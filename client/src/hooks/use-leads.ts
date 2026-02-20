@@ -215,3 +215,84 @@ export function useActiveCrmUsers() {
     },
   });
 }
+
+export function useDoctors() {
+  return useQuery<any[]>({
+    queryKey: ["/api/doctors-list"],
+    queryFn: async () => {
+      const res = await fetch("/api/doctors-list", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch doctors");
+      return res.json();
+    },
+  });
+}
+
+export function useDoctorAvailability(doctorId: number | null, date: string | null) {
+  return useQuery<{ available: boolean; reason?: string; dayOfWeek?: string; slots: Array<{ startTime: string; endTime: string; maxPatients: number; booked: number; availableCount: number }> }>({
+    queryKey: ["/api/doctors", doctorId, "availability", date],
+    queryFn: async () => {
+      const res = await fetch(`/api/doctors/${doctorId}/availability?date=${date}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch availability");
+      return res.json();
+    },
+    enabled: !!doctorId && !!date,
+  });
+}
+
+export function useAppointments(filters?: Record<string, string>) {
+  const params = filters ? "?" + new URLSearchParams(filters).toString() : "";
+  return useQuery<any[]>({
+    queryKey: ["/api/appointments", filters],
+    queryFn: async () => {
+      const res = await fetch(`/api/appointments${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch appointments");
+      return res.json();
+    },
+  });
+}
+
+export function useCreateAppointment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch("/api/appointments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to book appointment");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+      queryClient.invalidateQueries({ queryKey: [api.leads.list.path] });
+    },
+  });
+}
+
+export function useAppointmentAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, action, data }: { id: number; action: string; data?: any }) => {
+      const res = await fetch(`/api/appointments/${id}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data || {}),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || `Failed to ${action} appointment`);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+      queryClient.invalidateQueries({ queryKey: [api.leads.list.path] });
+    },
+  });
+}

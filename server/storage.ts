@@ -2,6 +2,7 @@ import { db, pool } from "./db";
 import {
   tenants, leads, tasks, activities, campaigns, crmUsers,
   patients, contacts, patientContactLinks, appointments, episodes, auditLogs,
+  opdTimings, doctorLeaveExceptions, doctors,
   type Tenant, type InsertTenant,
   type Patient, type InsertPatient,
   type Contact, type InsertContact,
@@ -17,7 +18,7 @@ import {
   type MasterRecord,
   MASTER_TABLE_REGISTRY,
 } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql, ne } from "drizzle-orm";
 
 export interface IStorage {
   // Tenant
@@ -58,6 +59,11 @@ export interface IStorage {
   getAppointment(id: number, tenantId: number): Promise<Appointment | undefined>;
   createAppointment(data: InsertAppointment): Promise<Appointment>;
   updateAppointment(id: number, tenantId: number, data: Partial<InsertAppointment>): Promise<Appointment>;
+  getDoctorOpdTimings(doctorId: number, tenantId: number): Promise<any[]>;
+  getDoctorLeaveExceptions(doctorId: number, tenantId: number, date: string): Promise<any[]>;
+  getAppointmentsForDoctorOnDate(doctorId: number, tenantId: number, date: string): Promise<Appointment[]>;
+  getNextTokenNumber(doctorId: number, tenantId: number, date: string): Promise<number>;
+  getDoctors(tenantId: number): Promise<any[]>;
   // Episodes
   getEpisodes(tenantId: number, patientId?: number): Promise<Episode[]>;
   getEpisode(id: number, tenantId: number): Promise<Episode | undefined>;
@@ -254,7 +260,10 @@ export class DatabaseStorage implements IStorage {
     if (filters?.leadId) conditions.push(eq(appointments.leadId, filters.leadId));
     if (filters?.patientId) conditions.push(eq(appointments.patientId, filters.patientId));
     if (filters?.doctorId) conditions.push(eq(appointments.doctorId, filters.doctorId));
-    return await db.select().from(appointments).where(and(...conditions));
+    if (filters?.status) conditions.push(eq(appointments.status, filters.status));
+    if (filters?.dateFrom) conditions.push(gte(appointments.appointmentDate, new Date(filters.dateFrom)));
+    if (filters?.dateTo) conditions.push(lte(appointments.appointmentDate, new Date(filters.dateTo + "T23:59:59.999Z")));
+    return await db.select().from(appointments).where(and(...conditions)).orderBy(desc(appointments.appointmentDate));
   }
 
   async getAppointment(id: number, tenantId: number): Promise<Appointment | undefined> {
@@ -275,6 +284,56 @@ export class DatabaseStorage implements IStorage {
       .returning();
     if (!appt) throw new Error("Appointment not found");
     return appt;
+  }
+
+  async getDoctorOpdTimings(doctorId: number, tenantId: number): Promise<any[]> {
+    return await db.select().from(opdTimings)
+      .where(and(eq(opdTimings.doctorId, doctorId), eq(opdTimings.tenantId, tenantId), eq(opdTimings.status, "Active")));
+  }
+
+  async getDoctorLeaveExceptions(doctorId: number, tenantId: number, date: string): Promise<any[]> {
+    const dayStart = new Date(date + "T00:00:00.000Z");
+    const dayEnd = new Date(date + "T23:59:59.999Z");
+    return await db.select().from(doctorLeaveExceptions)
+      .where(and(
+        eq(doctorLeaveExceptions.doctorId, doctorId),
+        eq(doctorLeaveExceptions.tenantId, tenantId),
+        gte(doctorLeaveExceptions.leaveDate, dayStart),
+        lte(doctorLeaveExceptions.leaveDate, dayEnd),
+      ));
+  }
+
+  async getAppointmentsForDoctorOnDate(doctorId: number, tenantId: number, date: string): Promise<Appointment[]> {
+    const dayStart = new Date(date + "T00:00:00.000Z");
+    const dayEnd = new Date(date + "T23:59:59.999Z");
+    return await db.select().from(appointments)
+      .where(and(
+        eq(appointments.doctorId, doctorId),
+        eq(appointments.tenantId, tenantId),
+        gte(appointments.appointmentDate, dayStart),
+        lte(appointments.appointmentDate, dayEnd),
+        ne(appointments.status, "Cancelled"),
+      ));
+  }
+
+  async getNextTokenNumber(doctorId: number, tenantId: number, date: string): Promise<number> {
+    const dayStart = new Date(date + "T00:00:00.000Z");
+    const dayEnd = new Date(date + "T23:59:59.999Z");
+    const result = await db.select({ maxToken: sql<number>`COALESCE(MAX(${appointments.tokenNumber}), 0)` })
+      .from(appointments)
+      .where(and(
+        eq(appointments.doctorId, doctorId),
+        eq(appointments.tenantId, tenantId),
+        gte(appointments.appointmentDate, dayStart),
+        lte(appointments.appointmentDate, dayEnd),
+        ne(appointments.status, "Cancelled"),
+      ));
+    return (result[0]?.maxToken || 0) + 1;
+  }
+
+  async getDoctors(tenantId: number): Promise<any[]> {
+    return await db.select().from(doctors)
+      .where(and(eq(doctors.tenantId, tenantId), eq(doctors.status, "Active")));
   }
 
   // --- Episodes ---

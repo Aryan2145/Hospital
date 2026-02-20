@@ -14,6 +14,7 @@ import LeadsWorkspace from "@/pages/LeadsWorkspace";
 import LeadDetailPage from "@/pages/LeadDetailPage";
 import MasterData from "@/pages/MasterData";
 import TeamManagement from "@/pages/TeamManagement";
+import AppointmentsPage from "@/pages/AppointmentsPage";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -41,6 +42,10 @@ function Router() {
 
       <Route path="/leads/:id">
          {isAuthenticated ? <LeadDetailPage /> : <Landing />}
+      </Route>
+
+      <Route path="/appointments">
+         {isAuthenticated ? <AppointmentsPage /> : <Landing />}
       </Route>
 
       <Route path="/team">

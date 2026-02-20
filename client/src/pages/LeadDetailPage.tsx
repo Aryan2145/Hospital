@@ -1,7 +1,7 @@
 import { useRoute, useLocation } from "wouter";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers } from "@/hooks/use-leads";
+import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers, useDoctors, useDoctorAvailability, useCreateAppointment } from "@/hooks/use-leads";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -544,11 +544,14 @@ function QuickActions({ lead }: { lead: any }) {
   const createActivity = useCreateActivity();
   const createTask = useCreateTask();
   const assignLead = useAssignLead();
+  const createAppointment = useCreateAppointment();
   const { data: crmUsers } = useActiveCrmUsers();
+  const { data: doctorsList } = useDoctors();
   const { toast } = useToast();
   const [callDialogOpen, setCallDialogOpen] = useState(false);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [apptDialogOpen, setApptDialogOpen] = useState(false);
   const [callNotes, setCallNotes] = useState("");
   const [callOutcome, setCallOutcome] = useState("");
   const [callDuration, setCallDuration] = useState("");
@@ -556,6 +559,15 @@ function QuickActions({ lead }: { lead: any }) {
   const [taskDueDate, setTaskDueDate] = useState("");
   const [taskPriority, setTaskPriority] = useState("Normal");
   const [selectedCrmUserId, setSelectedCrmUserId] = useState("");
+  const [apptDoctorId, setApptDoctorId] = useState("");
+  const [apptDate, setApptDate] = useState("");
+  const [apptSlot, setApptSlot] = useState("");
+  const [apptNotes, setApptNotes] = useState("");
+
+  const { data: availability, isLoading: availLoading } = useDoctorAvailability(
+    apptDoctorId ? Number(apptDoctorId) : null,
+    apptDate || null
+  );
 
   const handleLogCall = () => {
     createActivity.mutate({
@@ -703,10 +715,117 @@ function QuickActions({ lead }: { lead: any }) {
           </DialogContent>
         </Dialog>
 
-        <Button variant="outline" className="w-full justify-start text-xs" data-testid="button-book-appointment">
-          <Calendar className="w-4 h-4 mr-2" />
-          Book Appointment
-        </Button>
+        <Dialog open={apptDialogOpen} onOpenChange={setApptDialogOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline" className="w-full justify-start text-xs" data-testid="button-book-appointment">
+              <Calendar className="w-4 h-4 mr-2" />
+              Book Appointment
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Book Appointment</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Doctor</label>
+                <Select value={apptDoctorId} onValueChange={(v) => { setApptDoctorId(v); setApptSlot(""); }}>
+                  <SelectTrigger data-testid="select-appt-doctor">
+                    <SelectValue placeholder="Select doctor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {doctorsList?.map((d: any) => (
+                      <SelectItem key={d.id} value={String(d.id)}>
+                        {d.name} {d.specialization ? `(${d.specialization})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Date</label>
+                <Input
+                  type="date"
+                  value={apptDate}
+                  onChange={(e) => { setApptDate(e.target.value); setApptSlot(""); }}
+                  min={new Date().toISOString().split("T")[0]}
+                  data-testid="input-appt-date"
+                />
+              </div>
+              {apptDoctorId && apptDate && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Available Slots</label>
+                  {availLoading ? (
+                    <p className="text-xs text-muted-foreground py-2">Loading slots...</p>
+                  ) : availability && !availability.available ? (
+                    <p className="text-xs text-destructive py-2">{availability.reason}</p>
+                  ) : availability && availability.slots.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      {availability.slots.map((slot) => (
+                        <Button
+                          key={slot.startTime}
+                          variant={apptSlot === slot.startTime ? "default" : "outline"}
+                          size="sm"
+                          className="text-xs"
+                          disabled={slot.availableCount === 0}
+                          onClick={() => setApptSlot(slot.startTime)}
+                          data-testid={`button-slot-${slot.startTime}`}
+                        >
+                          {slot.startTime?.substring(0, 5)} - {slot.endTime?.substring(0, 5)}
+                          <span className="ml-1 text-muted-foreground">({slot.availableCount})</span>
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground py-2">No slots available</p>
+                  )}
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Notes</label>
+                <Textarea
+                  value={apptNotes}
+                  onChange={(e) => setApptNotes(e.target.value)}
+                  placeholder="Appointment notes..."
+                  rows={2}
+                  data-testid="input-appt-notes"
+                />
+              </div>
+              <Button
+                onClick={() => {
+                  const selectedSlot = availability?.slots.find(s => s.startTime === apptSlot);
+                  createAppointment.mutate(
+                    {
+                      leadId: lead.id,
+                      doctorId: Number(apptDoctorId),
+                      appointmentDate: new Date(apptDate + "T" + (apptSlot ? apptSlot.substring(0, 5) : "09:00") + ":00").toISOString(),
+                      startTime: apptSlot || undefined,
+                      endTime: selectedSlot?.endTime || undefined,
+                      notes: apptNotes || undefined,
+                      status: "Scheduled",
+                    },
+                    {
+                      onSuccess: (data) => {
+                        toast({ title: "Appointment booked", description: `Token #${data.tokenNumber}` });
+                        setApptDialogOpen(false);
+                        setApptDoctorId("");
+                        setApptDate("");
+                        setApptSlot("");
+                        setApptNotes("");
+                      },
+                      onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+                    }
+                  );
+                }}
+                className="w-full"
+                disabled={createAppointment.isPending || !apptDoctorId || !apptDate}
+                data-testid="button-confirm-appointment"
+              >
+                Book Appointment
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
           <DialogTrigger asChild>

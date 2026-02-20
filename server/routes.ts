@@ -6,7 +6,7 @@ import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, i
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db } from "./db";
-import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations } from "@shared/schema";
+import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -230,6 +230,33 @@ async function seedDatabase() {
       tenantId: tid, code: "AGT003", name: "Kavita Patel", email: "kavita.patel@viroc.in",
       phone: "+919800000006", reportingTo: crmMgr2.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 6,
     });
+
+    // Seed Doctors with OPD Timings
+    const [doc1] = await db.insert(doctors).values({
+      tenantId: tid, code: "DOC001", name: "Dr. Sanjay Gupta", qualification: "MS Ortho",
+      specialization: "Orthopaedics", phone: "+919900000001", email: "sanjay.gupta@viroc.in", status: "Active", displayOrder: 1,
+    }).returning();
+    const [doc2] = await db.insert(doctors).values({
+      tenantId: tid, code: "DOC002", name: "Dr. Meena Iyer", qualification: "MCh Neuro",
+      specialization: "Spine Surgery", phone: "+919900000002", email: "meena.iyer@viroc.in", status: "Active", displayOrder: 2,
+    }).returning();
+    const [doc3] = await db.insert(doctors).values({
+      tenantId: tid, code: "DOC003", name: "Dr. Arjun Reddy", qualification: "MD Pain",
+      specialization: "Pain Management", phone: "+919900000003", email: "arjun.reddy@viroc.in", status: "Active", displayOrder: 3,
+    }).returning();
+
+    const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    for (const day of weekdays) {
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: doc1.id, dayOfWeek: day, startTime: "09:00", endTime: "12:00", maxPatients: 15, status: "Active", displayOrder: 0 });
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: doc1.id, dayOfWeek: day, startTime: "14:00", endTime: "17:00", maxPatients: 10, status: "Active", displayOrder: 0 });
+    }
+    for (const day of ["Monday", "Wednesday", "Friday"]) {
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: doc2.id, dayOfWeek: day, startTime: "10:00", endTime: "13:00", maxPatients: 12, status: "Active", displayOrder: 0 });
+    }
+    for (const day of ["Tuesday", "Thursday", "Saturday"]) {
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: doc3.id, dayOfWeek: day, startTime: "09:00", endTime: "11:00", maxPatients: 8, status: "Active", displayOrder: 0 });
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: doc3.id, dayOfWeek: day, startTime: "15:00", endTime: "18:00", maxPatients: 10, status: "Active", displayOrder: 0 });
+    }
 
     console.log("Database seeded successfully with all master data");
   } catch (error) {
@@ -960,6 +987,60 @@ export async function registerRoutes(
   });
 
   // =============================================
+  // DOCTOR / AVAILABILITY ROUTES
+  // =============================================
+  app.get("/api/doctors-list", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const result = await storage.getDoctors(tid);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/doctors/:id/availability", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const doctorId = Number(req.params.id);
+      const date = req.query.date as string;
+      if (!date) return res.status(400).json({ message: "date query parameter required (YYYY-MM-DD)" });
+
+      const dayOfWeek = new Date(date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long" });
+
+      const leaves = await storage.getDoctorLeaveExceptions(doctorId, tid, date);
+      if (leaves.length > 0) {
+        return res.json({ available: false, reason: "Doctor on leave", slots: [] });
+      }
+
+      const timings = await storage.getDoctorOpdTimings(doctorId, tid);
+      const dayTimings = timings.filter((t: any) => t.dayOfWeek === dayOfWeek);
+      if (dayTimings.length === 0) {
+        return res.json({ available: false, reason: "No OPD on this day", slots: [] });
+      }
+
+      const existingAppts = await storage.getAppointmentsForDoctorOnDate(doctorId, tid, date);
+
+      const slots: Array<{ startTime: string; endTime: string; maxPatients: number; booked: number; availableCount: number }> = [];
+      for (const timing of dayTimings) {
+        const booked = existingAppts.filter((a: any) => a.startTime === timing.startTime).length;
+        const maxP = timing.maxPatients || 20;
+        slots.push({
+          startTime: timing.startTime,
+          endTime: timing.endTime,
+          maxPatients: maxP,
+          booked,
+          availableCount: Math.max(0, maxP - booked),
+        });
+      }
+
+      res.json({ available: true, dayOfWeek, slots });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =============================================
   // APPOINTMENT ROUTES
   // =============================================
   app.get("/api/appointments", isAuthenticated, async (req, res) => {
@@ -969,6 +1050,9 @@ export async function registerRoutes(
       if (req.query.leadId) filters.leadId = Number(req.query.leadId);
       if (req.query.patientId) filters.patientId = Number(req.query.patientId);
       if (req.query.doctorId) filters.doctorId = Number(req.query.doctorId);
+      if (req.query.status) filters.status = req.query.status;
+      if (req.query.dateFrom) filters.dateFrom = req.query.dateFrom;
+      if (req.query.dateTo) filters.dateTo = req.query.dateTo;
       const result = await storage.getAppointments(tid, filters);
       res.json(result);
     } catch (err: any) {
@@ -990,8 +1074,38 @@ export async function registerRoutes(
   app.post("/api/appointments", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const parsed = insertAppointmentSchema.parse({ ...req.body, tenantId: tid });
-      const appt = await storage.createAppointment(parsed);
+      const userId = (req as any).user?.claims?.sub || "system";
+      const body = { ...req.body, tenantId: tid, createdBy: userId, bookedBy: userId };
+      if (typeof body.appointmentDate === "string") body.appointmentDate = new Date(body.appointmentDate);
+      const parsed = insertAppointmentSchema.parse(body);
+
+      const dateStr = new Date(parsed.appointmentDate).toISOString().split("T")[0];
+
+      if (parsed.startTime) {
+        const existingAppts = await storage.getAppointmentsForDoctorOnDate(parsed.doctorId, tid, dateStr);
+        const conflict = existingAppts.find((a: any) => a.startTime === parsed.startTime && a.id !== undefined);
+        const timings = await storage.getDoctorOpdTimings(parsed.doctorId, tid);
+        const dayOfWeek = new Date(dateStr + "T12:00:00").toLocaleDateString("en-US", { weekday: "long" });
+        const slotTiming = timings.find((t: any) => t.dayOfWeek === dayOfWeek && t.startTime === parsed.startTime);
+        const maxP = slotTiming?.maxPatients || 20;
+        const bookedCount = existingAppts.filter((a: any) => a.startTime === parsed.startTime).length;
+        if (bookedCount >= maxP) {
+          return res.status(409).json({ message: `Slot ${parsed.startTime} is fully booked (${bookedCount}/${maxP})` });
+        }
+      }
+
+      const tokenNumber = await storage.getNextTokenNumber(parsed.doctorId, tid, dateStr);
+
+      const appt = await storage.createAppointment({ ...parsed, tokenNumber });
+
+      if (parsed.leadId) {
+        await storage.createActivity({
+          leadId: parsed.leadId, tenantId: tid, createdBy: userId,
+          type: "appointment",
+          description: `Appointment booked - Token #${tokenNumber}`,
+        });
+      }
+
       res.status(201).json(appt);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -1006,6 +1120,149 @@ export async function registerRoutes(
       res.json(appt);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/appointments/:id/consultation-done", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const userId = (req as any).user?.claims?.sub || "system";
+      const apptId = Number(req.params.id);
+      const { consultationNotes } = req.body as { consultationNotes?: string };
+
+      const appt = await storage.getAppointment(apptId, tid);
+      if (!appt) return res.status(404).json({ message: "Appointment not found" });
+
+      const updated = await storage.updateAppointment(apptId, tid, {
+        status: "Consultation Done",
+        consultationNotes: consultationNotes || null,
+        consultationDoneAt: new Date(),
+        consultationDoneBy: userId,
+      });
+
+      if (appt.leadId) {
+        await storage.updateLead(appt.leadId, { status: "Consultation Done" });
+        await storage.createActivity({
+          leadId: appt.leadId, tenantId: tid, createdBy: userId,
+          type: "status_change",
+          description: `Consultation completed${consultationNotes ? `: ${consultationNotes}` : ""}`,
+          oldStatus: "Appointment Booked",
+          newStatus: "Consultation Done",
+        });
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/appointments/:id/cancel", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const userId = (req as any).user?.claims?.sub || "system";
+      const apptId = Number(req.params.id);
+      const { cancelReason } = req.body as { cancelReason?: string };
+
+      const appt = await storage.getAppointment(apptId, tid);
+      if (!appt) return res.status(404).json({ message: "Appointment not found" });
+
+      const updated = await storage.updateAppointment(apptId, tid, {
+        status: "Cancelled",
+        cancelReason: cancelReason || null,
+      });
+
+      if (appt.leadId) {
+        await storage.createActivity({
+          leadId: appt.leadId, tenantId: tid, createdBy: userId,
+          type: "status_change",
+          description: `Appointment cancelled${cancelReason ? `: ${cancelReason}` : ""}`,
+        });
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/appointments/:id/reschedule", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const userId = (req as any).user?.claims?.sub || "system";
+      const apptId = Number(req.params.id);
+      const { appointmentDate, startTime, endTime } = req.body as { appointmentDate: string; startTime?: string; endTime?: string };
+
+      if (!appointmentDate) return res.status(400).json({ message: "appointmentDate required" });
+
+      const appt = await storage.getAppointment(apptId, tid);
+      if (!appt) return res.status(404).json({ message: "Appointment not found" });
+
+      const dateStr = new Date(appointmentDate).toISOString().split("T")[0];
+
+      if (startTime) {
+        const existingAppts = await storage.getAppointmentsForDoctorOnDate(appt.doctorId, tid, dateStr);
+        const timings = await storage.getDoctorOpdTimings(appt.doctorId, tid);
+        const dayOfWeek = new Date(dateStr + "T12:00:00").toLocaleDateString("en-US", { weekday: "long" });
+        const slotTiming = timings.find((t: any) => t.dayOfWeek === dayOfWeek && t.startTime === startTime);
+        const maxP = slotTiming?.maxPatients || 20;
+        const bookedCount = existingAppts.filter((a: any) => a.startTime === startTime && a.id !== apptId).length;
+        if (bookedCount >= maxP) {
+          return res.status(409).json({ message: `Slot ${startTime} is fully booked` });
+        }
+      }
+
+      const newToken = await storage.getNextTokenNumber(appt.doctorId, tid, dateStr);
+
+      const updated = await storage.updateAppointment(apptId, tid, {
+        appointmentDate: new Date(appointmentDate),
+        startTime: startTime || appt.startTime,
+        endTime: endTime || appt.endTime,
+        tokenNumber: newToken,
+        rescheduleCount: (appt.rescheduleCount || 0) + 1,
+        status: "Rescheduled",
+      });
+
+      if (appt.leadId) {
+        await storage.createActivity({
+          leadId: appt.leadId, tenantId: tid, createdBy: userId,
+          type: "appointment",
+          description: `Appointment rescheduled to ${dateStr} - Token #${newToken}`,
+        });
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/appointments/:id/no-show", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const userId = (req as any).user?.claims?.sub || "system";
+      const apptId = Number(req.params.id);
+      const { noShowReasonId } = req.body as { noShowReasonId?: number };
+
+      const appt = await storage.getAppointment(apptId, tid);
+      if (!appt) return res.status(404).json({ message: "Appointment not found" });
+
+      const updated = await storage.updateAppointment(apptId, tid, {
+        status: "No Show",
+        noShowReasonId: noShowReasonId || null,
+      });
+
+      if (appt.leadId) {
+        await storage.createActivity({
+          leadId: appt.leadId, tenantId: tid, createdBy: userId,
+          type: "status_change",
+          description: `Patient did not show for appointment`,
+        });
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 
