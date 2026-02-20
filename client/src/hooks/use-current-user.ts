@@ -44,7 +44,7 @@ export function useCurrentUser() {
       case "ADMIN":
         return true;
       case "MANAGER":
-        return ["dashboard", "leads", "appointments", "campaigns", "transactions", "team", "testing"].includes(page);
+        return ["dashboard", "leads", "appointments", "campaigns", "transactions", "connectors", "team", "testing"].includes(page);
       case "AGENT":
       case "COUNSELLOR":
         return ["dashboard", "leads", "appointments", "transactions", "testing"].includes(page);

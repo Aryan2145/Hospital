@@ -2,7 +2,7 @@ import { db, pool } from "./db";
 import {
   tenants, leads, tasks, activities, campaigns, crmUsers, systemRoles,
   patients, contacts, patientContactLinks, appointments, episodes, auditLogs,
-  opdTimings, doctorLeaveExceptions, doctors,
+  opdTimings, doctorLeaveExceptions, doctors, platformConnectors,
   type Tenant, type InsertTenant,
   type Patient, type InsertPatient,
   type Contact, type InsertContact,
@@ -15,6 +15,7 @@ import {
   type Appointment, type InsertAppointment,
   type Episode, type InsertEpisode,
   type AuditLog, type InsertAuditLog,
+  type PlatformConnector, type InsertPlatformConnector,
   type MasterRecord,
   MASTER_TABLE_REGISTRY,
 } from "@shared/schema";
@@ -85,6 +86,12 @@ export interface IStorage {
   findLeadByPhone(tenantId: number, phoneE164: string): Promise<Lead | undefined>;
   findLeadByEmail(tenantId: number, email: string): Promise<Lead | undefined>;
   getNextAssignableCrmUser(tenantId: number, branchId?: number, departmentId?: number): Promise<CrmUser | undefined>;
+  // Platform Connectors
+  getPlatformConnectors(tenantId: number): Promise<PlatformConnector[]>;
+  getPlatformConnector(id: number, tenantId: number): Promise<PlatformConnector | undefined>;
+  createPlatformConnector(data: InsertPlatformConnector): Promise<PlatformConnector>;
+  updatePlatformConnector(id: number, tenantId: number, data: Partial<InsertPlatformConnector>): Promise<PlatformConnector>;
+  deletePlatformConnector(id: number, tenantId: number): Promise<void>;
   // Generic Master CRUD
   getMasterRecords(tableName: string, tenantId: number): Promise<MasterRecord[]>;
   getMasterRecord(tableName: string, id: number): Promise<MasterRecord | undefined>;
@@ -422,6 +429,38 @@ export class DatabaseStorage implements IStorage {
       .returning();
     if (!c) throw new Error("Campaign not found");
     return c;
+  }
+
+  // --- Platform Connectors ---
+  async getPlatformConnectors(tenantId: number): Promise<PlatformConnector[]> {
+    return await db.select().from(platformConnectors)
+      .where(eq(platformConnectors.tenantId, tenantId))
+      .orderBy(platformConnectors.platform);
+  }
+
+  async getPlatformConnector(id: number, tenantId: number): Promise<PlatformConnector | undefined> {
+    const [c] = await db.select().from(platformConnectors)
+      .where(and(eq(platformConnectors.id, id), eq(platformConnectors.tenantId, tenantId)));
+    return c;
+  }
+
+  async createPlatformConnector(data: InsertPlatformConnector): Promise<PlatformConnector> {
+    const [c] = await db.insert(platformConnectors).values(data).returning();
+    return c;
+  }
+
+  async updatePlatformConnector(id: number, tenantId: number, data: Partial<InsertPlatformConnector>): Promise<PlatformConnector> {
+    const [c] = await db.update(platformConnectors)
+      .set({ ...data, modifiedAt: new Date() })
+      .where(and(eq(platformConnectors.id, id), eq(platformConnectors.tenantId, tenantId)))
+      .returning();
+    if (!c) throw new Error("Connector not found");
+    return c;
+  }
+
+  async deletePlatformConnector(id: number, tenantId: number): Promise<void> {
+    await db.delete(platformConnectors)
+      .where(and(eq(platformConnectors.id, id), eq(platformConnectors.tenantId, tenantId)));
   }
 
   // --- Audit Logs ---

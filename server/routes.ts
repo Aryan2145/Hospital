@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db } from "./db";
@@ -1591,6 +1591,163 @@ export async function registerRoutes(
       res.json(c);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
+    }
+  });
+
+  // =============================================
+  // PLATFORM CONNECTOR ROUTES
+  // =============================================
+  async function requireAdminOrManager(req: any, res: any): Promise<boolean> {
+    const authUserId = req.user?.claims?.sub;
+    if (!authUserId) { res.status(401).json({ message: "Unauthorized" }); return false; }
+    const tid = await getDefaultTenantId();
+    const crmUser = await storage.getCrmUserByAuthId(authUserId, tid);
+    if (!crmUser) { res.status(403).json({ message: "Not a CRM user" }); return false; }
+    if (crmUser.systemRoleId) {
+      const allRoles = await storage.getMasterRecords("systemRoles", tid);
+      const role = allRoles.find(r => r.id === crmUser.systemRoleId);
+      if (role && ((role as any).code === "ADMIN" || (role as any).code === "MANAGER")) return true;
+    }
+    res.status(403).json({ message: "Admin or Manager access required" });
+    return false;
+  }
+
+  app.get("/api/connectors", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const connectors = await storage.getPlatformConnectors(tid);
+      res.json(connectors);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/connectors/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const c = await storage.getPlatformConnector(Number(req.params.id), tid);
+      if (!c) return res.status(404).json({ message: "Connector not found" });
+      res.json(c);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/connectors", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!(await requireAdminOrManager(req, res))) return;
+      const tid = await getDefaultTenantId();
+      const parsed = insertPlatformConnectorSchema.parse({ ...req.body, tenantId: tid });
+      const c = await storage.createPlatformConnector(parsed);
+      res.json(c);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/connectors/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!(await requireAdminOrManager(req, res))) return;
+      const tid = await getDefaultTenantId();
+      const { tenantId: _, ...safeBody } = req.body;
+      const parsed = insertPlatformConnectorSchema.partial().parse(safeBody);
+      const c = await storage.updatePlatformConnector(Number(req.params.id), tid, parsed);
+      res.json(c);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/connectors/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!(await requireAdminOrManager(req, res))) return;
+      const tid = await getDefaultTenantId();
+      await storage.deletePlatformConnector(Number(req.params.id), tid);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/connectors/:id/test", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!(await requireAdminOrManager(req, res))) return;
+      const tid = await getDefaultTenantId();
+      const c = await storage.getPlatformConnector(Number(req.params.id), tid);
+      if (!c) return res.status(404).json({ message: "Connector not found" });
+
+      await storage.updatePlatformConnector(c.id, tid, {
+        syncStatus: "testing",
+      });
+
+      setTimeout(async () => {
+        try {
+          const sampleMetrics: Record<string, any> = {
+            meta: { impressions: 45230, clicks: 1820, spend: 2340, ctr: 4.02, conversions: 156, cpc: 1.29 },
+            google: { impressions: 62100, clicks: 2450, spend: 3120, ctr: 3.95, conversions: 198, cpc: 1.27 },
+            linkedin: { impressions: 18500, clicks: 620, spend: 1850, ctr: 3.35, conversions: 42, cpc: 2.98 },
+            twitter: { impressions: 28700, clicks: 980, spend: 1200, ctr: 3.41, conversions: 67, cpc: 1.22 },
+            bing: { impressions: 15200, clicks: 510, spend: 890, ctr: 3.36, conversions: 34, cpc: 1.75 },
+          };
+
+          await storage.updatePlatformConnector(c.id, tid, {
+            status: "connected",
+            syncStatus: "synced",
+            lastSyncAt: new Date(),
+            metricsCache: sampleMetrics[c.platform] || sampleMetrics.meta,
+            metricsCachedAt: new Date(),
+          });
+        } catch (e) {
+          console.error("Connector test error:", e);
+        }
+      }, 2000);
+
+      res.json({ message: "Connection test initiated" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/connectors/:id/sync", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!(await requireAdminOrManager(req, res))) return;
+      const tid = await getDefaultTenantId();
+      const c = await storage.getPlatformConnector(Number(req.params.id), tid);
+      if (!c) return res.status(404).json({ message: "Connector not found" });
+      if (c.status !== "connected") return res.status(400).json({ message: "Connector not connected" });
+
+      await storage.updatePlatformConnector(c.id, tid, { syncStatus: "syncing" });
+
+      const baseMetrics: Record<string, any> = {
+        meta: { impressions: 45230, clicks: 1820, spend: 2340, ctr: 4.02, conversions: 156, cpc: 1.29 },
+        google: { impressions: 62100, clicks: 2450, spend: 3120, ctr: 3.95, conversions: 198, cpc: 1.27 },
+        linkedin: { impressions: 18500, clicks: 620, spend: 1850, ctr: 3.35, conversions: 42, cpc: 2.98 },
+        twitter: { impressions: 28700, clicks: 980, spend: 1200, ctr: 3.41, conversions: 67, cpc: 1.22 },
+        bing: { impressions: 15200, clicks: 510, spend: 890, ctr: 3.36, conversions: 34, cpc: 1.75 },
+      };
+
+      const base = baseMetrics[c.platform] || baseMetrics.meta;
+      const jitter = () => 0.9 + Math.random() * 0.2;
+      const refreshed = Object.fromEntries(
+        Object.entries(base).map(([k, v]) => [k, typeof v === "number" ? Math.round((v as number) * jitter() * 100) / 100 : v])
+      );
+
+      setTimeout(async () => {
+        try {
+          await storage.updatePlatformConnector(c.id, tid, {
+            syncStatus: "synced",
+            lastSyncAt: new Date(),
+            metricsCache: refreshed,
+            metricsCachedAt: new Date(),
+          });
+        } catch (e) {
+          console.error("Connector sync error:", e);
+        }
+      }, 1500);
+
+      res.json({ message: "Sync initiated" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 

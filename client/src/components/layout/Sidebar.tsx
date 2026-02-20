@@ -13,6 +13,7 @@ import {
   FlaskConical,
   Megaphone,
   FileText,
+  Plug,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -25,6 +26,7 @@ const allNavItems = [
   { icon: Calendar, label: "Appointments", href: "/appointments", page: "appointments" },
   { icon: Megaphone, label: "Campaigns", href: "/campaigns", page: "campaigns" },
   { icon: FileText, label: "Transactions", href: "/transactions", page: "transactions" },
+  { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
 ];
 
 const systemItems = [

@@ -17,6 +17,7 @@ import TeamManagement from "@/pages/TeamManagement";
 import AppointmentsPage from "@/pages/AppointmentsPage";
 import CampaignsPage from "@/pages/CampaignsPage";
 import TransactionsPage from "@/pages/TransactionsPage";
+import ConnectorsPage from "@/pages/ConnectorsPage";
 import PendingApproval from "@/pages/PendingApproval";
 import TestingInterface from "@/pages/TestingInterface";
 
@@ -76,6 +77,12 @@ function Router() {
       <Route path="/transactions">
         {isAuthenticated ? (
           <RoleGate page="transactions"><TransactionsPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/connectors">
+        {isAuthenticated ? (
+          <RoleGate page="connectors"><ConnectorsPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

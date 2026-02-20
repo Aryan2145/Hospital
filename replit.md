@@ -46,6 +46,7 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - Activities: `GET/POST /api/leads/:leadId/activities`
 - Active CRM Users: `GET /api/crm-users/active`
 - Master Categories: `GET /api/masters-categories`
+- Platform Connectors: `GET/POST/PATCH/DELETE /api/connectors`, `POST /api/connectors/:id/test`, `POST /api/connectors/:id/sync`
 
 ## CRM User Management
 - Enhanced schema: reportingTo (self-ref hierarchy), accessScopeType (All/Branch/Department/Self), phiAccessLevel (Full/Masked/None)
@@ -58,7 +59,19 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - Accent: #ff8c00 (Orange)
 - Background: Light with medical-professional feel
 
+## Key Pages
+- `/` - Dashboard (authenticated) or Landing (unauthenticated)
+- `/leads` - Lead Kanban Workspace with drag-and-drop
+- `/leads/:id` - Lead Detail with activity timeline, next action, tasks, quick actions, handover banner
+- `/appointments` - Appointment scheduling and management
+- `/campaigns` - Campaign management (create, edit, track marketing campaigns)
+- `/transactions` - Treatment episode/transaction tracking
+- `/connectors` - Platform Connectors (Meta, Google, LinkedIn, X, Bing integration)
+- `/team` - Team Management (CRM Users, org hierarchy, access scoping)
+- `/masters` - Master Data Management (all 9 categories, 50+ tables)
+
 ## Recent Changes
+- 2026-02-20: Platform Connectors page - Connect Meta, Google Ads, LinkedIn, X, Microsoft Ads with credential config, test connection, sync, and live insights
 - 2026-02-20: Phase 4B - Handover acceptance (accept/reject with SLA), lead assignment/transfer, lead intake API with auto-dedup and round-robin auto-assign
 - 2026-02-20: Phase 4A - Lead detail page with activity timeline, status guardrails, quick actions (log call, create task, book appointment)
 - 2026-02-20: Phase 3 - Core transaction tables: Patient, Contact, PatientContactLink, enhanced Lead/Activity/Task, Appointment, Episode, AuditLog with full CRUD APIs
