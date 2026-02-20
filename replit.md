@@ -70,7 +70,15 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - `/team` - Team Management (CRM Users, org hierarchy, access scoping)
 - `/masters` - Master Data Management (all 9 categories, 50+ tables)
 
+## Sidebar Structure
+Navigation organized into 4 sections:
+1. **Reports & Dashboards**: Dashboard
+2. **Transactions**: Leads, Appointments, Campaigns, Transactions
+3. **Masters**: Master Data
+4. **Configurations**: Team, Connectors, Testing
+
 ## Recent Changes
+- 2026-02-20: Sidebar restructured into 4 sections (Reports & Dashboards, Transactions, Masters, Configurations); Connectors moved under Configurations
 - 2026-02-20: Platform Connectors page - Connect Meta, Google Ads, LinkedIn, X, Microsoft Ads with credential config, test connection, sync, and live insights
 - 2026-02-20: Phase 4B - Handover acceptance (accept/reject with SLA), lead assignment/transfer, lead intake API with auto-dedup and round-robin auto-assign
 - 2026-02-20: Phase 4A - Lead detail page with activity timeline, status guardrails, quick actions (log call, create task, book appointment)

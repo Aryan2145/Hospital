@@ -4,7 +4,6 @@ import {
   LayoutDashboard, 
   Users, 
   Calendar, 
-  Settings, 
   LogOut, 
   Activity,
   Database,
@@ -20,19 +19,38 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-const allNavItems = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/", page: "dashboard" },
-  { icon: Users, label: "Leads", href: "/leads", page: "leads" },
-  { icon: Calendar, label: "Appointments", href: "/appointments", page: "appointments" },
-  { icon: Megaphone, label: "Campaigns", href: "/campaigns", page: "campaigns" },
-  { icon: FileText, label: "Transactions", href: "/transactions", page: "transactions" },
-  { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
-];
+type NavItem = { icon: any; label: string; href: string; page: string };
 
-const systemItems = [
-  { icon: UserCog, label: "Team", href: "/team", page: "team" },
-  { icon: Database, label: "Master Data", href: "/masters", page: "masters" },
-  { icon: FlaskConical, label: "Testing", href: "/testing", page: "testing" },
+const sections: { label: string; items: NavItem[] }[] = [
+  {
+    label: "Reports & Dashboards",
+    items: [
+      { icon: LayoutDashboard, label: "Dashboard", href: "/", page: "dashboard" },
+    ],
+  },
+  {
+    label: "Transactions",
+    items: [
+      { icon: Users, label: "Leads", href: "/leads", page: "leads" },
+      { icon: Calendar, label: "Appointments", href: "/appointments", page: "appointments" },
+      { icon: Megaphone, label: "Campaigns", href: "/campaigns", page: "campaigns" },
+      { icon: FileText, label: "Transactions", href: "/transactions", page: "transactions" },
+    ],
+  },
+  {
+    label: "Masters",
+    items: [
+      { icon: Database, label: "Master Data", href: "/masters", page: "masters" },
+    ],
+  },
+  {
+    label: "Configurations",
+    items: [
+      { icon: UserCog, label: "Team", href: "/team", page: "team" },
+      { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
+      { icon: FlaskConical, label: "Testing", href: "/testing", page: "testing" },
+    ],
+  },
 ];
 
 export function Sidebar() {
@@ -40,11 +58,15 @@ export function Sidebar() {
   const { logout, user } = useAuth();
   const { crmUser, roleName, roleCode, canViewPage } = useCurrentUser();
 
-  const navItems = allNavItems.filter(item => canViewPage(item.page));
-  const filteredSystemItems = systemItems.filter(item => canViewPage(item.page));
-
   const displayName = crmUser?.name || `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User";
   const displayEmail = crmUser?.email || user?.email || "";
+
+  const visibleSections = sections
+    .map(section => ({
+      ...section,
+      items: section.items.filter(item => canViewPage(item.page)),
+    }))
+    .filter(section => section.items.length > 0);
 
   return (
     <div className="h-screen w-64 bg-card border-r border-border flex flex-col z-20">
@@ -60,53 +82,35 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="flex-1 py-6 px-4 space-y-1 overflow-y-auto">
-        <div className="text-xs font-semibold text-muted-foreground mb-4 px-2 uppercase tracking-wider">
-          Main Menu
-        </div>
-        {navItems.map((item) => {
-          const isActive = item.href === "/" ? location === "/" : location.startsWith(item.href);
-          return (
-            <Link key={item.href} href={item.href}>
-              <div
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium cursor-pointer",
-                  isActive
-                    ? "bg-primary text-white"
-                    : "text-muted-foreground hover-elevate"
-                )}
-                data-testid={`nav-${item.page}`}
-              >
-                <item.icon className={cn("w-5 h-5", isActive ? "text-white" : "text-muted-foreground")} />
-                {item.label}
-              </div>
-            </Link>
-          );
-        })}
-
-        {filteredSystemItems.length > 0 && (
-          <>
-            <div className="mt-8 text-xs font-semibold text-muted-foreground mb-4 px-2 uppercase tracking-wider">
-              System
+      <div className="flex-1 py-4 px-4 overflow-y-auto">
+        {visibleSections.map((section, idx) => (
+          <div key={section.label} className={cn(idx > 0 && "mt-6")}>
+            <div className="text-xs font-semibold text-muted-foreground mb-3 px-2 uppercase tracking-wider">
+              {section.label}
             </div>
-            {filteredSystemItems.map((item) => (
-              <Link key={item.href} href={item.href}>
-                <div
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium cursor-pointer",
-                    location === item.href
-                      ? "bg-primary text-white"
-                      : "text-muted-foreground hover-elevate"
-                  )}
-                  data-testid={`nav-${item.page}`}
-                >
-                  <item.icon className={cn("w-5 h-5", location === item.href ? "text-white" : "")} />
-                  {item.label}
-                </div>
-              </Link>
-            ))}
-          </>
-        )}
+            <div className="space-y-0.5">
+              {section.items.map((item) => {
+                const isActive = item.href === "/" ? location === "/" : location.startsWith(item.href);
+                return (
+                  <Link key={item.href} href={item.href}>
+                    <div
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium cursor-pointer",
+                        isActive
+                          ? "bg-primary text-white"
+                          : "text-muted-foreground hover-elevate"
+                      )}
+                      data-testid={`nav-${item.page}`}
+                    >
+                      <item.icon className={cn("w-5 h-5", isActive ? "text-white" : "text-muted-foreground")} />
+                      {item.label}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="p-4 border-t border-border bg-muted/50">
