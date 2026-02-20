@@ -16,18 +16,47 @@ class AuthStorage implements IAuthStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(userData)
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          ...userData,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
-    return user;
+    try {
+      if (userData.email) {
+        const [existingByEmail] = await db.select().from(users).where(eq(users.email, userData.email));
+        if (existingByEmail && existingByEmail.id !== userData.id) {
+          const [updated] = await db
+            .update(users)
+            .set({ firstName: userData.firstName, lastName: userData.lastName, profileImageUrl: userData.profileImageUrl, updatedAt: new Date() })
+            .where(eq(users.id, existingByEmail.id))
+            .returning();
+          return updated;
+        }
+      }
+      const [user] = await db
+        .insert(users)
+        .values(userData)
+        .onConflictDoUpdate({
+          target: users.id,
+          set: {
+            email: userData.email,
+            firstName: userData.firstName,
+            lastName: userData.lastName,
+            profileImageUrl: userData.profileImageUrl,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+      return user;
+    } catch (error: any) {
+      if (error?.code === '23505' && error?.constraint?.includes('email')) {
+        const [existingByEmail] = await db.select().from(users).where(eq(users.email, userData.email!));
+        if (existingByEmail) {
+          const [updated] = await db
+            .update(users)
+            .set({ firstName: userData.firstName, lastName: userData.lastName, profileImageUrl: userData.profileImageUrl, updatedAt: new Date() })
+            .where(eq(users.id, existingByEmail.id))
+            .returning();
+          return updated;
+        }
+      }
+      throw error;
+    }
   }
 }
 

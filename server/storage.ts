@@ -1,6 +1,6 @@
 import { db, pool } from "./db";
 import {
-  tenants, leads, tasks, activities, campaigns, crmUsers,
+  tenants, leads, tasks, activities, campaigns, crmUsers, systemRoles,
   patients, contacts, patientContactLinks, appointments, episodes, auditLogs,
   opdTimings, doctorLeaveExceptions, doctors,
   type Tenant, type InsertTenant,
@@ -18,7 +18,7 @@ import {
   type MasterRecord,
   MASTER_TABLE_REGISTRY,
 } from "@shared/schema";
-import { eq, and, desc, gte, lte, sql, ne } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql, ne, count } from "drizzle-orm";
 
 export interface IStorage {
   // Tenant
@@ -50,6 +50,10 @@ export interface IStorage {
   // CRM Users
   getCrmUsers(tenantId: number): Promise<CrmUser[]>;
   getCrmUser(id: number, tenantId: number): Promise<CrmUser | undefined>;
+  getCrmUserByAuthId(authUserId: string, tenantId: number): Promise<CrmUser | undefined>;
+  getCrmUserByEmail(email: string, tenantId: number): Promise<CrmUser | undefined>;
+  getCrmUserCount(tenantId: number): Promise<number>;
+  getSystemRoleByCode(code: string, tenantId: number): Promise<{ id: number; code: string; name: string } | undefined>;
   createCrmUser(data: InsertCrmUser): Promise<CrmUser>;
   updateCrmUser(id: number, tenantId: number, data: Partial<InsertCrmUser>): Promise<CrmUser>;
   deleteCrmUser(id: number, tenantId: number): Promise<void>;
@@ -228,6 +232,31 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db.select().from(crmUsers)
       .where(and(eq(crmUsers.id, id), eq(crmUsers.tenantId, tenantId)));
     return user;
+  }
+
+  async getCrmUserByAuthId(authUserId: string, tenantId: number): Promise<CrmUser | undefined> {
+    const [user] = await db.select().from(crmUsers)
+      .where(and(eq(crmUsers.userId, authUserId), eq(crmUsers.tenantId, tenantId)));
+    return user;
+  }
+
+  async getCrmUserByEmail(email: string, tenantId: number): Promise<CrmUser | undefined> {
+    const [user] = await db.select().from(crmUsers)
+      .where(and(eq(crmUsers.email, email), eq(crmUsers.tenantId, tenantId)));
+    return user;
+  }
+
+  async getCrmUserCount(tenantId: number): Promise<number> {
+    const [result] = await db.select({ cnt: count() }).from(crmUsers)
+      .where(eq(crmUsers.tenantId, tenantId));
+    return result?.cnt ?? 0;
+  }
+
+  async getSystemRoleByCode(code: string, tenantId: number): Promise<{ id: number; code: string; name: string } | undefined> {
+    const [role] = await db.select({ id: systemRoles.id, code: systemRoles.code, name: systemRoles.name })
+      .from(systemRoles)
+      .where(and(eq(systemRoles.code, code), eq(systemRoles.tenantId, tenantId)));
+    return role;
   }
 
   async createCrmUser(data: InsertCrmUser): Promise<CrmUser> {

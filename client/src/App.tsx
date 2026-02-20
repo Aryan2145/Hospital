@@ -1,13 +1,13 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { useAuth } from "@/hooks/use-auth";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 
-// Pages
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import LeadsWorkspace from "@/pages/LeadsWorkspace";
@@ -15,14 +15,16 @@ import LeadDetailPage from "@/pages/LeadDetailPage";
 import MasterData from "@/pages/MasterData";
 import TeamManagement from "@/pages/TeamManagement";
 import AppointmentsPage from "@/pages/AppointmentsPage";
+import PendingApproval from "@/pages/PendingApproval";
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
-  const { isAuthenticated, isLoading } = useAuth();
+function RoleGate({ page, children }: { page: string; children: React.ReactNode }) {
+  const { isLoading, isRegistered, canViewPage } = useCurrentUser();
 
   if (isLoading) return <div className="h-screen flex items-center justify-center"><LoadingSpinner /></div>;
-  if (!isAuthenticated) return <Landing />;
+  if (!isRegistered) return <PendingApproval />;
+  if (!canViewPage(page)) return <Redirect to="/" />;
 
-  return <Component />;
+  return <>{children}</>;
 }
 
 function Router() {
@@ -33,35 +35,45 @@ function Router() {
   return (
     <Switch>
       <Route path="/">
-        {isAuthenticated ? <Dashboard /> : <Landing />}
+        {isAuthenticated ? (
+          <RoleGate page="dashboard"><Dashboard /></RoleGate>
+        ) : <Landing />}
       </Route>
-      
+
       <Route path="/leads">
-         {isAuthenticated ? <LeadsWorkspace /> : <Landing />}
+        {isAuthenticated ? (
+          <RoleGate page="leads"><LeadsWorkspace /></RoleGate>
+        ) : <Landing />}
       </Route>
 
       <Route path="/leads/:id">
-         {isAuthenticated ? <LeadDetailPage /> : <Landing />}
+        {isAuthenticated ? (
+          <RoleGate page="leads"><LeadDetailPage /></RoleGate>
+        ) : <Landing />}
       </Route>
 
       <Route path="/appointments">
-         {isAuthenticated ? <AppointmentsPage /> : <Landing />}
+        {isAuthenticated ? (
+          <RoleGate page="appointments"><AppointmentsPage /></RoleGate>
+        ) : <Landing />}
       </Route>
 
       <Route path="/team">
-         {isAuthenticated ? <TeamManagement /> : <Landing />}
+        {isAuthenticated ? (
+          <RoleGate page="team"><TeamManagement /></RoleGate>
+        ) : <Landing />}
       </Route>
 
       <Route path="/masters">
-         {isAuthenticated ? <MasterData /> : <Landing />}
+        {isAuthenticated ? (
+          <RoleGate page="masters"><MasterData /></RoleGate>
+        ) : <Landing />}
       </Route>
 
       <Route path="/api/login">
-        {/* Redirect handled by hook/page logic or backend directly, but fallback here */}
         <Landing />
       </Route>
 
-      {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>
   );

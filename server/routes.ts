@@ -189,33 +189,38 @@ async function seedDatabase() {
     }
 
     // ── CRM Users (representative team) ──
+    const [adminRoleRec] = await db.select().from(systemRoles).where(and(eq(systemRoles.code, "ADMIN"), eq(systemRoles.tenantId, tid)));
+    const [mgrRoleRec] = await db.select().from(systemRoles).where(and(eq(systemRoles.code, "MANAGER"), eq(systemRoles.tenantId, tid)));
+    const [agentRoleRec] = await db.select().from(systemRoles).where(and(eq(systemRoles.code, "AGENT"), eq(systemRoles.tenantId, tid)));
+    const [counsellorRoleRec] = await db.select().from(systemRoles).where(and(eq(systemRoles.code, "COUNSELLOR"), eq(systemRoles.tenantId, tid)));
+
     const [crmHead] = await db.insert(crmUsers).values({
       tenantId: tid, code: "CRM001", name: "Nisha Patel", email: "nisha.patel@viroc.in",
-      phone: "+916356300401", accessScopeType: "All", phiAccessLevel: "Full", status: "Active", isActive: true, displayOrder: 1,
+      phone: "+916356300401", systemRoleId: adminRoleRec.id, accessScopeType: "All", phiAccessLevel: "Full", status: "Active", isActive: true, displayOrder: 1,
     }).returning();
     const [crmMgr1] = await db.insert(crmUsers).values({
       tenantId: tid, code: "CRM002", name: "Kiran Desai", email: "kiran.desai@viroc.in",
-      phone: "+916356300402", reportingTo: crmHead.id, accessScopeType: "Branch", phiAccessLevel: "Masked", status: "Active", isActive: true, displayOrder: 2,
+      phone: "+916356300402", systemRoleId: mgrRoleRec.id, reportingTo: crmHead.id, accessScopeType: "Branch", phiAccessLevel: "Masked", status: "Active", isActive: true, displayOrder: 2,
     }).returning();
     const [crmMgr2] = await db.insert(crmUsers).values({
       tenantId: tid, code: "CRM003", name: "Amit Joshi", email: "amit.joshi@viroc.in",
-      phone: "+916356300403", reportingTo: crmHead.id, accessScopeType: "Branch", phiAccessLevel: "Masked", status: "Active", isActive: true, displayOrder: 3,
+      phone: "+916356300403", systemRoleId: mgrRoleRec.id, reportingTo: crmHead.id, accessScopeType: "Branch", phiAccessLevel: "Masked", status: "Active", isActive: true, displayOrder: 3,
     }).returning();
     await db.insert(crmUsers).values({
       tenantId: tid, code: "CRM004", name: "Priya Sharma", email: "priya.sharma@viroc.in",
-      phone: "+916356300404", reportingTo: crmMgr1.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 4,
+      phone: "+916356300404", systemRoleId: counsellorRoleRec.id, reportingTo: crmMgr1.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 4,
     });
     await db.insert(crmUsers).values({
       tenantId: tid, code: "CRM005", name: "Rahul Mehta", email: "rahul.mehta@viroc.in",
-      phone: "+916356300405", reportingTo: crmMgr1.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 5,
+      phone: "+916356300405", systemRoleId: agentRoleRec.id, reportingTo: crmMgr1.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 5,
     });
     await db.insert(crmUsers).values({
       tenantId: tid, code: "CRM006", name: "Meera Trivedi", email: "meera.trivedi@viroc.in",
-      phone: "+916356300406", reportingTo: crmMgr2.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 6,
+      phone: "+916356300406", systemRoleId: counsellorRoleRec.id, reportingTo: crmMgr2.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 6,
     });
     await db.insert(crmUsers).values({
       tenantId: tid, code: "CRM007", name: "Jayesh Parmar", email: "jayesh.parmar@viroc.in",
-      phone: "+916356300407", reportingTo: crmMgr2.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 7,
+      phone: "+916356300407", systemRoleId: agentRoleRec.id, reportingTo: crmMgr2.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 7,
     });
 
     // ── Lead Statuses ──
@@ -428,6 +433,114 @@ export async function registerRoutes(
   await setupAuth(app);
   registerAuthRoutes(app);
 
+  const [defaultTenant] = await db.select().from(tenants).limit(1);
+  const tid = defaultTenant?.id || 1;
+
+  // --- /api/me: Get current user's CRM profile with role ---
+  app.get("/api/me", isAuthenticated, async (req, res) => {
+    try {
+      const authUserId = (req as any).user?.claims?.sub;
+      const authEmail = (req as any).user?.claims?.email;
+      if (!authUserId) return res.status(401).json({ message: "Unauthorized" });
+
+      let crmUser = await storage.getCrmUserByAuthId(authUserId, tid);
+
+      if (!crmUser && authEmail) {
+        const emailMatch = await storage.getCrmUserByEmail(authEmail, tid);
+        if (emailMatch && !emailMatch.userId) {
+          crmUser = await storage.updateCrmUser(emailMatch.id, tid, { userId: authUserId });
+        }
+      }
+
+      if (!crmUser) {
+        const allCrmUsers = await storage.getCrmUsers(tid);
+        const anyLinked = allCrmUsers.some(u => u.userId !== null);
+        console.log(`[/api/me] No CRM user found. authUserId=${authUserId}, authEmail=${authEmail}, totalCrmUsers=${allCrmUsers.length}, anyLinked=${anyLinked}`);
+
+        if (!anyLinked && allCrmUsers.length > 0) {
+          const adminRole = await storage.getSystemRoleByCode("ADMIN", tid);
+          const adminUser = allCrmUsers.find(u => u.systemRoleId === adminRole?.id) || allCrmUsers[0];
+          crmUser = await storage.updateCrmUser(adminUser.id, tid, {
+            userId: authUserId,
+            email: authEmail || adminUser.email || undefined,
+            systemRoleId: adminRole?.id || adminUser.systemRoleId || undefined,
+            accessScopeType: "All",
+          });
+        } else if (allCrmUsers.length === 0) {
+          const adminRole = await storage.getSystemRoleByCode("ADMIN", tid);
+          crmUser = await storage.createCrmUser({
+            tenantId: tid,
+            userId: authUserId,
+            code: `USR-${authUserId.substring(0, 6).toUpperCase()}`,
+            name: `${(req as any).user?.claims?.first_name || ""} ${(req as any).user?.claims?.last_name || ""}`.trim() || "Admin",
+            email: authEmail || undefined,
+            systemRoleId: adminRole?.id || undefined,
+            accessScopeType: "All",
+            isActive: true,
+            status: "Active",
+          });
+        } else {
+          return res.json({ status: "unregistered", authUserId, authEmail });
+        }
+      }
+
+      let roleName = null;
+      let roleCode = null;
+      if (crmUser.systemRoleId) {
+        const allRoles = await storage.getMasterRecords("systemRoles", tid);
+        const role = allRoles.find(r => r.id === crmUser!.systemRoleId);
+        if (role) {
+          roleName = role.name;
+          roleCode = (role as any).code;
+        }
+      }
+
+      res.json({
+        status: "active",
+        crmUser: {
+          ...crmUser,
+          roleName,
+          roleCode,
+        },
+      });
+    } catch (error) {
+      console.error("Error in /api/me:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // --- Admin: Link auth user to CRM user ---
+  app.patch("/api/crm-users/:id/link", isAuthenticated, async (req, res) => {
+    try {
+      const authUserId = (req as any).user?.claims?.sub;
+      const currentCrmUser = await storage.getCrmUserByAuthId(authUserId, tid);
+      if (!currentCrmUser) return res.status(403).json({ message: "Not a CRM user" });
+
+      let currentRole = null;
+      if (currentCrmUser.systemRoleId) {
+        currentRole = await storage.getSystemRoleByCode("ADMIN", tid);
+        if (!currentRole || currentRole.id !== currentCrmUser.systemRoleId) {
+          const allRoles = await storage.getMasterRecords("systemRoles", tid);
+          const r = allRoles.find(r => r.id === currentCrmUser.systemRoleId);
+          if (!r || (r as any).code !== "ADMIN") {
+            return res.status(403).json({ message: "Only admins can link users" });
+          }
+        }
+      } else {
+        return res.status(403).json({ message: "Only admins can link users" });
+      }
+
+      const { userId: linkUserId } = req.body;
+      if (!linkUserId) return res.status(400).json({ message: "userId is required" });
+
+      const updated = await storage.updateCrmUser(Number(req.params.id), tid, { userId: linkUserId });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error linking user:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   // --- Tenant ---
   app.get(api.tenants.get.path, isAuthenticated, async (req, res) => {
     const allTenants = await db.select().from(tenants);
@@ -438,10 +551,23 @@ export async function registerRoutes(
     }
   });
 
-  // --- Leads ---
+  // --- Leads (with access scope filtering) ---
   app.get(api.leads.list.path, isAuthenticated, async (req, res) => {
-    const allLeads = await storage.getLeads(1);
-    res.json(allLeads);
+    const allLeads = await storage.getLeads(tid);
+    const authUserId = (req as any).user?.claims?.sub;
+    const crmUser = authUserId ? await storage.getCrmUserByAuthId(authUserId, tid) : null;
+
+    if (!crmUser || crmUser.accessScopeType === "All") {
+      return res.json(allLeads);
+    }
+
+    let filtered = allLeads;
+    if (crmUser.accessScopeType === "Self") {
+      filtered = allLeads.filter(l => l.assignedCrmUserId === crmUser.id);
+    } else if (crmUser.accessScopeType === "Branch" && crmUser.branchId) {
+      filtered = allLeads.filter(l => l.branchId === crmUser.branchId);
+    }
+    res.json(filtered);
   });
 
   app.get(api.leads.get.path, isAuthenticated, async (req, res) => {
