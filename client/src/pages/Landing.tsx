@@ -81,11 +81,11 @@ export default function Landing() {
               </div>
             </div>
 
-            <div className="bg-blue-50 p-4 rounded-lg flex items-start gap-3">
-              <Stethoscope className="w-5 h-5 text-primary mt-0.5" />
+            <div className="bg-muted p-4 rounded-lg flex items-start gap-3">
+              <Stethoscope className="w-5 h-5 text-muted-foreground mt-0.5" />
               <div>
-                <h4 className="text-sm font-semibold text-primary">Need Help?</h4>
-                <p className="text-xs text-blue-600 mt-1">Contact IT support if you are having trouble accessing your account.</p>
+                <h4 className="text-sm font-semibold text-foreground">Need Help?</h4>
+                <p className="text-xs text-muted-foreground mt-1">Contact IT support if you are having trouble accessing your account.</p>
               </div>
             </div>
           </div>

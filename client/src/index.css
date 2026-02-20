@@ -9,7 +9,7 @@
   --font-body: 'Inter', sans-serif;
 
   /* Viroc Medical Theme */
-  --background: 210 40% 98%;      /* Very light blue-ish white */
+  --background: 0 0% 98%;          /* Clean neutral white */
   --foreground: 215 28% 17%;      /* Dark slate for text */
 
   --card: 0 0% 100%;
@@ -22,9 +22,9 @@
   --primary: 208 79% 28%;
   --primary-foreground: 0 0% 100%;
 
-  /* Secondary Light Blue #f0f7fc -> HSL 205 75% 96% */
-  --secondary: 205 75% 96%;
-  --secondary-foreground: 208 79% 28%;
+  /* Secondary - neutral gray instead of blue-tinted */
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 215 28% 17%;
 
   /* Muted */
   --muted: 210 40% 96.1%;
@@ -53,7 +53,7 @@
     font-family: var(--font-sans);
   }
   h1, h2, h3, h4, h5, h6 {
-    @apply font-bold tracking-tight text-primary;
+    @apply font-bold tracking-tight text-foreground;
   }
 }
 

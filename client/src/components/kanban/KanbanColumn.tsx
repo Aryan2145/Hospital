@@ -22,7 +22,7 @@ export function KanbanColumn({ id, title, color, count, leads }: KanbanColumnPro
           <div className={cn("w-3 h-3 rounded-full", color.split(" ")[0].replace("bg-", "bg-opacity-100 bg-"))} />
           <h3 className="font-semibold text-foreground text-sm tracking-tight">{title}</h3>
         </div>
-        <span className="bg-secondary text-secondary-foreground text-xs font-bold px-2.5 py-1 rounded-full border border-secondary-foreground/10">
+        <span className="bg-muted text-muted-foreground text-xs font-bold px-2.5 py-1 rounded-full">
           {count}
         </span>
       </div>

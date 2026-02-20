@@ -116,12 +116,12 @@ export default function Dashboard() {
 function StatCard({ title, value, icon: Icon, trend, trendColor }: any) {
   return (
     <Card className="shadow-sm hover:shadow-md transition-shadow duration-200">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
         <Icon className="h-4 w-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold text-primary">{value}</div>
+        <div className="text-2xl font-bold text-foreground">{value}</div>
         <p className={`text-xs ${trendColor} font-medium mt-1`}>{trend}</p>
       </CardContent>
     </Card>

@@ -22,7 +22,7 @@ export function LeadDetailView({ lead, onClose }: LeadDetailViewProps) {
       {/* Left Panel: Profile */}
       <div className="w-1/3 border-r border-border p-6 bg-secondary/30">
         <div className="flex items-center justify-between mb-8">
-          <h2 className="text-xl font-bold text-primary">Patient Profile</h2>
+          <h2 className="text-xl font-bold text-foreground">Patient Profile</h2>
           <Button variant="ghost" size="icon" onClick={onClose} className="md:hidden">
             <X className="w-5 h-5" />
           </Button>
@@ -33,7 +33,7 @@ export function LeadDetailView({ lead, onClose }: LeadDetailViewProps) {
             {lead.name.charAt(0).toUpperCase()}
           </div>
           <h3 className="text-2xl font-bold text-foreground text-center">{lead.name}</h3>
-          <span className="mt-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider">
+          <span className="mt-2 px-3 py-1 rounded-full bg-muted text-foreground text-xs font-semibold uppercase tracking-wider">
             {lead.status}
           </span>
         </div>
@@ -41,7 +41,7 @@ export function LeadDetailView({ lead, onClose }: LeadDetailViewProps) {
         <div className="space-y-6">
           <div className="p-4 bg-white rounded-xl shadow-sm border border-border">
             <div className="flex items-center gap-3 text-sm mb-3">
-              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+              <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
                 <Phone className="w-4 h-4" />
               </div>
               <div>
@@ -131,7 +131,7 @@ function ActivityFeed({ leadId }: { leadId: number }) {
       {activities.map((activity) => (
         <div key={activity.id} className="flex gap-4">
           <div className="flex flex-col items-center">
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 z-10">
+            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground z-10">
                {activity.type === 'call' ? <Phone className="w-4 h-4" /> : <StickyNote className="w-4 h-4" />}
             </div>
             <div className="w-0.5 h-full bg-border -mt-2 -mb-4" />
@@ -139,7 +139,7 @@ function ActivityFeed({ leadId }: { leadId: number }) {
           <div className="flex-1 pb-6">
             <div className="bg-secondary/30 p-4 rounded-xl rounded-tl-none border border-border/50">
               <div className="flex justify-between items-start mb-1">
-                <span className="text-xs font-bold uppercase text-primary/70">{activity.type}</span>
+                <span className="text-xs font-bold uppercase text-foreground/70">{activity.type}</span>
                 <span className="text-xs text-muted-foreground">
                   {activity.createdAt && format(new Date(activity.createdAt), "MMM d, h:mm a")}
                 </span>
