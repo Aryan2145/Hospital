@@ -1,15 +1,16 @@
 import { db, pool } from "./db";
 import {
-  tenants, leads, tasks, activities, campaigns,
+  tenants, leads, tasks, activities, campaigns, crmUsers,
   type Tenant, type InsertTenant,
   type Lead, type InsertLead, type UpdateLeadRequest,
   type Task, type InsertTask, type UpdateTaskRequest,
   type Activity, type InsertActivity,
   type Campaign, type InsertCampaign,
+  type CrmUser, type InsertCrmUser,
   type MasterRecord,
   MASTER_TABLE_REGISTRY,
 } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export interface IStorage {
   // Tenant
@@ -26,6 +27,13 @@ export interface IStorage {
   // Activities
   getActivities(leadId: number): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
+  // CRM Users
+  getCrmUsers(tenantId: number): Promise<CrmUser[]>;
+  getCrmUser(id: number, tenantId: number): Promise<CrmUser | undefined>;
+  createCrmUser(data: InsertCrmUser): Promise<CrmUser>;
+  updateCrmUser(id: number, tenantId: number, data: Partial<InsertCrmUser>): Promise<CrmUser>;
+  deleteCrmUser(id: number, tenantId: number): Promise<void>;
+  getCrmUserDirectReports(managerId: number, tenantId: number): Promise<CrmUser[]>;
   // Generic Master CRUD
   getMasterRecords(tableName: string, tenantId: number): Promise<MasterRecord[]>;
   getMasterRecord(tableName: string, id: number): Promise<MasterRecord | undefined>;
@@ -90,6 +98,41 @@ export class DatabaseStorage implements IStorage {
   async createActivity(activity: InsertActivity): Promise<Activity> {
     const [newActivity] = await db.insert(activities).values(activity).returning();
     return newActivity;
+  }
+
+  // --- CRM Users ---
+  async getCrmUsers(tenantId: number): Promise<CrmUser[]> {
+    return await db.select().from(crmUsers).where(eq(crmUsers.tenantId, tenantId));
+  }
+
+  async getCrmUser(id: number, tenantId: number): Promise<CrmUser | undefined> {
+    const [user] = await db.select().from(crmUsers)
+      .where(and(eq(crmUsers.id, id), eq(crmUsers.tenantId, tenantId)));
+    return user;
+  }
+
+  async createCrmUser(data: InsertCrmUser): Promise<CrmUser> {
+    const [user] = await db.insert(crmUsers).values(data).returning();
+    return user;
+  }
+
+  async updateCrmUser(id: number, tenantId: number, data: Partial<InsertCrmUser>): Promise<CrmUser> {
+    const [user] = await db.update(crmUsers)
+      .set({ ...data, modifiedAt: new Date() })
+      .where(and(eq(crmUsers.id, id), eq(crmUsers.tenantId, tenantId)))
+      .returning();
+    if (!user) throw new Error("User not found");
+    return user;
+  }
+
+  async deleteCrmUser(id: number, tenantId: number): Promise<void> {
+    await db.delete(crmUsers)
+      .where(and(eq(crmUsers.id, id), eq(crmUsers.tenantId, tenantId)));
+  }
+
+  async getCrmUserDirectReports(managerId: number, tenantId: number): Promise<CrmUser[]> {
+    return await db.select().from(crmUsers)
+      .where(and(eq(crmUsers.reportingTo, managerId), eq(crmUsers.tenantId, tenantId)));
   }
 
   // --- Generic Master CRUD ---

@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db } from "./db";
@@ -204,6 +204,32 @@ async function seedDatabase() {
     await db.insert(systemRoles).values({ tenantId: tid, code: "AGENT", name: "Agent", status: "Active", displayOrder: 2 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "MANAGER", name: "Manager", status: "Active", displayOrder: 3 });
     const [org] = await db.insert(organisations).values({ tenantId: tid, code: "VIROC", name: "VIROC Hospital", status: "Active", displayOrder: 1 }).returning();
+
+    // Seed CRM Users with hierarchy
+    const [crmHead] = await db.insert(crmUsers).values({
+      tenantId: tid, code: "HEAD001", name: "Dr. Rajesh Kumar", email: "rajesh.kumar@viroc.in",
+      phone: "+919800000001", accessScopeType: "All", phiAccessLevel: "Full", status: "Active", isActive: true, displayOrder: 1,
+    }).returning();
+    const [crmMgr1] = await db.insert(crmUsers).values({
+      tenantId: tid, code: "MGR001", name: "Anita Desai", email: "anita.desai@viroc.in",
+      phone: "+919800000002", reportingTo: crmHead.id, accessScopeType: "Branch", phiAccessLevel: "Masked", status: "Active", isActive: true, displayOrder: 2,
+    }).returning();
+    const [crmMgr2] = await db.insert(crmUsers).values({
+      tenantId: tid, code: "MGR002", name: "Vikram Joshi", email: "vikram.joshi@viroc.in",
+      phone: "+919800000003", reportingTo: crmHead.id, accessScopeType: "Branch", phiAccessLevel: "Masked", status: "Active", isActive: true, displayOrder: 3,
+    }).returning();
+    await db.insert(crmUsers).values({
+      tenantId: tid, code: "AGT001", name: "Pooja Shah", email: "pooja.shah@viroc.in",
+      phone: "+919800000004", reportingTo: crmMgr1.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 4,
+    });
+    await db.insert(crmUsers).values({
+      tenantId: tid, code: "AGT002", name: "Rohit Mehta", email: "rohit.mehta@viroc.in",
+      phone: "+919800000005", reportingTo: crmMgr1.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 5,
+    });
+    await db.insert(crmUsers).values({
+      tenantId: tid, code: "AGT003", name: "Kavita Patel", email: "kavita.patel@viroc.in",
+      phone: "+919800000006", reportingTo: crmMgr2.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 6,
+    });
 
     console.log("Database seeded successfully with all master data");
   } catch (error) {
@@ -534,6 +560,72 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (err: any) {
       res.status(400).json({ message: err.message });
+    }
+  });
+
+  // =============================================
+  // CRM USER MANAGEMENT ROUTES
+  // =============================================
+  app.get("/api/crm-users", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const users = await storage.getCrmUsers(tid);
+      res.json(users);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/crm-users/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const user = await storage.getCrmUser(Number(req.params.id), tid);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      res.json(user);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/crm-users", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertCrmUserSchema.parse({ ...req.body, tenantId: tid });
+      const user = await storage.createCrmUser(parsed);
+      res.status(201).json(user);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/crm-users/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertCrmUserSchema.partial().parse(req.body);
+      const user = await storage.updateCrmUser(Number(req.params.id), tid, parsed);
+      res.json(user);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/crm-users/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      await storage.deleteCrmUser(Number(req.params.id), tid);
+      res.status(204).send();
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/crm-users/:id/team", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const directReports = await storage.getCrmUserDirectReports(Number(req.params.id), tid);
+      res.json(directReports);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 

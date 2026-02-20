@@ -12,6 +12,7 @@ import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import LeadsWorkspace from "@/pages/LeadsWorkspace";
 import MasterData from "@/pages/MasterData";
+import TeamManagement from "@/pages/TeamManagement";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -35,6 +36,10 @@ function Router() {
       
       <Route path="/leads">
          {isAuthenticated ? <LeadsWorkspace /> : <Landing />}
+      </Route>
+
+      <Route path="/team">
+         {isAuthenticated ? <TeamManagement /> : <Landing />}
       </Route>
 
       <Route path="/masters">

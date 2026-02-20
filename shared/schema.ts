@@ -250,6 +250,11 @@ export const crmUsers = pgTable("crm_users", {
   designationId: integer("designation_id").references(() => designations.id),
   employmentTypeId: integer("employment_type_id").references(() => employmentTypes.id),
   systemRoleId: integer("system_role_id").references(() => systemRoles.id),
+  reportingTo: integer("reporting_to"),
+  accessScopeType: text("access_scope_type").notNull().default("Self"),
+  phiAccessLevel: text("phi_access_level").notNull().default("None"),
+  joiningDate: timestamp("joining_date"),
+  isActive: boolean("is_active").notNull().default(true),
   status: text("status").notNull().default("Active"),
   displayOrder: integer("display_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
@@ -919,6 +924,13 @@ export const bulkImportLogs = pgTable("bulk_import_logs", {
 
 export type BulkImportLog = typeof bulkImportLogs.$inferSelect;
 
+// CRM User insert schema
+export const insertCrmUserSchema = createInsertSchema(crmUsers).omit({
+  id: true,
+  createdAt: true,
+  modifiedAt: true,
+});
+
 // Generic master insert schema (used for all simple master tables)
 export const insertMasterSchema = z.object({
   tenantId: z.number(),
@@ -943,6 +955,8 @@ export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type UpdateTaskRequest = Partial<InsertTask>;
 export type Campaign = typeof campaigns.$inferSelect;
 export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
+export type CrmUser = typeof crmUsers.$inferSelect;
+export type InsertCrmUser = z.infer<typeof insertCrmUserSchema>;
 
 // Generic master record type
 export interface MasterRecord {
