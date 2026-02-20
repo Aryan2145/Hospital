@@ -6,7 +6,7 @@ import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, i
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db } from "./db";
-import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings } from "@shared/schema";
+import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, treatmentSubDepartments, areas, pinCodes, callingLines } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -20,21 +20,205 @@ async function seedDatabase() {
     if (existingTenants.length > 0) return;
 
     const [tenant] = await db.insert(tenants).values({
-      name: "VIROC Hospital",
+      name: "VIROC Super Speciality Orthopaedic Hospital",
       subdomain: "viroc",
-      primaryColor: "#005b9f",
+      primaryColor: "#0f4c81",
     }).returning();
 
     const tid = tenant.id;
 
-    // Seed leads
-    await storage.createLead({ tenantId: tid, name: "Amit Patel", phoneE164: "+919876543210", email: "amit.patel@example.com", status: "Raw Lead Captured" });
-    await storage.createLead({ tenantId: tid, name: "Priya Sharma", phoneE164: "+919876543211", email: "priya.sharma@example.com", status: "Qualified" });
-    await storage.createLead({ tenantId: tid, name: "Rahul Verma", phoneE164: "+919876543212", status: "Contacted" });
-    await storage.createLead({ tenantId: tid, name: "Sunita Mehta", phoneE164: "+919876543213", email: "sunita.m@example.com", status: "Appointment Booked" });
-    await storage.createLead({ tenantId: tid, name: "Deepak Singh", phoneE164: "+919876543214", status: "Consultation Done" });
+    // ── Location: India > Gujarat > Vadodara ──
+    const [india] = await db.insert(countries).values({ tenantId: tid, code: "IN", name: "India", status: "Active", displayOrder: 1 }).returning();
+    const [gujarat] = await db.insert(states).values({ tenantId: tid, countryId: india.id, code: "GJ", name: "Gujarat", status: "Active", displayOrder: 1 }).returning();
+    const [vadodara] = await db.insert(cities).values({ tenantId: tid, stateId: gujarat.id, code: "VAD", name: "Vadodara", status: "Active", displayOrder: 1 }).returning();
+    const [pin390018] = await db.insert(pinCodes).values({ tenantId: tid, cityId: vadodara.id, code: "390018", name: "390018 - Karelibaug", status: "Active", displayOrder: 1 }).returning();
+    await db.insert(areas).values({ tenantId: tid, cityId: vadodara.id, pinCodeId: pin390018.id, code: "KRLBG", name: "Karelibaug", pinCode: "390018", status: "Active", displayOrder: 1 });
 
-    // Seed Lead Statuses (Category 7)
+    // ── Organisation ──
+    const [org] = await db.insert(organisations).values({ tenantId: tid, code: "VIROC", name: "VIROC Super Speciality Orthopaedic Hospital", status: "Active", displayOrder: 1 }).returning();
+    const [mainBranch] = await db.insert(branches).values({ tenantId: tid, organisationId: org.id, code: "VIROC-HQ", name: "VIROC Karelibaug (Main)", address: "Society No. 5 B, Nivruti Colony, Opp. Lohana Lewa Samaj Wadi, Aryakanya Vidyalaya Road, Karelibaug, Vadodara - 390018", phone: "+916356300400", status: "Active", displayOrder: 1 }).returning();
+
+    // Administrative Departments
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "ORTHO", name: "Orthopaedics & Joint Replacement", status: "Active", displayOrder: 1 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "SPINE", name: "Spine Surgery", status: "Active", displayOrder: 2 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "SPORTS", name: "Sports Injury & Arthroscopy", status: "Active", displayOrder: 3 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "PAIN", name: "Advanced Pain Clinic", status: "Active", displayOrder: 4 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "PHYSIO", name: "Physiotherapy & Rehabilitation", status: "Active", displayOrder: 5 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "ICU", name: "Surgical ICU & Critical Care", status: "Active", displayOrder: 6 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "RADIO", name: "Radiology & Imaging", status: "Active", displayOrder: 7 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "PHARM", name: "In-house Pharmacy", status: "Active", displayOrder: 8 });
+
+    // Designations
+    await db.insert(designations).values({ tenantId: tid, code: "MD", name: "Managing Director", status: "Active", displayOrder: 1 });
+    await db.insert(designations).values({ tenantId: tid, code: "DIR", name: "Director", status: "Active", displayOrder: 2 });
+    await db.insert(designations).values({ tenantId: tid, code: "CONSLT", name: "Consultant Surgeon", status: "Active", displayOrder: 3 });
+    await db.insert(designations).values({ tenantId: tid, code: "SR_CONSLT", name: "Senior Consultant", status: "Active", displayOrder: 4 });
+    await db.insert(designations).values({ tenantId: tid, code: "CRM_MGR", name: "CRM Manager", status: "Active", displayOrder: 5 });
+    await db.insert(designations).values({ tenantId: tid, code: "CRM_EXEC", name: "CRM Executive", status: "Active", displayOrder: 6 });
+    await db.insert(designations).values({ tenantId: tid, code: "COUNSELLOR", name: "Patient Counsellor", status: "Active", displayOrder: 7 });
+
+    // Employment Types
+    await db.insert(employmentTypes).values({ tenantId: tid, code: "FT", name: "Full Time", status: "Active", displayOrder: 1 });
+    await db.insert(employmentTypes).values({ tenantId: tid, code: "PT", name: "Part Time", status: "Active", displayOrder: 2 });
+    await db.insert(employmentTypes).values({ tenantId: tid, code: "VISITING", name: "Visiting Consultant", status: "Active", displayOrder: 3 });
+
+    // System Roles
+    await db.insert(systemRoles).values({ tenantId: tid, code: "ADMIN", name: "Admin", status: "Active", displayOrder: 1 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "MANAGER", name: "Manager", status: "Active", displayOrder: 2 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "AGENT", name: "Agent", status: "Active", displayOrder: 3 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "COUNSELLOR", name: "Counsellor", status: "Active", displayOrder: 4 });
+
+    // Calling Lines
+    await db.insert(callingLines).values({ tenantId: tid, code: "MAIN", name: "Main Reception (+91 6356300400)", status: "Active", displayOrder: 1 });
+    await db.insert(callingLines).values({ tenantId: tid, code: "CRM", name: "CRM Outbound Line", status: "Active", displayOrder: 2 });
+    await db.insert(callingLines).values({ tenantId: tid, code: "COUNSELLING", name: "Home Counselling Line", status: "Active", displayOrder: 3 });
+
+    // ── Treatment Departments & Sub-Departments ──
+    const [tdJoint] = await db.insert(treatmentDepartments).values({ tenantId: tid, code: "JOINT_REPL", name: "Joint Replacement", status: "Active", displayOrder: 1 }).returning();
+    const [tdSpine] = await db.insert(treatmentDepartments).values({ tenantId: tid, code: "SPINE_SURG", name: "Spine Surgery", status: "Active", displayOrder: 2 }).returning();
+    const [tdSportsInj] = await db.insert(treatmentDepartments).values({ tenantId: tid, code: "SPORTS_INJ", name: "Sports Injury & Arthroscopy", status: "Active", displayOrder: 3 }).returning();
+    const [tdTrauma] = await db.insert(treatmentDepartments).values({ tenantId: tid, code: "TRAUMA", name: "Fracture & Trauma", status: "Active", displayOrder: 4 }).returning();
+    const [tdPainMgmt] = await db.insert(treatmentDepartments).values({ tenantId: tid, code: "PAIN_MGMT", name: "Pain Management", status: "Active", displayOrder: 5 }).returning();
+    const [tdFoot] = await db.insert(treatmentDepartments).values({ tenantId: tid, code: "FOOT_ANKLE", name: "Foot & Ankle Surgery", status: "Active", displayOrder: 6 }).returning();
+
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdJoint.id, code: "ROBOTIC_NKR", name: "Robotic Natural Knee Replacement", status: "Active", displayOrder: 1 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdJoint.id, code: "TKR", name: "Total Knee Replacement", status: "Active", displayOrder: 2 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdJoint.id, code: "THR", name: "Total Hip Replacement", status: "Active", displayOrder: 3 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdJoint.id, code: "REV_JOINT", name: "Revision Joint Replacement", status: "Active", displayOrder: 4 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdSpine.id, code: "ENDO_SPINE", name: "Endoscopic Spine Surgery", status: "Active", displayOrder: 1 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdSpine.id, code: "MIS_SPINE", name: "Minimally Invasive Spine Surgery", status: "Active", displayOrder: 2 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdSpine.id, code: "BACK_SCHOOL", name: "Back School", status: "Active", displayOrder: 3 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdSportsInj.id, code: "ARTHROSCOPY", name: "Arthroscopic Surgery", status: "Active", displayOrder: 1 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdSportsInj.id, code: "LIGAMENT", name: "Ligament Reconstruction", status: "Active", displayOrder: 2 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdTrauma.id, code: "FRACTURE_MIS", name: "Minimal Invasive Fracture Surgery", status: "Active", displayOrder: 1 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdTrauma.id, code: "POLYTRAUMA", name: "Polytrauma Management", status: "Active", displayOrder: 2 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdTrauma.id, code: "ILIZAROV", name: "Ilizarov Technique", status: "Active", displayOrder: 3 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdPainMgmt.id, code: "INJECTION", name: "Pain Injection Therapy", status: "Active", displayOrder: 1 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdPainMgmt.id, code: "RF_ABLATION", name: "Radiofrequency Ablation", status: "Active", displayOrder: 2 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdFoot.id, code: "ANKLE_SURG", name: "Ankle Surgery", status: "Active", displayOrder: 1 });
+    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdFoot.id, code: "FOOT_RECON", name: "Foot Reconstruction", status: "Active", displayOrder: 2 });
+
+    // Consultation Types (services offered)
+    for (const ct of [
+      { code: "ROBOTIC_NKR", name: "Robotic Natural Knee Replacement", displayOrder: 1 },
+      { code: "TKR", name: "Total Knee Replacement", displayOrder: 2 },
+      { code: "THR", name: "Total Hip Replacement", displayOrder: 3 },
+      { code: "REV_JOINT", name: "Revision Joint Replacement", displayOrder: 4 },
+      { code: "ARTHROSCOPY", name: "Arthroscopic Surgery for Sports Injuries", displayOrder: 5 },
+      { code: "ENDO_SPINE", name: "Endoscopic Spine Surgery", displayOrder: 6 },
+      { code: "MIS_FRACTURE", name: "Minimal Invasive Fracture Surgery", displayOrder: 7 },
+      { code: "PAIN_CLINIC", name: "Advanced Pain Clinic", displayOrder: 8 },
+      { code: "BACK_SCHOOL", name: "Back School", displayOrder: 9 },
+      { code: "FOOT_ANKLE", name: "Foot & Ankle Surgery", displayOrder: 10 },
+      { code: "ICU_CARE", name: "ICU & Critical Care", displayOrder: 11 },
+    ]) {
+      await db.insert(consultationTypes).values({ tenantId: tid, ...ct, status: "Active" });
+    }
+
+    // ── Doctors (Real VIROC team from viroc.in) ──
+    const [docVrajesh] = await db.insert(doctors).values({
+      tenantId: tid, code: "DOC001", name: "Dr. Vrajesh Shah",
+      qualification: "MBBS, MS - Orthopaedics",
+      specialization: "Joint Replacement Surgery, Robotic Natural Knee Replacement",
+      phone: "+916356300400", email: "dr.vrajesh@viroc.in", status: "Active", displayOrder: 1,
+    }).returning();
+    const [docRajiv] = await db.insert(doctors).values({
+      tenantId: tid, code: "DOC002", name: "Dr. Rajiv Paradkar",
+      qualification: "MBBS, D.Orth, MS - Orthopaedics",
+      specialization: "Joint Replacement, Hip & Spine Surgery",
+      phone: "+916356300400", email: "dr.rajiv@viroc.in", status: "Active", displayOrder: 2,
+    }).returning();
+    const [docPratik] = await db.insert(doctors).values({
+      tenantId: tid, code: "DOC003", name: "Dr. Pratik Patel",
+      qualification: "MBBS, D.Orth, MS, DNB, FNB Spine, MRCS, FISS, FMISS",
+      specialization: "Minimally Invasive & Endoscopic Spine Surgery",
+      phone: "+916356300400", email: "dr.pratik@viroc.in", status: "Active", displayOrder: 3,
+    }).returning();
+    const [docDarshan] = await db.insert(doctors).values({
+      tenantId: tid, code: "DOC004", name: "Dr. Darshan Suthar",
+      qualification: "MBBS, MS - Orthopaedics",
+      specialization: "Arthroscopy & Trauma Surgery",
+      phone: "+916356300400", email: "dr.darshan@viroc.in", status: "Active", displayOrder: 4,
+    }).returning();
+    const [docTanmay] = await db.insert(doctors).values({
+      tenantId: tid, code: "DOC005", name: "Dr. Tanmay Jaysingani",
+      qualification: "MBBS, MS - Orthopaedics, Fellowship (Arthroscopy, Robotic Knee)",
+      specialization: "Arthroscopy & Robotic Knee Replacement",
+      phone: "+916356300400", email: "dr.tanmay@viroc.in", status: "Active", displayOrder: 5,
+    }).returning();
+    const [docVihal] = await db.insert(doctors).values({
+      tenantId: tid, code: "DOC006", name: "Dr. Vihal Patel",
+      qualification: "MBBS, MS - Orthopaedics",
+      specialization: "Ankle & Foot Surgery",
+      phone: "+916356300400", email: "dr.vihal@viroc.in", status: "Active", displayOrder: 6,
+    }).returning();
+    const [docMihir] = await db.insert(doctors).values({
+      tenantId: tid, code: "DOC007", name: "Dr. Mihir Shah",
+      qualification: "MBBS, MD",
+      specialization: "Physician & Critical Care",
+      phone: "+916356300400", email: "dr.mihir@viroc.in", status: "Active", displayOrder: 7,
+    }).returning();
+
+    // ── OPD Timings (Mon-Sat, 9 AM - 7 PM visiting hours) ──
+    const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    // Dr. Vrajesh Shah - Managing Director - Mon-Sat morning & evening
+    for (const day of weekdays) {
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: docVrajesh.id, dayOfWeek: day, startTime: "09:00", endTime: "12:00", maxPatients: 15, status: "Active", displayOrder: 0 });
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: docVrajesh.id, dayOfWeek: day, startTime: "16:00", endTime: "19:00", maxPatients: 12, status: "Active", displayOrder: 0 });
+    }
+    // Dr. Rajiv Paradkar - Director - Mon-Sat morning
+    for (const day of weekdays) {
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: docRajiv.id, dayOfWeek: day, startTime: "10:00", endTime: "13:00", maxPatients: 15, status: "Active", displayOrder: 0 });
+    }
+    // Dr. Pratik Patel - Spine - Mon/Wed/Fri/Sat
+    for (const day of ["Monday", "Wednesday", "Friday", "Saturday"]) {
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: docPratik.id, dayOfWeek: day, startTime: "10:00", endTime: "13:00", maxPatients: 10, status: "Active", displayOrder: 0 });
+    }
+    // Dr. Darshan Suthar - Arthroscopy/Trauma - Mon-Sat
+    for (const day of weekdays) {
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: docDarshan.id, dayOfWeek: day, startTime: "09:00", endTime: "12:00", maxPatients: 12, status: "Active", displayOrder: 0 });
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: docDarshan.id, dayOfWeek: day, startTime: "14:00", endTime: "17:00", maxPatients: 10, status: "Active", displayOrder: 0 });
+    }
+    // Dr. Tanmay Jaysingani - Mon-Fri
+    for (const day of ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]) {
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: docTanmay.id, dayOfWeek: day, startTime: "09:00", endTime: "12:00", maxPatients: 10, status: "Active", displayOrder: 0 });
+    }
+    // Dr. Vihal Patel - Foot/Ankle - Tue/Thu/Sat
+    for (const day of ["Tuesday", "Thursday", "Saturday"]) {
+      await db.insert(opdTimings).values({ tenantId: tid, doctorId: docVihal.id, dayOfWeek: day, startTime: "10:00", endTime: "13:00", maxPatients: 8, status: "Active", displayOrder: 0 });
+    }
+
+    // ── CRM Users (representative team) ──
+    const [crmHead] = await db.insert(crmUsers).values({
+      tenantId: tid, code: "CRM001", name: "Nisha Patel", email: "nisha.patel@viroc.in",
+      phone: "+916356300401", accessScopeType: "All", phiAccessLevel: "Full", status: "Active", isActive: true, displayOrder: 1,
+    }).returning();
+    const [crmMgr1] = await db.insert(crmUsers).values({
+      tenantId: tid, code: "CRM002", name: "Kiran Desai", email: "kiran.desai@viroc.in",
+      phone: "+916356300402", reportingTo: crmHead.id, accessScopeType: "Branch", phiAccessLevel: "Masked", status: "Active", isActive: true, displayOrder: 2,
+    }).returning();
+    const [crmMgr2] = await db.insert(crmUsers).values({
+      tenantId: tid, code: "CRM003", name: "Amit Joshi", email: "amit.joshi@viroc.in",
+      phone: "+916356300403", reportingTo: crmHead.id, accessScopeType: "Branch", phiAccessLevel: "Masked", status: "Active", isActive: true, displayOrder: 3,
+    }).returning();
+    await db.insert(crmUsers).values({
+      tenantId: tid, code: "CRM004", name: "Priya Sharma", email: "priya.sharma@viroc.in",
+      phone: "+916356300404", reportingTo: crmMgr1.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 4,
+    });
+    await db.insert(crmUsers).values({
+      tenantId: tid, code: "CRM005", name: "Rahul Mehta", email: "rahul.mehta@viroc.in",
+      phone: "+916356300405", reportingTo: crmMgr1.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 5,
+    });
+    await db.insert(crmUsers).values({
+      tenantId: tid, code: "CRM006", name: "Meera Trivedi", email: "meera.trivedi@viroc.in",
+      phone: "+916356300406", reportingTo: crmMgr2.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 6,
+    });
+    await db.insert(crmUsers).values({
+      tenantId: tid, code: "CRM007", name: "Jayesh Parmar", email: "jayesh.parmar@viroc.in",
+      phone: "+916356300407", reportingTo: crmMgr2.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 7,
+    });
+
+    // ── Lead Statuses ──
     const leadStatusData = [
       { code: "RAW", name: "Raw Lead Captured", sequence: 1, isTerminal: false, requiresNextTask: true },
       { code: "QUAL", name: "Qualified", sequence: 2, isTerminal: false, requiresNextTask: true },
@@ -51,7 +235,7 @@ async function seedDatabase() {
       await db.insert(leadStatuses).values({ tenantId: tid, ...s, status: "Active", displayOrder: s.sequence });
     }
 
-    // Seed Activity Types
+    // ── Activity Types ──
     for (const a of [
       { code: "CALL", name: "Phone Call" },
       { code: "NOTE", name: "Note" },
@@ -59,35 +243,43 @@ async function seedDatabase() {
       { code: "WHATSAPP", name: "WhatsApp" },
       { code: "STAGE_CHANGE", name: "Stage Change" },
       { code: "MEETING", name: "Meeting" },
+      { code: "HOME_COUNSELLING", name: "Home Counselling Visit" },
+      { code: "SURGERY_DISCUSSION", name: "Surgery Discussion" },
     ]) {
       await db.insert(activityTypes).values({ tenantId: tid, ...a, status: "Active", displayOrder: 0 });
     }
 
-    // Seed Next Action Types
+    // ── Next Action Types ──
     for (const n of [
       { code: "CALLBACK", name: "Call Back" },
       { code: "SEND_INFO", name: "Send Information" },
       { code: "SCHEDULE_APPT", name: "Schedule Appointment" },
       { code: "FOLLOW_UP", name: "Follow Up" },
+      { code: "HOME_VISIT", name: "Schedule Home Counselling" },
+      { code: "SURGERY_DATE", name: "Confirm Surgery Date" },
     ]) {
       await db.insert(nextActionTypes).values({ tenantId: tid, ...n, status: "Active", displayOrder: 0 });
     }
 
-    // Seed Task Categories
+    // ── Task Categories ──
     for (const t of [
       { code: "SLA", name: "SLA Task" },
       { code: "FOLLOW_UP", name: "Follow Up" },
       { code: "REMINDER", name: "Appointment Reminder" },
+      { code: "PRE_OP", name: "Pre-Operative Preparation" },
+      { code: "POST_OP", name: "Post-Operative Follow Up" },
+      { code: "INSURANCE", name: "Insurance Processing" },
     ]) {
       await db.insert(taskCategories).values({ tenantId: tid, ...t, status: "Active", displayOrder: 0 });
     }
 
-    // Seed Call Statuses & Directions
+    // ── Call Statuses & Directions ──
     for (const c of [
       { code: "ANSWERED", name: "Answered" },
       { code: "NO_ANSWER", name: "No Answer" },
       { code: "BUSY", name: "Busy" },
       { code: "VOICEMAIL", name: "Voicemail" },
+      { code: "SWITCHED_OFF", name: "Switched Off" },
     ]) {
       await db.insert(callStatuses).values({ tenantId: tid, ...c, status: "Active", displayOrder: 0 });
     }
@@ -98,7 +290,7 @@ async function seedDatabase() {
       await db.insert(callDirections).values({ tenantId: tid, ...d, status: "Active", displayOrder: 0 });
     }
 
-    // Seed Appointment Statuses
+    // ── Appointment Statuses ──
     for (const a of [
       { code: "SCHEDULED", name: "Scheduled" },
       { code: "CONFIRMED", name: "Confirmed" },
@@ -106,11 +298,12 @@ async function seedDatabase() {
       { code: "COMPLETED", name: "Completed" },
       { code: "NO_SHOW", name: "No Show" },
       { code: "CANCELLED", name: "Cancelled" },
+      { code: "RESCHEDULED", name: "Rescheduled" },
     ]) {
       await db.insert(appointmentStatuses).values({ tenantId: tid, ...a, status: "Active", displayOrder: 0 });
     }
 
-    // Seed Referral Statuses
+    // ── Referral Statuses ──
     for (const r of [
       { code: "PENDING", name: "Pending" },
       { code: "ACCEPTED", name: "Accepted" },
@@ -119,146 +312,109 @@ async function seedDatabase() {
       await db.insert(referralStatuses).values({ tenantId: tid, ...r, status: "Active", displayOrder: 0 });
     }
 
-    // Seed Lead Source Categories & Sources
+    // ── Lead Source Categories & Sources ──
     for (const lsc of [
       { code: "DIGITAL", name: "Digital Marketing" },
       { code: "OFFLINE", name: "Offline / Walk-in" },
-      { code: "REFERRAL", name: "Referral" },
+      { code: "REFERRAL", name: "Doctor Referral" },
+      { code: "CAMP", name: "Health Camp / Event" },
     ]) {
       await db.insert(leadSourceCategories).values({ tenantId: tid, ...lsc, status: "Active", displayOrder: 0 });
     }
     for (const ls of [
       { code: "META", name: "Meta (Facebook/Instagram)" },
       { code: "GOOGLE", name: "Google Ads" },
-      { code: "WEBSITE", name: "Website Form" },
-      { code: "WALKIN", name: "Walk-in" },
+      { code: "WEBSITE", name: "viroc.in Website Form" },
+      { code: "WALKIN", name: "Walk-in / Direct Visit" },
       { code: "CAMP", name: "Health Camp" },
-      { code: "TELEPHONY", name: "Telephony Inbound" },
+      { code: "TELEPHONY", name: "Telephony Inbound (+91 6356300400)" },
+      { code: "JUSTDIAL", name: "JustDial" },
+      { code: "PRACTO", name: "Practo" },
+      { code: "YOUTUBE", name: "YouTube" },
+      { code: "DR_REFERRAL", name: "Doctor Referral" },
+      { code: "PATIENT_REF", name: "Patient Referral (Word of Mouth)" },
+      { code: "HOME_COUNSEL", name: "Home Counselling Request" },
     ]) {
       await db.insert(leadSources).values({ tenantId: tid, ...ls, status: "Active", displayOrder: 0 });
     }
 
-    // Seed Campaign Channels
+    // ── Campaign Channels ──
     for (const cc of [
       { code: "FACEBOOK", name: "Facebook" },
       { code: "INSTAGRAM", name: "Instagram" },
       { code: "GOOGLE_SEARCH", name: "Google Search" },
       { code: "GOOGLE_DISPLAY", name: "Google Display" },
+      { code: "YOUTUBE", name: "YouTube" },
+      { code: "LINKEDIN", name: "LinkedIn" },
     ]) {
       await db.insert(campaignChannels).values({ tenantId: tid, ...cc, status: "Active", displayOrder: 0 });
     }
 
-    // Seed Consultation Masters
+    // ── Appointment Types ──
     for (const at of [
-      { code: "FIRST_VISIT", name: "First Visit" },
-      { code: "FOLLOW_UP", name: "Follow Up" },
-      { code: "PRE_OP", name: "Pre-Operative" },
-      { code: "POST_OP", name: "Post-Operative" },
+      { code: "FIRST_VISIT", name: "First Consultation" },
+      { code: "FOLLOW_UP", name: "Follow Up Visit" },
+      { code: "PRE_OP", name: "Pre-Operative Assessment" },
+      { code: "POST_OP", name: "Post-Operative Review" },
+      { code: "PHYSIO", name: "Physiotherapy Session" },
+      { code: "SECOND_OPINION", name: "Second Opinion" },
+      { code: "HOME_COUNSEL", name: "Home Counselling" },
     ]) {
       await db.insert(appointmentTypes).values({ tenantId: tid, ...at, status: "Active", displayOrder: 0 });
     }
+
+    // ── Conversion Stages ──
     for (const cs of [
       { code: "ENQUIRY", name: "Enquiry", sequence: 1 },
       { code: "CONSULTATION", name: "Consultation Booked", sequence: 2 },
       { code: "SURGERY_PLANNED", name: "Surgery Planned", sequence: 3 },
-      { code: "CONVERTED", name: "Converted", sequence: 4, isTerminal: true, isBusinessAchieved: true },
+      { code: "INSURANCE_APPROVED", name: "Insurance Approved", sequence: 4 },
+      { code: "ADMITTED", name: "Admitted", sequence: 5 },
+      { code: "CONVERTED", name: "Converted (Surgery Done)", sequence: 6, isTerminal: true, isBusinessAchieved: true },
     ]) {
       await db.insert(conversionStages).values({ tenantId: tid, ...cs, status: "Active", displayOrder: cs.sequence });
     }
+
+    // ── Lost Reasons ──
     for (const lr of [
-      { code: "PRICE", name: "Price Concern" },
+      { code: "PRICE", name: "Price / Cost Concern" },
       { code: "TRUST", name: "Trust / Confidence Issue" },
-      { code: "COMPETITOR", name: "Chose Competitor" },
-      { code: "NOT_READY", name: "Not Ready for Treatment" },
+      { code: "COMPETITOR", name: "Chose Another Hospital" },
+      { code: "NOT_READY", name: "Not Ready for Surgery" },
+      { code: "DISTANCE", name: "Distance / Location Issue" },
+      { code: "INSURANCE", name: "Insurance Not Accepted" },
+      { code: "SECOND_OPINION", name: "Went for Second Opinion" },
+      { code: "IMPROVED", name: "Condition Improved (No Surgery Needed)" },
     ]) {
       await db.insert(lostReasons).values({ tenantId: tid, ...lr, status: "Active", displayOrder: 0 });
     }
+
+    // ── No Show Reasons ──
     for (const ns of [
-      { code: "FORGOT", name: "Forgot" },
-      { code: "EMERGENCY", name: "Emergency" },
-      { code: "TRAVEL", name: "Travel Issue" },
+      { code: "FORGOT", name: "Forgot Appointment" },
+      { code: "EMERGENCY", name: "Emergency / Illness" },
+      { code: "TRAVEL", name: "Travel / Transport Issue" },
+      { code: "WORK", name: "Work Commitment" },
+      { code: "RESCHEDULED", name: "Wants to Reschedule" },
     ]) {
       await db.insert(noShowReasons).values({ tenantId: tid, ...ns, status: "Active", displayOrder: 0 });
     }
 
-    // Seed Treatment
-    for (const td of [
-      { code: "ORTHO", name: "Orthopaedics" },
-      { code: "SPINE", name: "Spine" },
-      { code: "PAIN", name: "Pain Management" },
-    ]) {
-      await db.insert(consultationTypes).values({ tenantId: tid, ...td, status: "Active", displayOrder: 0 });
-    }
+    // ── Sample Leads (realistic orthopaedic enquiries) ──
+    await storage.createLead({ tenantId: tid, name: "Ramesh Patel", phoneE164: "+919876543210", email: "ramesh.patel@gmail.com", status: "Raw Lead Captured" });
+    await storage.createLead({ tenantId: tid, name: "Jyoti Sharma", phoneE164: "+919876543211", email: "jyoti.sharma@gmail.com", status: "Qualified" });
+    await storage.createLead({ tenantId: tid, name: "Bhavesh Solanki", phoneE164: "+919876543212", status: "Contacted" });
+    await storage.createLead({ tenantId: tid, name: "Hansaben Desai", phoneE164: "+919876543213", email: "hansa.desai@yahoo.com", status: "Appointment Booked" });
+    await storage.createLead({ tenantId: tid, name: "Vijay Chauhan", phoneE164: "+919876543214", status: "Consultation Done" });
+    await storage.createLead({ tenantId: tid, name: "Niraben Modi", phoneE164: "+919876543215", email: "nira.modi@gmail.com", status: "Raw Lead Captured" });
+    await storage.createLead({ tenantId: tid, name: "Suresh Thakor", phoneE164: "+919876543216", status: "Qualified" });
+    await storage.createLead({ tenantId: tid, name: "Kalpanaben Joshi", phoneE164: "+919876543217", email: "kalpana.j@hotmail.com", status: "Contacted" });
+    await storage.createLead({ tenantId: tid, name: "Prakash Pandya", phoneE164: "+919876543218", status: "Appointment Booked" });
+    await storage.createLead({ tenantId: tid, name: "Geeta Rathod", phoneE164: "+919876543219", email: "geeta.rathod@gmail.com", status: "Nurture" });
+    await storage.createLead({ tenantId: tid, name: "Mahesh Vaghela", phoneE164: "+919876543220", status: "Raw Lead Captured" });
+    await storage.createLead({ tenantId: tid, name: "Sangitaben Parikh", phoneE164: "+919876543221", email: "sangita.p@gmail.com", status: "Consultation Done" });
 
-    // Seed Location: Country, State, City
-    const [india] = await db.insert(countries).values({ tenantId: tid, code: "IN", name: "India", status: "Active", displayOrder: 1 }).returning();
-    const [gujarat] = await db.insert(states).values({ tenantId: tid, countryId: india.id, code: "GJ", name: "Gujarat", status: "Active", displayOrder: 1 }).returning();
-    await db.insert(cities).values({ tenantId: tid, stateId: gujarat.id, code: "AHD", name: "Ahmedabad", status: "Active", displayOrder: 1 });
-
-    // Seed Organisation masters
-    await db.insert(designations).values({ tenantId: tid, code: "MGR", name: "Manager", status: "Active", displayOrder: 1 });
-    await db.insert(designations).values({ tenantId: tid, code: "EXEC", name: "Executive", status: "Active", displayOrder: 2 });
-    await db.insert(employmentTypes).values({ tenantId: tid, code: "FT", name: "Full Time", status: "Active", displayOrder: 1 });
-    await db.insert(employmentTypes).values({ tenantId: tid, code: "PT", name: "Part Time", status: "Active", displayOrder: 2 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "ADMIN", name: "Admin", status: "Active", displayOrder: 1 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "AGENT", name: "Agent", status: "Active", displayOrder: 2 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "MANAGER", name: "Manager", status: "Active", displayOrder: 3 });
-    const [org] = await db.insert(organisations).values({ tenantId: tid, code: "VIROC", name: "VIROC Hospital", status: "Active", displayOrder: 1 }).returning();
-
-    // Seed CRM Users with hierarchy
-    const [crmHead] = await db.insert(crmUsers).values({
-      tenantId: tid, code: "HEAD001", name: "Dr. Rajesh Kumar", email: "rajesh.kumar@viroc.in",
-      phone: "+919800000001", accessScopeType: "All", phiAccessLevel: "Full", status: "Active", isActive: true, displayOrder: 1,
-    }).returning();
-    const [crmMgr1] = await db.insert(crmUsers).values({
-      tenantId: tid, code: "MGR001", name: "Anita Desai", email: "anita.desai@viroc.in",
-      phone: "+919800000002", reportingTo: crmHead.id, accessScopeType: "Branch", phiAccessLevel: "Masked", status: "Active", isActive: true, displayOrder: 2,
-    }).returning();
-    const [crmMgr2] = await db.insert(crmUsers).values({
-      tenantId: tid, code: "MGR002", name: "Vikram Joshi", email: "vikram.joshi@viroc.in",
-      phone: "+919800000003", reportingTo: crmHead.id, accessScopeType: "Branch", phiAccessLevel: "Masked", status: "Active", isActive: true, displayOrder: 3,
-    }).returning();
-    await db.insert(crmUsers).values({
-      tenantId: tid, code: "AGT001", name: "Pooja Shah", email: "pooja.shah@viroc.in",
-      phone: "+919800000004", reportingTo: crmMgr1.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 4,
-    });
-    await db.insert(crmUsers).values({
-      tenantId: tid, code: "AGT002", name: "Rohit Mehta", email: "rohit.mehta@viroc.in",
-      phone: "+919800000005", reportingTo: crmMgr1.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 5,
-    });
-    await db.insert(crmUsers).values({
-      tenantId: tid, code: "AGT003", name: "Kavita Patel", email: "kavita.patel@viroc.in",
-      phone: "+919800000006", reportingTo: crmMgr2.id, accessScopeType: "Self", phiAccessLevel: "None", status: "Active", isActive: true, displayOrder: 6,
-    });
-
-    // Seed Doctors with OPD Timings
-    const [doc1] = await db.insert(doctors).values({
-      tenantId: tid, code: "DOC001", name: "Dr. Sanjay Gupta", qualification: "MS Ortho",
-      specialization: "Orthopaedics", phone: "+919900000001", email: "sanjay.gupta@viroc.in", status: "Active", displayOrder: 1,
-    }).returning();
-    const [doc2] = await db.insert(doctors).values({
-      tenantId: tid, code: "DOC002", name: "Dr. Meena Iyer", qualification: "MCh Neuro",
-      specialization: "Spine Surgery", phone: "+919900000002", email: "meena.iyer@viroc.in", status: "Active", displayOrder: 2,
-    }).returning();
-    const [doc3] = await db.insert(doctors).values({
-      tenantId: tid, code: "DOC003", name: "Dr. Arjun Reddy", qualification: "MD Pain",
-      specialization: "Pain Management", phone: "+919900000003", email: "arjun.reddy@viroc.in", status: "Active", displayOrder: 3,
-    }).returning();
-
-    const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    for (const day of weekdays) {
-      await db.insert(opdTimings).values({ tenantId: tid, doctorId: doc1.id, dayOfWeek: day, startTime: "09:00", endTime: "12:00", maxPatients: 15, status: "Active", displayOrder: 0 });
-      await db.insert(opdTimings).values({ tenantId: tid, doctorId: doc1.id, dayOfWeek: day, startTime: "14:00", endTime: "17:00", maxPatients: 10, status: "Active", displayOrder: 0 });
-    }
-    for (const day of ["Monday", "Wednesday", "Friday"]) {
-      await db.insert(opdTimings).values({ tenantId: tid, doctorId: doc2.id, dayOfWeek: day, startTime: "10:00", endTime: "13:00", maxPatients: 12, status: "Active", displayOrder: 0 });
-    }
-    for (const day of ["Tuesday", "Thursday", "Saturday"]) {
-      await db.insert(opdTimings).values({ tenantId: tid, doctorId: doc3.id, dayOfWeek: day, startTime: "09:00", endTime: "11:00", maxPatients: 8, status: "Active", displayOrder: 0 });
-      await db.insert(opdTimings).values({ tenantId: tid, doctorId: doc3.id, dayOfWeek: day, startTime: "15:00", endTime: "18:00", maxPatients: 10, status: "Active", displayOrder: 0 });
-    }
-
-    console.log("Database seeded successfully with all master data");
+    console.log("Database seeded successfully with VIROC Hospital data from viroc.in");
   } catch (error) {
     console.error("Error seeding database:", error);
   }
