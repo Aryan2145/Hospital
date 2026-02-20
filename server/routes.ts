@@ -2096,13 +2096,14 @@ async function ensureSuperAdmin() {
     const tid = allTenantRows[0].id;
 
     const phone = "+919033050100";
+    const defaultPassword = "RGBTech@123";
     const existingUsers = await db.select().from(crmUsers).where(
       and(eq(crmUsers.phone, phone), eq(crmUsers.tenantId, tid))
     );
 
     if (existingUsers.length > 0) {
       if (!existingUsers[0].passwordHash) {
-        const hash = await hashPassword("rgbtech@replit");
+        const hash = await hashPassword(defaultPassword);
         await db.update(crmUsers).set({ passwordHash: hash }).where(eq(crmUsers.id, existingUsers[0].id));
         console.log("Super Admin password reset.");
       }
@@ -2114,7 +2115,7 @@ async function ensureSuperAdmin() {
     );
     const adminRoleId = roleRows.length > 0 ? roleRows[0].id : null;
 
-    const hash = await hashPassword("rgbtech@replit");
+    const hash = await hashPassword(defaultPassword);
     await db.insert(crmUsers).values({
       tenantId: tid,
       code: "SUPERADMIN",
