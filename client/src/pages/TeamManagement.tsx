@@ -14,7 +14,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import type { CrmUser, MasterRecord } from "@shared/schema";
 import {
   UserPlus, Search, ChevronDown, ChevronRight, Mail, Phone, Shield, Eye,
-  Users, UserCog, Network, List, Pencil, Trash2
+  Users, UserCog, Network, List, Pencil, Trash2, KeyRound
 } from "lucide-react";
 
 type ViewMode = "list" | "tree";
@@ -124,6 +124,9 @@ export default function TeamManagement() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<CrmUser | null>(null);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [passwordTarget, setPasswordTarget] = useState<CrmUser | null>(null);
+  const [newPassword, setNewPassword] = useState("");
   const [formData, setFormData] = useState<UserFormData>({
     code: "", name: "", email: "", phone: "",
     reportingTo: null, accessScopeType: "Self", phiAccessLevel: "None", status: "Active",
@@ -158,6 +161,18 @@ export default function TeamManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm-users"] });
       toast({ title: "User deleted" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const setPasswordMutation = useMutation({
+    mutationFn: ({ id, password }: { id: number; password: string }) =>
+      apiRequest("POST", `/api/crm-users/${id}/set-password`, { password }),
+    onSuccess: () => {
+      toast({ title: "Password set successfully" });
+      setPasswordDialogOpen(false);
+      setPasswordTarget(null);
+      setNewPassword("");
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -344,6 +359,7 @@ export default function TeamManagement() {
                           </td>
                           <td className="p-3 text-right">
                             <div className="flex items-center justify-end gap-1">
+                              <Button size="icon" variant="ghost" onClick={() => { setPasswordTarget(user); setNewPassword(""); setPasswordDialogOpen(true); }} title="Set Password" data-testid={`button-password-user-${user.id}`}><KeyRound className="w-3.5 h-3.5" /></Button>
                               <Button size="icon" variant="ghost" onClick={() => openEdit(user)} data-testid={`button-edit-user-${user.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
                               <Button size="icon" variant="ghost" onClick={() => handleDelete(user.id)} data-testid={`button-delete-user-${user.id}`}><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
                             </div>
@@ -457,6 +473,40 @@ export default function TeamManagement() {
             <Button variant="outline" onClick={closeDialog} data-testid="button-cancel-user">Cancel</Button>
             <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-user">
               {(createMutation.isPending || updateMutation.isPending) ? "Saving..." : editingUser ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Set Password</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Set login password for <strong>{passwordTarget?.name}</strong>
+            </p>
+            <div>
+              <Label htmlFor="new-password">New Password</Label>
+              <Input
+                id="new-password"
+                type="password"
+                placeholder="Minimum 6 characters"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                data-testid="input-new-password"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasswordDialogOpen(false)} data-testid="button-cancel-password">Cancel</Button>
+            <Button
+              onClick={() => passwordTarget && setPasswordMutation.mutate({ id: passwordTarget.id, password: newPassword })}
+              disabled={setPasswordMutation.isPending || newPassword.length < 6}
+              data-testid="button-save-password"
+            >
+              {setPasswordMutation.isPending ? "Setting..." : "Set Password"}
             </Button>
           </DialogFooter>
         </DialogContent>

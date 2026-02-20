@@ -98,10 +98,6 @@ function Router() {
         ) : <Landing />}
       </Route>
 
-      <Route path="/api/login">
-        <Landing />
-      </Route>
-
       <Route component={NotFound} />
     </Switch>
   );

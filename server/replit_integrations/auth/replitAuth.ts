@@ -1,25 +1,13 @@
-import * as client from "openid-client";
-import { Strategy, type VerifyFunction } from "openid-client/passport";
-
-import passport from "passport";
 import session from "express-session";
 import type { Express, RequestHandler } from "express";
-import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
-import { authStorage } from "./storage";
-
-const getOidcConfig = memoize(
-  async () => {
-    return await client.discovery(
-      new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
-      process.env.REPL_ID!
-    );
-  },
-  { maxAge: 3600 * 1000 }
-);
+import bcrypt from "bcryptjs";
+import { db } from "../../db";
+import { crmUsers } from "@shared/schema";
+import { eq, and } from "drizzle-orm";
 
 export function getSession() {
-  const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
+  const sessionTtl = 7 * 24 * 60 * 60 * 1000;
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
@@ -34,127 +22,172 @@ export function getSession() {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
       maxAge: sessionTtl,
     },
-  });
-}
-
-function updateUserSession(
-  user: any,
-  tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers
-) {
-  user.claims = tokens.claims();
-  user.access_token = tokens.access_token;
-  user.refresh_token = tokens.refresh_token;
-  user.expires_at = user.claims?.exp;
-}
-
-async function upsertUser(claims: any) {
-  await authStorage.upsertUser({
-    id: claims["sub"],
-    email: claims["email"],
-    firstName: claims["first_name"],
-    lastName: claims["last_name"],
-    profileImageUrl: claims["profile_image_url"],
   });
 }
 
 export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   app.use(getSession());
-  app.use(passport.initialize());
-  app.use(passport.session());
 
-  const config = await getOidcConfig();
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { mobile, password } = req.body;
+      if (!mobile || !password) {
+        return res.status(400).json({ message: "Mobile number and password are required" });
+      }
 
-  const verify: VerifyFunction = async (
-    tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
-    verified: passport.AuthenticateCallback
-  ) => {
-    const user = {};
-    updateUserSession(user, tokens);
-    await upsertUser(tokens.claims());
-    verified(null, user);
-  };
+      const normalizedMobile = mobile.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
 
-  // Keep track of registered strategies
-  const registeredStrategies = new Set<string>();
-
-  // Helper function to ensure strategy exists for a domain
-  const ensureStrategy = (domain: string) => {
-    const strategyName = `replitauth:${domain}`;
-    if (!registeredStrategies.has(strategyName)) {
-      const strategy = new Strategy(
-        {
-          name: strategyName,
-          config,
-          scope: "openid email profile offline_access",
-          callbackURL: `https://${domain}/api/callback`,
-        },
-        verify
+      const [user] = await db.select().from(crmUsers).where(
+        eq(crmUsers.phone, normalizedMobile)
       );
-      passport.use(strategy);
-      registeredStrategies.add(strategyName);
+
+      if (!user && normalizedMobile.length === 10) {
+        const [userWithPrefix] = await db.select().from(crmUsers).where(
+          eq(crmUsers.phone, `+91${normalizedMobile}`)
+        );
+        if (userWithPrefix) {
+          return await tryLogin(userWithPrefix, password, req, res);
+        }
+      }
+
+      if (!user) {
+        return res.status(401).json({ message: "Invalid mobile number or password" });
+      }
+
+      return await tryLogin(user, password, req, res);
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Login failed" });
     }
-  };
-
-  passport.serializeUser((user: Express.User, cb) => cb(null, user));
-  passport.deserializeUser((user: Express.User, cb) => cb(null, user));
-
-  app.get("/api/login", (req, res, next) => {
-    ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
-      prompt: "login consent",
-      scope: ["openid", "email", "profile", "offline_access"],
-    })(req, res, next);
   });
 
-  app.get("/api/callback", (req, res, next) => {
-    ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
-      successReturnToOrRedirect: "/",
-      failureRedirect: "/api/login",
-    })(req, res, next);
+  app.get("/api/auth/setup-status", async (_req, res) => {
+    try {
+      const allUsers = await db.select().from(crmUsers);
+      const hasAnyPassword = allUsers.some(u => u.passwordHash !== null);
+      const adminUsers = allUsers.filter(u => u.systemRoleId !== null);
+      res.json({ needsSetup: !hasAnyPassword && allUsers.length > 0, totalUsers: allUsers.length });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to check setup status" });
+    }
   });
 
-  app.get("/api/logout", (req, res) => {
-    req.logout(() => {
-      res.redirect(
-        client.buildEndSessionUrl(config, {
-          client_id: process.env.REPL_ID!,
-          post_logout_redirect_uri: `${req.protocol}://${req.hostname}`,
-        }).href
-      );
+  app.post("/api/auth/initial-setup", async (req, res) => {
+    try {
+      const allUsers = await db.select().from(crmUsers);
+      const hasAnyPassword = allUsers.some(u => u.passwordHash !== null);
+      if (hasAnyPassword) {
+        return res.status(403).json({ message: "Setup already completed. Use normal login." });
+      }
+
+      const { mobile, password } = req.body;
+      if (!mobile || !password || password.length < 6) {
+        return res.status(400).json({ message: "Mobile number and password (min 6 chars) required" });
+      }
+
+      const normalizedMobile = mobile.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
+      let user = allUsers.find(u => u.phone === normalizedMobile || u.phone === `+91${normalizedMobile}`);
+
+      if (!user) {
+        return res.status(404).json({ message: "No CRM user found with this mobile number. Contact your system administrator." });
+      }
+
+      const hash = await hashPassword(password);
+      await db.update(crmUsers).set({ passwordHash: hash }).where(eq(crmUsers.id, user.id));
+
+      (req.session as any).crmUserId = user.id;
+      (req.session as any).tenantId = user.tenantId;
+
+      req.session.save((err: any) => {
+        if (err) return res.status(500).json({ message: "Setup failed" });
+        res.json({ success: true, user: { id: user!.id, name: user!.name } });
+      });
+    } catch (error) {
+      console.error("Initial setup error:", error);
+      res.status(500).json({ message: "Setup failed" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Logout failed" });
+      }
+      res.clearCookie("connect.sid");
+      res.json({ success: true });
+    });
+  });
+
+  app.get("/api/auth/user", isAuthenticated, async (req, res) => {
+    try {
+      const session = req.session as any;
+      const crmUserId = session.crmUserId;
+
+      const [user] = await db.select().from(crmUsers).where(eq(crmUsers.id, crmUserId));
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      res.json({
+        id: String(user.id),
+        email: user.email,
+        firstName: user.name.split(" ")[0] || user.name,
+        lastName: user.name.split(" ").slice(1).join(" ") || "",
+        profileImageUrl: null,
+      });
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+}
+
+async function tryLogin(user: any, password: string, req: any, res: any) {
+  if (!user.isActive || user.status !== "Active") {
+    return res.status(403).json({ message: "Your account is inactive. Contact your administrator." });
+  }
+
+  if (!user.passwordHash) {
+    return res.status(401).json({ message: "Password not set. Contact your administrator to set your password." });
+  }
+
+  const isValid = await bcrypt.compare(password, user.passwordHash);
+  if (!isValid) {
+    return res.status(401).json({ message: "Invalid mobile number or password" });
+  }
+
+  (req.session as any).crmUserId = user.id;
+  (req.session as any).tenantId = user.tenantId;
+
+  req.session.save((err: any) => {
+    if (err) {
+      console.error("Session save error:", err);
+      return res.status(500).json({ message: "Login failed" });
+    }
+    res.json({
+      success: true,
+      user: {
+        id: String(user.id),
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+      },
     });
   });
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
-  const user = req.user as any;
-
-  if (!req.isAuthenticated() || !user.expires_at) {
+  const session = req.session as any;
+  if (!session?.crmUserId) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-
-  const now = Math.floor(Date.now() / 1000);
-  if (now <= user.expires_at) {
-    return next();
-  }
-
-  const refreshToken = user.refresh_token;
-  if (!refreshToken) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
-
-  try {
-    const config = await getOidcConfig();
-    const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
-    updateUserSession(user, tokenResponse);
-    return next();
-  } catch (error) {
-    res.status(401).json({ message: "Unauthorized" });
-    return;
-  }
+  next();
 };
+
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 12);
+}

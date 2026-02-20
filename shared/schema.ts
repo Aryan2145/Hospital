@@ -245,6 +245,7 @@ export const crmUsers = pgTable("crm_users", {
   name: text("name").notNull(),
   email: text("email"),
   phone: text("phone"),
+  passwordHash: text("password_hash"),
   branchId: integer("branch_id").references(() => branches.id),
   departmentId: integer("department_id").references(() => administrativeDepartments.id),
   designationId: integer("designation_id").references(() => designations.id),

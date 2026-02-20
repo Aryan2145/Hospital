@@ -1,20 +1,60 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Activity, ShieldCheck, HeartPulse, Stethoscope } from "lucide-react";
-import heroImg from "@assets/viroc-hero.jpg"; // Placeholder, assuming static asset exists or will fail gracefully
-
-// Using an Unsplash image as a fallback for the hero if asset is missing
-const HERO_IMAGE_URL = "https://images.unsplash.com/photo-1516549655169-df83a063b36c?q=80&w=2070&auto=format&fit=crop";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Activity, ShieldCheck, HeartPulse, Stethoscope, Phone, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function Landing() {
-  const handleLogin = () => {
-    window.location.href = "/api/login";
+  const [mobile, setMobile] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const queryClient = useQueryClient();
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    if (!mobile.trim()) {
+      setError("Please enter your mobile number");
+      return;
+    }
+    if (!password) {
+      setError("Please enter your password");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ mobile: mobile.trim(), password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.message || "Login failed");
+        return;
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/me"] });
+      window.location.href = "/";
+    } catch (err) {
+      setError("Connection error. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-background">
-      {/* Left Panel: Branding */}
       <div className="lg:w-1/2 p-8 lg:p-16 flex flex-col justify-between relative overflow-hidden bg-primary text-white">
-        {/* Abstract Background Pattern */}
         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
           <div className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-white blur-3xl" />
           <div className="absolute bottom-0 right-0 w-80 h-80 rounded-full bg-accent blur-3xl" />
@@ -56,37 +96,93 @@ export default function Landing() {
         </div>
       </div>
 
-      {/* Right Panel: Login */}
       <div className="lg:w-1/2 flex items-center justify-center p-8 bg-white relative">
         <div className="max-w-md w-full space-y-8">
           <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900">Welcome Back</h2>
+            <h2 className="text-3xl font-bold text-gray-900" data-testid="text-login-title">Welcome Back</h2>
             <p className="mt-2 text-gray-500">Sign in to your workspace</p>
           </div>
 
-          <div className="mt-8 space-y-4">
-            <Button 
-              onClick={handleLogin}
-              className="w-full h-12 text-lg font-medium bg-primary hover:bg-primary/90 shadow-lg shadow-primary/25 transition-all duration-300 hover:-translate-y-1"
-            >
-              Log In with Replit Auth
-            </Button>
-            
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200" />
+          <form onSubmit={handleLogin} className="mt-8 space-y-5">
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm" data-testid="text-login-error">
+                {error}
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Secure Hospital Access</span>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="mobile" className="text-sm font-medium text-gray-700">Mobile Number</Label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  id="mobile"
+                  type="tel"
+                  placeholder="Enter your mobile number"
+                  value={mobile}
+                  onChange={(e) => setMobile(e.target.value)}
+                  className="pl-10 h-12"
+                  data-testid="input-mobile"
+                  autoComplete="tel"
+                />
               </div>
             </div>
 
-            <div className="bg-muted p-4 rounded-lg flex items-start gap-3">
-              <Stethoscope className="w-5 h-5 text-muted-foreground mt-0.5" />
-              <div>
-                <h4 className="text-sm font-semibold text-foreground">Need Help?</h4>
-                <p className="text-xs text-muted-foreground mt-1">Contact IT support if you are having trouble accessing your account.</p>
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-sm font-medium text-gray-700">Password</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pl-10 pr-10 h-12"
+                  data-testid="input-password"
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  data-testid="button-toggle-password"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
+            </div>
+
+            <Button
+              type="submit"
+              disabled={isLoading}
+              className="w-full h-12 text-lg font-medium bg-primary hover:bg-primary/90 shadow-lg shadow-primary/25 transition-all duration-300 hover:-translate-y-1"
+              data-testid="button-login"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                "Sign In"
+              )}
+            </Button>
+          </form>
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200" />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-gray-500">Secure Hospital Access</span>
+            </div>
+          </div>
+
+          <div className="bg-muted p-4 rounded-lg flex items-start gap-3">
+            <Stethoscope className="w-5 h-5 text-muted-foreground mt-0.5" />
+            <div>
+              <h4 className="text-sm font-semibold text-foreground">Need Help?</h4>
+              <p className="text-xs text-muted-foreground mt-1">Contact your administrator if you need access or forgot your password.</p>
             </div>
           </div>
         </div>

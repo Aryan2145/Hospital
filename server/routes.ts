@@ -439,49 +439,15 @@ export async function registerRoutes(
   // --- /api/me: Get current user's CRM profile with role ---
   app.get("/api/me", isAuthenticated, async (req, res) => {
     try {
-      const authUserId = (req as any).user?.claims?.sub;
-      const authEmail = (req as any).user?.claims?.email;
-      if (!authUserId) return res.status(401).json({ message: "Unauthorized" });
+      const session = req.session as any;
+      const crmUserId = session.crmUserId;
+      if (!crmUserId) return res.status(401).json({ message: "Unauthorized" });
 
-      let crmUser = await storage.getCrmUserByAuthId(authUserId, tid);
-
-      if (!crmUser && authEmail) {
-        const emailMatch = await storage.getCrmUserByEmail(authEmail, tid);
-        if (emailMatch && !emailMatch.userId) {
-          crmUser = await storage.updateCrmUser(emailMatch.id, tid, { userId: authUserId });
-        }
-      }
+      const allCrmUsers = await storage.getCrmUsers(tid);
+      const crmUser = allCrmUsers.find(u => u.id === crmUserId);
 
       if (!crmUser) {
-        const allCrmUsers = await storage.getCrmUsers(tid);
-        const anyLinked = allCrmUsers.some(u => u.userId !== null);
-        console.log(`[/api/me] No CRM user found. authUserId=${authUserId}, authEmail=${authEmail}, totalCrmUsers=${allCrmUsers.length}, anyLinked=${anyLinked}`);
-
-        if (!anyLinked && allCrmUsers.length > 0) {
-          const adminRole = await storage.getSystemRoleByCode("ADMIN", tid);
-          const adminUser = allCrmUsers.find(u => u.systemRoleId === adminRole?.id) || allCrmUsers[0];
-          crmUser = await storage.updateCrmUser(adminUser.id, tid, {
-            userId: authUserId,
-            email: authEmail || adminUser.email || undefined,
-            systemRoleId: adminRole?.id || adminUser.systemRoleId || undefined,
-            accessScopeType: "All",
-          });
-        } else if (allCrmUsers.length === 0) {
-          const adminRole = await storage.getSystemRoleByCode("ADMIN", tid);
-          crmUser = await storage.createCrmUser({
-            tenantId: tid,
-            userId: authUserId,
-            code: `USR-${authUserId.substring(0, 6).toUpperCase()}`,
-            name: `${(req as any).user?.claims?.first_name || ""} ${(req as any).user?.claims?.last_name || ""}`.trim() || "Admin",
-            email: authEmail || undefined,
-            systemRoleId: adminRole?.id || undefined,
-            accessScopeType: "All",
-            isActive: true,
-            status: "Active",
-          });
-        } else {
-          return res.json({ status: "unregistered", authUserId, authEmail });
-        }
+        return res.status(401).json({ message: "User not found" });
       }
 
       let roleName = null;
@@ -495,10 +461,11 @@ export async function registerRoutes(
         }
       }
 
+      const { passwordHash: _, ...safeCrmUser } = crmUser as any;
       res.json({
         status: "active",
         crmUser: {
-          ...crmUser,
+          ...safeCrmUser,
           roleName,
           roleCode,
         },
@@ -509,34 +476,33 @@ export async function registerRoutes(
     }
   });
 
-  // --- Admin: Link auth user to CRM user ---
-  app.patch("/api/crm-users/:id/link", isAuthenticated, async (req, res) => {
+  // --- Admin: Set password for CRM user ---
+  app.post("/api/crm-users/:id/set-password", isAuthenticated, async (req: any, res) => {
     try {
-      const authUserId = (req as any).user?.claims?.sub;
-      const currentCrmUser = await storage.getCrmUserByAuthId(authUserId, tid);
+      const sessionCrmUserId = req.session?.crmUserId;
+      const allCrmUsers = await storage.getCrmUsers(tid);
+      const currentCrmUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
       if (!currentCrmUser) return res.status(403).json({ message: "Not a CRM user" });
 
-      let currentRole = null;
+      let isAdmin = false;
       if (currentCrmUser.systemRoleId) {
-        currentRole = await storage.getSystemRoleByCode("ADMIN", tid);
-        if (!currentRole || currentRole.id !== currentCrmUser.systemRoleId) {
-          const allRoles = await storage.getMasterRecords("systemRoles", tid);
-          const r = allRoles.find(r => r.id === currentCrmUser.systemRoleId);
-          if (!r || (r as any).code !== "ADMIN") {
-            return res.status(403).json({ message: "Only admins can link users" });
-          }
-        }
-      } else {
-        return res.status(403).json({ message: "Only admins can link users" });
+        const allRoles = await storage.getMasterRecords("systemRoles", tid);
+        const r = allRoles.find(r => r.id === currentCrmUser.systemRoleId);
+        if (r && (r as any).code === "ADMIN") isAdmin = true;
+      }
+      if (!isAdmin) return res.status(403).json({ message: "Only admins can set passwords" });
+
+      const { password } = req.body;
+      if (!password || password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
       }
 
-      const { userId: linkUserId } = req.body;
-      if (!linkUserId) return res.status(400).json({ message: "userId is required" });
-
-      const updated = await storage.updateCrmUser(Number(req.params.id), tid, { userId: linkUserId });
-      res.json(updated);
+      const { hashPassword } = await import("./replit_integrations/auth/replitAuth");
+      const passwordHash = await hashPassword(password);
+      const updated = await storage.updateCrmUser(Number(req.params.id), tid, { passwordHash });
+      res.json({ success: true, userId: updated.id });
     } catch (error) {
-      console.error("Error linking user:", error);
+      console.error("Error setting password:", error);
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -552,10 +518,11 @@ export async function registerRoutes(
   });
 
   // --- Leads (with access scope filtering) ---
-  app.get(api.leads.list.path, isAuthenticated, async (req, res) => {
+  app.get(api.leads.list.path, isAuthenticated, async (req: any, res) => {
     const allLeads = await storage.getLeads(tid);
-    const authUserId = (req as any).user?.claims?.sub;
-    const crmUser = authUserId ? await storage.getCrmUserByAuthId(authUserId, tid) : null;
+    const sessionCrmUserId = req.session?.crmUserId;
+    const allCrmUsers = await storage.getCrmUsers(tid);
+    const crmUser = sessionCrmUserId ? allCrmUsers.find((u: any) => u.id === sessionCrmUserId) || null : null;
 
     if (!crmUser || crmUser.accessScopeType === "All") {
       return res.json(allLeads);
@@ -613,7 +580,7 @@ export async function registerRoutes(
   app.post(api.tasks.create.path, isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const userId = (req as any).user?.claims?.sub || "system";
+      const userId = String((req as any).session?.crmUserId || "system");
       const input = api.tasks.create.input.parse({
         ...req.body,
         tenantId: tid,
@@ -651,7 +618,7 @@ export async function registerRoutes(
   app.post(api.activities.create.path, isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const userId = (req as any).user?.claims?.sub || "system";
+      const userId = String((req as any).session?.crmUserId || "system");
       const input = api.activities.create.input.parse({
         ...req.body,
         tenantId: tid,
@@ -711,7 +678,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Lead does not have a pending handover" });
       }
 
-      const userId = (req as any).user?.claims?.sub || "system";
+      const userId = String((req as any).session?.crmUserId || "system");
 
       if (action === "accept") {
         const updated = await storage.updateLead(leadId, {
@@ -765,7 +732,7 @@ export async function registerRoutes(
       if (!lead) return res.status(404).json({ message: "Lead not found" });
       if (lead.tenantId !== tid) return res.status(403).json({ message: "Access denied" });
 
-      const userId = (req as any).user?.claims?.sub || "system";
+      const userId = String((req as any).session?.crmUserId || "system");
 
       const targetUser = await storage.getCrmUser(assignToCrmUserId, tid);
       if (!targetUser) return res.status(400).json({ message: "Target CRM user not found" });
@@ -805,7 +772,7 @@ export async function registerRoutes(
       }
       const body = parsed.data;
       const tid = await getDefaultTenantId();
-      const userId = (req as any).user?.claims?.sub || "system";
+      const userId = String((req as any).session?.crmUserId || "system");
 
       let existingLead = await storage.findLeadByPhone(tid, body.phoneE164);
       if (!existingLead && body.email) {
@@ -1356,7 +1323,7 @@ export async function registerRoutes(
   app.post("/api/appointments", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const userId = (req as any).user?.claims?.sub || "system";
+      const userId = String((req as any).session?.crmUserId || "system");
       const body = { ...req.body, tenantId: tid, createdBy: userId, bookedBy: userId };
       if (typeof body.appointmentDate === "string") body.appointmentDate = new Date(body.appointmentDate);
       const parsed = insertAppointmentSchema.parse(body);
@@ -1408,7 +1375,7 @@ export async function registerRoutes(
   app.post("/api/appointments/:id/consultation-done", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const userId = (req as any).user?.claims?.sub || "system";
+      const userId = String((req as any).session?.crmUserId || "system");
       const apptId = Number(req.params.id);
       const { consultationNotes } = req.body as { consultationNotes?: string };
 
@@ -1442,7 +1409,7 @@ export async function registerRoutes(
   app.post("/api/appointments/:id/cancel", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const userId = (req as any).user?.claims?.sub || "system";
+      const userId = String((req as any).session?.crmUserId || "system");
       const apptId = Number(req.params.id);
       const { cancelReason } = req.body as { cancelReason?: string };
 
@@ -1471,7 +1438,7 @@ export async function registerRoutes(
   app.post("/api/appointments/:id/reschedule", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const userId = (req as any).user?.claims?.sub || "system";
+      const userId = String((req as any).session?.crmUserId || "system");
       const apptId = Number(req.params.id);
       const { appointmentDate, startTime, endTime } = req.body as { appointmentDate: string; startTime?: string; endTime?: string };
 
@@ -1522,7 +1489,7 @@ export async function registerRoutes(
   app.post("/api/appointments/:id/no-show", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const userId = (req as any).user?.claims?.sub || "system";
+      const userId = String((req as any).session?.crmUserId || "system");
       const apptId = Number(req.params.id);
       const { noShowReasonId } = req.body as { noShowReasonId?: number };
 
@@ -1598,10 +1565,11 @@ export async function registerRoutes(
   // PLATFORM CONNECTOR ROUTES
   // =============================================
   async function requireAdminOrManager(req: any, res: any): Promise<boolean> {
-    const authUserId = req.user?.claims?.sub;
-    if (!authUserId) { res.status(401).json({ message: "Unauthorized" }); return false; }
+    const crmUserId = req.session?.crmUserId;
+    if (!crmUserId) { res.status(401).json({ message: "Unauthorized" }); return false; }
     const tid = await getDefaultTenantId();
-    const crmUser = await storage.getCrmUserByAuthId(authUserId, tid);
+    const allCrmUsers = await storage.getCrmUsers(tid);
+    const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
     if (!crmUser) { res.status(403).json({ message: "Not a CRM user" }); return false; }
     if (crmUser.systemRoleId) {
       const allRoles = await storage.getMasterRecords("systemRoles", tid);
@@ -1829,10 +1797,11 @@ export async function registerRoutes(
   // =============================================
 
   async function requireTestingAccess(req: any, res: any): Promise<boolean> {
-    const authUserId = req.user?.claims?.sub;
-    if (!authUserId) { res.status(401).json({ message: "Unauthorized" }); return false; }
+    const crmUserId = req.session?.crmUserId;
+    if (!crmUserId) { res.status(401).json({ message: "Unauthorized" }); return false; }
     const tid = await getDefaultTenantId();
-    const crmUser = await storage.getCrmUserByAuthId(authUserId, tid);
+    const allCrmUsers = await storage.getCrmUsers(tid);
+    const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
     if (!crmUser) { res.status(403).json({ message: "Not a CRM user" }); return false; }
     if (crmUser.systemRoleId) {
       const allRoles = await storage.getMasterRecords("systemRoles", tid);
@@ -1917,27 +1886,19 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/testing/switch-role", isAuthenticated, async (req, res) => {
+  app.post("/api/testing/switch-role", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const authUserId = (req as any).user?.claims?.sub;
-      if (!authUserId) return res.status(401).json({ message: "Unauthorized" });
 
       const { targetCrmUserId } = req.body;
       if (!targetCrmUserId) return res.status(400).json({ message: "targetCrmUserId is required" });
 
-      const currentCrmUser = await storage.getCrmUserByAuthId(authUserId, tid);
-      if (currentCrmUser) {
-        await storage.updateCrmUser(currentCrmUser.id, tid, { userId: null as any });
-      }
-
       const targetUser = await storage.getCrmUser(targetCrmUserId, tid);
       if (!targetUser) return res.status(404).json({ message: "CRM user not found" });
 
-      if (targetUser.userId && targetUser.userId !== authUserId) {
-        await storage.updateCrmUser(targetUser.id, tid, { userId: null as any });
-      }
-      const updated = await storage.updateCrmUser(targetUser.id, tid, { userId: authUserId });
+      req.session.crmUserId = targetUser.id;
+      req.session.tenantId = targetUser.tenantId;
+      const updated = targetUser;
 
       const allRoles = await storage.getMasterRecords("systemRoles", tid);
       const role = allRoles.find(r => r.id === updated.systemRoleId);
@@ -1959,7 +1920,6 @@ export async function registerRoutes(
     try {
       if (!(await requireTestingAccess(req, res))) return;
       const tid = await getDefaultTenantId();
-      const authUserId = req.user?.claims?.sub;
 
       const allCrmUsers = await storage.getCrmUsers(tid);
       const allDoctors = await storage.getMasterRecords("doctors", tid);
@@ -2055,7 +2015,7 @@ export async function registerRoutes(
               endTime,
               status: statuses[Math.floor(Math.random() * statuses.length)],
               notes: `Consultation for ${treatments[Math.floor(Math.random() * treatments.length)]}`,
-              bookedBy: authUserId || undefined,
+              bookedBy: String(req.session?.crmUserId || "system"),
             });
             created.appointments++;
           }
@@ -2081,7 +2041,7 @@ export async function registerRoutes(
               dueDate,
               assignedCrmUserId: assignedUser?.id || undefined,
               status: "Pending",
-              createdBy: authUserId || undefined,
+              createdBy: String(req.session?.crmUserId || "system"),
             });
             created.tasks++;
           }
