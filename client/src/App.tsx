@@ -11,6 +11,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import LeadsWorkspace from "@/pages/LeadsWorkspace";
+import MasterData from "@/pages/MasterData";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -34,6 +35,10 @@ function Router() {
       
       <Route path="/leads">
          {isAuthenticated ? <LeadsWorkspace /> : <Landing />}
+      </Route>
+
+      <Route path="/masters">
+         {isAuthenticated ? <MasterData /> : <Landing />}
       </Route>
 
       <Route path="/api/login">

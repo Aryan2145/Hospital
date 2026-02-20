@@ -1,11 +1,24 @@
 import { z } from 'zod';
-import { insertLeadSchema, insertTaskSchema, insertActivitySchema, leads, tasks, activities, campaigns, tenants } from './schema';
+import { insertLeadSchema, insertTaskSchema, insertActivitySchema, insertMasterSchema, leads, tasks, activities, campaigns, tenants } from './schema';
 
 export const errorSchemas = {
   validation: z.object({ message: z.string(), field: z.string().optional() }),
   notFound: z.object({ message: z.string() }),
   unauthorized: z.object({ message: z.string() }),
 };
+
+export const masterRecordSchema = z.object({
+  id: z.number(),
+  tenantId: z.number(),
+  code: z.string(),
+  name: z.string(),
+  status: z.string(),
+  displayOrder: z.number().nullable(),
+  createdAt: z.string().nullable(),
+  createdBy: z.string().nullable(),
+  modifiedAt: z.string().nullable(),
+  modifiedBy: z.string().nullable(),
+});
 
 export const api = {
   auth: {
@@ -119,7 +132,67 @@ export const api = {
         400: errorSchemas.validation,
       }
     }
-  }
+  },
+  masters: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/masters/:tableName' as const,
+      responses: {
+        200: z.array(masterRecordSchema),
+        400: errorSchemas.validation,
+      },
+    },
+    get: {
+      method: 'GET' as const,
+      path: '/api/masters/:tableName/:id' as const,
+      responses: {
+        200: masterRecordSchema,
+        404: errorSchemas.notFound,
+      },
+    },
+    create: {
+      method: 'POST' as const,
+      path: '/api/masters/:tableName' as const,
+      input: insertMasterSchema.extend({
+        // Allow additional fields for specialized master tables
+      }).passthrough(),
+      responses: {
+        201: masterRecordSchema,
+        400: errorSchemas.validation,
+      },
+    },
+    update: {
+      method: 'PATCH' as const,
+      path: '/api/masters/:tableName/:id' as const,
+      input: insertMasterSchema.partial().passthrough(),
+      responses: {
+        200: masterRecordSchema,
+        400: errorSchemas.validation,
+        404: errorSchemas.notFound,
+      },
+    },
+    delete: {
+      method: 'DELETE' as const,
+      path: '/api/masters/:tableName/:id' as const,
+      responses: {
+        204: z.void(),
+        404: errorSchemas.notFound,
+      },
+    },
+    categories: {
+      method: 'GET' as const,
+      path: '/api/masters-categories' as const,
+      responses: {
+        200: z.array(z.object({
+          category: z.string(),
+          tables: z.array(z.object({
+            key: z.string(),
+            label: z.string(),
+          })),
+        })),
+      },
+    },
+  },
 };
 
 export function buildUrl(path: string, params?: Record<string, string | number>): string {
@@ -133,3 +206,95 @@ export function buildUrl(path: string, params?: Record<string, string | number>)
   }
   return url;
 }
+
+// Master categories definition for frontend navigation
+export const MASTER_CATEGORIES = [
+  {
+    category: "Location",
+    tables: [
+      { key: "countries", label: "Country" },
+      { key: "states", label: "State" },
+      { key: "cities", label: "City" },
+      { key: "areas", label: "Area & PIN Code" },
+      { key: "branchServiceability", label: "Branch Serviceability" },
+    ]
+  },
+  {
+    category: "Organisation",
+    tables: [
+      { key: "organisations", label: "Organisation" },
+      { key: "branches", label: "Branch" },
+      { key: "administrativeDepartments", label: "Administrative Department" },
+      { key: "administrativeSubDepartments", label: "Administrative Sub-Department" },
+      { key: "designations", label: "Designation" },
+      { key: "employmentTypes", label: "Employment Type" },
+      { key: "systemRoles", label: "System Role" },
+      { key: "crmUsers", label: "CRM User" },
+      { key: "callingLines", label: "Calling Line" },
+      { key: "userLineAssignments", label: "User Line Assignment" },
+    ]
+  },
+  {
+    category: "Treatment & Providers",
+    tables: [
+      { key: "treatmentDepartments", label: "Treatment Department" },
+      { key: "treatmentSubDepartments", label: "Treatment Sub-Department" },
+      { key: "consultationTypes", label: "Consultation Type" },
+    ]
+  },
+  {
+    category: "Doctors",
+    tables: [
+      { key: "doctors", label: "Doctor" },
+      { key: "opdTimings", label: "OPD Timing" },
+      { key: "surgeryWindows", label: "Surgery Window" },
+      { key: "doctorLeaveExceptions", label: "Doctor Leave Exception" },
+    ]
+  },
+  {
+    category: "Lead Generation",
+    tables: [
+      { key: "leadSourceCategories", label: "Lead Source Category" },
+      { key: "leadSources", label: "Lead Source" },
+      { key: "campaignChannels", label: "Campaign Channel" },
+      { key: "utmSources", label: "UTM Source" },
+      { key: "utmMediums", label: "UTM Medium" },
+      { key: "utmCampaigns", label: "UTM Campaign" },
+      { key: "utmTerms", label: "UTM Term" },
+      { key: "utmContents", label: "UTM Content" },
+      { key: "referrers", label: "Referrer" },
+      { key: "corporateInsurances", label: "Corporate / Insurance" },
+      { key: "leadCreationChannels", label: "Lead Creation Channel" },
+    ]
+  },
+  {
+    category: "Consultation",
+    tables: [
+      { key: "appointmentTypes", label: "Appointment Type" },
+      { key: "conversionStages", label: "Conversion Stage" },
+      { key: "lostReasons", label: "Lost Reason" },
+      { key: "noShowReasons", label: "No-Show Reason" },
+    ]
+  },
+  {
+    category: "Activity & Workflow",
+    tables: [
+      { key: "activityTypes", label: "Activity Type" },
+      { key: "nextActionTypes", label: "Next Action Type" },
+      { key: "taskCategories", label: "Task Category" },
+      { key: "leadStatuses", label: "Lead Status" },
+      { key: "appointmentStatuses", label: "Appointment Status" },
+      { key: "referralStatuses", label: "Referral Status" },
+      { key: "callStatuses", label: "Call Status" },
+      { key: "callDirections", label: "Call Direction" },
+    ]
+  },
+  {
+    category: "Communication",
+    tables: [
+      { key: "templates", label: "Template" },
+      { key: "holidays", label: "Holiday" },
+      { key: "tags", label: "Tag" },
+    ]
+  },
+];

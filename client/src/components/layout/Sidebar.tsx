@@ -8,7 +8,8 @@ import {
   LogOut, 
   Activity,
   Phone,
-  Megaphone
+  Megaphone,
+  Database,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -21,6 +22,7 @@ const navItems = [
 ];
 
 const secondaryItems = [
+  { icon: Database, label: "Master Data", href: "/masters" },
   { icon: Settings, label: "Settings", href: "/settings" },
 ];
 
