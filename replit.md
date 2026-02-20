@@ -13,6 +13,7 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 ## Key Pages
 - `/` - Dashboard (authenticated) or Landing (unauthenticated)
 - `/leads` - Lead Kanban Workspace with drag-and-drop
+- `/leads/:id` - Lead Detail with activity timeline, next action, tasks, quick actions, handover banner
 - `/team` - Team Management (CRM Users, org hierarchy, access scoping)
 - `/masters` - Master Data Management (all 9 categories, 50+ tables)
 
@@ -38,8 +39,12 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - Episodes: `GET/POST/PATCH /api/episodes` (filter by patientId)
 - Audit Logs: `GET/POST /api/audit-logs` (filter by entityType/entityId)
 - Leads: `GET/POST/PATCH /api/leads`
+- Lead Handover: `PATCH /api/leads/:id/handover` (accept/reject)
+- Lead Assignment: `POST /api/leads/:id/assign` (transfer with SLA)
+- Lead Intake: `POST /api/leads/intake` (external sources, auto-dedup, auto-assign)
 - Tasks: `GET/POST/PATCH /api/tasks`
 - Activities: `GET/POST /api/leads/:leadId/activities`
+- Active CRM Users: `GET /api/crm-users/active`
 - Master Categories: `GET /api/masters-categories`
 
 ## CRM User Management
@@ -54,6 +59,8 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - Background: Light with medical-professional feel
 
 ## Recent Changes
+- 2026-02-20: Phase 4B - Handover acceptance (accept/reject with SLA), lead assignment/transfer, lead intake API with auto-dedup and round-robin auto-assign
+- 2026-02-20: Phase 4A - Lead detail page with activity timeline, status guardrails, quick actions (log call, create task, book appointment)
 - 2026-02-20: Phase 3 - Core transaction tables: Patient, Contact, PatientContactLink, enhanced Lead/Activity/Task, Appointment, Episode, AuditLog with full CRUD APIs
 - 2026-02-20: Phase 2 - Team Management page with CRM user CRUD, org tree, access scoping
 - 2026-02-20: Phase 1B - Bulk CSV import/export for master data, import logs

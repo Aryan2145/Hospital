@@ -1,7 +1,7 @@
 import { useRoute, useLocation } from "wouter";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask } from "@/hooks/use-leads";
+import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers } from "@/hooks/use-leads";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -33,6 +33,10 @@ import {
   Target,
   TrendingUp,
   ChevronRight,
+  UserPlus,
+  ArrowRight,
+  X,
+  Shield,
 } from "lucide-react";
 
 const ACTIVITY_ICONS: Record<string, typeof Phone> = {
@@ -86,6 +90,7 @@ export default function LeadDetailPage() {
       <Sidebar />
       <main className="flex-1 flex flex-col h-full overflow-hidden">
         <LeadHeader lead={lead} onBack={() => setLocation("/leads")} />
+        {lead.handoverStatus === "Pending" && <HandoverBanner lead={lead} />}
         <div className="flex-1 flex overflow-hidden">
           <div className="flex-1 flex flex-col overflow-hidden border-r border-border">
             <ActivityTimeline leadId={lead.id} />
@@ -195,6 +200,105 @@ function LeadHeader({ lead, onBack }: { lead: any; onBack: () => void }) {
             </Select>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function HandoverBanner({ lead }: { lead: any }) {
+  const handoverAction = useHandoverAction();
+  const { toast } = useToast();
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
+
+  const handleAccept = () => {
+    handoverAction.mutate(
+      { leadId: lead.id, action: "accept" },
+      {
+        onSuccess: () => toast({ title: "Handover accepted" }),
+        onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+      }
+    );
+  };
+
+  const handleReject = () => {
+    handoverAction.mutate(
+      { leadId: lead.id, action: "reject", rejectionReason },
+      {
+        onSuccess: () => {
+          toast({ title: "Handover rejected" });
+          setRejectDialogOpen(false);
+          setRejectionReason("");
+        },
+        onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+      }
+    );
+  };
+
+  const slaDeadline = lead.slaDeadline ? new Date(lead.slaDeadline) : null;
+  const slaExpired = slaDeadline ? isPast(slaDeadline) : false;
+
+  return (
+    <div className={cn(
+      "px-4 py-3 flex items-center gap-3 flex-wrap border-b border-border",
+      slaExpired ? "bg-red-50 dark:bg-red-950/30" : "bg-amber-50 dark:bg-amber-950/30"
+    )} data-testid="banner-handover">
+      <Shield className={cn("w-5 h-5 shrink-0", slaExpired ? "text-red-600" : "text-amber-600")} />
+      <div className="flex-1 min-w-0">
+        <p className={cn("text-sm font-medium", slaExpired ? "text-red-800 dark:text-red-300" : "text-amber-800 dark:text-amber-300")}>
+          Pending Handover
+          {lead.handoverFromUserId && <span className="font-normal"> from CRM User #{lead.handoverFromUserId}</span>}
+        </p>
+        {slaDeadline && (
+          <p className={cn("text-xs", slaExpired ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400")}>
+            {slaExpired ? "SLA breached - " : "Accept within "}
+            {formatDistanceToNow(slaDeadline, { addSuffix: true })}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          onClick={handleAccept}
+          disabled={handoverAction.isPending}
+          data-testid="button-accept-handover"
+        >
+          <CheckCircle2 className="w-4 h-4 mr-1" />
+          Accept
+        </Button>
+        <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+          <DialogTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={handoverAction.isPending}
+              data-testid="button-reject-handover"
+            >
+              <X className="w-4 h-4 mr-1" />
+              Reject
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reject Handover</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Reason for rejection</label>
+                <Textarea
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Why are you rejecting this handover?"
+                  rows={3}
+                  data-testid="input-rejection-reason"
+                />
+              </div>
+              <Button onClick={handleReject} variant="destructive" className="w-full" disabled={handoverAction.isPending} data-testid="button-confirm-reject">
+                Confirm Rejection
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
@@ -439,15 +543,19 @@ function TasksPanel({ leadId }: { leadId: number }) {
 function QuickActions({ lead }: { lead: any }) {
   const createActivity = useCreateActivity();
   const createTask = useCreateTask();
+  const assignLead = useAssignLead();
+  const { data: crmUsers } = useActiveCrmUsers();
   const { toast } = useToast();
   const [callDialogOpen, setCallDialogOpen] = useState(false);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [callNotes, setCallNotes] = useState("");
   const [callOutcome, setCallOutcome] = useState("");
   const [callDuration, setCallDuration] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDueDate, setTaskDueDate] = useState("");
   const [taskPriority, setTaskPriority] = useState("Normal");
+  const [selectedCrmUserId, setSelectedCrmUserId] = useState("");
 
   const handleLogCall = () => {
     createActivity.mutate({
@@ -599,6 +707,64 @@ function QuickActions({ lead }: { lead: any }) {
           <Calendar className="w-4 h-4 mr-2" />
           Book Appointment
         </Button>
+
+        <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline" className="w-full justify-start text-xs" data-testid="button-assign-lead">
+              <UserPlus className="w-4 h-4 mr-2" />
+              Assign / Transfer
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Assign Lead</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Assign to CRM User</label>
+                <Select value={selectedCrmUserId} onValueChange={setSelectedCrmUserId}>
+                  <SelectTrigger data-testid="select-assign-user">
+                    <SelectValue placeholder="Select user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {crmUsers?.map((u) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.name} {u.email ? `(${u.email})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {lead.assignedCrmUserId && (
+                <p className="text-xs text-muted-foreground">
+                  Currently assigned to CRM User #{lead.assignedCrmUserId}
+                </p>
+              )}
+              <Button
+                onClick={() => {
+                  if (!selectedCrmUserId) return;
+                  assignLead.mutate(
+                    { leadId: lead.id, assignToCrmUserId: Number(selectedCrmUserId) },
+                    {
+                      onSuccess: () => {
+                        toast({ title: "Lead assigned", description: "Handover is now pending acceptance." });
+                        setAssignDialogOpen(false);
+                        setSelectedCrmUserId("");
+                      },
+                      onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+                    }
+                  );
+                }}
+                className="w-full"
+                disabled={assignLead.isPending || !selectedCrmUserId}
+                data-testid="button-confirm-assign"
+              >
+                <ArrowRight className="w-4 h-4 mr-2" />
+                Assign & Initiate Handover
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

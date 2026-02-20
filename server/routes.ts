@@ -358,6 +358,213 @@ export async function registerRoutes(
     }
   });
 
+  // --- Zod schemas for Phase 4B validation ---
+  const handoverActionSchema = z.object({
+    action: z.enum(["accept", "reject"]),
+    rejectionReason: z.string().optional(),
+  });
+
+  const assignLeadSchema = z.object({
+    assignToCrmUserId: z.number().int().positive(),
+  });
+
+  const leadIntakeSchema = z.object({
+    name: z.string().min(1, "name is required"),
+    phoneE164: z.string().min(1, "phoneE164 is required"),
+    email: z.string().email().optional().or(z.literal("")),
+    branchId: z.number().int().positive().optional(),
+    departmentId: z.number().int().positive().optional(),
+    leadSourceId: z.number().int().positive().optional(),
+    leadSourceCategoryId: z.number().int().positive().optional(),
+    utmSource: z.string().optional(),
+    utmMedium: z.string().optional(),
+    utmCampaign: z.string().optional(),
+    utmTerm: z.string().optional(),
+    utmContent: z.string().optional(),
+    notes: z.string().optional(),
+  });
+
+  // --- Lead Handover ---
+  app.patch("/api/leads/:id/handover", isAuthenticated, async (req, res) => {
+    try {
+      const parsed = handoverActionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+      const { action, rejectionReason } = parsed.data;
+      const leadId = Number(req.params.id);
+      const tid = await getDefaultTenantId();
+
+      const lead = await storage.getLead(leadId);
+      if (!lead) return res.status(404).json({ message: "Lead not found" });
+      if (lead.tenantId !== tid) return res.status(403).json({ message: "Access denied" });
+      if (lead.handoverStatus !== "Pending") {
+        return res.status(400).json({ message: "Lead does not have a pending handover" });
+      }
+
+      const userId = (req as any).user?.claims?.sub || "system";
+
+      if (action === "accept") {
+        const updated = await storage.updateLead(leadId, {
+          handoverStatus: "Accepted",
+          handoverAcceptedAt: new Date(),
+          assignedCrmUserId: lead.handoverToUserId,
+        });
+        await storage.createActivity({
+          leadId, tenantId: tid, createdBy: userId,
+          type: "status_change",
+          description: `Handover accepted`,
+          oldStatus: "Pending Handover",
+          newStatus: "Handover Accepted",
+        });
+        return res.json(updated);
+      } else if (action === "reject") {
+        const updated = await storage.updateLead(leadId, {
+          handoverStatus: "Rejected",
+          handoverRejectedAt: new Date(),
+          handoverRejectionReason: rejectionReason || null,
+          assignedCrmUserId: lead.handoverFromUserId,
+        });
+        await storage.createActivity({
+          leadId, tenantId: tid, createdBy: userId,
+          type: "status_change",
+          description: `Handover rejected${rejectionReason ? `: ${rejectionReason}` : ""}`,
+          oldStatus: "Pending Handover",
+          newStatus: "Handover Rejected",
+        });
+        return res.json(updated);
+      } else {
+        return res.status(400).json({ message: "Invalid action. Use 'accept' or 'reject'" });
+      }
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // --- Lead Assignment / Transfer ---
+  app.post("/api/leads/:id/assign", isAuthenticated, async (req, res) => {
+    try {
+      const parsed = assignLeadSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+      const { assignToCrmUserId } = parsed.data;
+      const leadId = Number(req.params.id);
+      const tid = await getDefaultTenantId();
+
+      const lead = await storage.getLead(leadId);
+      if (!lead) return res.status(404).json({ message: "Lead not found" });
+      if (lead.tenantId !== tid) return res.status(403).json({ message: "Access denied" });
+
+      const userId = (req as any).user?.claims?.sub || "system";
+
+      const targetUser = await storage.getCrmUser(assignToCrmUserId, tid);
+      if (!targetUser) return res.status(400).json({ message: "Target CRM user not found" });
+
+      const now = new Date();
+      const slaDeadline = new Date(now.getTime() + 30 * 60 * 1000);
+
+      const updated = await storage.updateLead(leadId, {
+        handoverFromUserId: lead.assignedCrmUserId,
+        handoverToUserId: assignToCrmUserId,
+        handoverStatus: "Pending",
+        handoverAt: now,
+        handoverAcceptedAt: null,
+        handoverRejectedAt: null,
+        handoverRejectionReason: null,
+        slaDeadline,
+      });
+
+      await storage.createActivity({
+        leadId, tenantId: tid, createdBy: userId,
+        type: "status_change",
+        description: `Lead assigned/transferred to ${targetUser.name}`,
+      });
+
+      return res.json(updated);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // --- Lead Intake (External Sources) ---
+  app.post("/api/leads/intake", isAuthenticated, async (req, res) => {
+    try {
+      const parsed = leadIntakeSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+      const body = parsed.data;
+      const tid = await getDefaultTenantId();
+      const userId = (req as any).user?.claims?.sub || "system";
+
+      let existingLead = await storage.findLeadByPhone(tid, body.phoneE164);
+      if (!existingLead && body.email) {
+        existingLead = await storage.findLeadByEmail(tid, body.email);
+      }
+
+      if (existingLead) {
+        const updates: Record<string, any> = {};
+        if (body.utmSource) updates.utmSource = body.utmSource;
+        if (body.utmMedium) updates.utmMedium = body.utmMedium;
+        if (body.utmCampaign) updates.utmCampaign = body.utmCampaign;
+        if (body.utmTerm) updates.utmTerm = body.utmTerm;
+        if (body.utmContent) updates.utmContent = body.utmContent;
+        if (body.leadSourceId) updates.leadSourceId = body.leadSourceId;
+        if (body.leadSourceCategoryId) updates.leadSourceCategoryId = body.leadSourceCategoryId;
+        if (body.notes) updates.notes = (existingLead.notes ? existingLead.notes + "\n" : "") + body.notes;
+
+        if (Object.keys(updates).length > 0) {
+          const updated = await storage.updateLead(existingLead.id, updates);
+          await storage.createActivity({
+            leadId: existingLead.id, tenantId: tid, createdBy: userId,
+            type: "note",
+            description: `Duplicate lead intake detected. Updated UTM/source fields.`,
+          });
+          return res.status(200).json({ lead: updated, deduped: true });
+        }
+        return res.status(200).json({ lead: existingLead, deduped: true });
+      }
+
+      const assignedUser = await storage.getNextAssignableCrmUser(tid, body.branchId, body.departmentId);
+
+      const newLead = await storage.createLead({
+        tenantId: tid,
+        name: body.name,
+        phoneE164: body.phoneE164,
+        email: body.email,
+        status: "Raw Lead Captured",
+        branchId: body.branchId,
+        leadSourceId: body.leadSourceId,
+        leadSourceCategoryId: body.leadSourceCategoryId,
+        utmSource: body.utmSource,
+        utmMedium: body.utmMedium,
+        utmCampaign: body.utmCampaign,
+        utmTerm: body.utmTerm,
+        utmContent: body.utmContent,
+        notes: body.notes,
+        assignedCrmUserId: assignedUser?.id,
+      });
+
+      await storage.createActivity({
+        leadId: newLead.id, tenantId: tid, createdBy: userId,
+        type: "note",
+        description: `Lead created via intake${assignedUser ? ` and auto-assigned to ${assignedUser.name}` : ""}`,
+      });
+
+      return res.status(201).json({ lead: newLead, deduped: false, assignedTo: assignedUser?.name });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // --- CRM Users list (for assignment dropdown) ---
+  app.get("/api/crm-users/active", isAuthenticated, async (req, res) => {
+    const tid = await getDefaultTenantId();
+    const users = await storage.getCrmUsers(tid);
+    res.json(users.filter(u => u.isActive));
+  });
+
   // Helper: get the default tenant ID
   async function getDefaultTenantId(): Promise<number> {
     const [t] = await db.select({ id: tenants.id }).from(tenants).limit(1);

@@ -955,6 +955,8 @@ export const leads = pgTable("leads", {
   handoverStatus: text("handover_status"),
   handoverAt: timestamp("handover_at"),
   handoverAcceptedAt: timestamp("handover_accepted_at"),
+  handoverRejectedAt: timestamp("handover_rejected_at"),
+  handoverRejectionReason: text("handover_rejection_reason"),
   slaBreached: boolean("sla_breached").default(false),
   slaDeadline: timestamp("sla_deadline"),
   firstContactAt: timestamp("first_contact_at"),

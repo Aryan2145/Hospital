@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
-import { type InsertLead, type InsertActivity, type InsertTask } from "@shared/schema";
+import { type InsertLead, type InsertActivity, type InsertTask, type CrmUser } from "@shared/schema";
 
 export function useLeads(status?: string, search?: string) {
   return useQuery({
@@ -153,6 +153,65 @@ export function useUpdateTask() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.tasks.list.path] });
+    },
+  });
+}
+
+export function useHandoverAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ leadId, action, rejectionReason }: { leadId: number; action: "accept" | "reject"; rejectionReason?: string }) => {
+      const res = await fetch(`/api/leads/${leadId}/handover`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, rejectionReason }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to process handover");
+      }
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [api.leads.get.path, variables.leadId] });
+      queryClient.invalidateQueries({ queryKey: [api.leads.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.activities.list.path, variables.leadId] });
+    },
+  });
+}
+
+export function useAssignLead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ leadId, assignToCrmUserId }: { leadId: number; assignToCrmUserId: number }) => {
+      const res = await fetch(`/api/leads/${leadId}/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignToCrmUserId }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to assign lead");
+      }
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [api.leads.get.path, variables.leadId] });
+      queryClient.invalidateQueries({ queryKey: [api.leads.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.activities.list.path, variables.leadId] });
+    },
+  });
+}
+
+export function useActiveCrmUsers() {
+  return useQuery<CrmUser[]>({
+    queryKey: ["/api/crm-users/active"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm-users/active", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch CRM users");
+      return res.json();
     },
   });
 }

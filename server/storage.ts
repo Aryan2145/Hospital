@@ -66,6 +66,10 @@ export interface IStorage {
   // Audit Logs
   getAuditLogs(tenantId: number, entityType?: string, entityId?: number): Promise<AuditLog[]>;
   createAuditLog(data: InsertAuditLog): Promise<AuditLog>;
+  // Lead Handover & Intake
+  findLeadByPhone(tenantId: number, phoneE164: string): Promise<Lead | undefined>;
+  findLeadByEmail(tenantId: number, email: string): Promise<Lead | undefined>;
+  getNextAssignableCrmUser(tenantId: number, branchId?: number, departmentId?: number): Promise<CrmUser | undefined>;
   // Generic Master CRUD
   getMasterRecords(tableName: string, tenantId: number): Promise<MasterRecord[]>;
   getMasterRecord(tableName: string, id: number): Promise<MasterRecord | undefined>;
@@ -326,6 +330,46 @@ export class DatabaseStorage implements IStorage {
   async createAuditLog(data: InsertAuditLog): Promise<AuditLog> {
     const [log] = await db.insert(auditLogs).values(data).returning();
     return log;
+  }
+
+  // --- Lead Handover & Intake ---
+  async findLeadByPhone(tenantId: number, phoneE164: string): Promise<Lead | undefined> {
+    const [lead] = await db.select().from(leads)
+      .where(and(eq(leads.tenantId, tenantId), eq(leads.phoneE164, phoneE164)));
+    return lead;
+  }
+
+  async findLeadByEmail(tenantId: number, email: string): Promise<Lead | undefined> {
+    const [lead] = await db.select().from(leads)
+      .where(and(eq(leads.tenantId, tenantId), eq(leads.email, email)));
+    return lead;
+  }
+
+  async getNextAssignableCrmUser(tenantId: number, branchId?: number, departmentId?: number): Promise<CrmUser | undefined> {
+    const conditions = [eq(crmUsers.tenantId, tenantId), eq(crmUsers.isActive, true)];
+    if (branchId) conditions.push(eq(crmUsers.branchId, branchId));
+    if (departmentId) conditions.push(eq(crmUsers.departmentId, departmentId));
+
+    const availableUsers = await db.select().from(crmUsers).where(and(...conditions));
+    if (availableUsers.length === 0) {
+      if (branchId || departmentId) {
+        return this.getNextAssignableCrmUser(tenantId);
+      }
+      return undefined;
+    }
+
+    const lastAssigned = await db.select({ assignedCrmUserId: leads.assignedCrmUserId })
+      .from(leads)
+      .where(eq(leads.tenantId, tenantId))
+      .orderBy(desc(leads.createdAt))
+      .limit(1);
+
+    const lastId = lastAssigned[0]?.assignedCrmUserId;
+    if (!lastId) return availableUsers[0];
+
+    const lastIndex = availableUsers.findIndex(u => u.id === lastId);
+    const nextIndex = (lastIndex + 1) % availableUsers.length;
+    return availableUsers[nextIndex];
   }
 
   // --- Generic Master CRUD ---
