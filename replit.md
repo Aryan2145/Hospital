@@ -31,6 +31,12 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - Generic Master CRUD: `GET/POST/PATCH/DELETE /api/masters/:tableName`
 - CSV Bulk Import/Export: `GET/POST /api/masters/:tableName/export|import|template|import-logs`
 - CRM Users: `GET/POST/PATCH/DELETE /api/crm-users`, `GET /api/crm-users/:id/team`
+- Patients: `GET/POST/PATCH /api/patients`, `GET /api/patients/:id/contacts`
+- Contacts: `POST/PATCH/DELETE /api/contacts`
+- Patient-Contact Links: `POST/DELETE /api/patient-contact-links`
+- Appointments: `GET/POST/PATCH /api/appointments` (filter by leadId/patientId/doctorId)
+- Episodes: `GET/POST/PATCH /api/episodes` (filter by patientId)
+- Audit Logs: `GET/POST /api/audit-logs` (filter by entityType/entityId)
 - Leads: `GET/POST/PATCH /api/leads`
 - Tasks: `GET/POST/PATCH /api/tasks`
 - Activities: `GET/POST /api/leads/:leadId/activities`
@@ -48,6 +54,7 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - Background: Light with medical-professional feel
 
 ## Recent Changes
+- 2026-02-20: Phase 3 - Core transaction tables: Patient, Contact, PatientContactLink, enhanced Lead/Activity/Task, Appointment, Episode, AuditLog with full CRUD APIs
 - 2026-02-20: Phase 2 - Team Management page with CRM user CRUD, org tree, access scoping
 - 2026-02-20: Phase 1B - Bulk CSV import/export for master data, import logs
 - 2026-02-20: Phase 1A - Governance masters, tenant settings, pin codes, doctor speciality mappings

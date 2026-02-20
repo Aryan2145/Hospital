@@ -841,8 +841,68 @@ export const dataRetentionPolicies = pgTable("data_retention_policies", {
 });
 
 // =============================================
-// TRANSACTIONAL TABLES (Leads, Activities, Tasks, Campaigns)
+// TRANSACTIONAL TABLES
 // =============================================
+
+// --- Patients ---
+export const patients = pgTable("patients", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  uhid: text("uhid"),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name"),
+  dateOfBirth: timestamp("date_of_birth"),
+  gender: text("gender"),
+  bloodGroup: text("blood_group"),
+  primaryPhone: text("primary_phone"),
+  secondaryPhone: text("secondary_phone"),
+  email: text("email"),
+  address: text("address"),
+  cityId: integer("city_id").references(() => cities.id),
+  stateId: integer("state_id").references(() => states.id),
+  pinCode: text("pin_code"),
+  areaId: integer("area_id").references(() => areas.id),
+  insuranceProvider: text("insurance_provider"),
+  insurancePolicyNumber: text("insurance_policy_number"),
+  emergencyContactName: text("emergency_contact_name"),
+  emergencyContactPhone: text("emergency_contact_phone"),
+  hmsPatientId: text("hms_patient_id"),
+  notes: text("notes"),
+  status: text("status").notNull().default("Active"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+// --- Contacts (phone/email/address records) ---
+export const contacts = pgTable("contacts", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  contactType: text("contact_type").notNull().default("Phone"),
+  contactValue: text("contact_value").notNull(),
+  label: text("label"),
+  isPrimary: boolean("is_primary").default(false),
+  isVerified: boolean("is_verified").default(false),
+  status: text("status").notNull().default("Active"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+// --- Patient-Contact Link ---
+export const patientContactLinks = pgTable("patient_contact_links", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  patientId: integer("patient_id").notNull().references(() => patients.id),
+  contactId: integer("contact_id").notNull().references(() => contacts.id),
+  relationship: text("relationship").default("Self"),
+  status: text("status").notNull().default("Active"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// --- Campaigns ---
 export const campaigns = pgTable("campaigns", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
@@ -855,6 +915,7 @@ export const campaigns = pgTable("campaigns", {
   isActive: boolean("is_active").default(true),
 });
 
+// --- Enhanced Leads ---
 export const leads = pgTable("leads", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
@@ -862,35 +923,168 @@ export const leads = pgTable("leads", {
   phoneE164: text("phone_e164").notNull(),
   email: text("email"),
   status: text("status").notNull().default("Raw Lead Captured"),
+  patientId: integer("patient_id").references(() => patients.id),
   campaignId: integer("campaign_id").references(() => campaigns.id),
   assignedTo: varchar("assigned_to").references(() => users.id),
+  assignedCrmUserId: integer("assigned_crm_user_id").references(() => crmUsers.id),
   hmsPatientId: text("hms_patient_id"),
   branchId: integer("branch_id").references(() => branches.id),
   leadSourceId: integer("lead_source_id").references(() => leadSources.id),
+  leadSourceCategoryId: integer("lead_source_category_id").references(() => leadSourceCategories.id),
   doctorId: integer("doctor_id").references(() => doctors.id),
+  treatmentDepartmentId: integer("treatment_department_id").references(() => treatmentDepartments.id),
+  treatmentSubDepartmentId: integer("treatment_sub_department_id").references(() => treatmentSubDepartments.id),
+  consultationTypeId: integer("consultation_type_id").references(() => consultationTypes.id),
+  priority: text("priority").default("Normal"),
+  leadScore: integer("lead_score").default(0),
+  conversionStageId: integer("conversion_stage_id").references(() => conversionStages.id),
+  lostReasonId: integer("lost_reason_id").references(() => lostReasons.id),
+  lostNotes: text("lost_notes"),
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
+  utmTerm: text("utm_term"),
+  utmContent: text("utm_content"),
+  referrerId: integer("referrer_id").references(() => referrers.id),
+  corporateInsuranceId: integer("corporate_insurance_id").references(() => corporateInsurances.id),
+  nextActionTypeId: integer("next_action_type_id").references(() => nextActionTypes.id),
+  nextActionDate: timestamp("next_action_date"),
+  nextActionNotes: text("next_action_notes"),
+  handoverFromUserId: integer("handover_from_user_id").references(() => crmUsers.id),
+  handoverToUserId: integer("handover_to_user_id").references(() => crmUsers.id),
+  handoverStatus: text("handover_status"),
+  handoverAt: timestamp("handover_at"),
+  handoverAcceptedAt: timestamp("handover_accepted_at"),
+  slaBreached: boolean("sla_breached").default(false),
+  slaDeadline: timestamp("sla_deadline"),
+  firstContactAt: timestamp("first_contact_at"),
+  lastContactAt: timestamp("last_contact_at"),
+  totalCallAttempts: integer("total_call_attempts").default(0),
+  totalCallDuration: integer("total_call_duration_seconds").default(0),
+  tags: text("tags"),
+  notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// --- Enhanced Activities ---
 export const activities = pgTable("activities", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
   leadId: integer("lead_id").notNull().references(() => leads.id),
   type: text("type").notNull(),
+  activityTypeId: integer("activity_type_id").references(() => activityTypes.id),
   description: text("description").notNull(),
+  outcome: text("outcome"),
+  callDirection: text("call_direction"),
+  callDurationSeconds: integer("call_duration_seconds"),
+  callStatus: text("call_status"),
+  callingLineId: integer("calling_line_id").references(() => callingLines.id),
+  nextActionTypeId: integer("next_action_type_id").references(() => nextActionTypes.id),
+  nextActionDate: timestamp("next_action_date"),
+  nextActionNotes: text("next_action_notes"),
+  oldStatus: text("old_status"),
+  newStatus: text("new_status"),
+  metadata: jsonb("metadata"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// --- Enhanced Tasks ---
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
   leadId: integer("lead_id").notNull().references(() => leads.id),
   title: text("title").notNull(),
+  description: text("description"),
+  taskCategoryId: integer("task_category_id").references(() => taskCategories.id),
+  priority: text("priority").default("Normal"),
   dueDate: timestamp("due_date").notNull(),
   assignedTo: varchar("assigned_to").references(() => users.id),
+  assignedCrmUserId: integer("assigned_crm_user_id").references(() => crmUsers.id),
   status: text("status").notNull().default("Pending"),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by"),
   isSlaTriggered: boolean("is_sla_triggered").default(false),
+  slaRuleId: integer("sla_rule_id").references(() => slaRules.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+});
+
+// --- Appointments ---
+export const appointments = pgTable("appointments", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  leadId: integer("lead_id").references(() => leads.id),
+  patientId: integer("patient_id").references(() => patients.id),
+  doctorId: integer("doctor_id").notNull().references(() => doctors.id),
+  branchId: integer("branch_id").references(() => branches.id),
+  appointmentTypeId: integer("appointment_type_id").references(() => appointmentTypes.id),
+  consultationTypeId: integer("consultation_type_id").references(() => consultationTypes.id),
+  appointmentDate: timestamp("appointment_date").notNull(),
+  startTime: text("start_time"),
+  endTime: text("end_time"),
+  tokenNumber: integer("token_number"),
+  status: text("status").notNull().default("Scheduled"),
+  appointmentStatusId: integer("appointment_status_id").references(() => appointmentStatuses.id),
+  noShowReasonId: integer("no_show_reason_id").references(() => noShowReasons.id),
+  rescheduleCount: integer("reschedule_count").default(0),
+  cancelReason: text("cancel_reason"),
+  consultationNotes: text("consultation_notes"),
+  consultationDoneAt: timestamp("consultation_done_at"),
+  consultationDoneBy: varchar("consultation_done_by"),
+  reminderSent: boolean("reminder_sent").default(false),
+  reminderSentAt: timestamp("reminder_sent_at"),
+  bookedBy: varchar("booked_by"),
+  bookedByCrmUserId: integer("booked_by_crm_user_id").references(() => crmUsers.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+// --- Episodes (Treatment Episodes) ---
+export const episodes = pgTable("episodes", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  patientId: integer("patient_id").notNull().references(() => patients.id),
+  leadId: integer("lead_id").references(() => leads.id),
+  treatmentDepartmentId: integer("treatment_department_id").references(() => treatmentDepartments.id),
+  treatmentSubDepartmentId: integer("treatment_sub_department_id").references(() => treatmentSubDepartments.id),
+  doctorId: integer("doctor_id").references(() => doctors.id),
+  branchId: integer("branch_id").references(() => branches.id),
+  episodeType: text("episode_type").default("OPD"),
+  status: text("status").notNull().default("Open"),
+  startDate: timestamp("start_date").defaultNow(),
+  endDate: timestamp("end_date"),
+  diagnosis: text("diagnosis"),
+  treatmentPlan: text("treatment_plan"),
+  estimatedCost: integer("estimated_cost"),
+  actualCost: integer("actual_cost"),
+  insuranceClaimed: boolean("insurance_claimed").default(false),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+// --- Audit Log ---
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  entityType: text("entity_type").notNull(),
+  entityId: integer("entity_id").notNull(),
+  action: text("action").notNull(),
+  oldValues: jsonb("old_values"),
+  newValues: jsonb("new_values"),
+  changedFields: text("changed_fields"),
+  performedBy: varchar("performed_by"),
+  performedByCrmUserId: integer("performed_by_crm_user_id").references(() => crmUsers.id),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -898,10 +1092,16 @@ export const tasks = pgTable("tasks", {
 // ZOD SCHEMAS
 // =============================================
 export const insertTenantSchema = createInsertSchema(tenants).omit({ id: true, createdAt: true });
+export const insertPatientSchema = createInsertSchema(patients).omit({ id: true, createdAt: true, modifiedAt: true });
+export const insertContactSchema = createInsertSchema(contacts).omit({ id: true, createdAt: true, modifiedAt: true });
+export const insertPatientContactLinkSchema = createInsertSchema(patientContactLinks).omit({ id: true, createdAt: true });
 export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertActivitySchema = createInsertSchema(activities).omit({ id: true, createdAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
 export const insertCampaignSchema = createInsertSchema(campaigns).omit({ id: true });
+export const insertAppointmentSchema = createInsertSchema(appointments).omit({ id: true, createdAt: true, modifiedAt: true });
+export const insertEpisodeSchema = createInsertSchema(episodes).omit({ id: true, createdAt: true, modifiedAt: true });
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
 
 // =============================================
 // BULK IMPORT LOG
@@ -945,6 +1145,12 @@ export const insertMasterSchema = z.object({
 // =============================================
 export type Tenant = typeof tenants.$inferSelect;
 export type InsertTenant = z.infer<typeof insertTenantSchema>;
+export type Patient = typeof patients.$inferSelect;
+export type InsertPatient = z.infer<typeof insertPatientSchema>;
+export type Contact = typeof contacts.$inferSelect;
+export type InsertContact = z.infer<typeof insertContactSchema>;
+export type PatientContactLink = typeof patientContactLinks.$inferSelect;
+export type InsertPatientContactLink = z.infer<typeof insertPatientContactLinkSchema>;
 export type Lead = typeof leads.$inferSelect;
 export type InsertLead = z.infer<typeof insertLeadSchema>;
 export type UpdateLeadRequest = Partial<InsertLead>;
@@ -957,6 +1163,12 @@ export type Campaign = typeof campaigns.$inferSelect;
 export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
 export type CrmUser = typeof crmUsers.$inferSelect;
 export type InsertCrmUser = z.infer<typeof insertCrmUserSchema>;
+export type Appointment = typeof appointments.$inferSelect;
+export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;
+export type Episode = typeof episodes.$inferSelect;
+export type InsertEpisode = z.infer<typeof insertEpisodeSchema>;
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 
 // Generic master record type
 export interface MasterRecord {

@@ -1,16 +1,23 @@
 import { db, pool } from "./db";
 import {
   tenants, leads, tasks, activities, campaigns, crmUsers,
+  patients, contacts, patientContactLinks, appointments, episodes, auditLogs,
   type Tenant, type InsertTenant,
+  type Patient, type InsertPatient,
+  type Contact, type InsertContact,
+  type PatientContactLink, type InsertPatientContactLink,
   type Lead, type InsertLead, type UpdateLeadRequest,
   type Task, type InsertTask, type UpdateTaskRequest,
   type Activity, type InsertActivity,
   type Campaign, type InsertCampaign,
   type CrmUser, type InsertCrmUser,
+  type Appointment, type InsertAppointment,
+  type Episode, type InsertEpisode,
+  type AuditLog, type InsertAuditLog,
   type MasterRecord,
   MASTER_TABLE_REGISTRY,
 } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 export interface IStorage {
   // Tenant
@@ -27,6 +34,18 @@ export interface IStorage {
   // Activities
   getActivities(leadId: number): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
+  // Patients
+  getPatients(tenantId: number): Promise<Patient[]>;
+  getPatient(id: number, tenantId: number): Promise<Patient | undefined>;
+  createPatient(data: InsertPatient): Promise<Patient>;
+  updatePatient(id: number, tenantId: number, data: Partial<InsertPatient>): Promise<Patient>;
+  // Contacts
+  getContactsForPatient(patientId: number, tenantId: number): Promise<Contact[]>;
+  createContact(data: InsertContact): Promise<Contact>;
+  updateContact(id: number, tenantId: number, data: Partial<InsertContact>): Promise<Contact>;
+  deleteContact(id: number, tenantId: number): Promise<void>;
+  linkPatientContact(data: InsertPatientContactLink): Promise<PatientContactLink>;
+  unlinkPatientContact(patientId: number, contactId: number, tenantId: number): Promise<void>;
   // CRM Users
   getCrmUsers(tenantId: number): Promise<CrmUser[]>;
   getCrmUser(id: number, tenantId: number): Promise<CrmUser | undefined>;
@@ -34,6 +53,19 @@ export interface IStorage {
   updateCrmUser(id: number, tenantId: number, data: Partial<InsertCrmUser>): Promise<CrmUser>;
   deleteCrmUser(id: number, tenantId: number): Promise<void>;
   getCrmUserDirectReports(managerId: number, tenantId: number): Promise<CrmUser[]>;
+  // Appointments
+  getAppointments(tenantId: number, filters?: Record<string, any>): Promise<Appointment[]>;
+  getAppointment(id: number, tenantId: number): Promise<Appointment | undefined>;
+  createAppointment(data: InsertAppointment): Promise<Appointment>;
+  updateAppointment(id: number, tenantId: number, data: Partial<InsertAppointment>): Promise<Appointment>;
+  // Episodes
+  getEpisodes(tenantId: number, patientId?: number): Promise<Episode[]>;
+  getEpisode(id: number, tenantId: number): Promise<Episode | undefined>;
+  createEpisode(data: InsertEpisode): Promise<Episode>;
+  updateEpisode(id: number, tenantId: number, data: Partial<InsertEpisode>): Promise<Episode>;
+  // Audit Logs
+  getAuditLogs(tenantId: number, entityType?: string, entityId?: number): Promise<AuditLog[]>;
+  createAuditLog(data: InsertAuditLog): Promise<AuditLog>;
   // Generic Master CRUD
   getMasterRecords(tableName: string, tenantId: number): Promise<MasterRecord[]>;
   getMasterRecord(tableName: string, id: number): Promise<MasterRecord | undefined>;
@@ -100,6 +132,81 @@ export class DatabaseStorage implements IStorage {
     return newActivity;
   }
 
+  // --- Patients ---
+  async getPatients(tenantId: number): Promise<Patient[]> {
+    return await db.select().from(patients).where(eq(patients.tenantId, tenantId));
+  }
+
+  async getPatient(id: number, tenantId: number): Promise<Patient | undefined> {
+    const [patient] = await db.select().from(patients)
+      .where(and(eq(patients.id, id), eq(patients.tenantId, tenantId)));
+    return patient;
+  }
+
+  async createPatient(data: InsertPatient): Promise<Patient> {
+    const [patient] = await db.insert(patients).values(data).returning();
+    return patient;
+  }
+
+  async updatePatient(id: number, tenantId: number, data: Partial<InsertPatient>): Promise<Patient> {
+    const [patient] = await db.update(patients)
+      .set({ ...data, modifiedAt: new Date() })
+      .where(and(eq(patients.id, id), eq(patients.tenantId, tenantId)))
+      .returning();
+    if (!patient) throw new Error("Patient not found");
+    return patient;
+  }
+
+  // --- Contacts ---
+  async getContactsForPatient(patientId: number, tenantId: number): Promise<Contact[]> {
+    const links = await db.select().from(patientContactLinks)
+      .where(and(eq(patientContactLinks.patientId, patientId), eq(patientContactLinks.tenantId, tenantId)));
+    if (links.length === 0) return [];
+    const contactIds = links.map(l => l.contactId);
+    const result: Contact[] = [];
+    for (const cid of contactIds) {
+      const [c] = await db.select().from(contacts)
+        .where(and(eq(contacts.id, cid), eq(contacts.tenantId, tenantId)));
+      if (c) result.push(c);
+    }
+    return result;
+  }
+
+  async createContact(data: InsertContact): Promise<Contact> {
+    const [contact] = await db.insert(contacts).values(data).returning();
+    return contact;
+  }
+
+  async updateContact(id: number, tenantId: number, data: Partial<InsertContact>): Promise<Contact> {
+    const [contact] = await db.update(contacts)
+      .set({ ...data, modifiedAt: new Date() })
+      .where(and(eq(contacts.id, id), eq(contacts.tenantId, tenantId)))
+      .returning();
+    if (!contact) throw new Error("Contact not found");
+    return contact;
+  }
+
+  async deleteContact(id: number, tenantId: number): Promise<void> {
+    await db.delete(patientContactLinks)
+      .where(and(eq(patientContactLinks.contactId, id), eq(patientContactLinks.tenantId, tenantId)));
+    await db.delete(contacts)
+      .where(and(eq(contacts.id, id), eq(contacts.tenantId, tenantId)));
+  }
+
+  async linkPatientContact(data: InsertPatientContactLink): Promise<PatientContactLink> {
+    const [link] = await db.insert(patientContactLinks).values(data).returning();
+    return link;
+  }
+
+  async unlinkPatientContact(patientId: number, contactId: number, tenantId: number): Promise<void> {
+    await db.delete(patientContactLinks)
+      .where(and(
+        eq(patientContactLinks.patientId, patientId),
+        eq(patientContactLinks.contactId, contactId),
+        eq(patientContactLinks.tenantId, tenantId)
+      ));
+  }
+
   // --- CRM Users ---
   async getCrmUsers(tenantId: number): Promise<CrmUser[]> {
     return await db.select().from(crmUsers).where(eq(crmUsers.tenantId, tenantId));
@@ -133,6 +240,90 @@ export class DatabaseStorage implements IStorage {
   async getCrmUserDirectReports(managerId: number, tenantId: number): Promise<CrmUser[]> {
     return await db.select().from(crmUsers)
       .where(and(eq(crmUsers.reportingTo, managerId), eq(crmUsers.tenantId, tenantId)));
+  }
+
+  // --- Appointments ---
+  async getAppointments(tenantId: number, filters?: Record<string, any>): Promise<Appointment[]> {
+    const conditions = [eq(appointments.tenantId, tenantId)];
+    if (filters?.leadId) conditions.push(eq(appointments.leadId, filters.leadId));
+    if (filters?.patientId) conditions.push(eq(appointments.patientId, filters.patientId));
+    if (filters?.doctorId) conditions.push(eq(appointments.doctorId, filters.doctorId));
+    return await db.select().from(appointments).where(and(...conditions));
+  }
+
+  async getAppointment(id: number, tenantId: number): Promise<Appointment | undefined> {
+    const [appt] = await db.select().from(appointments)
+      .where(and(eq(appointments.id, id), eq(appointments.tenantId, tenantId)));
+    return appt;
+  }
+
+  async createAppointment(data: InsertAppointment): Promise<Appointment> {
+    const [appt] = await db.insert(appointments).values(data).returning();
+    return appt;
+  }
+
+  async updateAppointment(id: number, tenantId: number, data: Partial<InsertAppointment>): Promise<Appointment> {
+    const [appt] = await db.update(appointments)
+      .set({ ...data, modifiedAt: new Date() })
+      .where(and(eq(appointments.id, id), eq(appointments.tenantId, tenantId)))
+      .returning();
+    if (!appt) throw new Error("Appointment not found");
+    return appt;
+  }
+
+  // --- Episodes ---
+  async getEpisodes(tenantId: number, patientId?: number): Promise<Episode[]> {
+    if (patientId) {
+      return await db.select().from(episodes)
+        .where(and(eq(episodes.tenantId, tenantId), eq(episodes.patientId, patientId)));
+    }
+    return await db.select().from(episodes).where(eq(episodes.tenantId, tenantId));
+  }
+
+  async getEpisode(id: number, tenantId: number): Promise<Episode | undefined> {
+    const [ep] = await db.select().from(episodes)
+      .where(and(eq(episodes.id, id), eq(episodes.tenantId, tenantId)));
+    return ep;
+  }
+
+  async createEpisode(data: InsertEpisode): Promise<Episode> {
+    const [ep] = await db.insert(episodes).values(data).returning();
+    return ep;
+  }
+
+  async updateEpisode(id: number, tenantId: number, data: Partial<InsertEpisode>): Promise<Episode> {
+    const [ep] = await db.update(episodes)
+      .set({ ...data, modifiedAt: new Date() })
+      .where(and(eq(episodes.id, id), eq(episodes.tenantId, tenantId)))
+      .returning();
+    if (!ep) throw new Error("Episode not found");
+    return ep;
+  }
+
+  // --- Audit Logs ---
+  async getAuditLogs(tenantId: number, entityType?: string, entityId?: number): Promise<AuditLog[]> {
+    if (entityType && entityId) {
+      return await db.select().from(auditLogs)
+        .where(and(
+          eq(auditLogs.tenantId, tenantId),
+          eq(auditLogs.entityType, entityType),
+          eq(auditLogs.entityId, entityId)
+        ))
+        .orderBy(desc(auditLogs.createdAt));
+    }
+    if (entityType) {
+      return await db.select().from(auditLogs)
+        .where(and(eq(auditLogs.tenantId, tenantId), eq(auditLogs.entityType, entityType)))
+        .orderBy(desc(auditLogs.createdAt));
+    }
+    return await db.select().from(auditLogs)
+      .where(eq(auditLogs.tenantId, tenantId))
+      .orderBy(desc(auditLogs.createdAt));
+  }
+
+  async createAuditLog(data: InsertAuditLog): Promise<AuditLog> {
+    const [log] = await db.insert(auditLogs).values(data).returning();
+    return log;
   }
 
   // --- Generic Master CRUD ---

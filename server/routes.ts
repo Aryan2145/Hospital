@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db } from "./db";
@@ -626,6 +626,238 @@ export async function registerRoutes(
       res.json(directReports);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =============================================
+  // PATIENT MANAGEMENT ROUTES
+  // =============================================
+  app.get("/api/patients", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const result = await storage.getPatients(tid);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/patients/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const patient = await storage.getPatient(Number(req.params.id), tid);
+      if (!patient) return res.status(404).json({ message: "Patient not found" });
+      res.json(patient);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/patients", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertPatientSchema.parse({ ...req.body, tenantId: tid });
+      const patient = await storage.createPatient(parsed);
+      res.status(201).json(patient);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/patients/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertPatientSchema.partial().parse(req.body);
+      const patient = await storage.updatePatient(Number(req.params.id), tid, parsed);
+      res.json(patient);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/patients/:id/contacts", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const result = await storage.getContactsForPatient(Number(req.params.id), tid);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/contacts", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertContactSchema.parse({ ...req.body, tenantId: tid });
+      const contact = await storage.createContact(parsed);
+      res.status(201).json(contact);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/contacts/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertContactSchema.partial().parse(req.body);
+      const contact = await storage.updateContact(Number(req.params.id), tid, parsed);
+      res.json(contact);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/contacts/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      await storage.deleteContact(Number(req.params.id), tid);
+      res.status(204).send();
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/patient-contact-links", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertPatientContactLinkSchema.parse({ ...req.body, tenantId: tid });
+      const link = await storage.linkPatientContact(parsed);
+      res.status(201).json(link);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/patient-contact-links/:patientId/:contactId", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      await storage.unlinkPatientContact(Number(req.params.patientId), Number(req.params.contactId), tid);
+      res.status(204).send();
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =============================================
+  // APPOINTMENT ROUTES
+  // =============================================
+  app.get("/api/appointments", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const filters: Record<string, any> = {};
+      if (req.query.leadId) filters.leadId = Number(req.query.leadId);
+      if (req.query.patientId) filters.patientId = Number(req.query.patientId);
+      if (req.query.doctorId) filters.doctorId = Number(req.query.doctorId);
+      const result = await storage.getAppointments(tid, filters);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/appointments/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const appt = await storage.getAppointment(Number(req.params.id), tid);
+      if (!appt) return res.status(404).json({ message: "Appointment not found" });
+      res.json(appt);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/appointments", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertAppointmentSchema.parse({ ...req.body, tenantId: tid });
+      const appt = await storage.createAppointment(parsed);
+      res.status(201).json(appt);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/appointments/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertAppointmentSchema.partial().parse(req.body);
+      const appt = await storage.updateAppointment(Number(req.params.id), tid, parsed);
+      res.json(appt);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // =============================================
+  // EPISODE ROUTES
+  // =============================================
+  app.get("/api/episodes", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const patientId = req.query.patientId ? Number(req.query.patientId) : undefined;
+      const result = await storage.getEpisodes(tid, patientId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/episodes/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const ep = await storage.getEpisode(Number(req.params.id), tid);
+      if (!ep) return res.status(404).json({ message: "Episode not found" });
+      res.json(ep);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/episodes", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertEpisodeSchema.parse({ ...req.body, tenantId: tid });
+      const ep = await storage.createEpisode(parsed);
+      res.status(201).json(ep);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/episodes/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertEpisodeSchema.partial().parse(req.body);
+      const ep = await storage.updateEpisode(Number(req.params.id), tid, parsed);
+      res.json(ep);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // =============================================
+  // AUDIT LOG ROUTES
+  // =============================================
+  app.get("/api/audit-logs", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const entityType = req.query.entityType as string | undefined;
+      const entityId = req.query.entityId ? Number(req.query.entityId) : undefined;
+      const result = await storage.getAuditLogs(tid, entityType, entityId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/audit-logs", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertAuditLogSchema.parse({ ...req.body, tenantId: tid });
+      const log = await storage.createAuditLog(parsed);
+      res.status(201).json(log);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
     }
   });
 
