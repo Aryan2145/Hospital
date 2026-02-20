@@ -2083,6 +2083,54 @@ export async function registerRoutes(
 
   // Seed the database
   await seedDatabase();
+  await ensureSuperAdmin();
 
   return httpServer;
+}
+
+async function ensureSuperAdmin() {
+  try {
+    const { hashPassword } = await import("./replit_integrations/auth/replitAuth");
+    const allTenantRows = await db.select().from(tenants);
+    if (allTenantRows.length === 0) return;
+    const tid = allTenantRows[0].id;
+
+    const phone = "+919033050100";
+    const existingUsers = await db.select().from(crmUsers).where(
+      and(eq(crmUsers.phone, phone), eq(crmUsers.tenantId, tid))
+    );
+
+    if (existingUsers.length > 0) {
+      if (!existingUsers[0].passwordHash) {
+        const hash = await hashPassword("rgbtech@replit");
+        await db.update(crmUsers).set({ passwordHash: hash }).where(eq(crmUsers.id, existingUsers[0].id));
+        console.log("Super Admin password reset.");
+      }
+      return;
+    }
+
+    const roleRows = await db.select().from(systemRoles).where(
+      and(eq(systemRoles.code, "ADMIN"), eq(systemRoles.tenantId, tid))
+    );
+    const adminRoleId = roleRows.length > 0 ? roleRows[0].id : null;
+
+    const hash = await hashPassword("rgbtech@replit");
+    await db.insert(crmUsers).values({
+      tenantId: tid,
+      code: "SUPERADMIN",
+      name: "Super Admin",
+      email: "superadmin@viroc.in",
+      phone,
+      systemRoleId: adminRoleId,
+      isActive: true,
+      status: "Active",
+      accessScopeType: "All",
+      phiAccessLevel: "Full",
+      passwordHash: hash,
+      displayOrder: 0,
+    });
+    console.log("Super Admin user created.");
+  } catch (err) {
+    console.error("Error ensuring super admin:", err);
+  }
 }
