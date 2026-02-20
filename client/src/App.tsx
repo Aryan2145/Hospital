@@ -11,6 +11,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import LeadsWorkspace from "@/pages/LeadsWorkspace";
+import LeadDetailPage from "@/pages/LeadDetailPage";
 import MasterData from "@/pages/MasterData";
 import TeamManagement from "@/pages/TeamManagement";
 
@@ -36,6 +37,10 @@ function Router() {
       
       <Route path="/leads">
          {isAuthenticated ? <LeadsWorkspace /> : <Landing />}
+      </Route>
+
+      <Route path="/leads/:id">
+         {isAuthenticated ? <LeadDetailPage /> : <Landing />}
       </Route>
 
       <Route path="/team">

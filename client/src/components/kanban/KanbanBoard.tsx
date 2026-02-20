@@ -6,6 +6,8 @@ import { KanbanCard } from "./KanbanCard";
 import { Lead } from "@shared/schema";
 import { useUpdateLead } from "@/hooks/use-leads";
 import { createPortal } from "react-dom";
+import { isValidTransition } from "@/lib/lead-status";
+import { useToast } from "@/hooks/use-toast";
 
 interface KanbanBoardProps {
   leads: Lead[];
@@ -13,15 +15,17 @@ interface KanbanBoardProps {
 
 const COLUMNS = [
   { id: "Raw Lead Captured", title: "New Lead", color: "bg-blue-100 text-blue-800" },
-  { id: "Qualified", title: "Qualified", color: "bg-indigo-100 text-indigo-800" },
   { id: "Contacted", title: "Contacted", color: "bg-amber-100 text-amber-800" },
+  { id: "Qualified", title: "Qualified", color: "bg-indigo-100 text-indigo-800" },
   { id: "Appointment Booked", title: "Appt Booked", color: "bg-purple-100 text-purple-800" },
   { id: "Consultation Done", title: "Consultation", color: "bg-green-100 text-green-800" },
   { id: "Closed Won", title: "Closed Won", color: "bg-emerald-100 text-emerald-800" },
+  { id: "Closed Lost", title: "Closed Lost", color: "bg-red-100 text-red-800" },
 ];
 
 export function KanbanBoard({ leads }: KanbanBoardProps) {
   const updateLead = useUpdateLead();
+  const { toast } = useToast();
   const [activeId, setActiveId] = useState<string | number | null>(null);
 
   const sensors = useSensors(
@@ -47,22 +51,28 @@ export function KanbanBoard({ leads }: KanbanBoardProps) {
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     
-    if (!over) return;
+    if (!over) { setActiveId(null); return; }
 
     const activeLeadId = Number(active.id);
-    const overId = over.id; // Could be a column ID or another card ID
+    const activeLead = leads.find(l => l.id === activeLeadId);
+    if (!activeLead) { setActiveId(null); return; }
 
-    // If dropped on a column
-    const column = COLUMNS.find(col => col.id === overId);
+    let targetStatus: string | null = null;
+
+    const column = COLUMNS.find(col => col.id === over.id);
     if (column) {
-      updateLead.mutate({ id: activeLeadId, status: column.id });
-      return;
+      targetStatus = column.id;
+    } else {
+      const overLead = leads.find(l => l.id === Number(over.id));
+      if (overLead) targetStatus = overLead.status;
     }
 
-    // If dropped on another card, find that card's column
-    const overLead = leads.find(l => l.id === Number(overId));
-    if (overLead && overLead.status !== leads.find(l => l.id === activeLeadId)?.status) {
-      updateLead.mutate({ id: activeLeadId, status: overLead.status });
+    if (targetStatus && targetStatus !== activeLead.status) {
+      if (!isValidTransition(activeLead.status, targetStatus)) {
+        toast({ title: "Invalid status change", description: `Cannot move from "${activeLead.status}" to "${targetStatus}"`, variant: "destructive" });
+      } else {
+        updateLead.mutate({ id: activeLeadId, status: targetStatus });
+      }
     }
 
     setActiveId(null);

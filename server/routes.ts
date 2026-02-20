@@ -295,13 +295,21 @@ export async function registerRoutes(
 
   // --- Tasks ---
   app.get(api.tasks.list.path, isAuthenticated, async (req, res) => {
-    const allTasks = await storage.getTasks(1);
+    const tid = await getDefaultTenantId();
+    const leadId = req.query.leadId ? Number(req.query.leadId) : undefined;
+    const allTasks = await storage.getTasks(tid, leadId);
     res.json(allTasks);
   });
 
   app.post(api.tasks.create.path, isAuthenticated, async (req, res) => {
     try {
-      const input = api.tasks.create.input.parse(req.body);
+      const tid = await getDefaultTenantId();
+      const userId = (req as any).user?.claims?.sub || "system";
+      const input = api.tasks.create.input.parse({
+        ...req.body,
+        tenantId: tid,
+        createdBy: userId,
+      });
       const task = await storage.createTask(input);
       res.status(201).json(task);
     } catch (err) {
@@ -333,7 +341,13 @@ export async function registerRoutes(
 
   app.post(api.activities.create.path, isAuthenticated, async (req, res) => {
     try {
-      const input = api.activities.create.input.parse(req.body);
+      const tid = await getDefaultTenantId();
+      const userId = (req as any).user?.claims?.sub || "system";
+      const input = api.activities.create.input.parse({
+        ...req.body,
+        tenantId: tid,
+        createdBy: userId,
+      });
       const activity = await storage.createActivity(input);
       res.status(201).json(activity);
     } catch (err) {

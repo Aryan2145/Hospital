@@ -106,11 +106,12 @@ export function useCreateActivity() {
 }
 
 // Tasks Hooks
-export function useTasks() {
+export function useTasks(leadId?: number) {
+  const url = leadId ? `${api.tasks.list.path}?leadId=${leadId}` : api.tasks.list.path;
   return useQuery({
-    queryKey: [api.tasks.list.path],
+    queryKey: [api.tasks.list.path, leadId],
     queryFn: async () => {
-      const res = await fetch(api.tasks.list.path, { credentials: "include" });
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch tasks");
       return api.tasks.list.responses[200].parse(await res.json());
     },

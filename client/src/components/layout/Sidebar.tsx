@@ -53,7 +53,7 @@ export function Sidebar() {
           Main Menu
         </div>
         {navItems.map((item) => {
-          const isActive = location === item.href;
+          const isActive = item.href === "/" ? location === "/" : location.startsWith(item.href);
           return (
             <Link key={item.href} href={item.href}>
               <div

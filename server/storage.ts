@@ -28,7 +28,7 @@ export interface IStorage {
   createLead(lead: InsertLead): Promise<Lead>;
   updateLead(id: number, updates: UpdateLeadRequest): Promise<Lead>;
   // Tasks
-  getTasks(tenantId: number): Promise<Task[]>;
+  getTasks(tenantId: number, leadId?: number): Promise<Task[]>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: number, updates: UpdateTaskRequest): Promise<Task>;
   // Activities
@@ -105,8 +105,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // --- Tasks ---
-  async getTasks(tenantId: number): Promise<Task[]> {
-    return await db.select().from(tasks).where(eq(tasks.tenantId, tenantId));
+  async getTasks(tenantId: number, leadId?: number): Promise<Task[]> {
+    const conditions = [eq(tasks.tenantId, tenantId)];
+    if (leadId) conditions.push(eq(tasks.leadId, leadId));
+    return await db.select().from(tasks).where(and(...conditions));
   }
 
   async createTask(task: InsertTask): Promise<Task> {
