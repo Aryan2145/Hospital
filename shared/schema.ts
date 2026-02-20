@@ -915,6 +915,27 @@ export const campaigns = pgTable("campaigns", {
   isActive: boolean("is_active").default(true),
 });
 
+// --- Platform Connectors ---
+export const platformConnectors = pgTable("platform_connectors", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  platform: text("platform").notNull(),
+  displayName: text("display_name").notNull(),
+  status: text("status").notNull().default("disconnected"),
+  credentials: jsonb("credentials"),
+  config: jsonb("config"),
+  lastSyncAt: timestamp("last_sync_at"),
+  syncStatus: text("sync_status"),
+  metricsCache: jsonb("metrics_cache"),
+  metricsCachedAt: timestamp("metrics_cached_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+});
+
+export const insertPlatformConnectorSchema = createInsertSchema(platformConnectors).omit({ id: true, createdAt: true, modifiedAt: true });
+export type InsertPlatformConnector = z.infer<typeof insertPlatformConnectorSchema>;
+export type PlatformConnector = typeof platformConnectors.$inferSelect;
+
 // --- Enhanced Leads ---
 export const leads = pgTable("leads", {
   id: serial("id").primaryKey(),
