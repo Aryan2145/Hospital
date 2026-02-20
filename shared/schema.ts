@@ -26,6 +26,26 @@ export const tenantUsers = pgTable("tenant_users", {
   role: text("role").notNull().default('agent'),
 });
 
+export const tenantSettings = pgTable("tenant_settings", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  settingKey: text("setting_key").notNull(),
+  settingValue: text("setting_value"),
+  settingType: text("setting_type").default("string"),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+});
+
+export const tenantDomains = pgTable("tenant_domains", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  domain: text("domain").notNull().unique(),
+  isPrimary: boolean("is_primary").default(false),
+  status: text("status").notNull().default("Active"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // =============================================
 // CATEGORY 1: LOCATION MASTERS
 // =============================================
@@ -70,13 +90,30 @@ export const cities = pgTable("cities", {
   modifiedBy: varchar("modified_by"),
 });
 
-export const areas = pgTable("areas", {
+export const pinCodes = pgTable("pin_codes", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
   cityId: integer("city_id").notNull().references(() => cities.id),
   code: text("code").notNull(),
   name: text("name").notNull(),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const areas = pgTable("areas", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  cityId: integer("city_id").notNull().references(() => cities.id),
+  pinCodeId: integer("pin_code_id").references(() => pinCodes.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
   pinCode: text("pin_code"),
+  serviceable: boolean("serviceable").default(true),
+  defaultNearestBranchId: integer("default_nearest_branch_id").references(() => branches.id),
   status: text("status").notNull().default("Active"),
   displayOrder: integer("display_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
@@ -90,6 +127,9 @@ export const branchServiceability = pgTable("branch_serviceability", {
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
   branchId: integer("branch_id"),
   areaId: integer("area_id").references(() => areas.id),
+  priority: integer("priority").default(1),
+  serviceType: text("service_type"),
+  pinCodeId: integer("pin_code_id").references(() => pinCodes.id),
   status: text("status").notNull().default("Active"),
   displayOrder: integer("display_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
@@ -351,6 +391,20 @@ export const doctorLeaveExceptions = pgTable("doctor_leave_exceptions", {
   doctorId: integer("doctor_id").notNull().references(() => doctors.id),
   leaveDate: timestamp("leave_date").notNull(),
   reason: text("reason"),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const doctorSpecialityMappings = pgTable("doctor_speciality_mappings", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  doctorId: integer("doctor_id").notNull().references(() => doctors.id),
+  treatmentSubDepartmentId: integer("treatment_sub_department_id").notNull().references(() => treatmentSubDepartments.id),
+  isPrimary: boolean("is_primary").default(false),
   status: text("status").notNull().default("Active"),
   displayOrder: integer("display_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
@@ -730,6 +784,58 @@ export const tags = pgTable("tags", {
 });
 
 // =============================================
+// CATEGORY 9: GOVERNANCE MASTERS
+// =============================================
+export const slaRules = pgTable("sla_rules", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  triggerEvent: text("trigger_event").notNull(),
+  timeLimitMinutes: integer("time_limit_minutes").notNull(),
+  appliesToRole: text("applies_to_role"),
+  escalationRole: text("escalation_role"),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const reminderPolicies = pgTable("reminder_policies", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  offsetMinutes: integer("offset_minutes").notNull(),
+  channel: text("channel"),
+  fallbackChannel: text("fallback_channel"),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const dataRetentionPolicies = pgTable("data_retention_policies", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  entityType: text("entity_type").notNull(),
+  retentionMonths: integer("retention_months").notNull(),
+  action: text("action").notNull().default("archive"),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+// =============================================
 // TRANSACTIONAL TABLES (Leads, Activities, Tasks, Campaigns)
 // =============================================
 export const campaigns = pgTable("campaigns", {
@@ -882,4 +988,9 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   templates: "templates",
   holidays: "holidays",
   tags: "tags",
+  pinCodes: "pin_codes",
+  doctorSpecialityMappings: "doctor_speciality_mappings",
+  slaRules: "sla_rules",
+  reminderPolicies: "reminder_policies",
+  dataRetentionPolicies: "data_retention_policies",
 };

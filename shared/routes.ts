@@ -216,6 +216,7 @@ export const MASTER_CATEGORIES = [
       { key: "states", label: "State" },
       { key: "cities", label: "City" },
       { key: "areas", label: "Area & PIN Code" },
+      { key: "pinCodes", label: "PIN Code" },
       { key: "branchServiceability", label: "Branch Serviceability" },
     ]
   },
@@ -249,6 +250,7 @@ export const MASTER_CATEGORIES = [
       { key: "opdTimings", label: "OPD Timing" },
       { key: "surgeryWindows", label: "Surgery Window" },
       { key: "doctorLeaveExceptions", label: "Doctor Leave Exception" },
+      { key: "doctorSpecialityMappings", label: "Doctor Speciality Mapping" },
     ]
   },
   {
@@ -295,6 +297,14 @@ export const MASTER_CATEGORIES = [
       { key: "templates", label: "Template" },
       { key: "holidays", label: "Holiday" },
       { key: "tags", label: "Tag" },
+    ]
+  },
+  {
+    category: "Governance",
+    tables: [
+      { key: "slaRules", label: "SLA Rule" },
+      { key: "reminderPolicies", label: "Reminder Policy" },
+      { key: "dataRetentionPolicies", label: "Data Retention Policy" },
     ]
   },
 ];

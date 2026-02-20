@@ -318,7 +318,7 @@ export async function registerRoutes(
   });
 
   app.get(api.masters.list.path, isAuthenticated, async (req, res) => {
-    const { tableName } = req.params;
+    const tableName = req.params.tableName as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
@@ -331,7 +331,8 @@ export async function registerRoutes(
   });
 
   app.get(api.masters.get.path, isAuthenticated, async (req, res) => {
-    const { tableName, id } = req.params;
+    const tableName = req.params.tableName as string;
+    const id = req.params.id as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
@@ -341,7 +342,7 @@ export async function registerRoutes(
   });
 
   app.post(api.masters.create.path, isAuthenticated, async (req, res) => {
-    const { tableName } = req.params;
+    const tableName = req.params.tableName as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
@@ -354,7 +355,8 @@ export async function registerRoutes(
   });
 
   app.patch(api.masters.update.path, isAuthenticated, async (req, res) => {
-    const { tableName, id } = req.params;
+    const tableName = req.params.tableName as string;
+    const id = req.params.id as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
@@ -367,7 +369,8 @@ export async function registerRoutes(
   });
 
   app.delete(api.masters.delete.path, isAuthenticated, async (req, res) => {
-    const { tableName, id } = req.params;
+    const tableName = req.params.tableName as string;
+    const id = req.params.id as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
