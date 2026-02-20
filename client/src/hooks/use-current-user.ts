@@ -44,10 +44,10 @@ export function useCurrentUser() {
       case "ADMIN":
         return true;
       case "MANAGER":
-        return ["dashboard", "leads", "appointments", "team"].includes(page);
+        return ["dashboard", "leads", "appointments", "team", "testing"].includes(page);
       case "AGENT":
       case "COUNSELLOR":
-        return ["dashboard", "leads", "appointments"].includes(page);
+        return ["dashboard", "leads", "appointments", "testing"].includes(page);
       default:
         return false;
     }

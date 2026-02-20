@@ -6,7 +6,7 @@ import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, i
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db } from "./db";
-import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, treatmentSubDepartments, areas, pinCodes, callingLines } from "@shared/schema";
+import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, treatmentSubDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -1618,6 +1618,303 @@ export async function registerRoutes(
       res.status(201).json(log);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
+    }
+  });
+
+  // =============================================
+  // TESTING INTERFACE ROUTES (Admin only)
+  // =============================================
+
+  async function requireTestingAccess(req: any, res: any): Promise<boolean> {
+    const authUserId = req.user?.claims?.sub;
+    if (!authUserId) { res.status(401).json({ message: "Unauthorized" }); return false; }
+    const tid = await getDefaultTenantId();
+    const crmUser = await storage.getCrmUserByAuthId(authUserId, tid);
+    if (!crmUser) { res.status(403).json({ message: "Not a CRM user" }); return false; }
+    if (crmUser.systemRoleId) {
+      const allRoles = await storage.getMasterRecords("systemRoles", tid);
+      const role = allRoles.find(r => r.id === crmUser.systemRoleId);
+      if (role && (role as any).code === "ADMIN") return true;
+    }
+    res.status(403).json({ message: "Admin access required for testing interface" });
+    return false;
+  }
+
+  app.get("/api/testing/stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const allLeads = await storage.getLeads(tid);
+      const allPatients = await storage.getPatients(tid);
+      const allCrmUsers = await storage.getCrmUsers(tid);
+      const allAppointments = await storage.getAppointments(tid);
+      const allTasks = await storage.getTasks(tid);
+      const allActivities: any[] = [];
+      for (const lead of allLeads.slice(0, 50)) {
+        const acts = await storage.getActivities(lead.id);
+        allActivities.push(...acts);
+      }
+
+      const statusCounts: Record<string, number> = {};
+      allLeads.forEach(l => {
+        statusCounts[l.status] = (statusCounts[l.status] || 0) + 1;
+      });
+
+      const priorityCounts: Record<string, number> = {};
+      allLeads.forEach(l => {
+        const p = l.priority || "Normal";
+        priorityCounts[p] = (priorityCounts[p] || 0) + 1;
+      });
+
+      const assignmentCounts: Record<string, number> = {};
+      allLeads.forEach(l => {
+        if (l.assignedCrmUserId) {
+          const user = allCrmUsers.find(u => u.id === l.assignedCrmUserId);
+          const name = user?.name || `User ${l.assignedCrmUserId}`;
+          assignmentCounts[name] = (assignmentCounts[name] || 0) + 1;
+        } else {
+          assignmentCounts["Unassigned"] = (assignmentCounts["Unassigned"] || 0) + 1;
+        }
+      });
+
+      res.json({
+        counts: {
+          leads: allLeads.length,
+          patients: allPatients.length,
+          appointments: allAppointments.length,
+          tasks: allTasks.length,
+          activities: allActivities.length,
+          crmUsers: allCrmUsers.length,
+        },
+        leadsByStatus: statusCounts,
+        leadsByPriority: priorityCounts,
+        leadsByAssignment: assignmentCounts,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/testing/crm-users", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const allCrmUsers = await storage.getCrmUsers(tid);
+      const allRoles = await storage.getMasterRecords("systemRoles", tid);
+
+      const enriched = allCrmUsers.map(u => {
+        const role = allRoles.find(r => r.id === u.systemRoleId);
+        return {
+          ...u,
+          roleName: role?.name || null,
+          roleCode: (role as any)?.code || null,
+        };
+      });
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/testing/switch-role", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const authUserId = (req as any).user?.claims?.sub;
+      if (!authUserId) return res.status(401).json({ message: "Unauthorized" });
+
+      const { targetCrmUserId } = req.body;
+      if (!targetCrmUserId) return res.status(400).json({ message: "targetCrmUserId is required" });
+
+      const currentCrmUser = await storage.getCrmUserByAuthId(authUserId, tid);
+      if (currentCrmUser) {
+        await storage.updateCrmUser(currentCrmUser.id, tid, { userId: null as any });
+      }
+
+      const targetUser = await storage.getCrmUser(targetCrmUserId, tid);
+      if (!targetUser) return res.status(404).json({ message: "CRM user not found" });
+
+      if (targetUser.userId && targetUser.userId !== authUserId) {
+        await storage.updateCrmUser(targetUser.id, tid, { userId: null as any });
+      }
+      const updated = await storage.updateCrmUser(targetUser.id, tid, { userId: authUserId });
+
+      const allRoles = await storage.getMasterRecords("systemRoles", tid);
+      const role = allRoles.find(r => r.id === updated.systemRoleId);
+
+      res.json({
+        status: "active",
+        crmUser: {
+          ...updated,
+          roleName: role?.name || null,
+          roleCode: (role as any)?.code || null,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/testing/seed-sample-data", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!(await requireTestingAccess(req, res))) return;
+      const tid = await getDefaultTenantId();
+      const authUserId = req.user?.claims?.sub;
+
+      const allCrmUsers = await storage.getCrmUsers(tid);
+      const allDoctors = await storage.getMasterRecords("doctors", tid);
+      const allBranches = await storage.getMasterRecords("branches", tid);
+      const allLeadStatuses = await storage.getMasterRecords("leadStatuses", tid);
+
+      const firstNames = ["Rajesh", "Sunita", "Amit", "Kavita", "Deepak", "Neha", "Suresh", "Priyanka", "Rohan", "Anita", "Vikram", "Geeta", "Manish", "Sarita", "Arun"];
+      const lastNames = ["Patel", "Shah", "Mehta", "Joshi", "Desai", "Kumar", "Sharma", "Singh", "Parmar", "Trivedi", "Rathod", "Soni", "Rao", "Chauhan", "Bhatt"];
+      const treatments = ["Knee Replacement", "Hip Replacement", "Spine Surgery", "Shoulder Surgery", "Fracture Treatment", "ACL Repair", "Sports Injury", "Arthroscopy"];
+      const sources = ["Facebook", "Google Ads", "Instagram", "Walk-in", "Referral", "Phone Call", "Website", "WhatsApp"];
+      const statuses = ["Raw Lead Captured", "Contacted", "Appointment Booked", "Consultation Done", "Follow-Up", "Converted"];
+      const priorities = ["High", "Normal", "Low", "Urgent"];
+      const phoneBase = "+9198";
+
+      const { type = "all", count = 10 } = req.body;
+      const created: Record<string, number> = { leads: 0, patients: 0, appointments: 0, tasks: 0, activities: 0 };
+      const limitedCount = Math.min(count, 50);
+
+      if (type === "all" || type === "leads") {
+        for (let i = 0; i < limitedCount; i++) {
+          const fn = firstNames[Math.floor(Math.random() * firstNames.length)];
+          const ln = lastNames[Math.floor(Math.random() * lastNames.length)];
+          const phone = phoneBase + String(Math.floor(10000000 + Math.random() * 89999999));
+          const status = statuses[Math.floor(Math.random() * statuses.length)];
+          const priority = priorities[Math.floor(Math.random() * priorities.length)];
+          const assignedUser = allCrmUsers.length > 0 ? allCrmUsers[Math.floor(Math.random() * allCrmUsers.length)] : null;
+          const doctor = allDoctors.length > 0 ? allDoctors[Math.floor(Math.random() * allDoctors.length)] : null;
+          const branch = allBranches.length > 0 ? allBranches[0] : null;
+
+          await storage.createLead({
+            tenantId: tid,
+            name: `${fn} ${ln}`,
+            phoneE164: phone,
+            email: `${fn.toLowerCase()}.${ln.toLowerCase()}${i}@gmail.com`,
+            status,
+            priority,
+            assignedCrmUserId: assignedUser?.id || undefined,
+            doctorId: doctor?.id || undefined,
+            branchId: branch?.id || undefined,
+            utmSource: sources[Math.floor(Math.random() * sources.length)],
+            notes: `Interested in ${treatments[Math.floor(Math.random() * treatments.length)]}`,
+            leadScore: Math.floor(Math.random() * 100),
+          });
+          created.leads++;
+        }
+      }
+
+      if (type === "all" || type === "patients") {
+        for (let i = 0; i < Math.min(limitedCount, 10); i++) {
+          const fn = firstNames[Math.floor(Math.random() * firstNames.length)];
+          const ln = lastNames[Math.floor(Math.random() * lastNames.length)];
+          const phone = phoneBase + String(Math.floor(10000000 + Math.random() * 89999999));
+          const genders = ["Male", "Female"];
+          const bloodGroups = ["A+", "B+", "O+", "AB+", "A-", "B-"];
+
+          await storage.createPatient({
+            tenantId: tid,
+            firstName: fn,
+            lastName: ln,
+            primaryPhone: phone,
+            email: `${fn.toLowerCase()}.${ln.toLowerCase()}${i}@gmail.com`,
+            gender: genders[Math.floor(Math.random() * genders.length)],
+            bloodGroup: bloodGroups[Math.floor(Math.random() * bloodGroups.length)],
+            uhid: `UHID-${String(1000 + i).padStart(5, "0")}`,
+            status: "Active",
+          });
+          created.patients++;
+        }
+      }
+
+      if (type === "all" || type === "appointments") {
+        const allLeads = await storage.getLeads(tid);
+        if (allLeads.length > 0 && allDoctors.length > 0) {
+          for (let i = 0; i < Math.min(limitedCount, 10); i++) {
+            const lead = allLeads[Math.floor(Math.random() * allLeads.length)];
+            const doctor = allDoctors[Math.floor(Math.random() * allDoctors.length)];
+            const branch = allBranches.length > 0 ? allBranches[0] : null;
+            const daysAhead = Math.floor(Math.random() * 14) + 1;
+            const apptDate = new Date();
+            apptDate.setDate(apptDate.getDate() + daysAhead);
+            const hours = 9 + Math.floor(Math.random() * 8);
+            const startTime = `${String(hours).padStart(2, "0")}:00`;
+            const endTime = `${String(hours + 1).padStart(2, "0")}:00`;
+            const statuses = ["Scheduled", "Confirmed", "Completed", "No Show"];
+
+            await storage.createAppointment({
+              tenantId: tid,
+              leadId: lead.id,
+              doctorId: doctor.id,
+              branchId: branch?.id || undefined,
+              appointmentDate: apptDate,
+              startTime,
+              endTime,
+              status: statuses[Math.floor(Math.random() * statuses.length)],
+              notes: `Consultation for ${treatments[Math.floor(Math.random() * treatments.length)]}`,
+              bookedBy: authUserId || undefined,
+            });
+            created.appointments++;
+          }
+        }
+      }
+
+      if (type === "all" || type === "tasks") {
+        const allLeads = await storage.getLeads(tid);
+        if (allLeads.length > 0) {
+          const taskTitles = ["Follow up call", "Send treatment info", "Schedule appointment", "Insurance verification", "Pre-op assessment", "Cost estimate", "Doctor consultation", "MRI review"];
+          for (let i = 0; i < Math.min(limitedCount, 10); i++) {
+            const lead = allLeads[Math.floor(Math.random() * allLeads.length)];
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + Math.floor(Math.random() * 7) + 1);
+            const assignedUser = allCrmUsers.length > 0 ? allCrmUsers[Math.floor(Math.random() * allCrmUsers.length)] : null;
+
+            await storage.createTask({
+              tenantId: tid,
+              leadId: lead.id,
+              title: taskTitles[Math.floor(Math.random() * taskTitles.length)],
+              description: `Task for lead ${lead.name}`,
+              priority: priorities[Math.floor(Math.random() * priorities.length)],
+              dueDate,
+              assignedCrmUserId: assignedUser?.id || undefined,
+              status: "Pending",
+              createdBy: authUserId || undefined,
+            });
+            created.tasks++;
+          }
+        }
+      }
+
+      res.json({ message: "Sample data created", created });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/testing/clear-data", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!(await requireTestingAccess(req, res))) return;
+      const tid = await getDefaultTenantId();
+      const { type } = req.body;
+
+      if (type === "leads" || type === "all") {
+        await db.delete(activities).where(eq(activities.tenantId, tid));
+        await db.delete(tasks).where(eq(tasks.tenantId, tid));
+        await db.delete(appointments).where(eq(appointments.tenantId, tid));
+        await db.delete(leads).where(eq(leads.tenantId, tid));
+      }
+      if (type === "patients" || type === "all") {
+        await db.delete(patientContactLinks).where(eq(patientContactLinks.tenantId, tid));
+        await db.delete(contacts).where(eq(contacts.tenantId, tid));
+        await db.delete(patients).where(eq(patients.tenantId, tid));
+      }
+      if (type === "appointments" || type === "all") {
+        await db.delete(appointments).where(eq(appointments.tenantId, tid));
+      }
+
+      res.json({ message: `Cleared ${type} data` });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 

@@ -16,6 +16,7 @@ import MasterData from "@/pages/MasterData";
 import TeamManagement from "@/pages/TeamManagement";
 import AppointmentsPage from "@/pages/AppointmentsPage";
 import PendingApproval from "@/pages/PendingApproval";
+import TestingInterface from "@/pages/TestingInterface";
 
 function RoleGate({ page, children }: { page: string; children: React.ReactNode }) {
   const { isLoading, isRegistered, canViewPage } = useCurrentUser();
@@ -67,6 +68,12 @@ function Router() {
       <Route path="/masters">
         {isAuthenticated ? (
           <RoleGate page="masters"><MasterData /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/testing">
+        {isAuthenticated ? (
+          <RoleGate page="testing"><TestingInterface /></RoleGate>
         ) : <Landing />}
       </Route>
 

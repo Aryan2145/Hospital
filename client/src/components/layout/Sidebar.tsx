@@ -10,6 +10,7 @@ import {
   Database,
   UserCog,
   Shield,
+  FlaskConical,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -25,6 +26,7 @@ const allNavItems = [
 const systemItems = [
   { icon: UserCog, label: "Team", href: "/team", page: "team" },
   { icon: Database, label: "Master Data", href: "/masters", page: "masters" },
+  { icon: FlaskConical, label: "Testing", href: "/testing", page: "testing" },
 ];
 
 export function Sidebar() {
