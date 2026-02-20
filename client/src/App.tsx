@@ -4,12 +4,43 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
+import { useAuth } from "@/hooks/use-auth";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+
+// Pages
+import Landing from "@/pages/Landing";
+import Dashboard from "@/pages/Dashboard";
+import LeadsWorkspace from "@/pages/LeadsWorkspace";
+
+function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) return <div className="h-screen flex items-center justify-center"><LoadingSpinner /></div>;
+  if (!isAuthenticated) return <Landing />;
+
+  return <Component />;
+}
 
 function Router() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) return <div className="h-screen flex items-center justify-center"><LoadingSpinner /></div>;
+
   return (
     <Switch>
-      {/* Add pages below */}
-      {/* <Route path="/" component={Home}/> */}
+      <Route path="/">
+        {isAuthenticated ? <Dashboard /> : <Landing />}
+      </Route>
+      
+      <Route path="/leads">
+         {isAuthenticated ? <LeadsWorkspace /> : <Landing />}
+      </Route>
+
+      <Route path="/api/login">
+        {/* Redirect handled by hook/page logic or backend directly, but fallback here */}
+        <Landing />
+      </Route>
+
       {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>
