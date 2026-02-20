@@ -73,6 +73,11 @@ export interface IStorage {
   getEpisode(id: number, tenantId: number): Promise<Episode | undefined>;
   createEpisode(data: InsertEpisode): Promise<Episode>;
   updateEpisode(id: number, tenantId: number, data: Partial<InsertEpisode>): Promise<Episode>;
+  // Campaigns
+  getCampaigns(tenantId: number): Promise<Campaign[]>;
+  getCampaign(id: number, tenantId: number): Promise<Campaign | undefined>;
+  createCampaign(data: InsertCampaign): Promise<Campaign>;
+  updateCampaign(id: number, tenantId: number, data: Partial<InsertCampaign>): Promise<Campaign>;
   // Audit Logs
   getAuditLogs(tenantId: number, entityType?: string, entityId?: number): Promise<AuditLog[]>;
   createAuditLog(data: InsertAuditLog): Promise<AuditLog>;
@@ -392,6 +397,31 @@ export class DatabaseStorage implements IStorage {
       .returning();
     if (!ep) throw new Error("Episode not found");
     return ep;
+  }
+
+  // --- Campaigns ---
+  async getCampaigns(tenantId: number): Promise<Campaign[]> {
+    return await db.select().from(campaigns).where(eq(campaigns.tenantId, tenantId));
+  }
+
+  async getCampaign(id: number, tenantId: number): Promise<Campaign | undefined> {
+    const [c] = await db.select().from(campaigns)
+      .where(and(eq(campaigns.id, id), eq(campaigns.tenantId, tenantId)));
+    return c;
+  }
+
+  async createCampaign(data: InsertCampaign): Promise<Campaign> {
+    const [c] = await db.insert(campaigns).values(data).returning();
+    return c;
+  }
+
+  async updateCampaign(id: number, tenantId: number, data: Partial<InsertCampaign>): Promise<Campaign> {
+    const [c] = await db.update(campaigns)
+      .set(data)
+      .where(and(eq(campaigns.id, id), eq(campaigns.tenantId, tenantId)))
+      .returning();
+    if (!c) throw new Error("Campaign not found");
+    return c;
   }
 
   // --- Audit Logs ---

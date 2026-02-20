@@ -81,6 +81,76 @@ interface ImportLog {
   completedAt: string | null;
 }
 
+interface ExtraField {
+  key: string;
+  label: string;
+  type: "text" | "number" | "boolean" | "select";
+  options?: string[];
+}
+
+const EXTRA_FIELDS: Record<string, ExtraField[]> = {
+  leadStatuses: [
+    { key: "stageOrder", label: "Stage Order", type: "number" },
+    { key: "isTerminal", label: "Is Terminal", type: "boolean" },
+    { key: "stageGroup", label: "Stage Group", type: "select", options: ["New", "Working", "Qualified", "Converted", "Closed"] },
+  ],
+  leadSources: [
+    { key: "categoryId", label: "Category ID", type: "number" },
+  ],
+  states: [
+    { key: "countryId", label: "Country ID", type: "number" },
+  ],
+  cities: [
+    { key: "stateId", label: "State ID", type: "number" },
+  ],
+  areas: [
+    { key: "cityId", label: "City ID", type: "number" },
+    { key: "pinCode", label: "PIN Code", type: "text" },
+  ],
+  branches: [
+    { key: "organisationId", label: "Organisation ID", type: "number" },
+    { key: "cityId", label: "City ID", type: "number" },
+    { key: "address", label: "Address", type: "text" },
+    { key: "phone", label: "Phone", type: "text" },
+    { key: "email", label: "Email", type: "text" },
+  ],
+  doctors: [
+    { key: "speciality", label: "Speciality", type: "text" },
+    { key: "qualification", label: "Qualification", type: "text" },
+    { key: "registrationNo", label: "Registration No", type: "text" },
+    { key: "branchId", label: "Branch ID", type: "number" },
+    { key: "departmentId", label: "Department ID", type: "number" },
+    { key: "consultationFee", label: "Consultation Fee", type: "number" },
+  ],
+  opdTimings: [
+    { key: "doctorId", label: "Doctor ID", type: "number" },
+    { key: "dayOfWeek", label: "Day of Week", type: "select", options: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
+    { key: "startTime", label: "Start Time", type: "text" },
+    { key: "endTime", label: "End Time", type: "text" },
+    { key: "maxPatients", label: "Max Patients", type: "number" },
+    { key: "slotDuration", label: "Slot Duration (min)", type: "number" },
+  ],
+  templates: [
+    { key: "category", label: "Category", type: "select", options: ["SMS", "Email", "WhatsApp", "Push"] },
+    { key: "subject", label: "Subject", type: "text" },
+    { key: "body", label: "Body", type: "text" },
+  ],
+  holidays: [
+    { key: "date", label: "Date", type: "text" },
+    { key: "isRecurring", label: "Is Recurring", type: "boolean" },
+  ],
+  slaRules: [
+    { key: "entity", label: "Entity", type: "text" },
+    { key: "metric", label: "Metric", type: "text" },
+    { key: "thresholdMinutes", label: "Threshold (minutes)", type: "number" },
+    { key: "escalationLevel", label: "Escalation Level", type: "number" },
+  ],
+  conversionStages: [
+    { key: "stageOrder", label: "Stage Order", type: "number" },
+    { key: "isTerminal", label: "Is Terminal", type: "boolean" },
+  ],
+};
+
 export default function MasterData() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -90,7 +160,7 @@ export default function MasterData() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<MasterRecord | null>(null);
-  const [formData, setFormData] = useState({ code: "", name: "", status: "Active", displayOrder: 0 });
+  const [formData, setFormData] = useState<Record<string, any>>({ code: "", name: "", status: "Active", displayOrder: 0 });
   const [showImportResult, setShowImportResult] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [showImportLogs, setShowImportLogs] = useState(false);
@@ -191,19 +261,29 @@ export default function MasterData() {
     },
   });
 
+  const extraFields = selectedTable ? (EXTRA_FIELDS[selectedTable] || []) : [];
+
   function resetForm() {
-    setFormData({ code: "", name: "", status: "Active", displayOrder: 0 });
+    const base: Record<string, any> = { code: "", name: "", status: "Active", displayOrder: 0 };
+    extraFields.forEach((f) => {
+      base[f.key] = f.type === "number" ? 0 : f.type === "boolean" ? false : "";
+    });
+    setFormData(base);
     setEditingRecord(null);
   }
 
   function handleEdit(record: MasterRecord) {
     setEditingRecord(record);
-    setFormData({
+    const base: Record<string, any> = {
       code: record.code,
       name: record.name,
       status: record.status,
       displayOrder: record.displayOrder ?? 0,
+    };
+    extraFields.forEach((f) => {
+      base[f.key] = record[f.key] ?? (f.type === "number" ? 0 : f.type === "boolean" ? false : "");
     });
+    setFormData(base);
     setIsDialogOpen(true);
   }
 
@@ -450,19 +530,22 @@ export default function MasterData() {
                       <TableHead>Name</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Order</TableHead>
+                      {extraFields.map((f) => (
+                        <TableHead key={f.key}>{f.label}</TableHead>
+                      ))}
                       <TableHead className="w-[100px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {isLoading ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={5 + extraFields.length} className="text-center py-8 text-muted-foreground">
                           Loading...
                         </TableCell>
                       </TableRow>
                     ) : filteredRecords.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={5 + extraFields.length} className="text-center py-8 text-muted-foreground">
                           No records found. Click "Add" to create one.
                         </TableCell>
                       </TableRow>
@@ -477,6 +560,13 @@ export default function MasterData() {
                             </Badge>
                           </TableCell>
                           <TableCell>{record.displayOrder ?? 0}</TableCell>
+                          {extraFields.map((f) => (
+                            <TableCell key={f.key} className="text-sm">
+                              {f.type === "boolean"
+                                ? (record[f.key] ? "Yes" : "No")
+                                : (record[f.key] ?? "-")}
+                            </TableCell>
+                          ))}
                           <TableCell>
                             <div className="flex items-center gap-1">
                               <Button
@@ -562,6 +652,58 @@ export default function MasterData() {
                 data-testid="input-display-order"
               />
             </div>
+
+            {extraFields.length > 0 && (
+              <div className="border-t pt-4 mt-2">
+                <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Additional Fields</p>
+                <div className="space-y-3">
+                  {extraFields.map((field) => (
+                    <div key={field.key}>
+                      <label className="text-sm font-medium">{field.label}</label>
+                      {field.type === "boolean" ? (
+                        <Select
+                          value={formData[field.key] ? "true" : "false"}
+                          onValueChange={(val) => setFormData({ ...formData, [field.key]: val === "true" })}
+                        >
+                          <SelectTrigger data-testid={`select-${field.key}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="true">Yes</SelectItem>
+                            <SelectItem value="false">No</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : field.type === "select" && field.options ? (
+                        <Select
+                          value={formData[field.key] || ""}
+                          onValueChange={(val) => setFormData({ ...formData, [field.key]: val })}
+                        >
+                          <SelectTrigger data-testid={`select-${field.key}`}>
+                            <SelectValue placeholder={`Select ${field.label}`} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {field.options.map((opt) => (
+                              <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          type={field.type === "number" ? "number" : "text"}
+                          value={formData[field.key] ?? ""}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            [field.key]: field.type === "number" ? (parseInt(e.target.value) || 0) : e.target.value,
+                          })}
+                          placeholder={field.label}
+                          data-testid={`input-${field.key}`}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)} data-testid="button-cancel">

@@ -11,6 +11,8 @@ import {
   UserCog,
   Shield,
   FlaskConical,
+  Megaphone,
+  FileText,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -21,6 +23,8 @@ const allNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/", page: "dashboard" },
   { icon: Users, label: "Leads", href: "/leads", page: "leads" },
   { icon: Calendar, label: "Appointments", href: "/appointments", page: "appointments" },
+  { icon: Megaphone, label: "Campaigns", href: "/campaigns", page: "campaigns" },
+  { icon: FileText, label: "Transactions", href: "/transactions", page: "transactions" },
 ];
 
 const systemItems = [

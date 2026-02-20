@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db } from "./db";
@@ -1545,6 +1545,52 @@ export async function registerRoutes(
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =============================================
+  // CAMPAIGN ROUTES
+  // =============================================
+  app.get("/api/campaigns", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const result = await storage.getCampaigns(tid);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/campaigns/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const c = await storage.getCampaign(Number(req.params.id), tid);
+      if (!c) return res.status(404).json({ message: "Campaign not found" });
+      res.json(c);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/campaigns", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertCampaignSchema.parse({ ...req.body, tenantId: tid });
+      const c = await storage.createCampaign(parsed);
+      res.status(201).json(c);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/campaigns/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const parsed = insertCampaignSchema.partial().parse(req.body);
+      const c = await storage.updateCampaign(Number(req.params.id), tid, parsed);
+      res.json(c);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
     }
   });
 

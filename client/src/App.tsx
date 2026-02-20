@@ -15,6 +15,8 @@ import LeadDetailPage from "@/pages/LeadDetailPage";
 import MasterData from "@/pages/MasterData";
 import TeamManagement from "@/pages/TeamManagement";
 import AppointmentsPage from "@/pages/AppointmentsPage";
+import CampaignsPage from "@/pages/CampaignsPage";
+import TransactionsPage from "@/pages/TransactionsPage";
 import PendingApproval from "@/pages/PendingApproval";
 import TestingInterface from "@/pages/TestingInterface";
 
@@ -62,6 +64,18 @@ function Router() {
       <Route path="/team">
         {isAuthenticated ? (
           <RoleGate page="team"><TeamManagement /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/campaigns">
+        {isAuthenticated ? (
+          <RoleGate page="campaigns"><CampaignsPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/transactions">
+        {isAuthenticated ? (
+          <RoleGate page="transactions"><TransactionsPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

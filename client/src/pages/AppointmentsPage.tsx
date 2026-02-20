@@ -1,17 +1,19 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { useAppointments, useDoctors, useAppointmentAction } from "@/hooks/use-leads";
+import { useAppointments, useDoctors, useAppointmentAction, useCreateAppointment, useDoctorAvailability } from "@/hooks/use-leads";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useState, useMemo } from "react";
-import { Calendar, Clock, User, Hash, CheckCircle2, XCircle, RotateCcw, AlertTriangle, Stethoscope } from "lucide-react";
+import { Calendar, Clock, User, Hash, CheckCircle2, XCircle, RotateCcw, AlertTriangle, Stethoscope, Plus, Loader2 } from "lucide-react";
 
 const STATUS_COLORS: Record<string, string> = {
   "Scheduled": "bg-blue-100 text-blue-700",
@@ -24,6 +26,7 @@ const STATUS_COLORS: Record<string, string> = {
 export default function AppointmentsPage() {
   const { toast } = useToast();
   const appointmentAction = useAppointmentAction();
+  const createAppointment = useCreateAppointment();
   const { data: doctorsList } = useDoctors();
 
   const [filterDoctor, setFilterDoctor] = useState("");
@@ -40,6 +43,66 @@ export default function AppointmentsPage() {
   const { data: appointments, isLoading } = useAppointments(
     Object.keys(filters).length > 0 ? filters : undefined
   );
+
+  const { data: leadsList } = useQuery<any[]>({
+    queryKey: ["/api/leads"],
+  });
+  const { data: patientsList } = useQuery<any[]>({
+    queryKey: ["/api/patients"],
+  });
+  const { data: appointmentTypes } = useQuery<any[]>({
+    queryKey: ["/api/masters/appointmentTypes"],
+  });
+
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [bookDoctorId, setBookDoctorId] = useState("");
+  const [bookDate, setBookDate] = useState("");
+  const [bookSlot, setBookSlot] = useState("");
+  const [bookLeadId, setBookLeadId] = useState("");
+  const [bookPatientId, setBookPatientId] = useState("");
+  const [bookApptTypeId, setBookApptTypeId] = useState("");
+  const [bookNotes, setBookNotes] = useState("");
+
+  const availability = useDoctorAvailability(
+    bookDoctorId ? Number(bookDoctorId) : null,
+    bookDate || null
+  );
+
+  const resetBookingForm = () => {
+    setBookDoctorId("");
+    setBookDate("");
+    setBookSlot("");
+    setBookLeadId("");
+    setBookPatientId("");
+    setBookApptTypeId("");
+    setBookNotes("");
+  };
+
+  const handleBookAppointment = () => {
+    if (!bookDoctorId || !bookDate) {
+      toast({ title: "Doctor and date are required", variant: "destructive" });
+      return;
+    }
+    const data: any = {
+      doctorId: Number(bookDoctorId),
+      appointmentDate: bookDate,
+      status: "Scheduled",
+    };
+    if (bookSlot) data.startTime = bookSlot;
+    if (bookLeadId && bookLeadId !== "none") data.leadId = Number(bookLeadId);
+    if (bookPatientId && bookPatientId !== "none") data.patientId = Number(bookPatientId);
+    if (bookApptTypeId && bookApptTypeId !== "none") data.appointmentTypeId = Number(bookApptTypeId);
+    if (bookNotes) data.notes = bookNotes;
+
+    createAppointment.mutate(data, {
+      onSuccess: () => {
+        toast({ title: "Appointment booked successfully" });
+        setBookingOpen(false);
+        resetBookingForm();
+      },
+      onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    });
+  };
 
   const [actionDialog, setActionDialog] = useState<{ type: string; appt: any } | null>(null);
   const [consultNotes, setConsultNotes] = useState("");
@@ -93,9 +156,15 @@ export default function AppointmentsPage() {
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
         <div className="p-8 max-w-7xl mx-auto space-y-6">
-          <div>
-            <h2 className="text-3xl font-bold tracking-tight text-foreground" data-testid="text-appointments-title">Appointments</h2>
-            <p className="text-muted-foreground mt-1">Manage patient appointments and consultations.</p>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h2 className="text-3xl font-bold tracking-tight text-foreground" data-testid="text-appointments-title">Appointments</h2>
+              <p className="text-muted-foreground mt-1">Manage patient appointments and consultations.</p>
+            </div>
+            <Button onClick={() => setBookingOpen(true)} data-testid="button-book-new-appointment">
+              <Plus className="w-4 h-4 mr-2" />
+              Book Appointment
+            </Button>
           </div>
 
           <Card className="p-4">
@@ -370,6 +439,148 @@ export default function AppointmentsPage() {
               >
                 <AlertTriangle className="w-4 h-4 mr-2" />
                 Confirm No Show
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={bookingOpen} onOpenChange={(open) => { if (!open) { setBookingOpen(false); resetBookingForm(); } }}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Book New Appointment</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Doctor *</Label>
+                <Select value={bookDoctorId} onValueChange={(v) => { setBookDoctorId(v); setBookSlot(""); }}>
+                  <SelectTrigger data-testid="book-select-doctor">
+                    <SelectValue placeholder="Select doctor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {doctorsList?.map((d: any) => (
+                      <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Date *</Label>
+                <Input
+                  type="date"
+                  value={bookDate}
+                  onChange={(e) => { setBookDate(e.target.value); setBookSlot(""); }}
+                  min={new Date().toISOString().split("T")[0]}
+                  data-testid="book-input-date"
+                />
+              </div>
+
+              {bookDoctorId && bookDate && availability.data && (
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground">Time Slot</Label>
+                  {!availability.data.available ? (
+                    <p className="text-xs text-destructive mt-1">{availability.data.reason || "Doctor not available on this date"}</p>
+                  ) : availability.data.slots.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      {availability.data.slots.map((slot) => (
+                        <Button
+                          key={slot.startTime}
+                          variant={bookSlot === slot.startTime ? "default" : "outline"}
+                          size="sm"
+                          className="text-xs"
+                          disabled={slot.availableCount <= 0}
+                          onClick={() => setBookSlot(slot.startTime)}
+                          data-testid={`book-slot-${slot.startTime}`}
+                        >
+                          <Clock className="w-3 h-3 mr-1" />
+                          {slot.startTime} - {slot.endTime}
+                          <Badge variant="outline" className="ml-1 text-[10px]">{slot.availableCount} left</Badge>
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-xs text-muted-foreground mt-1">No specific slots configured. Enter time manually:</p>
+                      <Input
+                        type="time"
+                        value={bookSlot}
+                        onChange={(e) => setBookSlot(e.target.value)}
+                        className="mt-1"
+                        data-testid="book-input-time-manual"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Link to Lead (optional)</Label>
+                <Select value={bookLeadId} onValueChange={setBookLeadId}>
+                  <SelectTrigger data-testid="book-select-lead">
+                    <SelectValue placeholder="Select lead (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No lead</SelectItem>
+                    {leadsList?.map((l: any) => (
+                      <SelectItem key={l.id} value={String(l.id)}>
+                        {l.name} {l.phone ? `(${l.phone})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Link to Patient (optional)</Label>
+                <Select value={bookPatientId} onValueChange={setBookPatientId}>
+                  <SelectTrigger data-testid="book-select-patient">
+                    <SelectValue placeholder="Select patient (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No patient</SelectItem>
+                    {patientsList?.map((p: any) => (
+                      <SelectItem key={p.id} value={String(p.id)}>
+                        {p.firstName} {p.lastName} {p.phone ? `(${p.phone})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Appointment Type (optional)</Label>
+                <Select value={bookApptTypeId} onValueChange={setBookApptTypeId}>
+                  <SelectTrigger data-testid="book-select-type">
+                    <SelectValue placeholder="Select type (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {appointmentTypes?.filter((t: any) => t.status === "Active").map((t: any) => (
+                      <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Notes (optional)</Label>
+                <Textarea
+                  value={bookNotes}
+                  onChange={(e) => setBookNotes(e.target.value)}
+                  placeholder="Appointment notes..."
+                  rows={3}
+                  data-testid="book-input-notes"
+                />
+              </div>
+
+              <Button
+                onClick={handleBookAppointment}
+                className="w-full"
+                disabled={createAppointment.isPending || !bookDoctorId || !bookDate}
+                data-testid="button-confirm-book"
+              >
+                {createAppointment.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calendar className="w-4 h-4 mr-2" />}
+                Book Appointment
               </Button>
             </div>
           </DialogContent>
