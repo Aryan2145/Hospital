@@ -2,11 +2,17 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db } from "./db";
 import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations } from "@shared/schema";
+import multer from "multer";
+import { parse } from "csv-parse/sync";
+import { stringify } from "csv-stringify/sync";
+import { desc, eq, and } from "drizzle-orm";
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 async function seedDatabase() {
   try {
@@ -312,6 +318,12 @@ export async function registerRoutes(
     }
   });
 
+  // Helper: get the default tenant ID
+  async function getDefaultTenantId(): Promise<number> {
+    const [t] = await db.select({ id: tenants.id }).from(tenants).limit(1);
+    return t?.id ?? 1;
+  }
+
   // --- Generic Master CRUD ---
   app.get(api.masters.categories.path, isAuthenticated, async (_req, res) => {
     res.json(MASTER_CATEGORIES);
@@ -323,10 +335,149 @@ export async function registerRoutes(
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
     try {
-      const records = await storage.getMasterRecords(tableName, 1);
+      const tid = await getDefaultTenantId();
+      const records = await storage.getMasterRecords(tableName, tid);
       res.json(records);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
+    }
+  });
+
+  // --- CSV Export (Download) --- must be before /:tableName/:id to avoid conflict
+  app.get("/api/masters/:tableName/export", isAuthenticated, async (req, res) => {
+    const tableName = req.params.tableName as string;
+    if (!MASTER_TABLE_REGISTRY[tableName]) {
+      return res.status(400).json({ message: `Unknown master table: ${tableName}` });
+    }
+    try {
+      const tid = await getDefaultTenantId();
+      const records = await storage.getMasterRecords(tableName, tid);
+      const csvData = stringify(records.map(r => ({
+        code: r.code,
+        name: r.name,
+        status: r.status,
+        displayOrder: r.displayOrder ?? 0,
+      })), { header: true, columns: ["code", "name", "status", "displayOrder"] });
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${tableName}_export.csv"`);
+      res.send(csvData);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/masters/:tableName/template", isAuthenticated, async (req, res) => {
+    const tableName = req.params.tableName as string;
+    if (!MASTER_TABLE_REGISTRY[tableName]) {
+      return res.status(400).json({ message: `Unknown master table: ${tableName}` });
+    }
+    const csvData = stringify([
+      { code: "SAMPLE_CODE", name: "Sample Name", status: "Active", displayOrder: 1 },
+    ], { header: true, columns: ["code", "name", "status", "displayOrder"] });
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${tableName}_template.csv"`);
+    res.send(csvData);
+  });
+
+  app.get("/api/masters/:tableName/import-logs", isAuthenticated, async (req, res) => {
+    const tableName = req.params.tableName as string;
+    if (!MASTER_TABLE_REGISTRY[tableName]) {
+      return res.status(400).json({ message: `Unknown master table: ${tableName}` });
+    }
+    try {
+      const tid = await getDefaultTenantId();
+      const logs = await db.select().from(bulkImportLogs)
+        .where(and(eq(bulkImportLogs.tableName, tableName), eq(bulkImportLogs.tenantId, tid)))
+        .orderBy(desc(bulkImportLogs.startedAt))
+        .limit(20);
+      res.json(logs);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/masters/:tableName/import", isAuthenticated, upload.single("file"), async (req, res) => {
+    const tableName = req.params.tableName as string;
+    if (!MASTER_TABLE_REGISTRY[tableName]) {
+      return res.status(400).json({ message: `Unknown master table: ${tableName}` });
+    }
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const tenantId = await getDefaultTenantId();
+    const fileName = req.file.originalname;
+
+    try {
+      const csvContent = req.file.buffer.toString("utf-8");
+      const rows = parse(csvContent, { columns: true, skip_empty_lines: true, trim: true }) as Record<string, string>[];
+
+      const existingRecords = await storage.getMasterRecords(tableName, tenantId);
+      const existingCodes = new Set(existingRecords.map(r => r.code?.toUpperCase()));
+
+      let successCount = 0;
+      let failureCount = 0;
+      let duplicateCount = 0;
+      const errors: { row: number; message: string }[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const code = (row.code || "").trim();
+        const name = (row.name || "").trim();
+        const status = (row.status || "Active").trim();
+        const displayOrder = parseInt(row.displayOrder || "0") || 0;
+
+        if (!code || !name) {
+          failureCount++;
+          errors.push({ row: i + 2, message: "Missing required field: code or name" });
+          continue;
+        }
+
+        if (existingCodes.has(code.toUpperCase())) {
+          duplicateCount++;
+          errors.push({ row: i + 2, message: `Duplicate code: ${code}` });
+          continue;
+        }
+
+        try {
+          await storage.createMasterRecord(tableName, {
+            tenantId,
+            code,
+            name,
+            status,
+            displayOrder,
+          });
+          existingCodes.add(code.toUpperCase());
+          successCount++;
+        } catch (err: any) {
+          failureCount++;
+          errors.push({ row: i + 2, message: err.message });
+        }
+      }
+
+      const [importLog] = await db.insert(bulkImportLogs).values({
+        tenantId,
+        tableName,
+        fileName,
+        totalRows: rows.length,
+        successCount,
+        failureCount,
+        duplicateCount,
+        status: failureCount === 0 && duplicateCount === 0 ? "Completed" : "Completed with Issues",
+        errorDetails: errors.length > 0 ? errors : null,
+        completedAt: new Date(),
+      }).returning();
+
+      res.json({
+        importLogId: importLog.id,
+        totalRows: rows.length,
+        successCount,
+        failureCount,
+        duplicateCount,
+        errors: errors.slice(0, 20),
+      });
+    } catch (err: any) {
+      res.status(400).json({ message: `CSV parse error: ${err.message}` });
     }
   });
 
@@ -336,7 +487,8 @@ export async function registerRoutes(
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
-    const record = await storage.getMasterRecord(tableName, Number(id), 1);
+    const tid = await getDefaultTenantId();
+    const record = await storage.getMasterRecord(tableName, Number(id), tid);
     if (!record) return res.status(404).json({ message: "Record not found" });
     res.json(record);
   });
@@ -347,7 +499,8 @@ export async function registerRoutes(
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
     try {
-      const record = await storage.createMasterRecord(tableName, { ...req.body, tenantId: 1 });
+      const tid = await getDefaultTenantId();
+      const record = await storage.createMasterRecord(tableName, { ...req.body, tenantId: tid });
       res.status(201).json(record);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -361,7 +514,8 @@ export async function registerRoutes(
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
     try {
-      const record = await storage.updateMasterRecord(tableName, Number(id), req.body, 1);
+      const tid = await getDefaultTenantId();
+      const record = await storage.updateMasterRecord(tableName, Number(id), req.body, tid);
       res.json(record);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -375,7 +529,8 @@ export async function registerRoutes(
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
     try {
-      await storage.deleteMasterRecord(tableName, Number(id), 1);
+      const tid = await getDefaultTenantId();
+      await storage.deleteMasterRecord(tableName, Number(id), tid);
       res.status(204).send();
     } catch (err: any) {
       res.status(400).json({ message: err.message });

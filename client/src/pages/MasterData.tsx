@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -39,6 +39,13 @@ import {
   ChevronRight,
   Database,
   ArrowLeft,
+  Upload,
+  Download,
+  FileDown,
+  History,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
 } from "lucide-react";
 
 interface MasterRecord {
@@ -51,6 +58,29 @@ interface MasterRecord {
   [key: string]: any;
 }
 
+interface ImportResult {
+  importLogId: number;
+  totalRows: number;
+  successCount: number;
+  failureCount: number;
+  duplicateCount: number;
+  errors: { row: number; message: string }[];
+}
+
+interface ImportLog {
+  id: number;
+  tableName: string;
+  fileName: string;
+  totalRows: number;
+  successCount: number;
+  failureCount: number;
+  duplicateCount: number;
+  status: string;
+  errorDetails: any;
+  startedAt: string;
+  completedAt: string | null;
+}
+
 export default function MasterData() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -61,6 +91,10 @@ export default function MasterData() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<MasterRecord | null>(null);
   const [formData, setFormData] = useState({ code: "", name: "", status: "Active", displayOrder: 0 });
+  const [showImportResult, setShowImportResult] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [showImportLogs, setShowImportLogs] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: records = [], isLoading } = useQuery<MasterRecord[]>({
     queryKey: ["/api/masters", selectedTable],
@@ -71,6 +105,17 @@ export default function MasterData() {
       return res.json();
     },
     enabled: !!selectedTable,
+  });
+
+  const { data: importLogs = [] } = useQuery<ImportLog[]>({
+    queryKey: ["/api/masters", selectedTable, "import-logs"],
+    queryFn: async () => {
+      if (!selectedTable) return [];
+      const res = await fetch(`/api/masters/${selectedTable}/import-logs`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+    enabled: !!selectedTable && showImportLogs,
   });
 
   const createMutation = useMutation({
@@ -116,6 +161,36 @@ export default function MasterData() {
     },
   });
 
+  const importMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/masters/${selectedTable}/import`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Import failed");
+      }
+      return res.json() as Promise<ImportResult>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/masters", selectedTable] });
+      queryClient.invalidateQueries({ queryKey: ["/api/masters", selectedTable, "import-logs"] });
+      setImportResult(result);
+      setShowImportResult(true);
+      toast({
+        title: "Import Complete",
+        description: `${result.successCount} of ${result.totalRows} records imported`,
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Import Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   function resetForm() {
     setFormData({ code: "", name: "", status: "Active", displayOrder: 0 });
     setEditingRecord(null);
@@ -138,6 +213,22 @@ export default function MasterData() {
     } else {
       createMutation.mutate(formData);
     }
+  }
+
+  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      importMutation.mutate(file);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function handleExport() {
+    window.open(`/api/masters/${selectedTable}/export`, "_blank");
+  }
+
+  function handleTemplateDownload() {
+    window.open(`/api/masters/${selectedTable}/template`, "_blank");
   }
 
   const filteredRecords = records.filter(
@@ -239,6 +330,7 @@ export default function MasterData() {
                     setSelectedTable(null);
                     setSelectedTableLabel("");
                     setSearchTerm("");
+                    setShowImportLogs(false);
                   }}
                   data-testid="button-back-tables"
                 >
@@ -265,7 +357,90 @@ export default function MasterData() {
                   <Plus className="h-4 w-4 mr-2" />
                   Add {selectedTableLabel}
                 </Button>
+                <input
+                  type="file"
+                  accept=".csv"
+                  ref={fileInputRef}
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  data-testid="input-file-upload"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={importMutation.isPending}
+                  data-testid="button-import-csv"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {importMutation.isPending ? "Importing..." : "Import CSV"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleExport}
+                  data-testid="button-export-csv"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleTemplateDownload}
+                  data-testid="button-download-template"
+                >
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Template
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowImportLogs(!showImportLogs)}
+                  data-testid="button-import-logs"
+                >
+                  <History className="h-4 w-4 mr-2" />
+                  Logs
+                </Button>
               </div>
+
+              {showImportLogs && (
+                <Card className="mb-4 p-4">
+                  <h3 className="font-semibold mb-3">Import History</h3>
+                  {importLogs.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No import history yet.</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>File</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Total</TableHead>
+                          <TableHead>Success</TableHead>
+                          <TableHead>Duplicates</TableHead>
+                          <TableHead>Failures</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {importLogs.map((log) => (
+                          <TableRow key={log.id} data-testid={`row-import-log-${log.id}`}>
+                            <TableCell className="text-sm">{log.fileName}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {new Date(log.startedAt).toLocaleString()}
+                            </TableCell>
+                            <TableCell>{log.totalRows}</TableCell>
+                            <TableCell className="text-green-600">{log.successCount}</TableCell>
+                            <TableCell className="text-amber-600">{log.duplicateCount}</TableCell>
+                            <TableCell className="text-red-600">{log.failureCount}</TableCell>
+                            <TableCell>
+                              <Badge variant={log.status === "Completed" ? "default" : "secondary"}>
+                                {log.status}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </Card>
+              )}
 
               <Card>
                 <Table>
@@ -398,6 +573,67 @@ export default function MasterData() {
               data-testid="button-save"
             >
               {createMutation.isPending || updateMutation.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showImportResult} onOpenChange={setShowImportResult}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle data-testid="text-import-result-title">Import Results</DialogTitle>
+          </DialogHeader>
+          {importResult && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <Card className="p-3">
+                  <div className="flex items-center gap-2">
+                    <Database className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Total Rows</span>
+                  </div>
+                  <p className="text-xl font-semibold mt-1" data-testid="text-total-rows">{importResult.totalRows}</p>
+                </Card>
+                <Card className="p-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <span className="text-sm text-muted-foreground">Success</span>
+                  </div>
+                  <p className="text-xl font-semibold mt-1 text-green-600" data-testid="text-success-count">{importResult.successCount}</p>
+                </Card>
+                <Card className="p-3">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <span className="text-sm text-muted-foreground">Duplicates</span>
+                  </div>
+                  <p className="text-xl font-semibold mt-1 text-amber-600" data-testid="text-duplicate-count">{importResult.duplicateCount}</p>
+                </Card>
+                <Card className="p-3">
+                  <div className="flex items-center gap-2">
+                    <XCircle className="h-4 w-4 text-red-600" />
+                    <span className="text-sm text-muted-foreground">Failed</span>
+                  </div>
+                  <p className="text-xl font-semibold mt-1 text-red-600" data-testid="text-failure-count">{importResult.failureCount}</p>
+                </Card>
+              </div>
+
+              {importResult.errors.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Error Details</h4>
+                  <div className="max-h-40 overflow-auto border rounded-md p-2 text-sm space-y-1">
+                    {importResult.errors.map((err, i) => (
+                      <div key={i} className="flex gap-2 text-muted-foreground" data-testid={`text-import-error-${i}`}>
+                        <span className="font-mono text-xs">Row {err.row}:</span>
+                        <span>{err.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setShowImportResult(false)} data-testid="button-close-import-result">
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

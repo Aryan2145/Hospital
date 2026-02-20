@@ -898,6 +898,27 @@ export const insertActivitySchema = createInsertSchema(activities).omit({ id: tr
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
 export const insertCampaignSchema = createInsertSchema(campaigns).omit({ id: true });
 
+// =============================================
+// BULK IMPORT LOG
+// =============================================
+export const bulkImportLogs = pgTable("bulk_import_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  tableName: text("table_name").notNull(),
+  fileName: text("file_name").notNull(),
+  totalRows: integer("total_rows").notNull().default(0),
+  successCount: integer("success_count").notNull().default(0),
+  failureCount: integer("failure_count").notNull().default(0),
+  duplicateCount: integer("duplicate_count").notNull().default(0),
+  status: text("status").notNull().default("Processing"),
+  errorDetails: jsonb("error_details"),
+  importedBy: varchar("imported_by"),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export type BulkImportLog = typeof bulkImportLogs.$inferSelect;
+
 // Generic master insert schema (used for all simple master tables)
 export const insertMasterSchema = z.object({
   tenantId: z.number(),

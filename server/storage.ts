@@ -107,7 +107,7 @@ export class DatabaseStorage implements IStorage {
       `SELECT * FROM "${pgTable}" WHERE tenant_id = $1 ORDER BY display_order ASC, id ASC`,
       [tenantId]
     );
-    return result.rows.map(this.mapRowToMaster);
+    return result.rows.map((row: any) => this.mapRowToMaster(row));
   }
 
   async getMasterRecord(tableName: string, id: number, tenantId?: number): Promise<MasterRecord | undefined> {
