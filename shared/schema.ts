@@ -949,7 +949,7 @@ export const leads = pgTable("leads", {
   status: text("status").notNull().default("Raw Lead Captured"),
   patientId: integer("patient_id").references(() => patients.id),
   campaignId: integer("campaign_id").references(() => campaigns.id),
-  assignedTo: varchar("assigned_to").references(() => users.id),
+  assignedTo: varchar("assigned_to"),
   assignedCrmUserId: integer("assigned_crm_user_id").references(() => crmUsers.id),
   hmsPatientId: text("hms_patient_id"),
   branchId: integer("branch_id").references(() => branches.id),
@@ -1012,7 +1012,7 @@ export const activities = pgTable("activities", {
   oldStatus: text("old_status"),
   newStatus: text("new_status"),
   metadata: jsonb("metadata"),
-  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdBy: varchar("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1026,7 +1026,7 @@ export const tasks = pgTable("tasks", {
   taskCategoryId: integer("task_category_id").references(() => taskCategories.id),
   priority: text("priority").default("Normal"),
   dueDate: timestamp("due_date").notNull(),
-  assignedTo: varchar("assigned_to").references(() => users.id),
+  assignedTo: varchar("assigned_to"),
   assignedCrmUserId: integer("assigned_crm_user_id").references(() => crmUsers.id),
   status: text("status").notNull().default("Pending"),
   completedAt: timestamp("completed_at"),
