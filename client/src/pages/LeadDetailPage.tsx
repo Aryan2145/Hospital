@@ -569,7 +569,10 @@ function QuickActions({ lead }: { lead: any }) {
   const [apptDoctorId, setApptDoctorId] = useState("");
   const [apptDate, setApptDate] = useState("");
   const [apptSlot, setApptSlot] = useState("");
+  const [apptManualTime, setApptManualTime] = useState("");
   const [apptNotes, setApptNotes] = useState("");
+
+  const effectiveApptTime = apptSlot || apptManualTime;
 
   const { data: availability, isLoading: availLoading } = useDoctorAvailability(
     apptDoctorId ? Number(apptDoctorId) : null,
@@ -870,30 +873,41 @@ function QuickActions({ lead }: { lead: any }) {
               </div>
               {apptDoctorId && apptDate && (
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">Available Slots</label>
+                  <label className="text-xs font-medium text-muted-foreground">Appointment Time *</label>
                   {availLoading ? (
                     <p className="text-xs text-muted-foreground py-2">Loading slots...</p>
                   ) : availability && !availability.available ? (
                     <p className="text-xs text-destructive py-2">{availability.reason}</p>
                   ) : availability && availability.slots.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-2 mt-1">
-                      {availability.slots.map((slot) => (
-                        <Button
-                          key={slot.startTime}
-                          variant={apptSlot === slot.startTime ? "default" : "outline"}
-                          size="sm"
-                          className="text-xs"
-                          disabled={slot.availableCount === 0}
-                          onClick={() => setApptSlot(slot.startTime)}
-                          data-testid={`button-slot-${slot.startTime}`}
-                        >
-                          {slot.startTime?.substring(0, 5)} - {slot.endTime?.substring(0, 5)}
-                          <span className="ml-1 text-muted-foreground">({slot.availableCount})</span>
-                        </Button>
-                      ))}
+                    <div className="space-y-2 mt-1">
+                      <div className="grid grid-cols-2 gap-2">
+                        {availability.slots.map((slot) => (
+                          <Button
+                            key={slot.startTime}
+                            variant={apptSlot === slot.startTime ? "default" : "outline"}
+                            size="sm"
+                            className="text-xs"
+                            disabled={slot.availableCount === 0}
+                            onClick={() => { setApptSlot(slot.startTime); setApptManualTime(""); }}
+                            data-testid={`button-slot-${slot.startTime}`}
+                          >
+                            {slot.startTime?.substring(0, 5)} - {slot.endTime?.substring(0, 5)}
+                            <span className="ml-1 text-muted-foreground">({slot.availableCount})</span>
+                          </Button>
+                        ))}
+                      </div>
+                      {!apptSlot && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Or enter time manually:</p>
+                          <Input type="time" value={apptManualTime} onChange={(e) => setApptManualTime(e.target.value)} className="mt-1" data-testid="input-appt-manual-time" />
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <p className="text-xs text-muted-foreground py-2">No slots available</p>
+                    <div>
+                      <p className="text-xs text-muted-foreground mt-1">{availability?.slots.length === 0 ? "No OPD slots configured." : ""} Enter time:</p>
+                      <Input type="time" value={apptManualTime} onChange={(e) => setApptManualTime(e.target.value)} className="mt-1" data-testid="input-appt-manual-time" />
+                    </div>
                   )}
                 </div>
               )}
@@ -909,13 +923,17 @@ function QuickActions({ lead }: { lead: any }) {
               </div>
               <Button
                 onClick={() => {
+                  if (!effectiveApptTime) {
+                    toast({ title: "Appointment time is required", variant: "destructive" });
+                    return;
+                  }
                   const selectedSlot = availability?.slots.find(s => s.startTime === apptSlot);
                   createAppointment.mutate(
                     {
                       leadId: lead.id,
                       doctorId: Number(apptDoctorId),
-                      appointmentDate: new Date(apptDate + "T" + (apptSlot ? apptSlot.substring(0, 5) : "09:00") + ":00").toISOString(),
-                      startTime: apptSlot || undefined,
+                      appointmentDate: apptDate,
+                      startTime: effectiveApptTime,
                       endTime: selectedSlot?.endTime || undefined,
                       notes: apptNotes || undefined,
                       status: "Scheduled",
@@ -927,6 +945,7 @@ function QuickActions({ lead }: { lead: any }) {
                         setApptDoctorId("");
                         setApptDate("");
                         setApptSlot("");
+                        setApptManualTime("");
                         setApptNotes("");
                       },
                       onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -934,7 +953,7 @@ function QuickActions({ lead }: { lead: any }) {
                   );
                 }}
                 className="w-full"
-                disabled={createAppointment.isPending || !apptDoctorId || !apptDate}
+                disabled={createAppointment.isPending || !apptDoctorId || !apptDate || !effectiveApptTime}
                 data-testid="button-confirm-appointment"
               >
                 Book Appointment

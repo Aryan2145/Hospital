@@ -130,23 +130,34 @@ function DoctorScheduleView() {
     setBookDoctorId("");
     setBookDate("");
     setBookSlot("");
+    setBookManualTime("");
     setBookLeadId("");
     setBookPatientId("");
     setBookApptTypeId("");
     setBookNotes("");
   };
 
+  const [bookManualTime, setBookManualTime] = useState("");
+
+  const effectiveStartTime = bookSlot || bookManualTime;
+
   const handleBookAppointment = () => {
     if (!bookDoctorId || !bookDate) {
       toast({ title: "Doctor and date are required", variant: "destructive" });
       return;
     }
+    if (!effectiveStartTime) {
+      toast({ title: "Appointment time is required", variant: "destructive" });
+      return;
+    }
+    const selectedSlot = availability.data?.slots?.find(s => s.startTime === bookSlot);
     const data: any = {
       doctorId: Number(bookDoctorId),
       appointmentDate: bookDate,
+      startTime: effectiveStartTime,
       status: "Scheduled",
     };
-    if (bookSlot) data.startTime = bookSlot;
+    if (selectedSlot?.endTime) data.endTime = selectedSlot.endTime;
     if (bookLeadId && bookLeadId !== "none") data.leadId = Number(bookLeadId);
     if (bookPatientId && bookPatientId !== "none") data.patientId = Number(bookPatientId);
     if (bookApptTypeId && bookApptTypeId !== "none") data.appointmentTypeId = Number(bookApptTypeId);
@@ -429,24 +440,34 @@ function DoctorScheduleView() {
               <Label className="text-xs font-medium text-muted-foreground">Date *</Label>
               <Input type="date" value={bookDate} onChange={(e) => { setBookDate(e.target.value); setBookSlot(""); }} min={new Date().toISOString().split("T")[0]} data-testid="book-input-date" />
             </div>
-            {bookDoctorId && bookDate && availability.data && (
+            {bookDoctorId && bookDate && (
               <div>
-                <Label className="text-xs font-medium text-muted-foreground">Time Slot</Label>
-                {!availability.data.available ? (
+                <Label className="text-xs font-medium text-muted-foreground">Appointment Time *</Label>
+                {availability.isLoading ? (
+                  <p className="text-xs text-muted-foreground mt-1">Loading available slots...</p>
+                ) : availability.data && !availability.data.available ? (
                   <p className="text-xs text-destructive mt-1">{availability.data.reason || "Doctor not available on this date"}</p>
-                ) : availability.data.slots.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-2 mt-1">
-                    {availability.data.slots.map((slot) => (
-                      <Button key={slot.startTime} variant={bookSlot === slot.startTime ? "default" : "outline"} size="sm" className="text-xs" disabled={slot.availableCount <= 0} onClick={() => setBookSlot(slot.startTime)} data-testid={`book-slot-${slot.startTime}`}>
-                        <Clock className="w-3 h-3 mr-1" />{slot.startTime} - {slot.endTime}
-                        <Badge variant="outline" className="ml-1 text-[10px]">{slot.availableCount} left</Badge>
-                      </Button>
-                    ))}
+                ) : availability.data && availability.data.slots.length > 0 ? (
+                  <div className="space-y-2 mt-1">
+                    <div className="grid grid-cols-2 gap-2">
+                      {availability.data.slots.map((slot) => (
+                        <Button key={slot.startTime} variant={bookSlot === slot.startTime ? "default" : "outline"} size="sm" className="text-xs" disabled={slot.availableCount <= 0} onClick={() => { setBookSlot(slot.startTime); setBookManualTime(""); }} data-testid={`book-slot-${slot.startTime}`}>
+                          <Clock className="w-3 h-3 mr-1" />{slot.startTime} - {slot.endTime}
+                          <Badge variant="outline" className="ml-1 text-[10px]">{slot.availableCount} left</Badge>
+                        </Button>
+                      ))}
+                    </div>
+                    {!bookSlot && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Or enter time manually:</p>
+                        <Input type="time" value={bookManualTime} onChange={(e) => setBookManualTime(e.target.value)} className="mt-1" data-testid="book-input-time-manual" />
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div>
-                    <p className="text-xs text-muted-foreground mt-1">No specific slots configured. Enter time manually:</p>
-                    <Input type="time" value={bookSlot} onChange={(e) => setBookSlot(e.target.value)} className="mt-1" data-testid="book-input-time-manual" />
+                    <p className="text-xs text-muted-foreground mt-1">{availability.data?.slots.length === 0 ? "No OPD slots configured for this day." : ""} Enter time:</p>
+                    <Input type="time" value={bookManualTime} onChange={(e) => setBookManualTime(e.target.value)} className="mt-1" data-testid="book-input-time-manual" />
                   </div>
                 )}
               </div>
@@ -491,7 +512,7 @@ function DoctorScheduleView() {
               <Label className="text-xs font-medium text-muted-foreground">Notes (optional)</Label>
               <Textarea value={bookNotes} onChange={(e) => setBookNotes(e.target.value)} placeholder="Appointment notes..." rows={3} data-testid="book-input-notes" />
             </div>
-            <Button onClick={handleBookAppointment} className="w-full" disabled={createAppointment.isPending || !bookDoctorId || !bookDate} data-testid="button-confirm-book">
+            <Button onClick={handleBookAppointment} className="w-full" disabled={createAppointment.isPending || !bookDoctorId || !bookDate || !effectiveStartTime} data-testid="button-confirm-book">
               {createAppointment.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calendar className="w-4 h-4 mr-2" />}
               Book Appointment
             </Button>
