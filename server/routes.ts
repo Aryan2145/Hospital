@@ -535,16 +535,30 @@ export async function registerRoutes(
     const allCrmUsers = await storage.getCrmUsers(tid);
     const crmUser = sessionCrmUserId ? allCrmUsers.find((u: any) => u.id === sessionCrmUserId) || null : null;
 
-    if (!crmUser || crmUser.accessScopeType === "All") {
-      return res.json(allLeads);
+    let filtered = allLeads;
+
+    if (crmUser && crmUser.accessScopeType === "Self") {
+      filtered = filtered.filter(l => l.assignedCrmUserId === crmUser.id);
+    } else if (crmUser && crmUser.accessScopeType === "Branch" && crmUser.branchId) {
+      filtered = filtered.filter(l => l.branchId === crmUser.branchId);
     }
 
-    let filtered = allLeads;
-    if (crmUser.accessScopeType === "Self") {
-      filtered = allLeads.filter(l => l.assignedCrmUserId === crmUser.id);
-    } else if (crmUser.accessScopeType === "Branch" && crmUser.branchId) {
-      filtered = allLeads.filter(l => l.branchId === crmUser.branchId);
+    const search = (req.query.search as string || "").trim().toLowerCase();
+    if (search) {
+      filtered = filtered.filter(l =>
+        (l.name && l.name.toLowerCase().includes(search)) ||
+        (l.phoneE164 && l.phoneE164.toLowerCase().includes(search)) ||
+        (l.email && l.email.toLowerCase().includes(search)) ||
+        (l.hmsPatientId && l.hmsPatientId.toLowerCase().includes(search)) ||
+        (l.notes && l.notes.toLowerCase().includes(search))
+      );
     }
+
+    const status = req.query.status as string;
+    if (status) {
+      filtered = filtered.filter(l => l.status === status);
+    }
+
     res.json(filtered);
   });
 
