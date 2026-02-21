@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
@@ -217,17 +217,16 @@ function DoctorScheduleView() {
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[200px]">
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Doctor</label>
-            <Select value={selectedDoctor} onValueChange={setSelectedDoctor}>
-              <SelectTrigger data-testid="schedule-filter-doctor">
-                <SelectValue placeholder="Select doctor" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Doctors</SelectItem>
-                {doctorsList?.map((d: any) => (
-                  <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={selectedDoctor}
+              onValueChange={setSelectedDoctor}
+              options={[
+                { value: "all", label: "All Doctors" },
+                ...(doctorsList?.map((d: any) => ({ value: String(d.id), label: d.name })) || []),
+              ]}
+              placeholder="Select doctor"
+              data-testid="schedule-filter-doctor"
+            />
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Date</label>
@@ -427,14 +426,13 @@ function DoctorScheduleView() {
           <div className="space-y-4">
             <div>
               <Label className="text-xs font-medium text-muted-foreground">Doctor *</Label>
-              <Select value={bookDoctorId} onValueChange={(v) => { setBookDoctorId(v); setBookSlot(""); }}>
-                <SelectTrigger data-testid="book-select-doctor"><SelectValue placeholder="Select doctor" /></SelectTrigger>
-                <SelectContent>
-                  {doctorsList?.map((d: any) => (
-                    <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={bookDoctorId}
+                onValueChange={(v) => { setBookDoctorId(v); setBookSlot(""); }}
+                options={doctorsList?.map((d: any) => ({ value: String(d.id), label: d.name })) || []}
+                placeholder="Select doctor"
+                data-testid="book-select-doctor"
+              />
             </div>
             <div>
               <Label className="text-xs font-medium text-muted-foreground">Date *</Label>
@@ -474,39 +472,42 @@ function DoctorScheduleView() {
             )}
             <div>
               <Label className="text-xs font-medium text-muted-foreground">Link to Lead (optional)</Label>
-              <Select value={bookLeadId} onValueChange={setBookLeadId}>
-                <SelectTrigger data-testid="book-select-lead"><SelectValue placeholder="Select lead (optional)" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No lead</SelectItem>
-                  {leadsList?.map((l: any) => (
-                    <SelectItem key={l.id} value={String(l.id)}>{l.name} {l.phone ? `(${l.phone})` : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={bookLeadId}
+                onValueChange={setBookLeadId}
+                options={[
+                  { value: "none", label: "No lead" },
+                  ...(leadsList?.map((l: any) => ({ value: String(l.id), label: `${l.name}${l.phone ? ` (${l.phone})` : ""}` })) || []),
+                ]}
+                placeholder="Select lead (optional)"
+                data-testid="book-select-lead"
+              />
             </div>
             <div>
               <Label className="text-xs font-medium text-muted-foreground">Link to Patient (optional)</Label>
-              <Select value={bookPatientId} onValueChange={setBookPatientId}>
-                <SelectTrigger data-testid="book-select-patient"><SelectValue placeholder="Select patient (optional)" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No patient</SelectItem>
-                  {patientsList?.map((p: any) => (
-                    <SelectItem key={p.id} value={String(p.id)}>{p.firstName} {p.lastName} {p.phone ? `(${p.phone})` : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={bookPatientId}
+                onValueChange={setBookPatientId}
+                options={[
+                  { value: "none", label: "No patient" },
+                  ...(patientsList?.map((p: any) => ({ value: String(p.id), label: `${p.firstName} ${p.lastName}${p.phone ? ` (${p.phone})` : ""}` })) || []),
+                ]}
+                placeholder="Select patient (optional)"
+                data-testid="book-select-patient"
+              />
             </div>
             <div>
               <Label className="text-xs font-medium text-muted-foreground">Appointment Type (optional)</Label>
-              <Select value={bookApptTypeId} onValueChange={setBookApptTypeId}>
-                <SelectTrigger data-testid="book-select-type"><SelectValue placeholder="Select type (optional)" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {appointmentTypes?.filter((t: any) => t.status === "Active").map((t: any) => (
-                    <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={bookApptTypeId}
+                onValueChange={setBookApptTypeId}
+                options={[
+                  { value: "none", label: "None" },
+                  ...(appointmentTypes?.filter((t: any) => t.status === "Active").map((t: any) => ({ value: String(t.id), label: t.name })) || []),
+                ]}
+                placeholder="Select type (optional)"
+                data-testid="book-select-type"
+              />
             </div>
             <div>
               <Label className="text-xs font-medium text-muted-foreground">Notes (optional)</Label>
@@ -629,17 +630,17 @@ function CalendarView() {
               </Button>
             </div>
             <div className="min-w-[180px]">
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                <SelectTrigger className="h-8 text-xs" data-testid="calendar-filter-branch">
-                  <SelectValue placeholder="All branches" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Branches</SelectItem>
-                  {branchesList?.filter((b: any) => b.status === "Active").map((b: any) => (
-                    <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={selectedBranch}
+                onValueChange={setSelectedBranch}
+                options={[
+                  { value: "all", label: "All Branches" },
+                  ...(branchesList?.filter((b: any) => b.status === "Active").map((b: any) => ({ value: String(b.id), label: b.name })) || []),
+                ]}
+                placeholder="All branches"
+                triggerClassName="h-8 text-xs"
+                data-testid="calendar-filter-branch"
+              />
             </div>
           </div>
         </div>

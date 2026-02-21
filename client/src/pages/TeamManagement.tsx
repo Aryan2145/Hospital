@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -421,52 +421,48 @@ export default function TeamManagement() {
             </div>
             <div>
               <Label>Reports To</Label>
-              <Select
+              <SearchableSelect
                 value={formData.reportingTo?.toString() || "none"}
                 onValueChange={v => setFormData(p => ({ ...p, reportingTo: v === "none" ? null : Number(v) }))}
-              >
-                <SelectTrigger data-testid="select-reporting-to"><SelectValue placeholder="Select manager" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">-- No Manager (Top Level) --</SelectItem>
-                  {users.filter(u => u.id !== editingUser?.id).map(u => (
-                    <SelectItem key={u.id} value={u.id.toString()}>{u.name} ({u.code})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={[
+                  { value: "none", label: "-- No Manager (Top Level) --" },
+                  ...users.filter(u => u.id !== editingUser?.id).map(u => ({ value: u.id.toString(), label: `${u.name} (${u.code})` }))
+                ]}
+                placeholder="Select manager"
+                data-testid="select-reporting-to"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Access Scope</Label>
-                <Select value={formData.accessScopeType} onValueChange={v => setFormData(p => ({ ...p, accessScopeType: v }))}>
-                  <SelectTrigger data-testid="select-access-scope"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {ACCESS_SCOPE_OPTIONS.map(o => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={formData.accessScopeType}
+                  onValueChange={v => setFormData(p => ({ ...p, accessScopeType: v }))}
+                  options={ACCESS_SCOPE_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+                  data-testid="select-access-scope"
+                />
               </div>
               <div>
                 <Label>PHI Access Level</Label>
-                <Select value={formData.phiAccessLevel} onValueChange={v => setFormData(p => ({ ...p, phiAccessLevel: v }))}>
-                  <SelectTrigger data-testid="select-phi-level"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {PHI_ACCESS_OPTIONS.map(o => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={formData.phiAccessLevel}
+                  onValueChange={v => setFormData(p => ({ ...p, phiAccessLevel: v }))}
+                  options={PHI_ACCESS_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+                  data-testid="select-phi-level"
+                />
               </div>
             </div>
             <div>
               <Label>Status</Label>
-              <Select value={formData.status} onValueChange={v => setFormData(p => ({ ...p, status: v }))}>
-                <SelectTrigger data-testid="select-user-status"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={formData.status}
+                onValueChange={v => setFormData(p => ({ ...p, status: v }))}
+                options={[
+                  { value: "Active", label: "Active" },
+                  { value: "Inactive", label: "Inactive" },
+                ]}
+                data-testid="select-user-status"
+              />
             </div>
           </div>
           <DialogFooter>

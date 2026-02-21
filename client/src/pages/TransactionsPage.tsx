@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -206,18 +206,19 @@ export default function TransactionsPage() {
             <div className="flex flex-wrap items-end gap-3">
               <div className="min-w-[140px]">
                 <Label className="text-xs font-medium text-muted-foreground mb-1 block">Status</Label>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger data-testid="filter-episode-status">
-                    <SelectValue placeholder="All statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
-                    <SelectItem value="Open">Open</SelectItem>
-                    <SelectItem value="In Treatment">In Treatment</SelectItem>
-                    <SelectItem value="Closed">Closed</SelectItem>
-                    <SelectItem value="Cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={filterStatus}
+                  onValueChange={setFilterStatus}
+                  options={[
+                    { value: "all", label: "All statuses" },
+                    { value: "Open", label: "Open" },
+                    { value: "In Treatment", label: "In Treatment" },
+                    { value: "Closed", label: "Closed" },
+                    { value: "Cancelled", label: "Cancelled" },
+                  ]}
+                  placeholder="All statuses"
+                  data-testid="filter-episode-status"
+                />
               </div>
               <Button variant="outline" size="sm" onClick={() => setFilterStatus("")} data-testid="button-clear-episode-filters">
                 Clear
@@ -290,63 +291,66 @@ export default function TransactionsPage() {
             <div className="space-y-4">
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Patient *</Label>
-                <Select value={formPatientId} onValueChange={setFormPatientId} disabled={!!editing}>
-                  <SelectTrigger data-testid="episode-select-patient">
-                    <SelectValue placeholder="Select patient" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {patientsList?.map((p: any) => (
-                      <SelectItem key={p.id} value={String(p.id)}>
-                        {p.firstName} {p.lastName} {p.phone ? `(${p.phone})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={formPatientId}
+                  onValueChange={setFormPatientId}
+                  disabled={!!editing}
+                  options={(patientsList || []).map((p: any) => ({
+                    value: String(p.id),
+                    label: `${p.firstName} ${p.lastName}${p.phone ? ` (${p.phone})` : ""}`,
+                  }))}
+                  placeholder="Select patient"
+                  data-testid="episode-select-patient"
+                />
               </div>
 
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Doctor</Label>
-                <Select value={formDoctorId} onValueChange={setFormDoctorId}>
-                  <SelectTrigger data-testid="episode-select-doctor">
-                    <SelectValue placeholder="Select doctor (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {doctorsList?.map((d: any) => (
-                      <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={formDoctorId}
+                  onValueChange={setFormDoctorId}
+                  options={[
+                    { value: "none", label: "None" },
+                    ...(doctorsList || []).map((d: any) => ({
+                      value: String(d.id),
+                      label: d.name,
+                    })),
+                  ]}
+                  placeholder="Select doctor (optional)"
+                  data-testid="episode-select-doctor"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs font-medium text-muted-foreground">Type</Label>
-                  <Select value={formEpisodeType} onValueChange={setFormEpisodeType}>
-                    <SelectTrigger data-testid="episode-select-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="OPD">OPD</SelectItem>
-                      <SelectItem value="IPD">IPD</SelectItem>
-                      <SelectItem value="Surgery">Surgery</SelectItem>
-                      <SelectItem value="Emergency">Emergency</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={formEpisodeType}
+                    onValueChange={setFormEpisodeType}
+                    options={[
+                      { value: "OPD", label: "OPD" },
+                      { value: "IPD", label: "IPD" },
+                      { value: "Surgery", label: "Surgery" },
+                      { value: "Emergency", label: "Emergency" },
+                    ]}
+                    placeholder="Select type"
+                    data-testid="episode-select-type"
+                  />
                 </div>
                 <div>
                   <Label className="text-xs font-medium text-muted-foreground">Status</Label>
-                  <Select value={formStatus} onValueChange={setFormStatus}>
-                    <SelectTrigger data-testid="episode-select-status">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Open">Open</SelectItem>
-                      <SelectItem value="In Treatment">In Treatment</SelectItem>
-                      <SelectItem value="Closed">Closed</SelectItem>
-                      <SelectItem value="Cancelled">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={formStatus}
+                    onValueChange={setFormStatus}
+                    options={[
+                      { value: "Open", label: "Open" },
+                      { value: "In Treatment", label: "In Treatment" },
+                      { value: "Closed", label: "Closed" },
+                      { value: "Cancelled", label: "Cancelled" },
+                    ]}
+                    placeholder="Select status"
+                    data-testid="episode-select-status"
+                  />
                 </div>
               </div>
 

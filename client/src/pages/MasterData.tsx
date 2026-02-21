@@ -23,13 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Sidebar } from "@/components/layout/Sidebar";
 import {
   Plus,
@@ -630,18 +624,15 @@ export default function MasterData() {
             </div>
             <div>
               <label className="text-sm font-medium">Status</label>
-              <Select
+              <SearchableSelect
                 value={formData.status}
                 onValueChange={(val) => setFormData({ ...formData, status: val })}
-              >
-                <SelectTrigger data-testid="select-status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
+                options={[
+                  { value: "Active", label: "Active" },
+                  { value: "Inactive", label: "Inactive" },
+                ]}
+                data-testid="select-status"
+              />
             </div>
             <div>
               <label className="text-sm font-medium">Display Order</label>
@@ -661,32 +652,23 @@ export default function MasterData() {
                     <div key={field.key}>
                       <label className="text-sm font-medium">{field.label}</label>
                       {field.type === "boolean" ? (
-                        <Select
+                        <SearchableSelect
                           value={formData[field.key] ? "true" : "false"}
                           onValueChange={(val) => setFormData({ ...formData, [field.key]: val === "true" })}
-                        >
-                          <SelectTrigger data-testid={`select-${field.key}`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="true">Yes</SelectItem>
-                            <SelectItem value="false">No</SelectItem>
-                          </SelectContent>
-                        </Select>
+                          options={[
+                            { value: "true", label: "Yes" },
+                            { value: "false", label: "No" },
+                          ]}
+                          data-testid={`select-${field.key}`}
+                        />
                       ) : field.type === "select" && field.options ? (
-                        <Select
+                        <SearchableSelect
                           value={formData[field.key] || ""}
                           onValueChange={(val) => setFormData({ ...formData, [field.key]: val })}
-                        >
-                          <SelectTrigger data-testid={`select-${field.key}`}>
-                            <SelectValue placeholder={`Select ${field.label}`} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {field.options.map((opt) => (
-                              <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          options={field.options.map((opt) => ({ value: opt, label: opt }))}
+                          placeholder={`Select ${field.label}`}
+                          data-testid={`select-${field.key}`}
+                        />
                       ) : (
                         <Input
                           type={field.type === "number" ? "number" : "text"}

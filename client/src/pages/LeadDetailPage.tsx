@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -183,21 +183,14 @@ function LeadHeader({ lead, onBack }: { lead: any; onBack: () => void }) {
 
         <div className="ml-auto flex items-center gap-2">
           {validTransitions.length > 0 && (
-            <Select onValueChange={handleStatusChange}>
-              <SelectTrigger className="w-44 h-8 text-xs" data-testid="select-change-status">
-                <SelectValue placeholder="Change Status" />
-              </SelectTrigger>
-              <SelectContent>
-                {validTransitions.map((s) => (
-                  <SelectItem key={s} value={s} data-testid={`option-status-${s.replace(/\s+/g, '-').toLowerCase()}`}>
-                    <div className="flex items-center gap-2">
-                      <ChevronRight className="w-3 h-3" />
-                      {s}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value=""
+              onValueChange={handleStatusChange}
+              options={validTransitions.map((s) => ({ value: s, label: s }))}
+              placeholder="Change Status"
+              triggerClassName="w-44 h-8 text-xs"
+              data-testid="select-change-status"
+            />
           )}
         </div>
       </div>
@@ -389,17 +382,18 @@ function ActivityTimeline({ leadId }: { leadId: number }) {
       </div>
       <div className="p-3 border-t border-border bg-card">
         <form onSubmit={handleSubmit} className="flex gap-2">
-          <Select value={activityType} onValueChange={setActivityType}>
-            <SelectTrigger className="w-24 h-8 text-xs" data-testid="select-activity-type">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="note">Note</SelectItem>
-              <SelectItem value="call">Call</SelectItem>
-              <SelectItem value="email">Email</SelectItem>
-              <SelectItem value="sms">SMS</SelectItem>
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={activityType}
+            onValueChange={setActivityType}
+            options={[
+              { value: "note", label: "Note" },
+              { value: "call", label: "Call" },
+              { value: "email", label: "Email" },
+              { value: "sms", label: "SMS" },
+            ]}
+            triggerClassName="w-24 h-8 text-xs"
+            data-testid="select-activity-type"
+          />
           <Input
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -682,18 +676,19 @@ function QuickActions({ lead }: { lead: any }) {
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Outcome</label>
-                <Select value={callOutcome} onValueChange={setCallOutcome}>
-                  <SelectTrigger data-testid="select-call-outcome">
-                    <SelectValue placeholder="Select outcome" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Connected">Connected</SelectItem>
-                    <SelectItem value="No Answer">No Answer</SelectItem>
-                    <SelectItem value="Busy">Busy</SelectItem>
-                    <SelectItem value="Voicemail">Voicemail</SelectItem>
-                    <SelectItem value="Wrong Number">Wrong Number</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={callOutcome}
+                  onValueChange={setCallOutcome}
+                  options={[
+                    { value: "Connected", label: "Connected" },
+                    { value: "No Answer", label: "No Answer" },
+                    { value: "Busy", label: "Busy" },
+                    { value: "Voicemail", label: "Voicemail" },
+                    { value: "Wrong Number", label: "Wrong Number" },
+                  ]}
+                  placeholder="Select outcome"
+                  data-testid="select-call-outcome"
+                />
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Duration (minutes)</label>
@@ -719,17 +714,16 @@ function QuickActions({ lead }: { lead: any }) {
               {validTransitions.length > 0 && (
                 <div className="border-t border-border pt-3">
                   <label className="text-xs font-medium text-muted-foreground">Change Status (optional)</label>
-                  <Select value={callStatusChange} onValueChange={setCallStatusChange}>
-                    <SelectTrigger data-testid="select-call-status-change">
-                      <SelectValue placeholder="Keep current status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">Keep current status</SelectItem>
-                      {validTransitions.map((s) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={callStatusChange}
+                    onValueChange={setCallStatusChange}
+                    options={[
+                      { value: "__none__", label: "Keep current status" },
+                      ...validTransitions.map((s) => ({ value: s, label: s })),
+                    ]}
+                    placeholder="Keep current status"
+                    data-testid="select-call-status-change"
+                  />
                 </div>
               )}
 
@@ -741,17 +735,16 @@ function QuickActions({ lead }: { lead: any }) {
                 <div className="space-y-2">
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">Type</label>
-                    <Select value={callNextActionTypeId} onValueChange={setCallNextActionTypeId}>
-                      <SelectTrigger data-testid="select-call-next-action-type">
-                        <SelectValue placeholder="Select next action type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">None</SelectItem>
-                        {(nextActionTypes || []).filter((t: any) => t.status === "Active").map((t: any) => (
-                          <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={callNextActionTypeId}
+                      onValueChange={setCallNextActionTypeId}
+                      options={[
+                        { value: "__none__", label: "None" },
+                        ...(nextActionTypes || []).filter((t: any) => t.status === "Active").map((t: any) => ({ value: String(t.id), label: t.name })),
+                      ]}
+                      placeholder="Select next action type"
+                      data-testid="select-call-next-action-type"
+                    />
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">Date & Time</label>
@@ -816,16 +809,16 @@ function QuickActions({ lead }: { lead: any }) {
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Priority</label>
-                <Select value={taskPriority} onValueChange={setTaskPriority}>
-                  <SelectTrigger data-testid="select-task-priority">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Low">Low</SelectItem>
-                    <SelectItem value="Normal">Normal</SelectItem>
-                    <SelectItem value="High">High</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={taskPriority}
+                  onValueChange={setTaskPriority}
+                  options={[
+                    { value: "Low", label: "Low" },
+                    { value: "Normal", label: "Normal" },
+                    { value: "High", label: "High" },
+                  ]}
+                  data-testid="select-task-priority"
+                />
               </div>
               <Button onClick={handleCreateTask} className="w-full" disabled={createTask.isPending || !taskTitle.trim() || !taskDueDate} data-testid="button-submit-task">
                 Create Task
@@ -848,18 +841,13 @@ function QuickActions({ lead }: { lead: any }) {
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Doctor</label>
-                <Select value={apptDoctorId} onValueChange={(v) => { setApptDoctorId(v); setApptSlot(""); }}>
-                  <SelectTrigger data-testid="select-appt-doctor">
-                    <SelectValue placeholder="Select doctor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {doctorsList?.map((d: any) => (
-                      <SelectItem key={d.id} value={String(d.id)}>
-                        {d.name} {d.specialization ? `(${d.specialization})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={apptDoctorId}
+                  onValueChange={(v) => { setApptDoctorId(v); setApptSlot(""); }}
+                  options={(doctorsList || []).map((d: any) => ({ value: String(d.id), label: `${d.name}${d.specialization ? ` (${d.specialization})` : ""}` }))}
+                  placeholder="Select doctor"
+                  data-testid="select-appt-doctor"
+                />
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Date</label>
@@ -976,18 +964,13 @@ function QuickActions({ lead }: { lead: any }) {
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Assign to CRM User</label>
-                <Select value={selectedCrmUserId} onValueChange={setSelectedCrmUserId}>
-                  <SelectTrigger data-testid="select-assign-user">
-                    <SelectValue placeholder="Select user" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {crmUsers?.map((u) => (
-                      <SelectItem key={u.id} value={String(u.id)}>
-                        {u.name} {u.email ? `(${u.email})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={selectedCrmUserId}
+                  onValueChange={setSelectedCrmUserId}
+                  options={(crmUsers || []).map((u) => ({ value: String(u.id), label: `${u.name}${u.email ? ` (${u.email})` : ""}` }))}
+                  placeholder="Select user"
+                  data-testid="select-assign-user"
+                />
               </div>
               {lead.assignedCrmUserId && (
                 <p className="text-xs text-muted-foreground">

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -214,36 +214,39 @@ export default function CampaignsPage() {
               </div>
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Platform</Label>
-                <Select value={formPlatform} onValueChange={setFormPlatform}>
-                  <SelectTrigger data-testid="select-campaign-platform">
-                    <SelectValue placeholder="Select platform" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="Google Ads">Google Ads</SelectItem>
-                    <SelectItem value="Facebook">Facebook</SelectItem>
-                    <SelectItem value="Instagram">Instagram</SelectItem>
-                    <SelectItem value="WhatsApp">WhatsApp</SelectItem>
-                    <SelectItem value="YouTube">YouTube</SelectItem>
-                    <SelectItem value="LinkedIn">LinkedIn</SelectItem>
-                    <SelectItem value="Offline">Offline</SelectItem>
-                    <SelectItem value="Other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={formPlatform}
+                  onValueChange={setFormPlatform}
+                  placeholder="Select platform"
+                  data-testid="select-campaign-platform"
+                  options={[
+                    { value: "none", label: "None" },
+                    { value: "Google Ads", label: "Google Ads" },
+                    { value: "Facebook", label: "Facebook" },
+                    { value: "Instagram", label: "Instagram" },
+                    { value: "WhatsApp", label: "WhatsApp" },
+                    { value: "YouTube", label: "YouTube" },
+                    { value: "LinkedIn", label: "LinkedIn" },
+                    { value: "Offline", label: "Offline" },
+                    { value: "Other", label: "Other" },
+                  ]}
+                />
               </div>
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Channel</Label>
-                <Select value={formChannel} onValueChange={setFormChannel}>
-                  <SelectTrigger data-testid="select-campaign-channel">
-                    <SelectValue placeholder="Select channel" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {channelsList?.filter((ch: any) => ch.status === "Active").map((ch: any) => (
-                      <SelectItem key={ch.id} value={ch.name}>{ch.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={formChannel}
+                  onValueChange={setFormChannel}
+                  placeholder="Select channel"
+                  data-testid="select-campaign-channel"
+                  options={[
+                    { value: "none", label: "None" },
+                    ...(channelsList?.filter((ch: any) => ch.status === "Active").map((ch: any) => ({
+                      value: ch.name,
+                      label: ch.name,
+                    })) || []),
+                  ]}
+                />
               </div>
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Budget</Label>
@@ -277,15 +280,15 @@ export default function CampaignsPage() {
               </div>
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Status</Label>
-                <Select value={formIsActive} onValueChange={setFormIsActive}>
-                  <SelectTrigger data-testid="select-campaign-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="true">Active</SelectItem>
-                    <SelectItem value="false">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={formIsActive}
+                  onValueChange={setFormIsActive}
+                  data-testid="select-campaign-status"
+                  options={[
+                    { value: "true", label: "Active" },
+                    { value: "false", label: "Inactive" },
+                  ]}
+                />
               </div>
 
               <Button
