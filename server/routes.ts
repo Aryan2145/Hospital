@@ -14,6 +14,17 @@ import { desc, eq, and } from "drizzle-orm";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
+function coerceDateFields(body: Record<string, any>, fields: string[]): Record<string, any> {
+  const result = { ...body };
+  for (const field of fields) {
+    if (result[field] && typeof result[field] === "string") {
+      result[field] = new Date(result[field]);
+    }
+  }
+  return result;
+}
+
+
 async function seedDatabase() {
   try {
     const existingTenants = await db.select().from(tenants);
@@ -559,8 +570,7 @@ export async function registerRoutes(
 
   app.patch(api.leads.update.path, isAuthenticated, async (req, res) => {
     try {
-      const body = { ...req.body };
-      if (body.nextActionDate && typeof body.nextActionDate === "string") body.nextActionDate = new Date(body.nextActionDate);
+      const body = coerceDateFields(req.body, ["nextActionDate"]);
       const input = api.leads.update.input.parse(body);
       const lead = await storage.updateLead(Number(req.params.id), input);
       res.json(lead);
@@ -584,8 +594,7 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId();
       const userId = String((req as any).session?.crmUserId || "system");
-      const body = { ...req.body };
-      if (body.dueDate && typeof body.dueDate === "string") body.dueDate = new Date(body.dueDate);
+      const body = coerceDateFields(req.body, ["dueDate"]);
       const input = api.tasks.create.input.parse({
         ...body,
         tenantId: tid,
@@ -624,8 +633,7 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId();
       const userId = String((req as any).session?.crmUserId || "system");
-      const body = { ...req.body };
-      if (body.nextActionDate && typeof body.nextActionDate === "string") body.nextActionDate = new Date(body.nextActionDate);
+      const body = coerceDateFields(req.body, ["nextActionDate"]);
       const input = api.activities.create.input.parse({
         ...body,
         tenantId: tid,
@@ -1030,7 +1038,8 @@ export async function registerRoutes(
     }
     try {
       const tid = await getDefaultTenantId();
-      const record = await storage.createMasterRecord(tableName, { ...req.body, tenantId: tid });
+      const body = coerceDateFields(req.body, ["leaveDate", "holidayDate", "startDate", "endDate"]);
+      const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid });
       res.status(201).json(record);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -1045,7 +1054,8 @@ export async function registerRoutes(
     }
     try {
       const tid = await getDefaultTenantId();
-      const record = await storage.updateMasterRecord(tableName, Number(id), req.body, tid);
+      const body = coerceDateFields(req.body, ["leaveDate", "holidayDate", "startDate", "endDate"]);
+      const record = await storage.updateMasterRecord(tableName, Number(id), body, tid);
       res.json(record);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -1094,7 +1104,8 @@ export async function registerRoutes(
   app.post("/api/crm-users", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const parsed = insertCrmUserSchema.parse({ ...req.body, tenantId: tid });
+      const body = coerceDateFields(req.body, ["joiningDate", "resetTokenExpiry"]);
+      const parsed = insertCrmUserSchema.parse({ ...body, tenantId: tid });
       const user = await storage.createCrmUser(parsed);
       res.status(201).json(user);
     } catch (err: any) {
@@ -1105,7 +1116,8 @@ export async function registerRoutes(
   app.patch("/api/crm-users/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const parsed = insertCrmUserSchema.partial().parse(req.body);
+      const body = coerceDateFields(req.body, ["joiningDate", "resetTokenExpiry"]);
+      const parsed = insertCrmUserSchema.partial().parse(body);
       const user = await storage.updateCrmUser(Number(req.params.id), tid, parsed);
       res.json(user);
     } catch (err: any) {
@@ -1160,7 +1172,8 @@ export async function registerRoutes(
   app.post("/api/patients", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const parsed = insertPatientSchema.parse({ ...req.body, tenantId: tid });
+      const body = coerceDateFields(req.body, ["dateOfBirth"]);
+      const parsed = insertPatientSchema.parse({ ...body, tenantId: tid });
       const patient = await storage.createPatient(parsed);
       res.status(201).json(patient);
     } catch (err: any) {
@@ -1171,7 +1184,8 @@ export async function registerRoutes(
   app.patch("/api/patients/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const parsed = insertPatientSchema.partial().parse(req.body);
+      const body = coerceDateFields(req.body, ["dateOfBirth"]);
+      const parsed = insertPatientSchema.partial().parse(body);
       const patient = await storage.updatePatient(Number(req.params.id), tid, parsed);
       res.json(patient);
     } catch (err: any) {
@@ -1331,8 +1345,7 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId();
       const userId = String((req as any).session?.crmUserId || "system");
-      const body = { ...req.body, tenantId: tid, createdBy: userId, bookedBy: userId };
-      if (typeof body.appointmentDate === "string") body.appointmentDate = new Date(body.appointmentDate);
+      const body = coerceDateFields({ ...req.body, tenantId: tid, createdBy: userId, bookedBy: userId }, ["appointmentDate"]);
       const parsed = insertAppointmentSchema.parse(body);
 
       const dateStr = new Date(parsed.appointmentDate).toISOString().split("T")[0];
@@ -1549,9 +1562,7 @@ export async function registerRoutes(
   app.post("/api/campaigns", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const body = { ...req.body };
-      if (body.startDate && typeof body.startDate === "string") body.startDate = new Date(body.startDate);
-      if (body.endDate && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
+      const body = coerceDateFields(req.body, ["startDate", "endDate"]);
       const parsed = insertCampaignSchema.parse({ ...body, tenantId: tid });
       const c = await storage.createCampaign(parsed);
       res.status(201).json(c);
@@ -1563,9 +1574,7 @@ export async function registerRoutes(
   app.patch("/api/campaigns/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const body = { ...req.body };
-      if (body.startDate && typeof body.startDate === "string") body.startDate = new Date(body.startDate);
-      if (body.endDate && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
+      const body = coerceDateFields(req.body, ["startDate", "endDate"]);
       const parsed = insertCampaignSchema.partial().parse(body);
       const c = await storage.updateCampaign(Number(req.params.id), tid, parsed);
       res.json(c);
@@ -1760,9 +1769,7 @@ export async function registerRoutes(
   app.post("/api/episodes", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const body = { ...req.body };
-      if (body.startDate && typeof body.startDate === "string") body.startDate = new Date(body.startDate);
-      if (body.endDate && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
+      const body = coerceDateFields(req.body, ["startDate", "endDate"]);
       const parsed = insertEpisodeSchema.parse({ ...body, tenantId: tid });
       const ep = await storage.createEpisode(parsed);
       res.status(201).json(ep);
@@ -1774,9 +1781,7 @@ export async function registerRoutes(
   app.patch("/api/episodes/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const body = { ...req.body };
-      if (body.startDate && typeof body.startDate === "string") body.startDate = new Date(body.startDate);
-      if (body.endDate && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
+      const body = coerceDateFields(req.body, ["startDate", "endDate"]);
       const parsed = insertEpisodeSchema.partial().parse(body);
       const ep = await storage.updateEpisode(Number(req.params.id), tid, parsed);
       res.json(ep);
