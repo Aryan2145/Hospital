@@ -1,6 +1,6 @@
 import { db, pool } from "./db";
 import {
-  tenants, leads, tasks, activities, campaigns, crmUsers, systemRoles,
+  tenants, tenantSettings, leads, tasks, activities, campaigns, crmUsers, systemRoles,
   patients, contacts, patientContactLinks, appointments, episodes, auditLogs,
   opdTimings, doctorLeaveExceptions, doctors, platformConnectors, branches,
   type Tenant, type InsertTenant,
@@ -92,6 +92,9 @@ export interface IStorage {
   createPlatformConnector(data: InsertPlatformConnector): Promise<PlatformConnector>;
   updatePlatformConnector(id: number, tenantId: number, data: Partial<InsertPlatformConnector>): Promise<PlatformConnector>;
   deletePlatformConnector(id: number, tenantId: number): Promise<void>;
+  // Tenant Settings
+  getTenantSettings(tenantId: number): Promise<{ settingKey: string; settingValue: string | null }[]>;
+  setTenantSetting(tenantId: number, key: string, value: string | null): Promise<void>;
   // Generic Master CRUD
   getMasterRecords(tableName: string, tenantId: number): Promise<MasterRecord[]>;
   getMasterRecord(tableName: string, id: number): Promise<MasterRecord | undefined>;
@@ -503,6 +506,27 @@ export class DatabaseStorage implements IStorage {
   async deletePlatformConnector(id: number, tenantId: number): Promise<void> {
     await db.delete(platformConnectors)
       .where(and(eq(platformConnectors.id, id), eq(platformConnectors.tenantId, tenantId)));
+  }
+
+  // --- Tenant Settings ---
+  async getTenantSettings(tenantId: number): Promise<{ settingKey: string; settingValue: string | null }[]> {
+    return await db.select({
+      settingKey: tenantSettings.settingKey,
+      settingValue: tenantSettings.settingValue,
+    }).from(tenantSettings)
+      .where(eq(tenantSettings.tenantId, tenantId));
+  }
+
+  async setTenantSetting(tenantId: number, key: string, value: string | null): Promise<void> {
+    const existing = await db.select().from(tenantSettings)
+      .where(and(eq(tenantSettings.tenantId, tenantId), eq(tenantSettings.settingKey, key)));
+    if (existing.length > 0) {
+      await db.update(tenantSettings)
+        .set({ settingValue: value, modifiedAt: new Date() })
+        .where(and(eq(tenantSettings.tenantId, tenantId), eq(tenantSettings.settingKey, key)));
+    } else {
+      await db.insert(tenantSettings).values({ tenantId, settingKey: key, settingValue: value });
+    }
   }
 
   // --- Audit Logs ---

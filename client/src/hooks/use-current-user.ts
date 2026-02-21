@@ -41,19 +41,22 @@ export function useCurrentUser() {
     if (!isRegistered || !roleCode) return false;
 
     switch (roleCode) {
-      case "ADMIN":
+      case "SYS_ADMIN":
         return true;
+      case "ADMIN":
+        return ["dashboard", "leads", "appointments", "campaigns", "transactions", "team", "masters"].includes(page);
       case "MANAGER":
-        return ["dashboard", "leads", "appointments", "campaigns", "transactions", "connectors", "team", "testing"].includes(page);
+        return ["dashboard", "leads", "appointments", "campaigns", "transactions", "team"].includes(page);
       case "AGENT":
       case "COUNSELLOR":
-        return ["dashboard", "leads", "appointments", "transactions", "testing"].includes(page);
+        return ["dashboard", "leads", "appointments", "transactions"].includes(page);
       default:
         return false;
     }
   };
 
-  const isAdmin = roleCode === "ADMIN";
+  const isSysAdmin = roleCode === "SYS_ADMIN";
+  const isAdmin = roleCode === "ADMIN" || roleCode === "SYS_ADMIN";
   const isManager = roleCode === "MANAGER";
 
   return {
@@ -64,6 +67,7 @@ export function useCurrentUser() {
     crmUser,
     roleCode,
     roleName: crmUser?.roleName ?? null,
+    isSysAdmin,
     isAdmin,
     isManager,
     canViewPage,

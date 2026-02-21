@@ -66,18 +66,28 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - `/appointments` - Appointment scheduling and management
 - `/campaigns` - Campaign management (create, edit, track marketing campaigns)
 - `/transactions` - Treatment episode/transaction tracking
-- `/connectors` - Platform Connectors (Meta, Google, LinkedIn, X, Bing integration)
+- `/connectors` - Platform Connectors (Meta, Google, LinkedIn, X, Bing integration) [System Admin only]
+- `/email-settings` - Email/SMTP Configuration for password reset & notifications [System Admin only]
 - `/team` - Team Management (CRM Users, org hierarchy, access scoping)
 - `/masters` - Master Data Management (all 9 categories, 50+ tables)
+- `/testing` - Testing Interface [System Admin only]
+
+## Role Hierarchy
+- **SYS_ADMIN (System Admin)**: Technical admin - full access to everything including connectors, email settings, testing
+- **ADMIN (CRM Admin)**: Business admin - dashboard, leads, appointments, campaigns, transactions, team, masters
+- **MANAGER**: Team manager - dashboard, leads, appointments, campaigns, transactions, team
+- **AGENT / COUNSELLOR**: Frontline - dashboard, leads, appointments, transactions
 
 ## Sidebar Structure
 Navigation organized into 4 sections:
 1. **Reports & Dashboards**: Dashboard
 2. **Transactions**: Leads, Appointments, Campaigns, Transactions
 3. **Masters**: Master Data
-4. **Configurations**: Team, Connectors, Testing
+4. **Configurations**: Team (CRM Admin+), Connectors (System Admin), Email Settings (System Admin), Testing (System Admin)
 
 ## Recent Changes
+- 2026-02-21: Role split - SYS_ADMIN (System Admin) vs ADMIN (CRM Admin); Connectors, Email Settings, Testing restricted to System Admin only
+- 2026-02-21: Email Settings page - SMTP configuration UI for password reset emails (stored in tenant_settings table)
 - 2026-02-20: Sidebar restructured into 4 sections (Reports & Dashboards, Transactions, Masters, Configurations); Connectors moved under Configurations
 - 2026-02-20: Platform Connectors page - Connect Meta, Google Ads, LinkedIn, X, Microsoft Ads with credential config, test connection, sync, and live insights
 - 2026-02-20: Phase 4B - Handover acceptance (accept/reject with SLA), lead assignment/transfer, lead intake API with auto-dedup and round-robin auto-assign

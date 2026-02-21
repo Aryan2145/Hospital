@@ -18,6 +18,7 @@ import AppointmentsPage from "@/pages/AppointmentsPage";
 import CampaignsPage from "@/pages/CampaignsPage";
 import TransactionsPage from "@/pages/TransactionsPage";
 import ConnectorsPage from "@/pages/ConnectorsPage";
+import EmailSettingsPage from "@/pages/EmailSettingsPage";
 import PendingApproval from "@/pages/PendingApproval";
 import TestingInterface from "@/pages/TestingInterface";
 import ForgotPassword from "@/pages/ForgotPassword";
@@ -85,6 +86,12 @@ function Router() {
       <Route path="/connectors">
         {isAuthenticated ? (
           <RoleGate page="connectors"><ConnectorsPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/email-settings">
+        {isAuthenticated ? (
+          <RoleGate page="email-settings"><EmailSettingsPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

@@ -74,6 +74,7 @@ async function seedDatabase() {
     await db.insert(employmentTypes).values({ tenantId: tid, code: "VISITING", name: "Visiting Consultant", status: "Active", displayOrder: 3 });
 
     // System Roles
+    await db.insert(systemRoles).values({ tenantId: tid, code: "SYS_ADMIN", name: "System Admin", status: "Active", displayOrder: 0 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "ADMIN", name: "Admin", status: "Active", displayOrder: 1 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "MANAGER", name: "Manager", status: "Active", displayOrder: 2 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "AGENT", name: "Agent", status: "Active", displayOrder: 3 });
@@ -1629,13 +1630,30 @@ export async function registerRoutes(
     if (crmUser.systemRoleId) {
       const allRoles = await storage.getMasterRecords("systemRoles", tid);
       const role = allRoles.find(r => r.id === crmUser.systemRoleId);
-      if (role && ((role as any).code === "ADMIN" || (role as any).code === "MANAGER")) return true;
+      if (role && ((role as any).code === "SYS_ADMIN" || (role as any).code === "ADMIN" || (role as any).code === "MANAGER")) return true;
     }
     res.status(403).json({ message: "Admin or Manager access required" });
     return false;
   }
 
-  app.get("/api/connectors", isAuthenticated, async (req: any, res) => {
+  async function requireSysAdmin(req: any, res: any): Promise<boolean> {
+    const crmUserId = req.session?.crmUserId;
+    if (!crmUserId) { res.status(401).json({ message: "Unauthorized" }); return false; }
+    const tid = await getDefaultTenantId();
+    const allCrmUsers = await storage.getCrmUsers(tid);
+    const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
+    if (!crmUser) { res.status(403).json({ message: "Not a CRM user" }); return false; }
+    if (crmUser.systemRoleId) {
+      const allRoles = await storage.getMasterRecords("systemRoles", tid);
+      const role = allRoles.find(r => r.id === crmUser.systemRoleId);
+      if (role && (role as any).code === "SYS_ADMIN") return true;
+    }
+    res.status(403).json({ message: "System Admin access required" });
+    return false;
+  }
+
+  app.get("/api/connectors", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireSysAdmin(req, res))) return;
     try {
       const tid = await getDefaultTenantId();
       const connectors = await storage.getPlatformConnectors(tid);
@@ -1645,7 +1663,8 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/connectors/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/connectors/:id", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireSysAdmin(req, res))) return;
     try {
       const tid = await getDefaultTenantId();
       const c = await storage.getPlatformConnector(Number(req.params.id), tid);
@@ -1656,9 +1675,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/connectors", isAuthenticated, async (req: any, res) => {
+  app.post("/api/connectors", isAuthenticated, async (req: any, res: any) => {
     try {
-      if (!(await requireAdminOrManager(req, res))) return;
+      if (!(await requireSysAdmin(req, res))) return;
       const tid = await getDefaultTenantId();
       const parsed = insertPlatformConnectorSchema.parse({ ...req.body, tenantId: tid });
       const c = await storage.createPlatformConnector(parsed);
@@ -1668,9 +1687,9 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/connectors/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/connectors/:id", isAuthenticated, async (req: any, res: any) => {
     try {
-      if (!(await requireAdminOrManager(req, res))) return;
+      if (!(await requireSysAdmin(req, res))) return;
       const tid = await getDefaultTenantId();
       const { tenantId: _, ...safeBody } = req.body;
       const parsed = insertPlatformConnectorSchema.partial().parse(safeBody);
@@ -1681,9 +1700,9 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/connectors/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/connectors/:id", isAuthenticated, async (req: any, res: any) => {
     try {
-      if (!(await requireAdminOrManager(req, res))) return;
+      if (!(await requireSysAdmin(req, res))) return;
       const tid = await getDefaultTenantId();
       await storage.deletePlatformConnector(Number(req.params.id), tid);
       res.json({ success: true });
@@ -1692,9 +1711,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/connectors/:id/test", isAuthenticated, async (req: any, res) => {
+  app.post("/api/connectors/:id/test", isAuthenticated, async (req: any, res: any) => {
     try {
-      if (!(await requireAdminOrManager(req, res))) return;
+      if (!(await requireSysAdmin(req, res))) return;
       const tid = await getDefaultTenantId();
       const c = await storage.getPlatformConnector(Number(req.params.id), tid);
       if (!c) return res.status(404).json({ message: "Connector not found" });
@@ -1731,9 +1750,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/connectors/:id/sync", isAuthenticated, async (req: any, res) => {
+  app.post("/api/connectors/:id/sync", isAuthenticated, async (req: any, res: any) => {
     try {
-      if (!(await requireAdminOrManager(req, res))) return;
+      if (!(await requireSysAdmin(req, res))) return;
       const tid = await getDefaultTenantId();
       const c = await storage.getPlatformConnector(Number(req.params.id), tid);
       if (!c) return res.status(404).json({ message: "Connector not found" });
@@ -2138,6 +2157,65 @@ export async function registerRoutes(
     }
   });
 
+  // =============================================
+  // EMAIL SETTINGS ROUTES (SYS_ADMIN only)
+  // =============================================
+  const EMAIL_SETTING_KEYS = ["smtp_host", "smtp_port", "smtp_user", "smtp_pass", "smtp_from_email", "smtp_from_name", "smtp_secure"];
+
+  app.get("/api/email-settings", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireSysAdmin(req, res))) return;
+    try {
+      const tid = await getDefaultTenantId();
+      const allSettings = await storage.getTenantSettings(tid);
+      const emailSettings: Record<string, string | null> = {};
+      for (const key of EMAIL_SETTING_KEYS) {
+        const found = allSettings.find(s => s.settingKey === key);
+        if (key === "smtp_pass" && found?.settingValue) {
+          emailSettings[key] = "••••••••";
+        } else {
+          emailSettings[key] = found?.settingValue ?? null;
+        }
+      }
+      res.json(emailSettings);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/email-settings", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireSysAdmin(req, res))) return;
+    try {
+      const tid = await getDefaultTenantId();
+      const body = req.body as Record<string, string | null>;
+      for (const key of EMAIL_SETTING_KEYS) {
+        if (key in body) {
+          if (key === "smtp_pass" && body[key] === "••••••••") continue;
+          await storage.setTenantSetting(tid, key, body[key] ?? null);
+        }
+      }
+      res.json({ success: true, message: "Email settings saved" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/email-settings/test", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireSysAdmin(req, res))) return;
+    try {
+      const tid = await getDefaultTenantId();
+      const allSettings = await storage.getTenantSettings(tid);
+      const smtpHost = allSettings.find(s => s.settingKey === "smtp_host")?.settingValue;
+      const smtpPort = allSettings.find(s => s.settingKey === "smtp_port")?.settingValue;
+      const smtpUser = allSettings.find(s => s.settingKey === "smtp_user")?.settingValue;
+      if (!smtpHost || !smtpPort || !smtpUser) {
+        return res.status(400).json({ message: "SMTP settings incomplete. Please save settings first." });
+      }
+      res.json({ success: true, message: "SMTP configuration looks valid. Test email would be sent to configured admin email." });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Seed the database
   await seedDatabase();
   await ensureSuperAdmin();
@@ -2159,17 +2237,31 @@ async function ensureSuperAdmin() {
     );
 
     if (existingUsers.length > 0) {
+      const updates: Record<string, any> = {};
       if (!existingUsers[0].passwordHash) {
-        const hash = await hashPassword(defaultPassword);
-        await db.update(crmUsers).set({ passwordHash: hash }).where(eq(crmUsers.id, existingUsers[0].id));
-        console.log("Super Admin password reset.");
+        updates.passwordHash = await hashPassword(defaultPassword);
+      }
+      const sysAdminRole = await db.select().from(systemRoles).where(
+        and(eq(systemRoles.code, "SYS_ADMIN"), eq(systemRoles.tenantId, tid))
+      );
+      if (sysAdminRole.length > 0 && existingUsers[0].systemRoleId !== sysAdminRole[0].id) {
+        updates.systemRoleId = sysAdminRole[0].id;
+      }
+      if (Object.keys(updates).length > 0) {
+        await db.update(crmUsers).set(updates).where(eq(crmUsers.id, existingUsers[0].id));
+        console.log("Super Admin updated:", Object.keys(updates).join(", "));
       }
       return;
     }
 
-    const roleRows = await db.select().from(systemRoles).where(
-      and(eq(systemRoles.code, "ADMIN"), eq(systemRoles.tenantId, tid))
+    let roleRows = await db.select().from(systemRoles).where(
+      and(eq(systemRoles.code, "SYS_ADMIN"), eq(systemRoles.tenantId, tid))
     );
+    if (roleRows.length === 0) {
+      roleRows = await db.select().from(systemRoles).where(
+        and(eq(systemRoles.code, "ADMIN"), eq(systemRoles.tenantId, tid))
+      );
+    }
     const adminRoleId = roleRows.length > 0 ? roleRows[0].id : null;
 
     const hash = await hashPassword(defaultPassword);
