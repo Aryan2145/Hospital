@@ -582,12 +582,18 @@ function QuickActions({ lead }: { lead: any }) {
         tenantId: 1,
         createdBy: "placeholder",
       },
+    }, {
+      onSuccess: () => {
+        setCallNotes("");
+        setCallOutcome("");
+        setCallDuration("");
+        setCallDialogOpen(false);
+        toast({ title: "Call logged" });
+      },
+      onError: (err) => {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      },
     });
-    setCallNotes("");
-    setCallOutcome("");
-    setCallDuration("");
-    setCallDialogOpen(false);
-    toast({ title: "Call logged" });
   };
 
   const handleCreateTask = () => {
@@ -599,12 +605,18 @@ function QuickActions({ lead }: { lead: any }) {
       priority: taskPriority,
       status: "Pending",
       tenantId: 1,
+    }, {
+      onSuccess: () => {
+        setTaskTitle("");
+        setTaskDueDate("");
+        setTaskPriority("Normal");
+        setTaskDialogOpen(false);
+        toast({ title: "Task created" });
+      },
+      onError: (err) => {
+        toast({ title: "Error creating task", description: err.message, variant: "destructive" });
+      },
     });
-    setTaskTitle("");
-    setTaskDueDate("");
-    setTaskPriority("Normal");
-    setTaskDialogOpen(false);
-    toast({ title: "Task created" });
   };
 
   return (

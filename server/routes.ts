@@ -559,7 +559,9 @@ export async function registerRoutes(
 
   app.patch(api.leads.update.path, isAuthenticated, async (req, res) => {
     try {
-      const input = api.leads.update.input.parse(req.body);
+      const body = { ...req.body };
+      if (body.nextActionDate && typeof body.nextActionDate === "string") body.nextActionDate = new Date(body.nextActionDate);
+      const input = api.leads.update.input.parse(body);
       const lead = await storage.updateLead(Number(req.params.id), input);
       res.json(lead);
     } catch (err) {
@@ -582,8 +584,10 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId();
       const userId = String((req as any).session?.crmUserId || "system");
+      const body = { ...req.body };
+      if (body.dueDate && typeof body.dueDate === "string") body.dueDate = new Date(body.dueDate);
       const input = api.tasks.create.input.parse({
-        ...req.body,
+        ...body,
         tenantId: tid,
         createdBy: userId,
       });
@@ -620,8 +624,10 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId();
       const userId = String((req as any).session?.crmUserId || "system");
+      const body = { ...req.body };
+      if (body.nextActionDate && typeof body.nextActionDate === "string") body.nextActionDate = new Date(body.nextActionDate);
       const input = api.activities.create.input.parse({
-        ...req.body,
+        ...body,
         tenantId: tid,
         createdBy: userId,
       });
