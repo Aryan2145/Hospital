@@ -545,7 +545,8 @@ export async function registerRoutes(
 
   app.post(api.leads.create.path, isAuthenticated, async (req, res) => {
     try {
-      const input = api.leads.create.input.parse(req.body);
+      const tid = await getDefaultTenantId();
+      const input = api.leads.create.input.parse({ ...req.body, tenantId: tid });
       const lead = await storage.createLead(input);
       res.status(201).json(lead);
     } catch (err) {
