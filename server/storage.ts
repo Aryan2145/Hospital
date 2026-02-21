@@ -2,7 +2,7 @@ import { db, pool } from "./db";
 import {
   tenants, leads, tasks, activities, campaigns, crmUsers, systemRoles,
   patients, contacts, patientContactLinks, appointments, episodes, auditLogs,
-  opdTimings, doctorLeaveExceptions, doctors, platformConnectors,
+  opdTimings, doctorLeaveExceptions, doctors, platformConnectors, branches,
   type Tenant, type InsertTenant,
   type Patient, type InsertPatient,
   type Contact, type InsertContact,
@@ -301,10 +301,64 @@ export class DatabaseStorage implements IStorage {
     if (filters?.leadId) conditions.push(eq(appointments.leadId, filters.leadId));
     if (filters?.patientId) conditions.push(eq(appointments.patientId, filters.patientId));
     if (filters?.doctorId) conditions.push(eq(appointments.doctorId, filters.doctorId));
+    if (filters?.branchId) conditions.push(eq(appointments.branchId, filters.branchId));
     if (filters?.status) conditions.push(eq(appointments.status, filters.status));
     if (filters?.dateFrom) conditions.push(gte(appointments.appointmentDate, new Date(filters.dateFrom)));
     if (filters?.dateTo) conditions.push(lte(appointments.appointmentDate, new Date(filters.dateTo + "T23:59:59.999Z")));
     return await db.select().from(appointments).where(and(...conditions)).orderBy(desc(appointments.appointmentDate));
+  }
+
+  async getAppointmentsEnriched(tenantId: number, filters?: Record<string, any>): Promise<any[]> {
+    const conditions = [eq(appointments.tenantId, tenantId)];
+    if (filters?.leadId) conditions.push(eq(appointments.leadId, filters.leadId));
+    if (filters?.patientId) conditions.push(eq(appointments.patientId, filters.patientId));
+    if (filters?.doctorId) conditions.push(eq(appointments.doctorId, filters.doctorId));
+    if (filters?.branchId) conditions.push(eq(appointments.branchId, filters.branchId));
+    if (filters?.status) conditions.push(eq(appointments.status, filters.status));
+    if (filters?.dateFrom) conditions.push(gte(appointments.appointmentDate, new Date(filters.dateFrom)));
+    if (filters?.dateTo) conditions.push(lte(appointments.appointmentDate, new Date(filters.dateTo + "T23:59:59.999Z")));
+
+    const rows = await db
+      .select({
+        id: appointments.id,
+        tenantId: appointments.tenantId,
+        leadId: appointments.leadId,
+        patientId: appointments.patientId,
+        doctorId: appointments.doctorId,
+        branchId: appointments.branchId,
+        appointmentTypeId: appointments.appointmentTypeId,
+        appointmentDate: appointments.appointmentDate,
+        startTime: appointments.startTime,
+        endTime: appointments.endTime,
+        tokenNumber: appointments.tokenNumber,
+        status: appointments.status,
+        rescheduleCount: appointments.rescheduleCount,
+        cancelReason: appointments.cancelReason,
+        consultationNotes: appointments.consultationNotes,
+        notes: appointments.notes,
+        createdAt: appointments.createdAt,
+        doctorName: doctors.name,
+        leadName: leads.name,
+        leadPhone: leads.phone,
+        patientFirstName: patients.firstName,
+        patientLastName: patients.lastName,
+        patientPhone: patients.phone,
+        branchName: branches.name,
+      })
+      .from(appointments)
+      .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
+      .leftJoin(leads, eq(appointments.leadId, leads.id))
+      .leftJoin(patients, eq(appointments.patientId, patients.id))
+      .leftJoin(branches, eq(appointments.branchId, branches.id))
+      .where(and(...conditions))
+      .orderBy(appointments.appointmentDate, appointments.startTime);
+
+    return rows.map(r => ({
+      ...r,
+      patientName: r.patientFirstName && r.patientLastName
+        ? `${r.patientFirstName} ${r.patientLastName}`
+        : r.patientFirstName || r.patientLastName || null,
+    }));
   }
 
   async getAppointment(id: number, tenantId: number): Promise<Appointment | undefined> {

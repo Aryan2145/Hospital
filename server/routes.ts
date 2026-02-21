@@ -1334,10 +1334,29 @@ export async function registerRoutes(
       if (req.query.leadId) filters.leadId = Number(req.query.leadId);
       if (req.query.patientId) filters.patientId = Number(req.query.patientId);
       if (req.query.doctorId) filters.doctorId = Number(req.query.doctorId);
+      if (req.query.branchId) filters.branchId = Number(req.query.branchId);
       if (req.query.status) filters.status = req.query.status;
       if (req.query.dateFrom) filters.dateFrom = req.query.dateFrom;
       if (req.query.dateTo) filters.dateTo = req.query.dateTo;
       const result = await storage.getAppointments(tid, filters);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/appointments-enriched", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const filters: Record<string, any> = {};
+      if (req.query.leadId) filters.leadId = Number(req.query.leadId);
+      if (req.query.patientId) filters.patientId = Number(req.query.patientId);
+      if (req.query.doctorId) filters.doctorId = Number(req.query.doctorId);
+      if (req.query.branchId) filters.branchId = Number(req.query.branchId);
+      if (req.query.status) filters.status = req.query.status;
+      if (req.query.dateFrom) filters.dateFrom = req.query.dateFrom;
+      if (req.query.dateTo) filters.dateTo = req.query.dateTo;
+      const result = await storage.getAppointmentsEnriched(tid, filters);
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
