@@ -42,6 +42,9 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - Lead Handover: `PATCH /api/leads/:id/handover` (accept/reject)
 - Lead Assignment: `POST /api/leads/:id/assign` (transfer with SLA)
 - Lead Intake: `POST /api/leads/intake` (external sources, auto-dedup, auto-assign)
+- Lead Import: `POST /api/leads/import` (CSV bulk import with dedup), `GET /api/leads/import-logs|import-fields|import-template`
+- Lead Capture Rules: `GET/POST/PATCH/DELETE /api/lead-capture-rules`
+- Lead Webhook: `POST /api/webhook/lead-capture/:token` (external auto-import)
 - Tasks: `GET/POST/PATCH /api/tasks`
 - Activities: `GET/POST /api/leads/:leadId/activities`
 - Active CRM Users: `GET /api/crm-users/active`
@@ -63,10 +66,11 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - `/` - Dashboard (authenticated) or Landing (unauthenticated)
 - `/leads` - Lead Kanban Workspace with drag-and-drop
 - `/leads/:id` - Lead Detail with activity timeline, next action, tasks, quick actions, handover banner
+- `/lead-import` - Bulk Lead Import (CSV upload, column mapping, dedup strategy, import history)
 - `/appointments` - Appointment scheduling and management
 - `/campaigns` - Campaign management (create, edit, track marketing campaigns)
 - `/transactions` - Treatment episode/transaction tracking
-- `/connectors` - Platform Connectors (Meta, Google, LinkedIn, X, Bing integration) [System Admin only]
+- `/connectors` - Platform Connectors + Lead Capture Rules (Meta, Google, Callyzer, Google Forms integration) [System Admin only]
 - `/email-settings` - Email/SMTP Configuration for password reset & notifications [System Admin only]
 - `/team` - Team Management (CRM Users, org hierarchy, access scoping)
 - `/masters` - Master Data Management (all 9 categories, 50+ tables)
@@ -86,6 +90,10 @@ Navigation organized into 4 sections:
 4. **Configurations**: Team (CRM Admin+), Connectors (System Admin), Email Settings (System Admin), Testing (System Admin)
 
 ## Recent Changes
+- 2026-02-21: Proper case enforcement - All master data, lead names, and CRM user names auto-converted to title case (e.g., "ramesh modi" → "Ramesh Modi")
+- 2026-02-21: Bulk Lead Import page - CSV upload with column mapping, phone normalization, dedup strategies (Skip/UpdateBlank/Overwrite), import history logs
+- 2026-02-21: Lead Capture Rules - Configurable field mapping per connector for auto-importing leads from Meta, Google Forms, Callyzer, etc. with assignment strategies, dedup handling, webhook endpoints
+- 2026-02-21: All dropdowns replaced with SearchableSelect component (Popover + search input with substring matching)
 - 2026-02-21: Role split - SYS_ADMIN (System Admin) vs ADMIN (CRM Admin); Connectors, Email Settings, Testing restricted to System Admin only
 - 2026-02-21: Email Settings page - SMTP configuration UI for password reset emails (stored in tenant_settings table)
 - 2026-02-20: Sidebar restructured into 4 sections (Reports & Dashboards, Transactions, Masters, Configurations); Connectors moved under Configurations

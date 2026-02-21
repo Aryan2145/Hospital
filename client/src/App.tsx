@@ -21,6 +21,7 @@ import ConnectorsPage from "@/pages/ConnectorsPage";
 import EmailSettingsPage from "@/pages/EmailSettingsPage";
 import PendingApproval from "@/pages/PendingApproval";
 import TestingInterface from "@/pages/TestingInterface";
+import LeadImportPage from "@/pages/LeadImportPage";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 
@@ -98,6 +99,12 @@ function Router() {
       <Route path="/masters">
         {isAuthenticated ? (
           <RoleGate page="masters"><MasterData /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/lead-import">
+        {isAuthenticated ? (
+          <RoleGate page="leads"><LeadImportPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

@@ -2,7 +2,9 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors } from "@shared/schema";
+import { toProperCase } from "./storage";
+import crypto from "crypto";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db } from "./db";
@@ -861,6 +863,376 @@ export async function registerRoutes(
       return res.status(201).json({ lead: newLead, deduped: false, assignedTo: assignedUser?.name });
     } catch (err: any) {
       return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // --- Bulk Lead Import (CSV) ---
+  const LEAD_CSV_FIELDS = [
+    { key: "name", label: "Name", required: true },
+    { key: "phoneE164", label: "Phone Number", required: true },
+    { key: "email", label: "Email" },
+    { key: "notes", label: "Notes" },
+    { key: "tags", label: "Tags" },
+    { key: "utmSource", label: "UTM Source" },
+    { key: "utmMedium", label: "UTM Medium" },
+    { key: "utmCampaign", label: "UTM Campaign" },
+    { key: "utmTerm", label: "UTM Term" },
+    { key: "utmContent", label: "UTM Content" },
+    { key: "priority", label: "Priority" },
+    { key: "city", label: "City" },
+    { key: "leadSource", label: "Lead Source" },
+    { key: "callSummary", label: "Call Summary" },
+    { key: "companyName", label: "Company Name" },
+    { key: "alternatePhone", label: "Alternate Phone" },
+    { key: "address", label: "Address" },
+    { key: "revenueGenerated", label: "Revenue Generated" },
+  ];
+
+  app.get("/api/leads/import-fields", isAuthenticated, (_req, res) => {
+    res.json(LEAD_CSV_FIELDS);
+  });
+
+  app.get("/api/leads/import-template", isAuthenticated, (_req, res) => {
+    const csvData = stringify([
+      { name: "John Doe", phoneE164: "+919876543210", email: "john@example.com", notes: "Sample lead", tags: "facebook,walk-in", priority: "Normal" },
+    ], { header: true, columns: LEAD_CSV_FIELDS.map(f => f.key) });
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", 'attachment; filename="lead_import_template.csv"');
+    res.send(csvData);
+  });
+
+  app.get("/api/leads/import-logs", isAuthenticated, async (_req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const logs = await db.select().from(leadImportLogs)
+        .where(eq(leadImportLogs.tenantId, tid))
+        .orderBy(desc(leadImportLogs.startedAt))
+        .limit(50);
+      res.json(logs);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  function normalizePhone(phone: string): string {
+    let cleaned = phone.replace(/[\s\-\(\)\.]/g, "");
+    if (cleaned.startsWith("00")) cleaned = "+" + cleaned.slice(2);
+    if (!cleaned.startsWith("+")) {
+      if (cleaned.length === 10) cleaned = "+91" + cleaned;
+      else if (cleaned.startsWith("91") && cleaned.length === 12) cleaned = "+" + cleaned;
+      else cleaned = "+91" + cleaned;
+    }
+    return cleaned;
+  }
+
+  app.post("/api/leads/import", isAuthenticated, upload.single("file"), async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const tid = await getDefaultTenantId();
+    const userId = String((req as any).session?.crmUserId || "system");
+    const duplicateStrategy = (req.body?.duplicateStrategy || "skip") as string;
+    const columnMapping = req.body?.columnMapping ? JSON.parse(req.body.columnMapping) : null;
+    const defaultLeadStatus = req.body?.defaultLeadStatus || "Raw Lead Captured";
+    const defaultTags = req.body?.defaultTags || "";
+
+    try {
+      const csvContent = req.file.buffer.toString("utf-8");
+      const rows = parse(csvContent, { columns: true, skip_empty_lines: true, trim: true, bom: true }) as Record<string, string>[];
+
+      let successCount = 0;
+      let failureCount = 0;
+      let duplicateCount = 0;
+      let updatedCount = 0;
+      const errors: { row: number; message: string }[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const mapped: Record<string, string> = {};
+
+        if (columnMapping && typeof columnMapping === "object") {
+          for (const [crmField, csvCol] of Object.entries(columnMapping)) {
+            if (csvCol && typeof csvCol === "string" && row[csvCol] !== undefined) {
+              mapped[crmField] = row[csvCol];
+            }
+          }
+        } else {
+          Object.assign(mapped, row);
+        }
+
+        const name = toProperCase((mapped.name || "").trim());
+        let phone = (mapped.phoneE164 || mapped.phone || mapped.phoneNumber || mapped.mobile || "").trim();
+        const email = (mapped.email || "").trim();
+
+        if (!name && !phone) {
+          failureCount++;
+          errors.push({ row: i + 2, message: "Missing required field: name or phone" });
+          continue;
+        }
+
+        if (!phone) {
+          failureCount++;
+          errors.push({ row: i + 2, message: "Missing required field: phone number" });
+          continue;
+        }
+
+        phone = normalizePhone(phone);
+
+        const existingLead = await storage.findLeadByPhone(tid, phone);
+
+        if (existingLead) {
+          if (duplicateStrategy === "skip") {
+            duplicateCount++;
+            continue;
+          } else if (duplicateStrategy === "update_blank") {
+            const updates: Record<string, any> = {};
+            if (!existingLead.email && email) updates.email = email;
+            if (!existingLead.name && name) updates.name = name;
+            if (!existingLead.utmSource && mapped.utmSource) updates.utmSource = mapped.utmSource;
+            if (!existingLead.utmMedium && mapped.utmMedium) updates.utmMedium = mapped.utmMedium;
+            if (!existingLead.utmCampaign && mapped.utmCampaign) updates.utmCampaign = mapped.utmCampaign;
+            if (!existingLead.notes && mapped.notes) updates.notes = mapped.notes;
+            if (!existingLead.tags && (mapped.tags || defaultTags)) updates.tags = mapped.tags || defaultTags;
+            if (Object.keys(updates).length > 0) {
+              await storage.updateLead(existingLead.id, updates);
+              updatedCount++;
+            } else {
+              duplicateCount++;
+            }
+            continue;
+          } else if (duplicateStrategy === "overwrite") {
+            const updates: Record<string, any> = {};
+            if (name) updates.name = name;
+            if (email) updates.email = email;
+            if (mapped.utmSource) updates.utmSource = mapped.utmSource;
+            if (mapped.utmMedium) updates.utmMedium = mapped.utmMedium;
+            if (mapped.utmCampaign) updates.utmCampaign = mapped.utmCampaign;
+            if (mapped.notes) updates.notes = mapped.notes;
+            if (mapped.tags || defaultTags) updates.tags = mapped.tags || defaultTags;
+            if (mapped.priority) updates.priority = mapped.priority;
+            if (Object.keys(updates).length > 0) {
+              await storage.updateLead(existingLead.id, updates);
+              updatedCount++;
+            } else {
+              duplicateCount++;
+            }
+            continue;
+          }
+        }
+
+        try {
+          const assignedUser = await storage.getNextAssignableCrmUser(tid);
+          const newLead = await storage.createLead({
+            tenantId: tid,
+            name: name || "Unknown",
+            phoneE164: phone,
+            email: email || undefined,
+            status: defaultLeadStatus,
+            tags: mapped.tags || defaultTags || undefined,
+            utmSource: mapped.utmSource || undefined,
+            utmMedium: mapped.utmMedium || undefined,
+            utmCampaign: mapped.utmCampaign || undefined,
+            utmTerm: mapped.utmTerm || undefined,
+            utmContent: mapped.utmContent || undefined,
+            notes: mapped.notes || mapped.callSummary || undefined,
+            priority: mapped.priority || "Normal",
+            assignedCrmUserId: assignedUser?.id,
+            assignedTo: assignedUser?.name,
+          });
+
+          await storage.createActivity({
+            leadId: newLead.id, tenantId: tid, createdBy: userId,
+            type: "note",
+            description: `Lead imported via CSV${assignedUser ? ` and auto-assigned to ${assignedUser.name}` : ""}`,
+          });
+
+          successCount++;
+        } catch (err: any) {
+          failureCount++;
+          errors.push({ row: i + 2, message: err.message });
+        }
+      }
+
+      const [importLog] = await db.insert(leadImportLogs).values({
+        tenantId: tid,
+        fileName: req.file.originalname,
+        source: "csv",
+        totalRows: rows.length,
+        successCount,
+        duplicateCount,
+        updatedCount,
+        failureCount,
+        duplicateStrategy,
+        status: failureCount === 0 ? "Completed" : "Completed with Issues",
+        errorDetails: errors.length > 0 ? errors : null,
+        columnMapping: columnMapping || null,
+        importedBy: userId,
+        completedAt: new Date(),
+      }).returning();
+
+      res.json({
+        importLogId: importLog.id,
+        totalRows: rows.length,
+        successCount,
+        duplicateCount,
+        updatedCount,
+        failureCount,
+        errors: errors.slice(0, 50),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // --- Lead Capture Rules CRUD ---
+  app.get("/api/lead-capture-rules", isAuthenticated, async (_req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const rules = await db.select().from(leadCaptureRules)
+        .where(eq(leadCaptureRules.tenantId, tid))
+        .orderBy(desc(leadCaptureRules.createdAt));
+      res.json(rules);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/lead-capture-rules", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const body = { ...req.body, tenantId: tid, webhookToken: crypto.randomBytes(32).toString("hex") };
+      const parsed = insertLeadCaptureRuleSchema.safeParse(body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+      const [rule] = await db.insert(leadCaptureRules).values(parsed.data).returning();
+      res.status(201).json(rule);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/lead-capture-rules/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const id = Number(req.params.id);
+      const [rule] = await db.update(leadCaptureRules)
+        .set({ ...req.body, modifiedAt: new Date() })
+        .where(and(eq(leadCaptureRules.id, id), eq(leadCaptureRules.tenantId, tid)))
+        .returning();
+      if (!rule) return res.status(404).json({ message: "Rule not found" });
+      res.json(rule);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/lead-capture-rules/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const id = Number(req.params.id);
+      await db.delete(leadCaptureRules)
+        .where(and(eq(leadCaptureRules.id, id), eq(leadCaptureRules.tenantId, tid)));
+      res.status(204).send();
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // --- Webhook Endpoint for Lead Capture ---
+  app.post("/api/webhook/lead-capture/:token", async (req, res) => {
+    try {
+      const token = req.params.token;
+      const [rule] = await db.select().from(leadCaptureRules)
+        .where(and(eq(leadCaptureRules.webhookToken, token), eq(leadCaptureRules.isActive, true)));
+
+      if (!rule) {
+        return res.status(404).json({ message: "Invalid or inactive webhook" });
+      }
+
+      const tid = rule.tenantId;
+      const fieldMapping = (rule.fieldMapping || {}) as Record<string, string>;
+      const payload = req.body;
+
+      const mapped: Record<string, string> = {};
+      for (const [crmField, sourceField] of Object.entries(fieldMapping)) {
+        if (sourceField && payload[sourceField] !== undefined) {
+          mapped[crmField] = String(payload[sourceField]);
+        }
+      }
+
+      if (payload.name && !mapped.name) mapped.name = payload.name;
+      if (payload.phone && !mapped.phoneE164) mapped.phoneE164 = payload.phone;
+      if (payload.phoneE164 && !mapped.phoneE164) mapped.phoneE164 = payload.phoneE164;
+      if (payload.email && !mapped.email) mapped.email = payload.email;
+
+      const name = toProperCase((mapped.name || mapped.firstName || "").trim() + (mapped.lastName ? " " + mapped.lastName.trim() : ""));
+      let phone = (mapped.phoneE164 || "").trim();
+
+      if (!phone) {
+        return res.status(400).json({ message: "Phone number is required" });
+      }
+
+      phone = normalizePhone(phone);
+
+      const existingLead = await storage.findLeadByPhone(tid, phone);
+
+      if (existingLead) {
+        const dupOption = rule.duplicateLeadOption || "skip";
+        if (dupOption === "skip") {
+          return res.json({ status: "duplicate_skipped", leadId: existingLead.id });
+        } else if (dupOption === "update_blank") {
+          const updates: Record<string, any> = {};
+          if (!existingLead.email && mapped.email) updates.email = mapped.email;
+          if (!existingLead.name && name) updates.name = name;
+          if (!existingLead.utmSource && mapped.utmSource) updates.utmSource = mapped.utmSource;
+          if (!existingLead.notes && mapped.notes) updates.notes = mapped.notes;
+          if (Object.keys(updates).length > 0) {
+            await storage.updateLead(existingLead.id, updates);
+          }
+          return res.json({ status: "duplicate_updated", leadId: existingLead.id });
+        }
+      }
+
+      let assignedUser = null;
+      const strategy = rule.assignmentStrategy || "round_robin";
+      if (strategy === "round_robin") {
+        assignedUser = await storage.getNextAssignableCrmUser(tid);
+      } else if (strategy === "specific" && rule.assignToEmployeeIds) {
+        const empIds = rule.assignToEmployeeIds as number[];
+        if (empIds.length > 0) {
+          const randomIdx = Math.floor(Math.random() * empIds.length);
+          const users = await storage.getCrmUsers(tid);
+          assignedUser = users.find(u => u.id === empIds[randomIdx]) || null;
+        }
+      }
+
+      const newLead = await storage.createLead({
+        tenantId: tid,
+        name: name || "Unknown",
+        phoneE164: phone,
+        email: mapped.email || undefined,
+        status: rule.defaultLeadStatus || "Raw Lead Captured",
+        tags: mapped.tags || rule.defaultTags || undefined,
+        utmSource: mapped.utmSource || undefined,
+        utmMedium: mapped.utmMedium || undefined,
+        utmCampaign: mapped.utmCampaign || undefined,
+        notes: mapped.notes || mapped.callSummary || undefined,
+        priority: mapped.priority || "Normal",
+        assignedCrmUserId: assignedUser?.id,
+        assignedTo: assignedUser?.name,
+      });
+
+      await storage.createActivity({
+        leadId: newLead.id, tenantId: tid, createdBy: "webhook",
+        type: "note",
+        description: `Lead captured via ${rule.sourceType}${rule.name ? ` (${rule.name})` : ""}${assignedUser ? ` and auto-assigned to ${assignedUser.name}` : ""}`,
+      });
+
+      res.status(201).json({ status: "created", leadId: newLead.id });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 

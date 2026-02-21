@@ -8,12 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import {
   Plus, Settings, RefreshCw, Trash2, CheckCircle2, XCircle,
   Wifi, WifiOff, ArrowUpRight, BarChart3, Eye, MousePointerClick,
   DollarSign, Target, Loader2, Zap, Globe, TrendingUp,
+  Copy, Pencil, Link2,
 } from "lucide-react";
 import { SiFacebook, SiGoogle, SiLinkedin, SiX } from "react-icons/si";
 
@@ -42,6 +45,101 @@ interface PlatformTemplate {
   description: string;
   credentialFields: { key: string; label: string; type: string; placeholder: string }[];
 }
+
+interface LeadCaptureRule {
+  id: number;
+  tenantId: number;
+  connectorId: number | null;
+  name: string;
+  sourceType: string;
+  sourcePage: string | null;
+  sourceForm: string | null;
+  isActive: boolean;
+  assignmentStrategy: string;
+  assignToEmployeeIds: number[] | null;
+  duplicatePhoneAction: string;
+  duplicateLeadOption: string;
+  duplicateTagsOption: string;
+  defaultLeadStatus: string;
+  defaultTags: string | null;
+  fieldMapping: Record<string, string> | null;
+  webhookToken: string | null;
+  mapCallLogs: boolean | null;
+  createdAt: string;
+  modifiedAt: string;
+}
+
+interface CrmUser {
+  id: number;
+  fullName: string;
+  email: string;
+  isActive: boolean;
+}
+
+interface ImportField {
+  key: string;
+  label: string;
+  required?: boolean;
+}
+
+const SOURCE_TYPE_OPTIONS = [
+  { value: "meta_lead_ads", label: "Meta Lead Ads" },
+  { value: "google_forms", label: "Google Forms" },
+  { value: "callyzer", label: "Callyzer" },
+  { value: "whatsapp_business", label: "WhatsApp Business" },
+  { value: "google_sheets", label: "Google Sheets" },
+  { value: "custom_webhook", label: "Custom Webhook" },
+];
+
+const ACTIVE_OPTIONS = [
+  { value: "true", label: "Yes" },
+  { value: "false", label: "No" },
+];
+
+const ASSIGNMENT_STRATEGY_OPTIONS = [
+  { value: "round_robin", label: "Round Robin" },
+  { value: "specific_employees", label: "Specific Employees" },
+];
+
+const DUPLICATE_PHONE_OPTIONS = [
+  { value: "ignore", label: "Ignore - keep same assignment" },
+  { value: "reassign", label: "Reassign - reassign based on strategy" },
+];
+
+const DUPLICATE_LEAD_OPTIONS = [
+  { value: "skip", label: "Skip - skip duplicates" },
+  { value: "update_blank_only", label: "UpdateBlankOnly - update only blank fields" },
+  { value: "overwrite", label: "Overwrite" },
+];
+
+const DUPLICATE_TAGS_OPTIONS = [
+  { value: "ignore", label: "Ignore - keep existing tags" },
+  { value: "replace", label: "Replace - replace with new tags" },
+];
+
+const LEAD_STATUS_OPTIONS = [
+  { value: "Raw Lead Captured", label: "Raw Lead Captured" },
+  { value: "Contacted", label: "Contacted" },
+  { value: "Interested", label: "Interested" },
+  { value: "Not Interested", label: "Not Interested" },
+];
+
+const DEFAULT_RULE_FORM = {
+  name: "",
+  sourceType: "",
+  sourcePage: "",
+  sourceForm: "",
+  isActive: "true",
+  assignmentStrategy: "round_robin",
+  assignToEmployeeIds: [] as number[],
+  duplicatePhoneAction: "ignore",
+  duplicateLeadOption: "skip",
+  duplicateTagsOption: "ignore",
+  defaultLeadStatus: "Raw Lead Captured",
+  defaultTags: "",
+  mapCallLogs: false,
+  fieldMapping: {} as Record<string, string>,
+};
 
 const PLATFORM_TEMPLATES: PlatformTemplate[] = [
   {
@@ -132,9 +230,24 @@ export default function ConnectorsPage() {
   const [editingConnector, setEditingConnector] = useState<PlatformConnector | null>(null);
   const [credentialValues, setCredentialValues] = useState<Record<string, string>>({});
   const [metricsDialog, setMetricsDialog] = useState<PlatformConnector | null>(null);
+  const [ruleDialog, setRuleDialog] = useState(false);
+  const [editingRule, setEditingRule] = useState<LeadCaptureRule | null>(null);
+  const [ruleForm, setRuleForm] = useState({ ...DEFAULT_RULE_FORM });
 
   const { data: connectors = [], isLoading } = useQuery<PlatformConnector[]>({
     queryKey: ["/api/connectors"],
+  });
+
+  const { data: captureRules = [], isLoading: rulesLoading } = useQuery<LeadCaptureRule[]>({
+    queryKey: ["/api/lead-capture-rules"],
+  });
+
+  const { data: crmUsers = [] } = useQuery<CrmUser[]>({
+    queryKey: ["/api/crm-users/active"],
+  });
+
+  const { data: importFields = [] } = useQuery<ImportField[]>({
+    queryKey: ["/api/leads/import-fields"],
   });
 
   const createMutation = useMutation({
@@ -208,11 +321,138 @@ export default function ConnectorsPage() {
     },
   });
 
+  const createRuleMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/lead-capture-rules", data);
+      return res.json();
+    },
+    onSuccess: (rule: LeadCaptureRule) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-capture-rules"] });
+      toast({ title: "Lead capture rule created" });
+      setEditingRule(rule);
+      setRuleDialog(true);
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updateRuleMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      await apiRequest("PATCH", `/api/lead-capture-rules/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-capture-rules"] });
+      toast({ title: "Lead capture rule updated" });
+      closeRuleDialog();
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/lead-capture-rules/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-capture-rules"] });
+      toast({ title: "Lead capture rule deleted" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   function closeDialog() {
     setConfigDialog(false);
     setSelectedPlatform(null);
     setEditingConnector(null);
     setCredentialValues({});
+  }
+
+  function closeRuleDialog() {
+    setRuleDialog(false);
+    setEditingRule(null);
+    setRuleForm({ ...DEFAULT_RULE_FORM });
+  }
+
+  function openNewRule() {
+    setEditingRule(null);
+    setRuleForm({ ...DEFAULT_RULE_FORM });
+    setRuleDialog(true);
+  }
+
+  function openEditRule(rule: LeadCaptureRule) {
+    setEditingRule(rule);
+    setRuleForm({
+      name: rule.name,
+      sourceType: rule.sourceType,
+      sourcePage: rule.sourcePage || "",
+      sourceForm: rule.sourceForm || "",
+      isActive: String(rule.isActive),
+      assignmentStrategy: rule.assignmentStrategy,
+      assignToEmployeeIds: (rule.assignToEmployeeIds as number[]) || [],
+      duplicatePhoneAction: rule.duplicatePhoneAction,
+      duplicateLeadOption: rule.duplicateLeadOption,
+      duplicateTagsOption: rule.duplicateTagsOption,
+      defaultLeadStatus: rule.defaultLeadStatus,
+      defaultTags: rule.defaultTags || "",
+      mapCallLogs: rule.mapCallLogs || false,
+      fieldMapping: (rule.fieldMapping as Record<string, string>) || {},
+    });
+    setRuleDialog(true);
+  }
+
+  function handleSaveRule() {
+    if (!ruleForm.name.trim()) {
+      toast({ title: "Name is required", variant: "destructive" });
+      return;
+    }
+    if (!ruleForm.sourceType) {
+      toast({ title: "Source Type is required", variant: "destructive" });
+      return;
+    }
+    const payload = {
+      name: ruleForm.name,
+      sourceType: ruleForm.sourceType,
+      sourcePage: ruleForm.sourcePage || null,
+      sourceForm: ruleForm.sourceForm || null,
+      isActive: ruleForm.isActive === "true",
+      assignmentStrategy: ruleForm.assignmentStrategy,
+      assignToEmployeeIds: ruleForm.assignmentStrategy === "specific_employees" ? ruleForm.assignToEmployeeIds : null,
+      duplicatePhoneAction: ruleForm.duplicatePhoneAction,
+      duplicateLeadOption: ruleForm.duplicateLeadOption,
+      duplicateTagsOption: ruleForm.duplicateTagsOption,
+      defaultLeadStatus: ruleForm.defaultLeadStatus,
+      defaultTags: ruleForm.defaultTags || null,
+      fieldMapping: ruleForm.fieldMapping,
+      mapCallLogs: ruleForm.mapCallLogs,
+    };
+    if (editingRule) {
+      updateRuleMutation.mutate({ id: editingRule.id, data: payload });
+    } else {
+      createRuleMutation.mutate(payload);
+    }
+  }
+
+  function toggleEmployee(userId: number) {
+    setRuleForm((prev) => {
+      const ids = prev.assignToEmployeeIds.includes(userId)
+        ? prev.assignToEmployeeIds.filter((id) => id !== userId)
+        : [...prev.assignToEmployeeIds, userId];
+      return { ...prev, assignToEmployeeIds: ids };
+    });
+  }
+
+  function copyWebhookUrl(token: string) {
+    const url = `${window.location.origin}/api/webhook/lead-capture/${token}`;
+    navigator.clipboard.writeText(url);
+    toast({ title: "Webhook URL copied to clipboard" });
+  }
+
+  function getSourceTypeLabel(value: string) {
+    return SOURCE_TYPE_OPTIONS.find((o) => o.value === value)?.label || value;
   }
 
   function openAddConnector(template: PlatformTemplate) {
@@ -478,6 +718,95 @@ export default function ConnectorsPage() {
                   </CardContent>
                 </Card>
               )}
+
+              <Card data-testid="card-lead-capture-rules">
+                <CardHeader className="flex flex-row items-center justify-between gap-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Link2 className="h-5 w-5" />
+                    Lead Capture Rules
+                  </CardTitle>
+                  <Button size="sm" onClick={openNewRule} data-testid="button-new-rule">
+                    <Plus className="h-3.5 w-3.5 mr-1.5" /> New Rule
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {rulesLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <LoadingSpinner />
+                    </div>
+                  ) : captureRules.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6" data-testid="text-no-rules">
+                      No lead capture rules configured yet. Create one to start automatically importing leads.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {captureRules.map((rule) => (
+                        <Card key={rule.id} data-testid={`card-rule-${rule.id}`}>
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between gap-3 flex-wrap">
+                              <div className="space-y-1.5 min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium" data-testid={`text-rule-name-${rule.id}`}>{rule.name}</span>
+                                  <Badge variant="secondary" data-testid={`badge-rule-source-${rule.id}`}>
+                                    {getSourceTypeLabel(rule.sourceType)}
+                                  </Badge>
+                                  {rule.isActive ? (
+                                    <Badge variant="default" data-testid={`badge-rule-status-${rule.id}`}>Active</Badge>
+                                  ) : (
+                                    <Badge variant="secondary" data-testid={`badge-rule-status-${rule.id}`}>Inactive</Badge>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                                  <span data-testid={`text-rule-strategy-${rule.id}`}>
+                                    {rule.assignmentStrategy === "round_robin" ? "Round Robin" : "Specific Employees"}
+                                  </span>
+                                  {rule.webhookToken && (
+                                    <span className="flex items-center gap-1 font-mono text-[11px] truncate max-w-xs" data-testid={`text-rule-webhook-${rule.id}`}>
+                                      {`${window.location.origin}/api/webhook/lead-capture/${rule.webhookToken.slice(0, 8)}...`}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {rule.webhookToken && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => copyWebhookUrl(rule.webhookToken!)}
+                                    data-testid={`button-copy-webhook-${rule.id}`}
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => openEditRule(rule)}
+                                  data-testid={`button-edit-rule-${rule.id}`}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    if (confirm("Delete this lead capture rule?")) {
+                                      deleteRuleMutation.mutate(rule.id);
+                                    }
+                                  }}
+                                  data-testid={`button-delete-rule-${rule.id}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                </Button>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </>
           )}
         </div>
@@ -584,6 +913,225 @@ export default function ConnectorsPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={ruleDialog} onOpenChange={(open) => { if (!open) closeRuleDialog(); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle data-testid="text-rule-dialog-title">
+              {editingRule ? "Edit Lead Capture Rule" : "New Lead Capture Rule"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6">
+            {editingRule?.webhookToken && (
+              <div className="flex items-center gap-2 p-3 rounded-md bg-muted/50">
+                <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                <code className="text-xs flex-1 truncate" data-testid="text-webhook-url">
+                  {`${window.location.origin}/api/webhook/lead-capture/${editingRule.webhookToken}`}
+                </code>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => copyWebhookUrl(editingRule.webhookToken!)}
+                  data-testid="button-copy-rule-webhook"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Rule Settings</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Name *</Label>
+                  <Input
+                    value={ruleForm.name}
+                    onChange={(e) => setRuleForm({ ...ruleForm, name: e.target.value })}
+                    placeholder="e.g. Facebook Lead Ads"
+                    data-testid="input-rule-name"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Source Type *</Label>
+                  <SearchableSelect
+                    value={ruleForm.sourceType}
+                    onValueChange={(v) => setRuleForm({ ...ruleForm, sourceType: v })}
+                    options={SOURCE_TYPE_OPTIONS}
+                    placeholder="Select source type"
+                    data-testid="select-rule-source-type"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Source Page/Form</Label>
+                  <Input
+                    value={ruleForm.sourcePage}
+                    onChange={(e) => setRuleForm({ ...ruleForm, sourcePage: e.target.value })}
+                    placeholder="Optional page or form identifier"
+                    data-testid="input-rule-source-page"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Active</Label>
+                  <SearchableSelect
+                    value={ruleForm.isActive}
+                    onValueChange={(v) => setRuleForm({ ...ruleForm, isActive: v })}
+                    options={ACTIVE_OPTIONS}
+                    placeholder="Select status"
+                    data-testid="select-rule-active"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Assignment</h3>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label>Assignment Strategy</Label>
+                  <SearchableSelect
+                    value={ruleForm.assignmentStrategy}
+                    onValueChange={(v) => setRuleForm({ ...ruleForm, assignmentStrategy: v })}
+                    options={ASSIGNMENT_STRATEGY_OPTIONS}
+                    placeholder="Select strategy"
+                    data-testid="select-rule-assignment-strategy"
+                  />
+                </div>
+                {ruleForm.assignmentStrategy === "specific_employees" && (
+                  <div className="space-y-1.5">
+                    <Label>Select Employees</Label>
+                    <div className="border rounded-md max-h-40 overflow-y-auto p-2 space-y-1" data-testid="list-rule-employees">
+                      {crmUsers.length === 0 ? (
+                        <p className="text-xs text-muted-foreground py-2 text-center">No active users found</p>
+                      ) : (
+                        crmUsers.map((user) => (
+                          <label
+                            key={user.id}
+                            className="flex items-center gap-2 px-2 py-1.5 rounded-sm text-sm cursor-pointer hover:bg-accent"
+                            data-testid={`checkbox-employee-${user.id}`}
+                          >
+                            <Checkbox
+                              checked={ruleForm.assignToEmployeeIds.includes(user.id)}
+                              onCheckedChange={() => toggleEmployee(user.id)}
+                            />
+                            <span>{user.fullName}</span>
+                            <span className="text-xs text-muted-foreground ml-auto">{user.email}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Duplicate Handling</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Assign To Option</Label>
+                  <SearchableSelect
+                    value={ruleForm.duplicatePhoneAction}
+                    onValueChange={(v) => setRuleForm({ ...ruleForm, duplicatePhoneAction: v })}
+                    options={DUPLICATE_PHONE_OPTIONS}
+                    placeholder="Select option"
+                    data-testid="select-rule-duplicate-phone"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Lead Option</Label>
+                  <SearchableSelect
+                    value={ruleForm.duplicateLeadOption}
+                    onValueChange={(v) => setRuleForm({ ...ruleForm, duplicateLeadOption: v })}
+                    options={DUPLICATE_LEAD_OPTIONS}
+                    placeholder="Select option"
+                    data-testid="select-rule-duplicate-lead"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Tags Option</Label>
+                  <SearchableSelect
+                    value={ruleForm.duplicateTagsOption}
+                    onValueChange={(v) => setRuleForm({ ...ruleForm, duplicateTagsOption: v })}
+                    options={DUPLICATE_TAGS_OPTIONS}
+                    placeholder="Select option"
+                    data-testid="select-rule-duplicate-tags"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Defaults</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Default Lead Status</Label>
+                  <SearchableSelect
+                    value={ruleForm.defaultLeadStatus}
+                    onValueChange={(v) => setRuleForm({ ...ruleForm, defaultLeadStatus: v })}
+                    options={LEAD_STATUS_OPTIONS}
+                    placeholder="Select status"
+                    data-testid="select-rule-lead-status"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Default Tags</Label>
+                  <Input
+                    value={ruleForm.defaultTags}
+                    onChange={(e) => setRuleForm({ ...ruleForm, defaultTags: e.target.value })}
+                    placeholder="tag1, tag2, tag3"
+                    data-testid="input-rule-default-tags"
+                  />
+                </div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer" data-testid="checkbox-rule-map-call-logs">
+                <Checkbox
+                  checked={ruleForm.mapCallLogs}
+                  onCheckedChange={(checked) => setRuleForm({ ...ruleForm, mapCallLogs: !!checked })}
+                />
+                <span className="text-sm">Map Call Logs</span>
+              </label>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Field Mapping</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {importFields.map((field) => (
+                  <div key={field.key} className="space-y-1">
+                    <Label className="text-xs">{field.label}</Label>
+                    <Input
+                      value={ruleForm.fieldMapping[field.key] || ""}
+                      onChange={(e) =>
+                        setRuleForm({
+                          ...ruleForm,
+                          fieldMapping: { ...ruleForm.fieldMapping, [field.key]: e.target.value },
+                        })
+                      }
+                      placeholder={`Source field for ${field.label}`}
+                      data-testid={`input-field-mapping-${field.key}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeRuleDialog} data-testid="button-cancel-rule">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveRule}
+              disabled={createRuleMutation.isPending || updateRuleMutation.isPending}
+              data-testid="button-save-rule"
+            >
+              {createRuleMutation.isPending || updateRuleMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-1.5" /> Saving...</>
+              ) : (
+                editingRule ? "Update Rule" : "Create Rule"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

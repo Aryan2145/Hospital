@@ -1114,6 +1114,54 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// --- Lead Import Logs ---
+export const leadImportLogs = pgTable("lead_import_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  fileName: text("file_name").notNull(),
+  source: text("source").notNull().default("csv"),
+  totalRows: integer("total_rows").default(0),
+  successCount: integer("success_count").default(0),
+  duplicateCount: integer("duplicate_count").default(0),
+  updatedCount: integer("updated_count").default(0),
+  failureCount: integer("failure_count").default(0),
+  duplicateStrategy: text("duplicate_strategy").notNull().default("skip"),
+  status: text("status").notNull().default("Processing"),
+  errorDetails: jsonb("error_details"),
+  columnMapping: jsonb("column_mapping"),
+  importedBy: varchar("imported_by"),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+// --- Lead Capture Rules (per connector) ---
+export const leadCaptureRules = pgTable("lead_capture_rules", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  connectorId: integer("connector_id").references(() => platformConnectors.id),
+  name: text("name").notNull(),
+  sourceType: text("source_type").notNull(),
+  sourcePage: text("source_page"),
+  sourceForm: text("source_form"),
+  isActive: boolean("is_active").notNull().default(true),
+  assignmentStrategy: text("assignment_strategy").notNull().default("round_robin"),
+  assignToEmployeeIds: jsonb("assign_to_employee_ids"),
+  duplicatePhoneAction: text("duplicate_phone_action").notNull().default("ignore"),
+  duplicateLeadOption: text("duplicate_lead_option").notNull().default("skip"),
+  duplicateTagsOption: text("duplicate_tags_option").notNull().default("ignore"),
+  defaultLeadStatus: text("default_lead_status").notNull().default("Raw Lead Captured"),
+  defaultTags: text("default_tags"),
+  fieldMapping: jsonb("field_mapping"),
+  webhookToken: text("webhook_token"),
+  mapCallLogs: boolean("map_call_logs").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+});
+
+export const insertLeadCaptureRuleSchema = createInsertSchema(leadCaptureRules).omit({ id: true, createdAt: true, modifiedAt: true });
+export type InsertLeadCaptureRule = z.infer<typeof insertLeadCaptureRuleSchema>;
+export type LeadCaptureRule = typeof leadCaptureRules.$inferSelect;
+
 // =============================================
 // ZOD SCHEMAS
 // =============================================

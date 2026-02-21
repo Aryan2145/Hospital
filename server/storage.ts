@@ -1,4 +1,15 @@
 import { db, pool } from "./db";
+
+export function toProperCase(str: string): string {
+  if (!str) return str;
+  return str.trim().replace(/\s+/g, " ").replace(/\b\w+/g, (word) => {
+    const lower = word.toLowerCase();
+    const skipWords = new Set(["and", "or", "the", "in", "of", "to", "for", "a", "an", "on", "at", "by", "with"]);
+    if (skipWords.has(lower) && word !== str.trim().split(/\s+/)[0]) return lower;
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  });
+}
+
 import {
   tenants, tenantSettings, leads, tasks, activities, campaigns, crmUsers, systemRoles,
   patients, contacts, patientContactLinks, appointments, episodes, auditLogs,
@@ -121,11 +132,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createLead(lead: InsertLead): Promise<Lead> {
+    if (lead.name && typeof lead.name === "string") lead.name = toProperCase(lead.name);
     const [newLead] = await db.insert(leads).values(lead).returning();
     return newLead;
   }
 
   async updateLead(id: number, updates: UpdateLeadRequest): Promise<Lead> {
+    if (updates.name && typeof updates.name === "string") updates.name = toProperCase(updates.name);
     const [updatedLead] = await db.update(leads)
       .set({ ...updates, updatedAt: new Date() })
       .where(eq(leads.id, id))
@@ -275,6 +288,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createCrmUser(data: InsertCrmUser): Promise<CrmUser> {
+    if (data.name && typeof data.name === "string") data.name = toProperCase(data.name);
     const [user] = await db.insert(crmUsers).values(data).returning();
     return user;
   }
@@ -629,10 +643,10 @@ export class DatabaseStorage implements IStorage {
   async createMasterRecord(tableName: string, data: Record<string, any>): Promise<MasterRecord> {
     const pgTable = this.resolveTableName(tableName);
     const now = new Date();
+    if (data.name && typeof data.name === "string") data.name = toProperCase(data.name);
     data.created_at = now;
     data.modified_at = now;
 
-    // Convert camelCase keys to snake_case for DB
     const snakeData = this.toSnakeCase(data);
 
     const keys = Object.keys(snakeData);
@@ -649,6 +663,7 @@ export class DatabaseStorage implements IStorage {
 
   async updateMasterRecord(tableName: string, id: number, data: Record<string, any>, tenantId?: number): Promise<MasterRecord> {
     const pgTable = this.resolveTableName(tableName);
+    if (data.name && typeof data.name === "string") data.name = toProperCase(data.name);
     data.modified_at = new Date();
 
     const snakeData = this.toSnakeCase(data);
