@@ -251,6 +251,17 @@ export function useAppointments(filters?: Record<string, string>) {
   });
 }
 
+export function useNextActionTypes() {
+  return useQuery<any[]>({
+    queryKey: ["/api/masters/next_action_types"],
+    queryFn: async () => {
+      const res = await fetch("/api/masters/next_action_types", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch next action types");
+      return res.json();
+    },
+  });
+}
+
 export function useCreateAppointment() {
   const queryClient = useQueryClient();
   return useMutation({

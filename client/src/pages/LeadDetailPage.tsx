@@ -1,7 +1,7 @@
 import { useRoute, useLocation } from "wouter";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers, useDoctors, useDoctorAvailability, useCreateAppointment } from "@/hooks/use-leads";
+import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers, useDoctors, useDoctorAvailability, useCreateAppointment, useNextActionTypes } from "@/hooks/use-leads";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -543,11 +543,14 @@ function TasksPanel({ leadId }: { leadId: number }) {
 function QuickActions({ lead }: { lead: any }) {
   const createActivity = useCreateActivity();
   const createTask = useCreateTask();
+  const updateLead = useUpdateLead();
   const assignLead = useAssignLead();
   const createAppointment = useCreateAppointment();
   const { data: crmUsers } = useActiveCrmUsers();
   const { data: doctorsList } = useDoctors();
+  const { data: nextActionTypes } = useNextActionTypes();
   const { toast } = useToast();
+  const validTransitions = getValidTransitions(lead.status);
   const [callDialogOpen, setCallDialogOpen] = useState(false);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
@@ -555,6 +558,10 @@ function QuickActions({ lead }: { lead: any }) {
   const [callNotes, setCallNotes] = useState("");
   const [callOutcome, setCallOutcome] = useState("");
   const [callDuration, setCallDuration] = useState("");
+  const [callNextActionTypeId, setCallNextActionTypeId] = useState("");
+  const [callNextActionDate, setCallNextActionDate] = useState("");
+  const [callNextActionNotes, setCallNextActionNotes] = useState("");
+  const [callStatusChange, setCallStatusChange] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDueDate, setTaskDueDate] = useState("");
   const [taskPriority, setTaskPriority] = useState("Normal");
@@ -569,24 +576,59 @@ function QuickActions({ lead }: { lead: any }) {
     apptDate || null
   );
 
+  const effectiveStatusChange = callStatusChange && callStatusChange !== "__none__" ? callStatusChange : null;
+  const effectiveNextActionTypeId = callNextActionTypeId && callNextActionTypeId !== "__none__" ? Number(callNextActionTypeId) : null;
+
   const handleLogCall = () => {
+    if (effectiveStatusChange && !isValidTransition(lead.status, effectiveStatusChange)) {
+      toast({ title: "Invalid status transition", description: `Cannot move from "${lead.status}" to "${effectiveStatusChange}"`, variant: "destructive" });
+      return;
+    }
+
+    const activityData: any = {
+      leadId: lead.id,
+      type: "call",
+      description: callNotes || "Phone call",
+      outcome: callOutcome || undefined,
+      callDurationSeconds: callDuration ? parseInt(callDuration) * 60 : undefined,
+      callDirection: "Outbound",
+      tenantId: 1,
+      createdBy: "placeholder",
+    };
+    if (effectiveNextActionTypeId) activityData.nextActionTypeId = effectiveNextActionTypeId;
+    if (callNextActionDate) activityData.nextActionDate = new Date(callNextActionDate);
+    if (callNextActionNotes) activityData.nextActionNotes = callNextActionNotes;
+    if (effectiveStatusChange) {
+      activityData.oldStatus = lead.status;
+      activityData.newStatus = effectiveStatusChange;
+    }
+
     createActivity.mutate({
       leadId: lead.id,
-      data: {
-        leadId: lead.id,
-        type: "call",
-        description: callNotes || "Phone call",
-        outcome: callOutcome || undefined,
-        callDurationSeconds: callDuration ? parseInt(callDuration) * 60 : undefined,
-        callDirection: "Outbound",
-        tenantId: 1,
-        createdBy: "placeholder",
-      },
+      data: activityData,
     }, {
       onSuccess: () => {
+        const leadUpdates: any = {};
+        if (effectiveNextActionTypeId) leadUpdates.nextActionTypeId = effectiveNextActionTypeId;
+        if (callNextActionDate) leadUpdates.nextActionDate = new Date(callNextActionDate);
+        if (callNextActionNotes) leadUpdates.nextActionNotes = callNextActionNotes;
+        if (effectiveStatusChange) leadUpdates.status = effectiveStatusChange;
+
+        if (Object.keys(leadUpdates).length > 0) {
+          updateLead.mutate({ id: lead.id, ...leadUpdates }, {
+            onError: (err) => {
+              toast({ title: "Call logged but lead update failed", description: err.message, variant: "destructive" });
+            },
+          });
+        }
+
         setCallNotes("");
         setCallOutcome("");
         setCallDuration("");
+        setCallNextActionTypeId("");
+        setCallNextActionDate("");
+        setCallNextActionNotes("");
+        setCallStatusChange("");
         setCallDialogOpen(false);
         toast({ title: "Call logged" });
       },
@@ -630,7 +672,7 @@ function QuickActions({ lead }: { lead: any }) {
               Log Call
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Log Call</DialogTitle>
             </DialogHeader>
@@ -666,10 +708,72 @@ function QuickActions({ lead }: { lead: any }) {
                   value={callNotes}
                   onChange={(e) => setCallNotes(e.target.value)}
                   placeholder="Call notes..."
-                  rows={3}
+                  rows={2}
                   data-testid="input-call-notes"
                 />
               </div>
+
+              {validTransitions.length > 0 && (
+                <div className="border-t border-border pt-3">
+                  <label className="text-xs font-medium text-muted-foreground">Change Status (optional)</label>
+                  <Select value={callStatusChange} onValueChange={setCallStatusChange}>
+                    <SelectTrigger data-testid="select-call-status-change">
+                      <SelectValue placeholder="Keep current status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Keep current status</SelectItem>
+                      {validTransitions.map((s) => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div className="border-t border-border pt-3">
+                <label className="text-xs font-semibold text-foreground flex items-center gap-1.5 mb-2">
+                  <Target className="w-3.5 h-3.5 text-primary" />
+                  Next Action
+                </label>
+                <div className="space-y-2">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Type</label>
+                    <Select value={callNextActionTypeId} onValueChange={setCallNextActionTypeId}>
+                      <SelectTrigger data-testid="select-call-next-action-type">
+                        <SelectValue placeholder="Select next action type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">None</SelectItem>
+                        {(nextActionTypes || []).filter((t: any) => t.status === "Active").map((t: any) => (
+                          <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Date & Time</label>
+                    <Input
+                      type="datetime-local"
+                      value={callNextActionDate}
+                      onChange={(e) => setCallNextActionDate(e.target.value)}
+                      className="text-xs"
+                      data-testid="input-call-next-action-date"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Next Action Notes</label>
+                    <Textarea
+                      value={callNextActionNotes}
+                      onChange={(e) => setCallNextActionNotes(e.target.value)}
+                      placeholder="What needs to happen next..."
+                      rows={2}
+                      className="text-xs"
+                      data-testid="input-call-next-action-notes"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <Button onClick={handleLogCall} className="w-full" disabled={createActivity.isPending} data-testid="button-submit-call">
                 Log Call
               </Button>
