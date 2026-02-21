@@ -83,9 +83,9 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - **AGENT / COUNSELLOR**: Frontline - dashboard, leads, appointments, transactions
 
 ## Sidebar Structure
-Navigation organized into 4 sections:
+Navigation organized into 4 sections following the lead lifecycle flow:
 1. **Reports & Dashboards**: Dashboard
-2. **Transactions**: Leads, Appointments, Campaigns, Transactions
+2. **Transactions** (full lifecycle): Campaigns → Lead Import → Leads → Appointments → Episodes
 3. **Masters**: Master Data
 4. **Configurations**: Team (CRM Admin+), Connectors (System Admin), Email Settings (System Admin), Testing (System Admin)
 

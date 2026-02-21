@@ -11,10 +11,10 @@ import {
   Shield,
   FlaskConical,
   Megaphone,
-  FileText,
   FileUp,
   Plug,
   Mail,
+  HeartPulse,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -33,11 +33,11 @@ const sections: { label: string; items: NavItem[] }[] = [
   {
     label: "Transactions",
     items: [
-      { icon: Users, label: "Leads", href: "/leads", page: "leads" },
-      { icon: Calendar, label: "Appointments", href: "/appointments", page: "appointments" },
       { icon: Megaphone, label: "Campaigns", href: "/campaigns", page: "campaigns" },
       { icon: FileUp, label: "Lead Import", href: "/lead-import", page: "leads" },
-      { icon: FileText, label: "Transactions", href: "/transactions", page: "transactions" },
+      { icon: Users, label: "Leads", href: "/leads", page: "leads" },
+      { icon: Calendar, label: "Appointments", href: "/appointments", page: "appointments" },
+      { icon: HeartPulse, label: "Episodes", href: "/transactions", page: "transactions" },
     ],
   },
   {

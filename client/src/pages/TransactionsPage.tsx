@@ -193,8 +193,8 @@ export default function TransactionsPage() {
         <div className="p-8 max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <h2 className="text-3xl font-bold tracking-tight text-foreground" data-testid="text-transactions-title">Transactions</h2>
-              <p className="text-muted-foreground mt-1">Manage treatment episodes and patient transactions.</p>
+              <h2 className="text-3xl font-bold tracking-tight text-foreground" data-testid="text-transactions-title">Episodes</h2>
+              <p className="text-muted-foreground mt-1">Manage treatment episodes and patient journey tracking.</p>
             </div>
             <Button onClick={openCreate} data-testid="button-create-episode">
               <Plus className="w-4 h-4 mr-2" />
