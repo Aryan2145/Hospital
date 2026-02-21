@@ -280,6 +280,7 @@ export function useCreateAppointment() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
       queryClient.invalidateQueries({ queryKey: [api.leads.list.path] });
     },
   });
@@ -303,6 +304,7 @@ export function useAppointmentAction() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
       queryClient.invalidateQueries({ queryKey: [api.leads.list.path] });
     },
   });

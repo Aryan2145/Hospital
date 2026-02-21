@@ -309,51 +309,39 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAppointmentsEnriched(tenantId: number, filters?: Record<string, any>): Promise<any[]> {
-    const conditions = [eq(appointments.tenantId, tenantId)];
-    if (filters?.leadId) conditions.push(eq(appointments.leadId, filters.leadId));
-    if (filters?.patientId) conditions.push(eq(appointments.patientId, filters.patientId));
-    if (filters?.doctorId) conditions.push(eq(appointments.doctorId, filters.doctorId));
-    if (filters?.branchId) conditions.push(eq(appointments.branchId, filters.branchId));
-    if (filters?.status) conditions.push(eq(appointments.status, filters.status));
-    if (filters?.dateFrom) conditions.push(gte(appointments.appointmentDate, new Date(filters.dateFrom)));
-    if (filters?.dateTo) conditions.push(lte(appointments.appointmentDate, new Date(filters.dateTo + "T23:59:59.999Z")));
+    const conditions: ReturnType<typeof sql>[] = [sql`a.tenant_id = ${tenantId}`];
+    if (filters?.leadId) conditions.push(sql`a.lead_id = ${Number(filters.leadId)}`);
+    if (filters?.patientId) conditions.push(sql`a.patient_id = ${Number(filters.patientId)}`);
+    if (filters?.doctorId) conditions.push(sql`a.doctor_id = ${Number(filters.doctorId)}`);
+    if (filters?.branchId) conditions.push(sql`a.branch_id = ${Number(filters.branchId)}`);
+    if (filters?.status) conditions.push(sql`a.status = ${String(filters.status)}`);
+    if (filters?.dateFrom) conditions.push(sql`a.appointment_date >= ${new Date(filters.dateFrom + "T00:00:00.000Z")}`);
+    if (filters?.dateTo) conditions.push(sql`a.appointment_date <= ${new Date(filters.dateTo + "T23:59:59.999Z")}`);
 
-    const rows = await db
-      .select({
-        id: appointments.id,
-        tenantId: appointments.tenantId,
-        leadId: appointments.leadId,
-        patientId: appointments.patientId,
-        doctorId: appointments.doctorId,
-        branchId: appointments.branchId,
-        appointmentTypeId: appointments.appointmentTypeId,
-        appointmentDate: appointments.appointmentDate,
-        startTime: appointments.startTime,
-        endTime: appointments.endTime,
-        tokenNumber: appointments.tokenNumber,
-        status: appointments.status,
-        rescheduleCount: appointments.rescheduleCount,
-        cancelReason: appointments.cancelReason,
-        consultationNotes: appointments.consultationNotes,
-        notes: appointments.notes,
-        createdAt: appointments.createdAt,
-        doctorName: doctors.name,
-        leadName: leads.name,
-        leadPhone: leads.phone,
-        patientFirstName: patients.firstName,
-        patientLastName: patients.lastName,
-        patientPhone: patients.phone,
-        branchName: branches.name,
-      })
-      .from(appointments)
-      .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
-      .leftJoin(leads, eq(appointments.leadId, leads.id))
-      .leftJoin(patients, eq(appointments.patientId, patients.id))
-      .leftJoin(branches, eq(appointments.branchId, branches.id))
-      .where(and(...conditions))
-      .orderBy(appointments.appointmentDate, appointments.startTime);
+    const whereClause = conditions.reduce((acc, cond, i) => i === 0 ? cond : sql`${acc} AND ${cond}`);
 
-    return rows.map(r => ({
+    const result = await db.execute(sql`
+      SELECT a.id, a.tenant_id AS "tenantId", a.lead_id AS "leadId", a.patient_id AS "patientId",
+        a.doctor_id AS "doctorId", a.branch_id AS "branchId", a.appointment_type_id AS "appointmentTypeId",
+        a.appointment_date AS "appointmentDate", a.start_time AS "startTime", a.end_time AS "endTime",
+        a.token_number AS "tokenNumber", a.status, a.reschedule_count AS "rescheduleCount",
+        a.cancel_reason AS "cancelReason", a.consultation_notes AS "consultationNotes",
+        a.notes, a.created_at AS "createdAt",
+        d.name AS "doctorName",
+        l.name AS "leadName", l.phone_e164 AS "leadPhone",
+        p.first_name AS "patientFirstName", p.last_name AS "patientLastName", p.primary_phone AS "patientPhone",
+        b.name AS "branchName"
+      FROM appointments a
+      LEFT JOIN doctors d ON a.doctor_id = d.id
+      LEFT JOIN leads l ON a.lead_id = l.id
+      LEFT JOIN patients p ON a.patient_id = p.id
+      LEFT JOIN branches b ON a.branch_id = b.id
+      WHERE ${whereClause}
+      ORDER BY a.appointment_date, a.start_time
+    `);
+
+    const rows = (result as any).rows || result;
+    return rows.map((r: any) => ({
       ...r,
       patientName: r.patientFirstName && r.patientLastName
         ? `${r.patientFirstName} ${r.patientLastName}`
