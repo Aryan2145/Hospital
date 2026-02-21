@@ -2,9 +2,11 @@ import session from "express-session";
 import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { db } from "../../db";
 import { crmUsers } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
+import { sendPasswordResetEmail } from "../../email";
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
@@ -120,6 +122,89 @@ export async function setupAuth(app: Express) {
       res.clearCookie("connect.sid");
       res.json({ success: true });
     });
+  });
+
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    try {
+      const { mobile } = req.body;
+      if (!mobile) {
+        return res.status(400).json({ message: "Mobile number is required" });
+      }
+
+      const normalizedMobile = mobile.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
+
+      let user = null;
+      const [found] = await db.select().from(crmUsers).where(eq(crmUsers.phone, `+91${normalizedMobile}`));
+      if (found) user = found;
+      if (!user) {
+        const [found2] = await db.select().from(crmUsers).where(eq(crmUsers.phone, normalizedMobile));
+        if (found2) user = found2;
+      }
+
+      if (!user || !user.email) {
+        return res.json({ success: true, message: "If an account with that mobile number exists and has an email, a reset link has been sent." });
+      }
+
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiry = new Date(Date.now() + 60 * 60 * 1000);
+
+      await db.update(crmUsers)
+        .set({ resetToken: token, resetTokenExpiry: expiry })
+        .where(eq(crmUsers.id, user.id));
+
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const resetLink = `${baseUrl}/reset-password?token=${token}`;
+
+      try {
+        await sendPasswordResetEmail(user.email, user.name, resetLink);
+      } catch (emailErr: any) {
+        console.error("Email send error:", emailErr);
+        await db.update(crmUsers)
+          .set({ resetToken: null, resetTokenExpiry: null })
+          .where(eq(crmUsers.id, user.id));
+        return res.status(500).json({ message: "Unable to send reset email. Please check SMTP configuration or contact your administrator." });
+      }
+
+      res.json({ success: true, message: "If an account with that mobile number exists and has an email, a reset link has been sent." });
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      res.status(500).json({ message: "Failed to process request. Please try again." });
+    }
+  });
+
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const { token, password } = req.body;
+      if (!token || !password) {
+        return res.status(400).json({ message: "Token and new password are required" });
+      }
+      if (password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      const [user] = await db.select().from(crmUsers).where(eq(crmUsers.resetToken, token));
+
+      if (!user) {
+        return res.status(400).json({ message: "Invalid or expired reset link. Please request a new one." });
+      }
+
+      if (!user.resetTokenExpiry || new Date() > user.resetTokenExpiry) {
+        await db.update(crmUsers)
+          .set({ resetToken: null, resetTokenExpiry: null })
+          .where(eq(crmUsers.id, user.id));
+        return res.status(400).json({ message: "Reset link has expired. Please request a new one." });
+      }
+
+      const hash = await hashPassword(password);
+      await db.update(crmUsers)
+        .set({ passwordHash: hash, resetToken: null, resetTokenExpiry: null })
+        .where(eq(crmUsers.id, user.id));
+
+      res.json({ success: true, message: "Password has been reset successfully. You can now log in." });
+    } catch (error) {
+      console.error("Reset password error:", error);
+      res.status(500).json({ message: "Failed to reset password. Please try again." });
+    }
   });
 
   app.get("/api/auth/user", isAuthenticated, async (req, res) => {

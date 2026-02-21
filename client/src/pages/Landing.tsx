@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Activity, ShieldCheck, HeartPulse, Stethoscope, Phone, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 
 export default function Landing() {
   const [mobile, setMobile] = useState("");
@@ -167,6 +168,12 @@ export default function Landing() {
                 "Sign In"
               )}
             </Button>
+
+            <div className="text-right">
+              <Link href="/forgot-password" className="text-sm text-primary hover:underline" data-testid="link-forgot-password">
+                Forgot Password?
+              </Link>
+            </div>
           </form>
 
           <div className="relative my-6">

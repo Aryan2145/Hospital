@@ -20,6 +20,8 @@ import TransactionsPage from "@/pages/TransactionsPage";
 import ConnectorsPage from "@/pages/ConnectorsPage";
 import PendingApproval from "@/pages/PendingApproval";
 import TestingInterface from "@/pages/TestingInterface";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 
 function RoleGate({ page, children }: { page: string; children: React.ReactNode }) {
   const { isLoading, isRegistered, canViewPage } = useCurrentUser();
@@ -96,6 +98,14 @@ function Router() {
         {isAuthenticated ? (
           <RoleGate page="testing"><TestingInterface /></RoleGate>
         ) : <Landing />}
+      </Route>
+
+      <Route path="/forgot-password">
+        {isAuthenticated ? <Redirect to="/" /> : <ForgotPassword />}
+      </Route>
+
+      <Route path="/reset-password">
+        {isAuthenticated ? <Redirect to="/" /> : <ResetPassword />}
       </Route>
 
       <Route component={NotFound} />
