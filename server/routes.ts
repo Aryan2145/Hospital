@@ -1549,7 +1549,10 @@ export async function registerRoutes(
   app.post("/api/campaigns", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const parsed = insertCampaignSchema.parse({ ...req.body, tenantId: tid });
+      const body = { ...req.body };
+      if (body.startDate && typeof body.startDate === "string") body.startDate = new Date(body.startDate);
+      if (body.endDate && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
+      const parsed = insertCampaignSchema.parse({ ...body, tenantId: tid });
       const c = await storage.createCampaign(parsed);
       res.status(201).json(c);
     } catch (err: any) {
@@ -1560,7 +1563,10 @@ export async function registerRoutes(
   app.patch("/api/campaigns/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const parsed = insertCampaignSchema.partial().parse(req.body);
+      const body = { ...req.body };
+      if (body.startDate && typeof body.startDate === "string") body.startDate = new Date(body.startDate);
+      if (body.endDate && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
+      const parsed = insertCampaignSchema.partial().parse(body);
       const c = await storage.updateCampaign(Number(req.params.id), tid, parsed);
       res.json(c);
     } catch (err: any) {
@@ -1754,7 +1760,10 @@ export async function registerRoutes(
   app.post("/api/episodes", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const parsed = insertEpisodeSchema.parse({ ...req.body, tenantId: tid });
+      const body = { ...req.body };
+      if (body.startDate && typeof body.startDate === "string") body.startDate = new Date(body.startDate);
+      if (body.endDate && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
+      const parsed = insertEpisodeSchema.parse({ ...body, tenantId: tid });
       const ep = await storage.createEpisode(parsed);
       res.status(201).json(ep);
     } catch (err: any) {
@@ -1765,7 +1774,10 @@ export async function registerRoutes(
   app.patch("/api/episodes/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();
-      const parsed = insertEpisodeSchema.partial().parse(req.body);
+      const body = { ...req.body };
+      if (body.startDate && typeof body.startDate === "string") body.startDate = new Date(body.startDate);
+      if (body.endDate && typeof body.endDate === "string") body.endDate = new Date(body.endDate);
+      const parsed = insertEpisodeSchema.partial().parse(body);
       const ep = await storage.updateEpisode(Number(req.params.id), tid, parsed);
       res.json(ep);
     } catch (err: any) {
