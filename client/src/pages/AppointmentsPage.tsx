@@ -12,9 +12,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, addWeeks, subWeeks, isSameMonth, isSameDay, isToday } from "date-fns";
 import { useState, useMemo } from "react";
-import { Calendar, Clock, User, Hash, CheckCircle2, XCircle, RotateCcw, AlertTriangle, Stethoscope, Plus, Loader2, ChevronLeft, ChevronRight, Building, ListOrdered, CalendarDays } from "lucide-react";
+import { Calendar, Clock, User, Hash, CheckCircle2, XCircle, RotateCcw, AlertTriangle, Stethoscope, Plus, Loader2, ChevronLeft, ChevronRight, Building, ListOrdered, CalendarDays, UserPlus, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -111,6 +112,7 @@ function DoctorScheduleView() {
   const { data: leadsList } = useQuery<any[]>({ queryKey: ["/api/leads"] });
   const { data: patientsList } = useQuery<any[]>({ queryKey: ["/api/patients"] });
   const { data: appointmentTypes } = useQuery<any[]>({ queryKey: ["/api/masters/appointmentTypes"] });
+  const { data: consultationTypesList } = useQuery<any[]>({ queryKey: ["/api/masters/consultationTypes"] });
 
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookDoctorId, setBookDoctorId] = useState("");
@@ -120,6 +122,14 @@ function DoctorScheduleView() {
   const [bookPatientId, setBookPatientId] = useState("");
   const [bookApptTypeId, setBookApptTypeId] = useState("");
   const [bookNotes, setBookNotes] = useState("");
+  const [bookMode, setBookMode] = useState<"existing" | "new">("new");
+
+  const [newPatientName, setNewPatientName] = useState("");
+  const [newPatientPhone, setNewPatientPhone] = useState("");
+  const [newPatientAge, setNewPatientAge] = useState("");
+  const [newPatientGender, setNewPatientGender] = useState("");
+  const [newPatientConsultationType, setNewPatientConsultationType] = useState("");
+  const [isCreatingLead, setIsCreatingLead] = useState(false);
 
   const availability = useDoctorAvailability(
     bookDoctorId ? Number(bookDoctorId) : null,
@@ -135,13 +145,31 @@ function DoctorScheduleView() {
     setBookPatientId("");
     setBookApptTypeId("");
     setBookNotes("");
+    setBookMode("new");
+    setNewPatientName("");
+    setNewPatientPhone("");
+    setNewPatientAge("");
+    setNewPatientGender("");
+    setNewPatientConsultationType("");
   };
 
   const [bookManualTime, setBookManualTime] = useState("");
 
   const effectiveStartTime = bookSlot || bookManualTime;
 
-  const handleBookAppointment = () => {
+  function toTitleCase(str: string) {
+    return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+  }
+
+  function normalizePhone(phone: string): string {
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length === 10) return `+91${digits}`;
+    if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
+    if (digits.startsWith("+")) return phone;
+    return `+91${digits}`;
+  }
+
+  const handleBookAppointment = async () => {
     if (!bookDoctorId || !bookDate) {
       toast({ title: "Doctor and date are required", variant: "destructive" });
       return;
@@ -150,7 +178,44 @@ function DoctorScheduleView() {
       toast({ title: "Appointment time is required", variant: "destructive" });
       return;
     }
-    const selectedSlot = availability.data?.slots?.find(s => s.startTime === bookSlot);
+
+    let leadId: number | null = null;
+
+    if (bookMode === "new") {
+      if (!newPatientName || !newPatientPhone) {
+        toast({ title: "Patient name and phone are required", variant: "destructive" });
+        return;
+      }
+      const phoneDigits = newPatientPhone.replace(/\D/g, "");
+      if (phoneDigits.length < 10) {
+        toast({ title: "Please enter a valid 10-digit phone number", variant: "destructive" });
+        return;
+      }
+      setIsCreatingLead(true);
+      try {
+        const leadRes = await apiRequest("POST", "/api/leads", {
+          name: toTitleCase(newPatientName.trim()),
+          phoneE164: normalizePhone(newPatientPhone.trim()),
+          status: "Raw Lead Captured",
+          doctorId: Number(bookDoctorId),
+          consultationTypeId: newPatientConsultationType ? Number(newPatientConsultationType) : undefined,
+          notes: [
+            newPatientAge ? `Age: ${newPatientAge}` : "",
+            newPatientGender ? `Gender: ${newPatientGender}` : "",
+          ].filter(Boolean).join(", "),
+        });
+        const newLead = await leadRes.json();
+        leadId = newLead.id;
+        queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      } catch (err: any) {
+        setIsCreatingLead(false);
+        toast({ title: "Failed to create lead", description: err.message, variant: "destructive" });
+        return;
+      }
+      setIsCreatingLead(false);
+    }
+
+    const selectedSlot = availability.data?.slots?.find((s: any) => s.startTime === bookSlot);
     const data: any = {
       doctorId: Number(bookDoctorId),
       appointmentDate: bookDate,
@@ -158,9 +223,14 @@ function DoctorScheduleView() {
       status: "Scheduled",
     };
     if (selectedSlot?.endTime) data.endTime = selectedSlot.endTime;
-    if (bookLeadId && bookLeadId !== "none") data.leadId = Number(bookLeadId);
+    if (leadId) {
+      data.leadId = leadId;
+    } else if (bookLeadId && bookLeadId !== "none") {
+      data.leadId = Number(bookLeadId);
+    }
     if (bookPatientId && bookPatientId !== "none") data.patientId = Number(bookPatientId);
     if (bookApptTypeId && bookApptTypeId !== "none") data.appointmentTypeId = Number(bookApptTypeId);
+    if (bookMode === "new" && newPatientConsultationType) data.consultationTypeId = Number(newPatientConsultationType);
     if (bookNotes) data.notes = bookNotes;
 
     createAppointment.mutate(data, {
@@ -424,6 +494,133 @@ function DoctorScheduleView() {
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Book New Appointment</DialogTitle></DialogHeader>
           <div className="space-y-4">
+            <div className="flex gap-2 p-1 bg-muted/50 rounded-lg">
+              <Button
+                variant={bookMode === "new" ? "default" : "ghost"}
+                size="sm"
+                className="flex-1 text-xs"
+                onClick={() => setBookMode("new")}
+                data-testid="book-mode-new"
+              >
+                <UserPlus className="w-3.5 h-3.5 mr-1.5" />
+                New Patient
+              </Button>
+              <Button
+                variant={bookMode === "existing" ? "default" : "ghost"}
+                size="sm"
+                className="flex-1 text-xs"
+                onClick={() => setBookMode("existing")}
+                data-testid="book-mode-existing"
+              >
+                <User className="w-3.5 h-3.5 mr-1.5" />
+                Existing Lead / Follow-up
+              </Button>
+            </div>
+
+            {bookMode === "new" && (
+              <div className="space-y-3 p-3 border rounded-lg bg-blue-50/30">
+                <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
+                  <UserPlus className="w-3.5 h-3.5" />
+                  New Patient Details
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <Label className="text-xs font-medium text-muted-foreground">Patient Name *</Label>
+                    <Input
+                      value={newPatientName}
+                      onChange={(e) => setNewPatientName(e.target.value)}
+                      placeholder="Full name"
+                      data-testid="book-input-patient-name"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs font-medium text-muted-foreground">Phone Number *</Label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground font-medium">+91</span>
+                      <Input
+                        value={newPatientPhone}
+                        onChange={(e) => setNewPatientPhone(e.target.value)}
+                        placeholder="10-digit mobile"
+                        maxLength={10}
+                        data-testid="book-input-patient-phone"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium text-muted-foreground">Age</Label>
+                    <Input
+                      type="number"
+                      value={newPatientAge}
+                      onChange={(e) => setNewPatientAge(e.target.value)}
+                      placeholder="Years"
+                      min="0"
+                      max="120"
+                      data-testid="book-input-patient-age"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium text-muted-foreground">Gender</Label>
+                    <SearchableSelect
+                      value={newPatientGender}
+                      onValueChange={setNewPatientGender}
+                      options={[
+                        { value: "", label: "Select" },
+                        { value: "Male", label: "Male" },
+                        { value: "Female", label: "Female" },
+                        { value: "Other", label: "Other" },
+                      ]}
+                      placeholder="Select"
+                      data-testid="book-select-patient-gender"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs font-medium text-muted-foreground">Consultation Type</Label>
+                    <SearchableSelect
+                      value={newPatientConsultationType}
+                      onValueChange={setNewPatientConsultationType}
+                      options={[
+                        { value: "", label: "None" },
+                        ...(consultationTypesList?.filter((t: any) => t.status === "Active").map((t: any) => ({ value: String(t.id), label: t.name })) || []),
+                      ]}
+                      placeholder="Select consultation type"
+                      data-testid="book-select-consultation-type"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {bookMode === "existing" && (
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground">Link to Lead (for follow-up)</Label>
+                  <SearchableSelect
+                    value={bookLeadId}
+                    onValueChange={setBookLeadId}
+                    options={[
+                      { value: "none", label: "No lead" },
+                      ...(leadsList?.map((l: any) => ({ value: String(l.id), label: `${l.name}${l.phone ? ` (${l.phone})` : ""}` })) || []),
+                    ]}
+                    placeholder="Search lead by name or phone..."
+                    data-testid="book-select-lead"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground">Link to Patient (optional)</Label>
+                  <SearchableSelect
+                    value={bookPatientId}
+                    onValueChange={setBookPatientId}
+                    options={[
+                      { value: "none", label: "No patient" },
+                      ...(patientsList?.map((p: any) => ({ value: String(p.id), label: `${p.firstName} ${p.lastName}${p.phone ? ` (${p.phone})` : ""}` })) || []),
+                    ]}
+                    placeholder="Search patient..."
+                    data-testid="book-select-patient"
+                  />
+                </div>
+              </div>
+            )}
+
             <div>
               <Label className="text-xs font-medium text-muted-foreground">Doctor *</Label>
               <SearchableSelect
@@ -448,7 +645,7 @@ function DoctorScheduleView() {
                 ) : availability.data && availability.data.slots.length > 0 ? (
                   <div className="space-y-2 mt-1">
                     <div className="grid grid-cols-2 gap-2">
-                      {availability.data.slots.map((slot) => (
+                      {availability.data.slots.map((slot: any) => (
                         <Button key={slot.startTime} variant={bookSlot === slot.startTime ? "default" : "outline"} size="sm" className="text-xs" disabled={slot.availableCount <= 0} onClick={() => { setBookSlot(slot.startTime); setBookManualTime(""); }} data-testid={`book-slot-${slot.startTime}`}>
                           <Clock className="w-3 h-3 mr-1" />{slot.startTime} - {slot.endTime}
                           <Badge variant="outline" className="ml-1 text-[10px]">{slot.availableCount} left</Badge>
@@ -471,32 +668,6 @@ function DoctorScheduleView() {
               </div>
             )}
             <div>
-              <Label className="text-xs font-medium text-muted-foreground">Link to Lead (optional)</Label>
-              <SearchableSelect
-                value={bookLeadId}
-                onValueChange={setBookLeadId}
-                options={[
-                  { value: "none", label: "No lead" },
-                  ...(leadsList?.map((l: any) => ({ value: String(l.id), label: `${l.name}${l.phone ? ` (${l.phone})` : ""}` })) || []),
-                ]}
-                placeholder="Select lead (optional)"
-                data-testid="book-select-lead"
-              />
-            </div>
-            <div>
-              <Label className="text-xs font-medium text-muted-foreground">Link to Patient (optional)</Label>
-              <SearchableSelect
-                value={bookPatientId}
-                onValueChange={setBookPatientId}
-                options={[
-                  { value: "none", label: "No patient" },
-                  ...(patientsList?.map((p: any) => ({ value: String(p.id), label: `${p.firstName} ${p.lastName}${p.phone ? ` (${p.phone})` : ""}` })) || []),
-                ]}
-                placeholder="Select patient (optional)"
-                data-testid="book-select-patient"
-              />
-            </div>
-            <div>
               <Label className="text-xs font-medium text-muted-foreground">Appointment Type (optional)</Label>
               <SearchableSelect
                 value={bookApptTypeId}
@@ -511,11 +682,16 @@ function DoctorScheduleView() {
             </div>
             <div>
               <Label className="text-xs font-medium text-muted-foreground">Notes (optional)</Label>
-              <Textarea value={bookNotes} onChange={(e) => setBookNotes(e.target.value)} placeholder="Appointment notes..." rows={3} data-testid="book-input-notes" />
+              <Textarea value={bookNotes} onChange={(e) => setBookNotes(e.target.value)} placeholder="Appointment notes..." rows={2} data-testid="book-input-notes" />
             </div>
-            <Button onClick={handleBookAppointment} className="w-full" disabled={createAppointment.isPending || !bookDoctorId || !bookDate || !effectiveStartTime} data-testid="button-confirm-book">
-              {createAppointment.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calendar className="w-4 h-4 mr-2" />}
-              Book Appointment
+            <Button
+              onClick={handleBookAppointment}
+              className="w-full"
+              disabled={createAppointment.isPending || isCreatingLead || !bookDoctorId || !bookDate || !effectiveStartTime || (bookMode === "new" && (!newPatientName || !newPatientPhone))}
+              data-testid="button-confirm-book"
+            >
+              {(createAppointment.isPending || isCreatingLead) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calendar className="w-4 h-4 mr-2" />}
+              {bookMode === "new" ? "Create Lead & Book Appointment" : "Book Appointment"}
             </Button>
           </div>
         </DialogContent>
