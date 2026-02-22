@@ -1797,7 +1797,7 @@ export async function registerRoutes(
             const waConfig = getWhatsAppConfigFromSettings(allSettings);
             if (!waConfig.enabled) return;
 
-            const lead = await storage.getLead(parsed.leadId);
+            const lead = await storage.getLead(parsed.leadId!);
             if (!lead?.phoneE164) return;
 
             const waPhone = formatPhoneForWhatsApp(lead.phoneE164);
@@ -1823,7 +1823,7 @@ export async function registerRoutes(
             }
 
             await storage.createActivity({
-              leadId: parsed.leadId, tenantId: tid, createdBy: "system",
+              leadId: parsed.leadId!, tenantId: tid, createdBy: "system",
               type: "whatsapp",
               description: `WhatsApp appointment confirmation sent to ${lead.phoneE164}`,
             });
