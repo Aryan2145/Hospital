@@ -799,38 +799,45 @@ function DoctorScheduleView() {
               <Label className="text-xs font-medium text-muted-foreground">Date *</Label>
               <Input type="date" value={bookDate} onChange={(e) => { setBookDate(e.target.value); setBookSlot(""); }} min={new Date().toISOString().split("T")[0]} data-testid="book-input-date" />
             </div>
-            {bookDoctorId && bookDate && (
-              <div>
-                <Label className="text-xs font-medium text-muted-foreground">Appointment Time *</Label>
-                {availability.isLoading ? (
-                  <p className="text-xs text-muted-foreground mt-1">Loading available slots...</p>
-                ) : availability.data && !availability.data.available ? (
-                  <p className="text-xs text-destructive mt-1">{availability.data.reason || "Doctor not available on this date"}</p>
-                ) : availability.data && availability.data.slots.length > 0 ? (
-                  <div className="space-y-2 mt-1">
-                    <div className="grid grid-cols-2 gap-2">
-                      {availability.data.slots.map((slot: any) => (
-                        <Button key={slot.startTime} variant={bookSlot === slot.startTime ? "default" : "outline"} size="sm" className="text-xs" disabled={slot.availableCount <= 0} onClick={() => { setBookSlot(slot.startTime); setBookManualTime(""); }} data-testid={`book-slot-${slot.startTime}`}>
-                          <Clock className="w-3 h-3 mr-1" />{slot.startTime} - {slot.endTime}
-                          <Badge variant="outline" className="ml-1 text-[10px]">{slot.availableCount} left</Badge>
-                        </Button>
-                      ))}
+            <div>
+              <Label className="text-xs font-medium text-muted-foreground">Appointment Time *</Label>
+              {!bookDoctorId || !bookDate ? (
+                <div className="space-y-2 mt-1">
+                  <p className="text-xs text-muted-foreground">Select doctor and date above to see available slots</p>
+                  <Input type="time" value={bookManualTime} onChange={(e) => setBookManualTime(e.target.value)} placeholder="HH:MM" data-testid="book-input-time-manual" />
+                </div>
+              ) : availability.isLoading ? (
+                <p className="text-xs text-muted-foreground mt-1">Loading available slots...</p>
+              ) : availability.data && !availability.data.available ? (
+                <div className="space-y-2 mt-1">
+                  <p className="text-xs text-destructive">{availability.data.reason || "Doctor not available on this date"}</p>
+                  <p className="text-xs text-muted-foreground">You can still enter time manually:</p>
+                  <Input type="time" value={bookManualTime} onChange={(e) => setBookManualTime(e.target.value)} data-testid="book-input-time-manual" />
+                </div>
+              ) : availability.data && availability.data.slots.length > 0 ? (
+                <div className="space-y-2 mt-1">
+                  <div className="grid grid-cols-2 gap-2">
+                    {availability.data.slots.map((slot: any) => (
+                      <Button key={slot.startTime} variant={bookSlot === slot.startTime ? "default" : "outline"} size="sm" className="text-xs" disabled={slot.availableCount <= 0} onClick={() => { setBookSlot(slot.startTime); setBookManualTime(""); }} data-testid={`book-slot-${slot.startTime}`}>
+                        <Clock className="w-3 h-3 mr-1" />{slot.startTime} - {slot.endTime}
+                        <Badge variant="outline" className="ml-1 text-[10px]">{slot.availableCount} left</Badge>
+                      </Button>
+                    ))}
+                  </div>
+                  {!bookSlot && (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Or enter time manually:</p>
+                      <Input type="time" value={bookManualTime} onChange={(e) => setBookManualTime(e.target.value)} className="mt-1" data-testid="book-input-time-manual" />
                     </div>
-                    {!bookSlot && (
-                      <div>
-                        <p className="text-xs text-muted-foreground">Or enter time manually:</p>
-                        <Input type="time" value={bookManualTime} onChange={(e) => setBookManualTime(e.target.value)} className="mt-1" data-testid="book-input-time-manual" />
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-xs text-muted-foreground mt-1">{availability.data?.slots.length === 0 ? "No OPD slots configured for this day." : ""} Enter time:</p>
-                    <Input type="time" value={bookManualTime} onChange={(e) => setBookManualTime(e.target.value)} className="mt-1" data-testid="book-input-time-manual" />
-                  </div>
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xs text-muted-foreground mt-1">{availability.data?.slots.length === 0 ? "No OPD slots configured for this day." : ""} Enter time:</p>
+                  <Input type="time" value={bookManualTime} onChange={(e) => setBookManualTime(e.target.value)} className="mt-1" data-testid="book-input-time-manual" />
+                </div>
+              )}
+            </div>
             <div>
               <Label className="text-xs font-medium text-muted-foreground">Appointment Type (optional)</Label>
               <SearchableSelect
