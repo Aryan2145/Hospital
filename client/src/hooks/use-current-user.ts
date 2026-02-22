@@ -45,7 +45,7 @@ export function useCurrentUser() {
       case "SYS_ADMIN":
         return true;
       case "ADMIN":
-        return ["dashboard", "leads", "appointments", "campaigns", "transactions", "team", "masters"].includes(page);
+        return ["dashboard", "leads", "appointments", "campaigns", "transactions", "team", "masters", "connectors", "branding", "email-settings", "whatsapp-settings"].includes(page);
       case "MANAGER":
         return ["dashboard", "leads", "appointments", "campaigns", "transactions", "team"].includes(page);
       case "AGENT":

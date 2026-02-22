@@ -2730,7 +2730,7 @@ export async function registerRoutes(
   }
 
   app.get("/api/connectors", isAuthenticated, async (req: any, res: any) => {
-    if (!(await requireSysAdmin(req, res))) return;
+    if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
     try {
       const tid = await getDefaultTenantId(req);
       const connectors = await storage.getPlatformConnectors(tid);
@@ -2741,7 +2741,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/connectors/:id", isAuthenticated, async (req: any, res: any) => {
-    if (!(await requireSysAdmin(req, res))) return;
+    if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
     try {
       const tid = await getDefaultTenantId(req);
       const c = await storage.getPlatformConnector(Number(req.params.id), tid);
@@ -2754,7 +2754,7 @@ export async function registerRoutes(
 
   app.post("/api/connectors", isAuthenticated, async (req: any, res: any) => {
     try {
-      if (!(await requireSysAdmin(req, res))) return;
+      if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
       const tid = await getDefaultTenantId(req);
       const parsed = insertPlatformConnectorSchema.parse({ ...req.body, tenantId: tid });
       const c = await storage.createPlatformConnector(parsed);
@@ -2766,7 +2766,7 @@ export async function registerRoutes(
 
   app.patch("/api/connectors/:id", isAuthenticated, async (req: any, res: any) => {
     try {
-      if (!(await requireSysAdmin(req, res))) return;
+      if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
       const tid = await getDefaultTenantId(req);
       const { tenantId: _, ...safeBody } = req.body;
       const parsed = insertPlatformConnectorSchema.partial().parse(safeBody);
@@ -2779,7 +2779,7 @@ export async function registerRoutes(
 
   app.delete("/api/connectors/:id", isAuthenticated, async (req: any, res: any) => {
     try {
-      if (!(await requireSysAdmin(req, res))) return;
+      if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
       const tid = await getDefaultTenantId(req);
       await storage.deletePlatformConnector(Number(req.params.id), tid);
       res.json({ success: true });
@@ -2790,7 +2790,7 @@ export async function registerRoutes(
 
   app.post("/api/connectors/:id/test", isAuthenticated, async (req: any, res: any) => {
     try {
-      if (!(await requireSysAdmin(req, res))) return;
+      if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
       const tid = await getDefaultTenantId(req);
       const c = await storage.getPlatformConnector(Number(req.params.id), tid);
       if (!c) return res.status(404).json({ message: "Connector not found" });
@@ -2829,7 +2829,7 @@ export async function registerRoutes(
 
   app.post("/api/connectors/:id/sync", isAuthenticated, async (req: any, res: any) => {
     try {
-      if (!(await requireSysAdmin(req, res))) return;
+      if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
       const tid = await getDefaultTenantId(req);
       const c = await storage.getPlatformConnector(Number(req.params.id), tid);
       if (!c) return res.status(404).json({ message: "Connector not found" });

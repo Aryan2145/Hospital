@@ -39,14 +39,18 @@ import AdminPayments from "@/pages/admin/AdminPayments";
 
 function TenantSuspended() {
   return (
-    <div className="h-screen flex items-center justify-center bg-slate-50" data-testid="tenant-suspended-screen">
-      <div className="text-center max-w-md p-8">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
-          <AlertTriangle className="w-8 h-8 text-red-600" />
+    <div className="h-screen flex items-center justify-center bg-gradient-to-b from-slate-50 to-white" data-testid="tenant-suspended-screen">
+      <div className="text-center max-w-lg px-8 py-12">
+        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-amber-50 flex items-center justify-center">
+          <AlertTriangle className="w-10 h-10 text-amber-500" />
         </div>
-        <h2 className="text-xl font-bold text-slate-900 mb-2" data-testid="text-suspended-title">Service Temporarily Suspended</h2>
-        <p className="text-slate-500 mb-4" data-testid="text-suspended-message">Your hospital's CRM access has been temporarily suspended. This is usually due to a pending payment or subscription renewal.</p>
-        <p className="text-sm text-slate-400">Please contact your system administrator or the myProSys team to resolve this.</p>
+        <h2 className="text-2xl font-semibold text-slate-800 mb-3" data-testid="text-suspended-title">We'll Be Right Back</h2>
+        <p className="text-slate-500 leading-relaxed mb-4" data-testid="text-suspended-message">
+          Your CRM access is currently on hold while we sort out a few account details. This is typically related to a subscription renewal and is usually resolved quickly.
+        </p>
+        <p className="text-sm text-slate-400 leading-relaxed">
+          If you believe this is an error or need immediate assistance, please reach out to your hospital administrator or contact the myProSys support team. We appreciate your patience and are happy to help.
+        </p>
       </div>
     </div>
   );
