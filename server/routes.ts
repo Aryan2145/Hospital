@@ -742,6 +742,54 @@ export async function registerRoutes(
     }
   });
 
+  // --- Bulk Lead Import (CSV) --- (MUST be before /api/leads/:id to avoid route collision)
+  const LEAD_CSV_FIELDS = [
+    { key: "name", label: "Name", required: true },
+    { key: "phoneE164", label: "Phone Number", required: true },
+    { key: "email", label: "Email" },
+    { key: "notes", label: "Notes" },
+    { key: "tags", label: "Tags" },
+    { key: "utmSource", label: "UTM Source" },
+    { key: "utmMedium", label: "UTM Medium" },
+    { key: "utmCampaign", label: "UTM Campaign" },
+    { key: "utmTerm", label: "UTM Term" },
+    { key: "utmContent", label: "UTM Content" },
+    { key: "priority", label: "Priority" },
+    { key: "city", label: "City" },
+    { key: "leadSource", label: "Lead Source" },
+    { key: "callSummary", label: "Call Summary" },
+    { key: "companyName", label: "Company Name" },
+    { key: "alternatePhone", label: "Alternate Phone" },
+    { key: "address", label: "Address" },
+    { key: "revenueGenerated", label: "Revenue Generated" },
+  ];
+
+  app.get("/api/leads/import-fields", isAuthenticated, (_req, res) => {
+    res.json(LEAD_CSV_FIELDS);
+  });
+
+  app.get("/api/leads/import-template", isAuthenticated, (_req, res) => {
+    const csvData = stringify([
+      { name: "John Doe", phoneE164: "+919876543210", email: "john@example.com", notes: "Sample lead", tags: "facebook,walk-in", priority: "Normal" },
+    ], { header: true, columns: LEAD_CSV_FIELDS.map(f => f.key) });
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", 'attachment; filename="lead_import_template.csv"');
+    res.send(csvData);
+  });
+
+  app.get("/api/leads/import-logs", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const logs = await db.select().from(leadImportLogs)
+        .where(eq(leadImportLogs.tenantId, tid))
+        .orderBy(desc(leadImportLogs.startedAt))
+        .limit(50);
+      res.json(logs);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get(api.leads.get.path, isAuthenticated, async (req, res) => {
     const lead = await storage.getLead(Number(req.params.id));
     if (!lead) return res.status(404).json({ message: "Lead not found" });
@@ -1043,54 +1091,6 @@ export async function registerRoutes(
       return res.status(201).json({ lead: newLead, deduped: false, assignedTo: assignedUser?.name });
     } catch (err: any) {
       return res.status(500).json({ message: err.message });
-    }
-  });
-
-  // --- Bulk Lead Import (CSV) ---
-  const LEAD_CSV_FIELDS = [
-    { key: "name", label: "Name", required: true },
-    { key: "phoneE164", label: "Phone Number", required: true },
-    { key: "email", label: "Email" },
-    { key: "notes", label: "Notes" },
-    { key: "tags", label: "Tags" },
-    { key: "utmSource", label: "UTM Source" },
-    { key: "utmMedium", label: "UTM Medium" },
-    { key: "utmCampaign", label: "UTM Campaign" },
-    { key: "utmTerm", label: "UTM Term" },
-    { key: "utmContent", label: "UTM Content" },
-    { key: "priority", label: "Priority" },
-    { key: "city", label: "City" },
-    { key: "leadSource", label: "Lead Source" },
-    { key: "callSummary", label: "Call Summary" },
-    { key: "companyName", label: "Company Name" },
-    { key: "alternatePhone", label: "Alternate Phone" },
-    { key: "address", label: "Address" },
-    { key: "revenueGenerated", label: "Revenue Generated" },
-  ];
-
-  app.get("/api/leads/import-fields", isAuthenticated, (_req, res) => {
-    res.json(LEAD_CSV_FIELDS);
-  });
-
-  app.get("/api/leads/import-template", isAuthenticated, (_req, res) => {
-    const csvData = stringify([
-      { name: "John Doe", phoneE164: "+919876543210", email: "john@example.com", notes: "Sample lead", tags: "facebook,walk-in", priority: "Normal" },
-    ], { header: true, columns: LEAD_CSV_FIELDS.map(f => f.key) });
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", 'attachment; filename="lead_import_template.csv"');
-    res.send(csvData);
-  });
-
-  app.get("/api/leads/import-logs", isAuthenticated, async (req, res) => {
-    try {
-      const tid = await getDefaultTenantId(req);
-      const logs = await db.select().from(leadImportLogs)
-        .where(eq(leadImportLogs.tenantId, tid))
-        .orderBy(desc(leadImportLogs.startedAt))
-        .limit(50);
-      res.json(logs);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
     }
   });
 
