@@ -63,6 +63,52 @@ export function getPriorityColor(priority: string | null | undefined): string {
   }
 }
 
+const TERMINAL_STATUSES = ["Closed Won", "Closed Lost", "Unqualified"];
+const ACTIVE_STAGES = ["Raw Lead Captured", "Contacted", "Qualified"];
+
+export type LeadTemperature = "Hot" | "Warm" | "Cold";
+
+export function getLeadTemperature(lead: { lastContactAt?: string | Date | null; updatedAt?: string | Date | null; createdAt?: string | Date | null; status: string }): LeadTemperature | null {
+  if (TERMINAL_STATUSES.includes(lead.status)) return null;
+
+  const now = new Date();
+  const differenceInHours = (a: Date, b: Date) => Math.floor((a.getTime() - b.getTime()) / (1000 * 60 * 60));
+
+  const lastContact = lead.lastContactAt ? new Date(lead.lastContactAt) : null;
+  const created = lead.createdAt ? new Date(lead.createdAt) : null;
+
+  if (lastContact) {
+    const hoursSinceContact = differenceInHours(now, lastContact);
+    if (hoursSinceContact <= 24) return "Hot";
+    if (hoursSinceContact <= 72) return "Warm";
+    return "Cold";
+  }
+
+  if (ACTIVE_STAGES.includes(lead.status) && created) {
+    const hoursSinceCreated = differenceInHours(now, created);
+    if (hoursSinceCreated <= 48) return "Hot";
+    if (hoursSinceCreated <= 120) return "Warm";
+  }
+
+  return "Cold";
+}
+
+export function getTemperatureColor(temp: LeadTemperature): string {
+  switch (temp) {
+    case "Hot": return "bg-red-100 text-red-700 border-red-200";
+    case "Warm": return "bg-orange-100 text-orange-700 border-orange-200";
+    case "Cold": return "bg-blue-100 text-blue-700 border-blue-200";
+  }
+}
+
+export function getTemperatureIcon(temp: LeadTemperature): string {
+  switch (temp) {
+    case "Hot": return "Flame";
+    case "Warm": return "Sun";
+    case "Cold": return "Snowflake";
+  }
+}
+
 export function getActivityIcon(type: string): string {
   switch (type) {
     case "call": return "Phone";

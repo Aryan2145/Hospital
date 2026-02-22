@@ -565,6 +565,89 @@ export async function registerRoutes(
     res.json(filtered);
   });
 
+  app.get("/api/leads/dormant", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const daysThreshold = Number(req.query.days) || 5;
+      const allLeads = await storage.getLeads(tid);
+      const now = new Date();
+      const terminalStatuses = ["Closed Won", "Closed Lost", "Unqualified"];
+
+      const sessionCrmUserId = req.session?.crmUserId;
+      const allCrmUsers = await storage.getCrmUsers(tid);
+      const crmUser = sessionCrmUserId ? allCrmUsers.find((u: any) => u.id === sessionCrmUserId) || null : null;
+
+      let scopedLeads = allLeads;
+      if (crmUser && crmUser.accessScopeType === "Self") {
+        scopedLeads = scopedLeads.filter(l => l.assignedCrmUserId === crmUser.id);
+      } else if (crmUser && crmUser.accessScopeType === "Branch" && crmUser.branchId) {
+        scopedLeads = scopedLeads.filter(l => l.branchId === crmUser.branchId);
+      }
+
+      const dormantLeads = scopedLeads.filter(lead => {
+        if (terminalStatuses.includes(lead.status)) return false;
+        const lastActivity = lead.lastContactAt || lead.createdAt;
+        if (!lastActivity) return true;
+        const daysSince = (now.getTime() - new Date(lastActivity).getTime()) / (1000 * 60 * 60 * 24);
+        return daysSince > daysThreshold;
+      });
+      
+      res.json(dormantLeads.sort((a, b) => {
+        const aDate = a.lastContactAt || a.createdAt;
+        const bDate = b.lastContactAt || b.createdAt;
+        return new Date(aDate || 0).getTime() - new Date(bDate || 0).getTime();
+      }));
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch dormant leads" });
+    }
+  });
+
+  app.get("/api/tasks/today", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const allTasks = await storage.getTasks(tid);
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+      
+      const sessionCrmUserId = req.session?.crmUserId;
+      const assignedToFilter = req.query.assignedCrmUserId ? Number(req.query.assignedCrmUserId) : sessionCrmUserId;
+      
+      const relevantTasks = allTasks.filter(task => {
+        if (task.status === "Completed") return false;
+        if (!task.dueDate) return false;
+        const due = new Date(task.dueDate);
+        const isOverdue = due < todayStart;
+        const isDueToday = due >= todayStart && due < todayEnd;
+        if (!isOverdue && !isDueToday) return false;
+        if (assignedToFilter && task.assignedCrmUserId !== assignedToFilter) return false;
+        return true;
+      });
+      
+      const overdue = relevantTasks.filter(t => new Date(t.dueDate!) < todayStart);
+      const dueToday = relevantTasks.filter(t => {
+        const due = new Date(t.dueDate!);
+        return due >= todayStart && due < todayEnd;
+      });
+      
+      res.json({ overdue, dueToday, total: relevantTasks.length });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch today's tasks" });
+    }
+  });
+
+  app.get("/api/leads/:id/handover-history", isAuthenticated, async (req, res) => {
+    try {
+      const allActivities = await storage.getActivities(Number(req.params.id));
+      const handoverActivities = allActivities.filter(a => 
+        a.type === "handover" || a.type === "assignment" || a.type === "handover_accepted" || a.type === "handover_rejected"
+      );
+      res.json(handoverActivities);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch handover history" });
+    }
+  });
+
   app.get(api.leads.get.path, isAuthenticated, async (req, res) => {
     const lead = await storage.getLead(Number(req.params.id));
     if (!lead) return res.status(404).json({ message: "Lead not found" });
@@ -674,6 +757,7 @@ export async function registerRoutes(
 
   const assignLeadSchema = z.object({
     assignToCrmUserId: z.number().int().positive(),
+    handoverReason: z.string().optional(),
   });
 
   const leadIntakeSchema = z.object({
@@ -780,13 +864,15 @@ export async function registerRoutes(
         handoverAcceptedAt: null,
         handoverRejectedAt: null,
         handoverRejectionReason: null,
+        handoverReason: req.body.handoverReason || null,
         slaDeadline,
       });
 
+      const reasonText = req.body.handoverReason ? ` (Reason: ${req.body.handoverReason})` : "";
       await storage.createActivity({
         leadId, tenantId: tid, createdBy: userId,
-        type: "status_change",
-        description: `Lead assigned/transferred to ${targetUser.name}`,
+        type: "assignment",
+        description: `Lead assigned/transferred to ${targetUser.name}${reasonText}`,
       });
 
       return res.json(updated);

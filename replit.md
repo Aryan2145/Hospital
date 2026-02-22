@@ -146,6 +146,7 @@ Note: Lead Import is accessible via "Bulk Import" button on the Leads page (not 
 - 2026-02-22: Kanban board fix - Added missing columns for Reminder Running, Unqualified, Nurture statuses; fixed orphaned "Converted" leads migrated to "Closed Won"
 - 2026-02-22: Auto-status on episode creation - Creating consultation episode auto-updates lead status to "Consultation Done"
 - 2026-02-22: WhatsApp Business API integration - Settings page for configuration, auto-send appointment confirmation messages, test connection/message, activity logging for sent messages
+- 2026-02-22: Zero Lead Leakage Phase A - Lead temperature indicator (Hot/Warm/Cold based on lastContactAt), dormant lead detection API with access-scope filtering, dormant alerts + today's tasks dashboard widgets, handover reason capture with history, unified communication timeline with channel-specific colors/icons (WhatsApp/Call/Email/SMS)
 - 2026-02-22: Enhanced Campaign Management - Dropdown-based auto-generated campaign names (Company_Platform_Objective_Year_Month_AdNumber), auto-generated UTM parameters, campaign detail view, funnel stage, target audience tracking, budget in INR
 - 2026-02-21: Proper case enforcement - All master data, lead names, and CRM user names auto-converted to title case (e.g., "ramesh modi" → "Ramesh Modi")
 - 2026-02-21: Bulk Lead Import page - CSV upload with column mapping, phone normalization, dedup strategies (Skip/UpdateBlank/Overwrite), import history logs

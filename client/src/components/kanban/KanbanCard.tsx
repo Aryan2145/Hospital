@@ -2,9 +2,9 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Lead } from "@shared/schema";
 import { format } from "date-fns";
-import { Clock, Phone, User as UserIcon } from "lucide-react";
+import { Clock, Phone, User as UserIcon, Flame, Sun, Snowflake } from "lucide-react";
 import { useLocation } from "wouter";
-import { getStatusColor, getPriorityColor } from "@/lib/lead-status";
+import { getStatusColor, getPriorityColor, getLeadTemperature, getTemperatureColor } from "@/lib/lead-status";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -92,6 +92,17 @@ export function KanbanCard({ lead }: KanbanCardProps) {
             <Badge className={cn("text-[10px]", lead.slaBreached ? "bg-red-100 text-red-700 border-red-200" : "bg-green-100 text-green-700 border-green-200")}>
               {lead.slaBreached ? "SLA Breached" : "On Track"}
             </Badge>
+            {(() => {
+              const temp = getLeadTemperature(lead);
+              if (!temp) return null;
+              const TempIcon = temp === "Hot" ? Flame : temp === "Warm" ? Sun : Snowflake;
+              return (
+                <Badge className={cn("text-[10px]", getTemperatureColor(temp))} data-testid={`badge-temp-${lead.id}`}>
+                  <TempIcon className="w-3 h-3 mr-0.5" />
+                  {temp}
+                </Badge>
+              );
+            })()}
           </div>
         </div>
       </div>

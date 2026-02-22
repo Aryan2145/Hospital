@@ -184,11 +184,11 @@ export function useHandoverAction() {
 export function useAssignLead() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ leadId, assignToCrmUserId }: { leadId: number; assignToCrmUserId: number }) => {
+    mutationFn: async ({ leadId, assignToCrmUserId, handoverReason }: { leadId: number; assignToCrmUserId: number; handoverReason?: string }) => {
       const res = await fetch(`/api/leads/${leadId}/assign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assignToCrmUserId }),
+        body: JSON.stringify({ assignToCrmUserId, handoverReason }),
         credentials: "include",
       });
       if (!res.ok) {

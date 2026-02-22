@@ -11,9 +11,10 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { getStatusColor, getPriorityColor, getValidTransitions, isValidTransition, LEAD_STATUSES } from "@/lib/lead-status";
+import { getStatusColor, getPriorityColor, getValidTransitions, isValidTransition, LEAD_STATUSES, getLeadTemperature, getTemperatureColor } from "@/lib/lead-status";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Phone,
@@ -37,6 +38,10 @@ import {
   ArrowRight,
   X,
   Shield,
+  Flame,
+  Sun,
+  Snowflake,
+  MessageCircle,
 } from "lucide-react";
 
 const ACTIVITY_ICONS: Record<string, typeof Phone> = {
@@ -46,8 +51,27 @@ const ACTIVITY_ICONS: Record<string, typeof Phone> = {
   appointment: Calendar,
   email: Mail,
   sms: MessageSquare,
-  whatsapp: MessageSquare,
+  whatsapp: MessageCircle,
   task: CheckSquare,
+  handover: ArrowRightLeft,
+  assignment: UserPlus,
+  handover_accepted: CheckCircle2,
+  handover_rejected: X,
+};
+
+const ACTIVITY_COLORS: Record<string, string> = {
+  call: "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400",
+  note: "bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400",
+  status_change: "bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400",
+  appointment: "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400",
+  email: "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400",
+  sms: "bg-cyan-100 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400",
+  whatsapp: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400",
+  task: "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400",
+  handover: "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400",
+  assignment: "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400",
+  handover_accepted: "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400",
+  handover_rejected: "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400",
 };
 
 export default function LeadDetailPage() {
@@ -99,6 +123,7 @@ export default function LeadDetailPage() {
             <NextActionPanel lead={lead} />
             <TasksPanel leadId={lead.id} />
             <QuickActions lead={lead} />
+            <HandoverHistory leadId={lead.id} />
           </div>
         </div>
       </main>
@@ -147,6 +172,18 @@ function LeadHeader({ lead, onBack }: { lead: any; onBack: () => void }) {
             {lead.priority}
           </Badge>
         )}
+
+        {(() => {
+          const temp = getLeadTemperature(lead);
+          if (!temp) return null;
+          const TempIcon = temp === "Hot" ? Flame : temp === "Warm" ? Sun : Snowflake;
+          return (
+            <Badge className={cn("text-xs", getTemperatureColor(temp))} data-testid="badge-temperature">
+              <TempIcon className="w-3 h-3 mr-0.5" />
+              {temp}
+            </Badge>
+          );
+        })()}
 
         {lead.leadScore !== null && lead.leadScore !== undefined && lead.leadScore > 0 && (
           <Badge variant="outline" className="text-xs gap-1" data-testid="badge-score">
@@ -340,10 +377,7 @@ function ActivityTimeline({ leadId }: { leadId: number }) {
                   <div className="flex flex-col items-center">
                     <div className={cn(
                       "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                      activity.type === "call" ? "bg-blue-100 text-blue-600" :
-                      isStatusChange ? "bg-purple-100 text-purple-600" :
-                      activity.type === "appointment" ? "bg-green-100 text-green-600" :
-                      "bg-muted text-muted-foreground"
+                      ACTIVITY_COLORS[activity.type] || "bg-muted text-muted-foreground"
                     )}>
                       <Icon className="w-4 h-4" />
                     </div>
@@ -352,6 +386,17 @@ function ActivityTimeline({ leadId }: { leadId: number }) {
                   <div className="flex-1 pb-4 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-xs font-semibold uppercase text-foreground/70">{activity.type.replace(/_/g, " ")}</span>
+                      {["whatsapp", "sms", "email", "call"].includes(activity.type) && (
+                        <Badge variant="outline" className={cn("text-[10px] gap-0.5",
+                          activity.type === "whatsapp" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                          activity.type === "call" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                          activity.type === "email" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                          "bg-cyan-50 text-cyan-700 border-cyan-200"
+                        )}>
+                          <Icon className="w-2.5 h-2.5" />
+                          {activity.type === "whatsapp" ? "WhatsApp" : activity.type === "sms" ? "SMS" : activity.type === "call" ? "Call" : "Email"}
+                        </Badge>
+                      )}
                       {activity.outcome && (
                         <Badge variant="outline" className="text-[10px]">{activity.outcome}</Badge>
                       )}
@@ -388,6 +433,7 @@ function ActivityTimeline({ leadId }: { leadId: number }) {
             options={[
               { value: "note", label: "Note" },
               { value: "call", label: "Call" },
+              { value: "whatsapp", label: "WhatsApp" },
               { value: "email", label: "Email" },
               { value: "sms", label: "SMS" },
             ]}
@@ -561,6 +607,7 @@ function QuickActions({ lead }: { lead: any }) {
   const [taskDueDate, setTaskDueDate] = useState("");
   const [taskPriority, setTaskPriority] = useState("Normal");
   const [selectedCrmUserId, setSelectedCrmUserId] = useState("");
+  const [handoverReason, setHandoverReason] = useState("");
   const [apptDoctorId, setApptDoctorId] = useState("");
   const [apptDate, setApptDate] = useState("");
   const [apptSlot, setApptSlot] = useState("");
@@ -1008,6 +1055,24 @@ function QuickActions({ lead }: { lead: any }) {
                   data-testid="select-assign-user"
                 />
               </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Reason for Transfer</label>
+                <SearchableSelect
+                  value={handoverReason}
+                  onValueChange={setHandoverReason}
+                  options={[
+                    { value: "Speciality Mismatch", label: "Speciality Mismatch" },
+                    { value: "Workload Balancing", label: "Workload Balancing" },
+                    { value: "Location Change", label: "Location Change" },
+                    { value: "On Leave", label: "On Leave" },
+                    { value: "Patient Request", label: "Patient Request" },
+                    { value: "Escalation", label: "Escalation" },
+                    { value: "Other", label: "Other" },
+                  ]}
+                  placeholder="Select reason..."
+                  data-testid="select-handover-reason"
+                />
+              </div>
               {lead.assignedCrmUserId && (
                 <p className="text-xs text-muted-foreground">
                   Currently assigned to CRM User #{lead.assignedCrmUserId}
@@ -1017,12 +1082,13 @@ function QuickActions({ lead }: { lead: any }) {
                 onClick={() => {
                   if (!selectedCrmUserId) return;
                   assignLead.mutate(
-                    { leadId: lead.id, assignToCrmUserId: Number(selectedCrmUserId) },
+                    { leadId: lead.id, assignToCrmUserId: Number(selectedCrmUserId), handoverReason },
                     {
                       onSuccess: () => {
                         toast({ title: "Lead assigned", description: "Handover is now pending acceptance." });
                         setAssignDialogOpen(false);
                         setSelectedCrmUserId("");
+                        setHandoverReason("");
                       },
                       onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
                     }
@@ -1038,6 +1104,41 @@ function QuickActions({ lead }: { lead: any }) {
             </div>
           </DialogContent>
         </Dialog>
+      </div>
+    </div>
+  );
+}
+
+function HandoverHistory({ leadId }: { leadId: number }) {
+  const { data: history, isLoading } = useQuery({
+    queryKey: ['/api/leads', leadId, 'handover-history'],
+    queryFn: async () => {
+      const res = await fetch(`/api/leads/${leadId}/handover-history`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  if (isLoading || !history?.length) return null;
+
+  return (
+    <div className="p-4 border-b border-border">
+      <h3 className="font-semibold text-sm text-foreground flex items-center gap-2 mb-3">
+        <ArrowRightLeft className="w-4 h-4 text-primary" />
+        Handover History ({history.length})
+      </h3>
+      <div className="space-y-2">
+        {history.map((item: any) => (
+          <Card key={item.id} className="p-2" data-testid={`handover-history-${item.id}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <Badge variant="outline" className="text-[10px]">{item.type.replace(/_/g, " ")}</Badge>
+              <span className="text-[10px] text-muted-foreground ml-auto">
+                {item.createdAt && format(new Date(item.createdAt), "MMM d, h:mm a")}
+              </span>
+            </div>
+            <p className="text-xs text-foreground">{item.description}</p>
+          </Card>
+        ))}
       </div>
     </div>
   );

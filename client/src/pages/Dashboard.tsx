@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { format, formatDistanceToNow, isPast } from "date-fns";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useLeads } from "@/hooks/use-leads";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -8,7 +10,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Users, CalendarCheck, Target,
   ArrowUpRight, ArrowDownRight, Activity, Stethoscope, UserCheck,
-  IndianRupee, BarChart3, PieChart as PieChartIcon
+  IndianRupee, BarChart3, PieChart as PieChartIcon,
+  AlertTriangle, Phone, Clock, CheckCircle2, Flame, Snowflake, ChevronRight
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
@@ -138,6 +141,24 @@ export default function Dashboard() {
   const [, navigate] = useLocation();
   const [campaignTab, setCampaignTab] = useState("overview");
 
+  const { data: todayTasks } = useQuery({
+    queryKey: ['/api/tasks/today'],
+    queryFn: async () => {
+      const res = await fetch('/api/tasks/today', { credentials: 'include' });
+      if (!res.ok) return { overdue: [], dueToday: [], total: 0 };
+      return res.json();
+    },
+  });
+
+  const { data: dormantLeads } = useQuery({
+    queryKey: ['/api/leads/dormant'],
+    queryFn: async () => {
+      const res = await fetch('/api/leads/dormant?days=5', { credentials: 'include' });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   if (isLoading) return <LoadingSpinner />;
 
   const totalLeads = leads?.length || 0;
@@ -184,6 +205,97 @@ export default function Dashboard() {
             <KPICard title="Conversions" value={totalConversions.toString()} icon={UserCheck} trend="14% conv. rate" up />
             <KPICard title="Revenue" value="Rs.94.7L" icon={IndianRupee} trend="ROAS 4.4x" up />
           </div>
+
+          {((todayTasks?.total || 0) > 0 || (dormantLeads?.length || 0) > 0) && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {(todayTasks?.total || 0) > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                      <Clock className="h-4 w-4 text-primary" />
+                      Today's Tasks
+                      <Badge variant="secondary" className="ml-auto text-xs">{todayTasks.total} pending</Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {todayTasks.overdue.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs font-semibold text-red-600 mb-1.5 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          Overdue ({todayTasks.overdue.length})
+                        </p>
+                        <div className="space-y-1.5">
+                          {todayTasks.overdue.slice(0, 5).map((task: any) => (
+                            <div key={task.id} className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-950/20 rounded-md cursor-pointer hover-elevate" onClick={() => navigate(`/leads/${task.leadId}`)} data-testid={`overdue-task-${task.id}`}>
+                              <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-foreground truncate">{task.title}</p>
+                                <p className="text-[10px] text-red-500">{task.dueDate && formatDistanceToNow(new Date(task.dueDate), { addSuffix: true })}</p>
+                              </div>
+                              <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {todayTasks.dueToday.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-foreground mb-1.5">Due Today ({todayTasks.dueToday.length})</p>
+                        <div className="space-y-1.5">
+                          {todayTasks.dueToday.slice(0, 5).map((task: any) => (
+                            <div key={task.id} className="flex items-center gap-2 p-2 bg-amber-50 dark:bg-amber-950/20 rounded-md cursor-pointer hover-elevate" onClick={() => navigate(`/leads/${task.leadId}`)} data-testid={`today-task-${task.id}`}>
+                              <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-foreground truncate">{task.title}</p>
+                                <p className="text-[10px] text-muted-foreground">{task.dueDate && format(new Date(task.dueDate), "h:mm a")}</p>
+                              </div>
+                              <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {(dormantLeads?.length || 0) > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                      <Snowflake className="h-4 w-4 text-blue-500" />
+                      Dormant Leads
+                      <Badge variant="outline" className="ml-auto text-xs bg-blue-50 text-blue-700 border-blue-200">{dormantLeads.length} cold</Badge>
+                    </CardTitle>
+                    <CardDescription className="text-xs">No activity for 5+ days — needs attention</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-1.5">
+                      {dormantLeads.slice(0, 8).map((lead: any) => {
+                        const lastDate = lead.lastContactAt || lead.updatedAt || lead.createdAt;
+                        return (
+                          <div key={lead.id} className="flex items-center gap-2 p-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-md cursor-pointer hover-elevate" onClick={() => navigate(`/leads/${lead.id}`)} data-testid={`dormant-lead-${lead.id}`}>
+                            <Snowflake className="w-3 h-3 text-blue-400 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-foreground truncate">{lead.name}</p>
+                              <p className="text-[10px] text-muted-foreground">{lead.status} · {lastDate ? formatDistanceToNow(new Date(lastDate), { addSuffix: true }) : "no activity"}</p>
+                            </div>
+                            <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-200 shrink-0">{lead.status === "Raw Lead Captured" ? "Untouched" : "Cold"}</Badge>
+                            <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {dormantLeads.length > 8 && (
+                      <Button variant="ghost" size="sm" className="w-full mt-2 text-xs text-blue-600" onClick={() => navigate("/leads")} data-testid="button-view-all-dormant">
+                        View all {dormantLeads.length} dormant leads
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
 
           {/* Campaign Analytics Section */}
           <Tabs value={campaignTab} onValueChange={setCampaignTab}>
