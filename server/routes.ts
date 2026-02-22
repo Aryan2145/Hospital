@@ -2284,6 +2284,14 @@ export async function registerRoutes(
       const body = coerceDateFields(req.body, ["startDate", "endDate"]);
       const parsed = insertEpisodeSchema.parse({ ...body, tenantId: tid });
       const ep = await storage.createEpisode(parsed);
+
+      if (parsed.leadId) {
+        const lead = await storage.getLead(parsed.leadId);
+        if (lead && lead.status !== "Consultation Done" && lead.status !== "Closed Won" && lead.status !== "Closed Lost") {
+          await storage.updateLead(parsed.leadId, { status: "Consultation Done" });
+        }
+      }
+
       res.status(201).json(ep);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
