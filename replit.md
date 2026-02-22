@@ -92,6 +92,29 @@ Navigation organized into 4 sections following the lead lifecycle flow:
 
 Note: Lead Import is accessible via "Bulk Import" button on the Leads page (not a separate sidebar item).
 
+## Roadmap / Planned Features (Notes from team feedback - NOT yet built)
+
+### Priority 1 — Must Build
+- **Unified Communication Timeline**: Single view on lead/patient detail page showing WhatsApp messages, calls, and emails together
+- **Post-Care Follow-up Scheduler**: Configurable automated follow-up sequences (day 1, 7, 30 post-consultation). VIROC already practices post-care follow-ups (enquiring patient health, next steps). Includes physiotherapy home session scheduling. All interactions logged in patient timeline.
+
+### Priority 2 — Need to Develop
+- Churn prediction / dormant patient detection
+- Win-back campaign automation
+- Loyalty program
+- Re-appointment scheduling triggers
+
+### Priority 3 — Basic Level Implementation
+- Patient satisfaction rating (post-consultation)
+- Doctor-wise feedback tracking
+- Complaint resolution workflow
+- Google/Practo/JustDial review monitoring
+- CSAT/NPS dashboards
+
+### Low-Hanging Fruit — Quick Wins
+- Lead temperature indicator (hot/warm/cold based on days since last activity)
+- Dormant lead auto-detection alerts
+
 ## Recent Changes
 - 2026-02-22: Google Sheets Lead Extraction - Connect Google Sheet via API key, auto-detect columns, map to CRM fields, preview data, import leads with dedup/auto-assign. Multi-sheet tab support with header re-fetch on tab switch. Route: /google-sheets-import
 - 2026-02-22: Kanban board fix - Added missing columns for Reminder Running, Unqualified, Nurture statuses; fixed orphaned "Converted" leads migrated to "Closed Won"
