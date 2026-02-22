@@ -69,7 +69,12 @@ export default function TransactionsPage() {
   });
 
   const { data: leadsList } = useQuery<any[]>({
-    queryKey: ["/api/leads"],
+    queryKey: ["/api/leads", { status: "Appointment Booked" }],
+    queryFn: async () => {
+      const res = await fetch("/api/leads?status=Appointment%20Booked");
+      if (!res.ok) throw new Error("Failed to fetch leads");
+      return res.json();
+    },
   });
 
   const { data: patientsList } = useQuery<any[]>({
@@ -324,18 +329,15 @@ export default function TransactionsPage() {
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label className="text-xs font-medium text-muted-foreground">Lead *</Label>
+                <Label className="text-xs font-medium text-muted-foreground">Lead (Appointment Booked) *</Label>
                 <SearchableSelect
                   value={formLeadId}
                   onValueChange={handleLeadChange}
                   disabled={!!editing}
-                  options={[
-                    { value: "none", label: "-- Select Lead --" },
-                    ...(leadsList || []).map((l: any) => ({
-                      value: String(l.id),
-                      label: `${l.firstName || ""} ${l.lastName || ""}`.trim() + (l.phone ? ` (${l.phone})` : ""),
-                    })),
-                  ]}
+                  options={(leadsList || []).map((l: any) => ({
+                    value: String(l.id),
+                    label: `${l.firstName || ""} ${l.lastName || ""}`.trim() + (l.phone ? ` (${l.phone})` : ""),
+                  }))}
                   placeholder="Search and select a lead"
                   data-testid="episode-select-lead"
                 />
