@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -404,13 +404,12 @@ export default function CampaignsPage() {
   };
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <AppLayout>
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <h2 className="text-3xl font-bold tracking-tight text-foreground" data-testid="text-campaigns-title">Campaigns</h2>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground" data-testid="text-campaigns-title">Campaigns</h2>
               <p className="text-muted-foreground mt-1">Create and manage marketing campaigns with standardized naming and UTM tracking.</p>
             </div>
             <Button onClick={openCreate} data-testid="button-create-campaign">
@@ -419,7 +418,7 @@ export default function CampaignsPage() {
             </Button>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
             <Card data-testid="stat-total-campaigns">
               <CardContent className="pt-4 pb-3 px-4">
                 <div className="flex items-center justify-between">
@@ -471,7 +470,7 @@ export default function CampaignsPage() {
               placeholder="Search campaigns..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-64"
+              className="w-full max-w-64"
               data-testid="input-search-campaigns"
             />
             <SearchableSelect
@@ -929,8 +928,8 @@ export default function CampaignsPage() {
             </div>
           </DialogContent>
         </Dialog>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }
 

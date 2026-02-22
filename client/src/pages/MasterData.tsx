@@ -25,7 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppLayout } from "@/components/layout/AppLayout";
 import {
   Plus,
   Pencil,
@@ -361,9 +361,8 @@ export default function MasterData() {
   const selectedCategoryData = MASTER_CATEGORIES.find((c) => c.category === selectedCategory);
 
   return (
-    <div className="flex h-screen w-full" data-testid="master-data-page">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
+    <AppLayout>
+      <div className="flex-1 flex flex-col overflow-hidden" data-testid="master-data-page">
         <header className="flex items-center justify-between gap-2 p-4 border-b bg-card">
           <div className="flex items-center gap-2 flex-wrap">
             <Database className="h-5 w-5 text-muted-foreground" />
@@ -387,7 +386,7 @@ export default function MasterData() {
           {!selectedCategory ? (
             <div className="space-y-4">
               {pendingSuggestions.length > 0 && (
-                <Card className="p-4 border-amber-200 bg-amber-50" data-testid="card-pending-suggestions">
+                <Card className="p-4 border-amber-200 bg-amber-50 overflow-x-auto" data-testid="card-pending-suggestions">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 text-amber-600" />
@@ -559,7 +558,7 @@ export default function MasterData() {
                   data-testid="button-import-csv"
                 >
                   <Upload className="h-4 w-4 mr-2" />
-                  {importMutation.isPending ? "Importing..." : "Import CSV"}
+                  <span className="hidden md:inline">{importMutation.isPending ? "Importing..." : "Import CSV"}</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -567,7 +566,7 @@ export default function MasterData() {
                   data-testid="button-export-csv"
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  Export
+                  <span className="hidden md:inline">Export</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -575,7 +574,7 @@ export default function MasterData() {
                   data-testid="button-download-template"
                 >
                   <FileDown className="h-4 w-4 mr-2" />
-                  Template
+                  <span className="hidden md:inline">Template</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -583,12 +582,12 @@ export default function MasterData() {
                   data-testid="button-import-logs"
                 >
                   <History className="h-4 w-4 mr-2" />
-                  Logs
+                  <span className="hidden md:inline">Logs</span>
                 </Button>
               </div>
 
               {showImportLogs && (
-                <Card className="mb-4 p-4">
+                <Card className="mb-4 p-4 overflow-x-auto">
                   <h3 className="font-semibold mb-3">Import History</h3>
                   {importLogs.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No import history yet.</p>
@@ -629,7 +628,7 @@ export default function MasterData() {
                 </Card>
               )}
 
-              <Card>
+              <Card className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -875,6 +874,6 @@ export default function MasterData() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppLayout>
   );
 }

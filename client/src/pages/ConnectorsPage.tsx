@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -515,13 +515,12 @@ export default function ConnectorsPage() {
   const connectedCount = connectors.filter((c) => c.status === "connected").length;
 
   return (
-    <div className="flex h-screen" data-testid="connectors-page">
-      <Sidebar />
-      <main className="flex-1 overflow-auto">
-        <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <AppLayout>
+      <div className="flex-1 overflow-auto p-4 md:p-8" data-testid="connectors-page">
+        <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
-              <h1 className="text-2xl font-bold" data-testid="text-page-title">Platform Connectors</h1>
+              <h1 className="text-xl md:text-2xl font-bold" data-testid="text-page-title">Platform Connectors</h1>
               <p className="text-sm text-muted-foreground mt-1">
                 Connect marketing platforms to draw live insights and campaign performance data
               </p>
@@ -810,7 +809,7 @@ export default function ConnectorsPage() {
             </>
           )}
         </div>
-      </main>
+      </div>
 
       <Dialog open={configDialog} onOpenChange={(open) => { if (!open) closeDialog(); }}>
         <DialogContent className="max-w-md">
@@ -1134,6 +1133,6 @@ export default function ConnectorsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppLayout>
   );
 }

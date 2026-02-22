@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -230,22 +230,21 @@ export default function LeadImportPage() {
     : false;
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
+    <AppLayout>
       <main className="flex-1 overflow-y-auto">
-        <div className="p-8 max-w-7xl mx-auto space-y-6">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <h2 className="text-3xl font-bold tracking-tight text-foreground" data-testid="text-lead-import-title">
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground" data-testid="text-lead-import-title">
                 Lead Import
               </h2>
-              <p className="text-muted-foreground mt-1">
+              <p className="text-sm md:text-base text-muted-foreground mt-1">
                 Import leads from CSV files into your CRM workspace.
               </p>
             </div>
-            <Button variant="outline" onClick={handleDownloadTemplate} data-testid="button-download-template">
-              <Download className="w-4 h-4 mr-2" />
-              Download Template
+            <Button variant="outline" size="sm" onClick={handleDownloadTemplate} data-testid="button-download-template">
+              <Download className="w-4 h-4 md:mr-2" />
+              <span className="hidden md:inline">Download Template</span>
             </Button>
           </div>
 
@@ -607,6 +606,6 @@ export default function LeadImportPage() {
           </DialogContent>
         </Dialog>
       </main>
-    </div>
+    </AppLayout>
   );
 }

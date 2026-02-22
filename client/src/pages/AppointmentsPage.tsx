@@ -1,4 +1,4 @@
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useDoctors, useAppointmentAction, useCreateAppointment, useDoctorAvailability } from "@/hooks/use-leads";
 import { Button } from "@/components/ui/button";
@@ -55,12 +55,11 @@ export default function AppointmentsPage() {
   const [activeTab, setActiveTab] = useState("schedule");
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <AppLayout>
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
           <div>
-            <h2 className="text-3xl font-bold tracking-tight text-foreground" data-testid="text-appointments-title">Appointments</h2>
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground" data-testid="text-appointments-title">Appointments</h2>
             <p className="text-muted-foreground mt-1">View and manage patient appointments.</p>
           </div>
 
@@ -84,8 +83,8 @@ export default function AppointmentsPage() {
             </TabsContent>
           </Tabs>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }
 
@@ -459,7 +458,7 @@ function DoctorScheduleView() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <Card className={cn("p-2.5 cursor-pointer transition-all border-2", statusFilter === "all" ? "border-[#0f4c81] bg-[#0f4c81]/5" : "border-transparent hover:border-gray-200")} onClick={() => setStatusFilter("all")} data-testid="stat-card-all">
           <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Total</div>
           <div className="text-2xl font-bold text-[#0f4c81]">{statusCounts.all}</div>
@@ -487,8 +486,8 @@ function DoctorScheduleView() {
         </Card>
       </div>
 
-      <div className="flex items-center justify-between text-sm">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-sm">
+        <div className="flex items-center gap-2 flex-wrap">
           <Calendar className="w-4 h-4 text-primary" />
           <span className="font-semibold">{selectedDate ? format(new Date(selectedDate + "T12:00:00"), "EEEE, MMMM d, yyyy") : "All Dates"}</span>
           {isAllDoctors && doctorGroups && (
@@ -499,7 +498,7 @@ function DoctorScheduleView() {
             </>
           )}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {STATUS_FILTERS.map(sf => (
             <button
               key={sf.key}
@@ -548,7 +547,7 @@ function DoctorScheduleView() {
                   </div>
                 </button>
                 {!isCollapsed && (
-                  <div className="border-t">
+                  <div className="border-t overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-muted/40">
@@ -572,7 +571,7 @@ function DoctorScheduleView() {
           })}
         </div>
       ) : (
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/40 border-b">

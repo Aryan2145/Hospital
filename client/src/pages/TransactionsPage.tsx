@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -222,13 +222,12 @@ export default function TransactionsPage() {
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <AppLayout>
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <h2 className="text-3xl font-bold tracking-tight text-foreground" data-testid="text-transactions-title">Consultation Episodes</h2>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground" data-testid="text-transactions-title">Consultation Episodes</h2>
               <p className="text-muted-foreground mt-1">Track patient consultation episodes — from first visit through treatment to completion.</p>
             </div>
             <Button onClick={openCreate} data-testid="button-create-episode">
@@ -473,7 +472,7 @@ export default function TransactionsPage() {
             </div>
           </DialogContent>
         </Dialog>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

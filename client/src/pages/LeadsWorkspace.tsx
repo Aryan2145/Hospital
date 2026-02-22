@@ -1,4 +1,4 @@
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { KanbanBoard } from "@/components/kanban/KanbanBoard";
 import { useLeads, useCreateLead } from "@/hooks/use-leads";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -20,20 +20,18 @@ export default function LeadsWorkspace() {
   const [, navigate] = useLocation();
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
-      <Sidebar />
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+    <AppLayout className="flex-1 flex flex-col h-full overflow-hidden relative">
         {/* Background Accent */}
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-b from-muted to-transparent opacity-50 rounded-bl-full pointer-events-none z-0" />
 
-        <div className="p-6 border-b border-border bg-white/80 backdrop-blur-sm z-10">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="p-4 md:p-6 border-b border-border bg-white/80 backdrop-blur-sm z-10">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">Leads Workspace</h1>
-              <p className="text-sm text-muted-foreground">Manage patient inquiries and track status.</p>
+              <h1 className="text-xl md:text-2xl font-bold tracking-tight text-foreground">Leads Workspace</h1>
+              <p className="text-xs md:text-sm text-muted-foreground">Manage patient inquiries and track status.</p>
             </div>
             
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input 
@@ -47,16 +45,16 @@ export default function LeadsWorkspace() {
                 <Filter className="w-4 h-4" />
               </Button>
 
-              <Button variant="outline" className="shrink-0" onClick={() => navigate("/lead-import")} data-testid="button-bulk-import">
-                <FileUp className="w-4 h-4 mr-2" />
-                Bulk Import
+              <Button variant="outline" size="sm" className="shrink-0" onClick={() => navigate("/lead-import")} data-testid="button-bulk-import">
+                <FileUp className="w-4 h-4 md:mr-2" />
+                <span className="hidden md:inline">Bulk Import</span>
               </Button>
               
               <Dialog open={open} onOpenChange={setOpen}>
                 <DialogTrigger asChild>
-                  <Button className="shrink-0 bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20">
-                    <Plus className="w-4 h-4 mr-2" />
-                    New Lead
+                  <Button size="sm" className="shrink-0 bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20">
+                    <Plus className="w-4 h-4 md:mr-2" />
+                    <span className="hidden md:inline">New Lead</span>
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
@@ -70,7 +68,7 @@ export default function LeadsWorkspace() {
           </div>
         </div>
 
-        <div className="flex-1 p-6 overflow-hidden z-10">
+        <div className="flex-1 p-3 md:p-6 overflow-hidden z-10">
           {isLoading ? (
             <LoadingSpinner text="Loading leads..." />
           ) : leads ? (
@@ -81,8 +79,7 @@ export default function LeadsWorkspace() {
              </div>
           )}
         </div>
-      </main>
-    </div>
+    </AppLayout>
   );
 }
 

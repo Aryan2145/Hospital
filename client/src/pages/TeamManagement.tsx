@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -280,22 +280,21 @@ export default function TeamManagement() {
     return mgr ? mgr.name : "-";
   };
 
-  if (isLoading) return <div className="flex h-screen"><Sidebar /><main className="flex-1 flex items-center justify-center"><LoadingSpinner /></main></div>;
+  if (isLoading) return <AppLayout><div className="flex-1 flex items-center justify-center"><LoadingSpinner /></div></AppLayout>;
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <AppLayout>
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <h2 className="text-3xl font-bold tracking-tight text-foreground" data-testid="text-page-title">Team Management</h2>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground" data-testid="text-page-title">Team Management</h2>
               <p className="text-muted-foreground mt-1">Manage CRM users, roles, reporting hierarchy, and access levels.</p>
             </div>
             <Button onClick={openCreate} data-testid="button-add-user"><UserPlus className="w-4 h-4 mr-2" />Add User</Button>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
             <Card>
               <CardContent className="pt-4 pb-3">
                 <div className="flex items-center gap-3">
@@ -440,7 +439,7 @@ export default function TeamManagement() {
               <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
                 <CardTitle className="text-base">Organisation Hierarchy</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="overflow-x-auto">
                 {rootUsers.length === 0 ? (
                   <p className="text-center text-muted-foreground py-8">No users found.</p>
                 ) : (
@@ -452,7 +451,7 @@ export default function TeamManagement() {
             </Card>
           )}
         </div>
-      </main>
+      </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -672,6 +671,6 @@ export default function TeamManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </AppLayout>
   );
 }

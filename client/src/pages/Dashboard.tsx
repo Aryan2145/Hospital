@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format, formatDistanceToNow, isPast } from "date-fns";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { useLeads } from "@/hooks/use-leads";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -182,10 +182,9 @@ export default function Dashboard() {
   const overallCPL = Math.round(totalCampaignSpend / totalCampaignLeads);
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-6 max-w-[1400px] mx-auto space-y-6">
+    <AppLayout>
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <h2 className="text-2xl font-bold tracking-tight text-foreground" data-testid="text-dashboard-title">Dashboard</h2>
@@ -604,8 +603,8 @@ export default function Dashboard() {
             <SocialCard platform="LinkedIn" handle="viroc-hospital" followers="2,180" posts="234" engagement="2.4%" color="#0077B5" />
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }
 

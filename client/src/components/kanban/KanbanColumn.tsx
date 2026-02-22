@@ -16,7 +16,7 @@ export function KanbanColumn({ id, title, color, count, leads }: KanbanColumnPro
   const { setNodeRef } = useDroppable({ id });
 
   return (
-    <div className="flex flex-col w-80 shrink-0">
+    <div className="flex flex-col w-64 md:w-80 shrink-0">
       <div className="flex items-center justify-between mb-4 px-1">
         <div className="flex items-center gap-2">
           <div className={cn("w-3 h-3 rounded-full", color.split(" ")[0].replace("bg-", "bg-opacity-100 bg-"))} />

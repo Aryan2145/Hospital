@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -261,19 +261,19 @@ export default function GoogleSheetsImportPage() {
   }
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
-      <Sidebar />
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+    <AppLayout>
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-b from-muted to-transparent opacity-50 rounded-bl-full pointer-events-none z-0" />
 
-        <div className="p-6 border-b border-border bg-white/80 backdrop-blur-sm z-10">
-          <div className="flex items-center justify-between">
+        <div className="p-4 md:p-6 border-b border-border bg-white/80 backdrop-blur-sm z-10">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2" data-testid="text-page-title">
-                <FileSpreadsheet className="w-6 h-6 text-green-600" />
-                Google Sheets Lead Extraction
+              <h1 className="text-xl md:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2" data-testid="text-page-title">
+                <FileSpreadsheet className="w-5 h-5 md:w-6 md:h-6 text-green-600" />
+                <span className="hidden md:inline">Google Sheets Lead Extraction</span>
+                <span className="md:hidden">Sheets Import</span>
               </h1>
-              <p className="text-sm text-muted-foreground">Connect a Google Sheet and import leads directly into CRM</p>
+              <p className="text-xs md:text-sm text-muted-foreground">Connect a Google Sheet and import leads directly into CRM</p>
             </div>
             {step !== "connect" && (
               <Button variant="outline" onClick={resetAll} data-testid="button-start-over">
@@ -283,26 +283,26 @@ export default function GoogleSheetsImportPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-2 mt-4">
+          <div className="flex items-center gap-1 md:gap-2 mt-4 overflow-x-auto">
             {["connect", "map", "preview", "result"].map((s, idx) => (
-              <div key={s} className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+              <div key={s} className="flex items-center gap-1 md:gap-2 shrink-0">
+                <div className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs font-bold ${
                   step === s ? "bg-primary text-white" :
                   ["connect", "map", "preview", "result"].indexOf(step) > idx ? "bg-green-100 text-green-700" :
                   "bg-muted text-muted-foreground"
                 }`}>
                   {["connect", "map", "preview", "result"].indexOf(step) > idx ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
                 </div>
-                <span className={`text-xs font-medium ${step === s ? "text-foreground" : "text-muted-foreground"}`}>
-                  {s === "connect" ? "Connect" : s === "map" ? "Map Fields" : s === "preview" ? "Preview" : "Result"}
+                <span className={`text-[10px] md:text-xs font-medium ${step === s ? "text-foreground" : "text-muted-foreground"}`}>
+                  {s === "connect" ? "Connect" : s === "map" ? "Map" : s === "preview" ? "Preview" : "Result"}
                 </span>
-                {idx < 3 && <ArrowRight className="w-4 h-4 text-muted-foreground" />}
+                {idx < 3 && <ArrowRight className="w-3 h-3 md:w-4 md:h-4 text-muted-foreground" />}
               </div>
             ))}
           </div>
         </div>
 
-        <div className="flex-1 p-6 overflow-auto z-10">
+        <div className="flex-1 p-4 md:p-6 overflow-auto z-10">
           {step === "connect" && (
             <Card className="max-w-2xl mx-auto">
               <CardHeader>
@@ -644,7 +644,7 @@ export default function GoogleSheetsImportPage() {
             </div>
           )}
         </div>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

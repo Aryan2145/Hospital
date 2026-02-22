@@ -1,5 +1,5 @@
 import { useRoute, useLocation } from "wouter";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers, useDoctors, useDoctorAvailability, useCreateAppointment, useNextActionTypes } from "@/hooks/use-leads";
 import { Button } from "@/components/ui/button";
@@ -83,20 +83,18 @@ export default function LeadDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen bg-background">
-        <Sidebar />
-        <main className="flex-1 flex items-center justify-center">
+      <AppLayout>
+        <div className="flex-1 flex items-center justify-center">
           <LoadingSpinner text="Loading lead..." />
-        </main>
-      </div>
+        </div>
+      </AppLayout>
     );
   }
 
   if (!lead) {
     return (
-      <div className="flex h-screen bg-background">
-        <Sidebar />
-        <main className="flex-1 flex items-center justify-center">
+      <AppLayout>
+        <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <p className="text-muted-foreground mb-4">Lead not found</p>
             <Button variant="outline" onClick={() => setLocation("/leads")} data-testid="button-back-to-leads">
@@ -104,30 +102,27 @@ export default function LeadDetailPage() {
               Back to Leads
             </Button>
           </div>
-        </main>
-      </div>
+        </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
-      <Sidebar />
-      <main className="flex-1 flex flex-col h-full overflow-hidden">
-        <LeadHeader lead={lead} onBack={() => setLocation("/leads")} />
-        {lead.handoverStatus === "Pending" && <HandoverBanner lead={lead} />}
-        <div className="flex-1 flex overflow-hidden">
-          <div className="flex-1 flex flex-col overflow-hidden border-r border-border">
-            <ActivityTimeline leadId={lead.id} />
-          </div>
-          <div className="w-80 flex flex-col overflow-y-auto bg-muted/20">
-            <NextActionPanel lead={lead} />
-            <TasksPanel leadId={lead.id} />
-            <QuickActions lead={lead} />
-            <HandoverHistory leadId={lead.id} />
-          </div>
+    <AppLayout className="flex-1 flex flex-col h-full overflow-hidden">
+      <LeadHeader lead={lead} onBack={() => setLocation("/leads")} />
+      {lead.handoverStatus === "Pending" && <HandoverBanner lead={lead} />}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden lg:border-r border-border">
+          <ActivityTimeline leadId={lead.id} />
         </div>
-      </main>
-    </div>
+        <div className="w-full lg:w-80 flex flex-col overflow-y-auto bg-muted/20 border-t lg:border-t-0">
+          <NextActionPanel lead={lead} />
+          <TasksPanel leadId={lead.id} />
+          <QuickActions lead={lead} />
+          <HandoverHistory leadId={lead.id} />
+        </div>
+      </div>
+    </AppLayout>
   );
 }
 
@@ -149,14 +144,14 @@ function LeadHeader({ lead, onBack }: { lead: any; onBack: () => void }) {
   const slaExpired = slaDeadline ? isPast(slaDeadline) : false;
 
   return (
-    <div className="p-4 border-b border-border bg-card">
-      <div className="flex items-center gap-3 mb-3">
+    <div className="p-3 md:p-4 border-b border-border bg-card">
+      <div className="flex items-center gap-2 md:gap-3 mb-3">
         <Button variant="ghost" size="icon" onClick={onBack} data-testid="button-back">
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-xl font-bold text-foreground truncate" data-testid="text-lead-name">{lead.name}</h1>
+          <div className="flex items-center gap-2 md:gap-3 flex-wrap">
+            <h1 className="text-lg md:text-xl font-bold text-foreground truncate" data-testid="text-lead-name">{lead.name}</h1>
             <span className="text-xs font-mono text-muted-foreground" data-testid="text-lead-id">#{lead.id}</span>
           </div>
         </div>

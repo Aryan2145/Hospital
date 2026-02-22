@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -147,10 +147,9 @@ export default function TestingInterface() {
   const isCurrentUser = (userId: string | null) => userId !== null && crmUser?.userId === userId;
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
+    <AppLayout>
       <div className="flex-1 overflow-auto">
-        <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center">
@@ -517,6 +516,6 @@ export default function TestingInterface() {
           </div>
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }
