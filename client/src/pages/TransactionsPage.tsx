@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useDoctors } from "@/hooks/use-leads";
-import { Plus, Pencil, FileText, Calendar, IndianRupee, Loader2, Stethoscope, User } from "lucide-react";
+import { Plus, Pencil, FileText, Calendar, IndianRupee, Loader2, Stethoscope, User, UserCheck } from "lucide-react";
 import { format } from "date-fns";
 
 interface Episode {
@@ -51,6 +51,7 @@ export default function TransactionsPage() {
   const [editing, setEditing] = useState<Episode | null>(null);
   const [filterStatus, setFilterStatus] = useState("");
 
+  const [formLeadId, setFormLeadId] = useState("");
   const [formPatientId, setFormPatientId] = useState("");
   const [formDoctorId, setFormDoctorId] = useState("");
   const [formEpisodeType, setFormEpisodeType] = useState("OPD");
@@ -67,6 +68,10 @@ export default function TransactionsPage() {
     queryKey: ["/api/episodes"],
   });
 
+  const { data: leadsList } = useQuery<any[]>({
+    queryKey: ["/api/leads"],
+  });
+
   const { data: patientsList } = useQuery<any[]>({
     queryKey: ["/api/patients"],
   });
@@ -76,6 +81,12 @@ export default function TransactionsPage() {
   const { data: treatmentDepts } = useQuery<any[]>({
     queryKey: ["/api/masters/treatmentDepartments"],
   });
+
+  const leadMap = useMemo(() => {
+    const map: Record<number, any> = {};
+    leadsList?.forEach((l: any) => { map[l.id] = l; });
+    return map;
+  }, [leadsList]);
 
   const patientMap = useMemo(() => {
     const map: Record<number, string> = {};
@@ -121,8 +132,19 @@ export default function TransactionsPage() {
     onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const handleLeadChange = (leadId: string) => {
+    setFormLeadId(leadId);
+    if (leadId && leadId !== "none") {
+      const lead = leadMap[Number(leadId)];
+      if (lead?.patientId) {
+        setFormPatientId(String(lead.patientId));
+      }
+    }
+  };
+
   const openCreate = () => {
     setEditing(null);
+    setFormLeadId("");
     setFormPatientId("");
     setFormDoctorId("");
     setFormEpisodeType("OPD");
@@ -139,6 +161,7 @@ export default function TransactionsPage() {
 
   const openEdit = (ep: Episode) => {
     setEditing(ep);
+    setFormLeadId(ep.leadId ? String(ep.leadId) : "");
     setFormPatientId(String(ep.patientId));
     setFormDoctorId(ep.doctorId ? String(ep.doctorId) : "");
     setFormEpisodeType(ep.episodeType || "OPD");
@@ -159,11 +182,16 @@ export default function TransactionsPage() {
   };
 
   const handleSubmit = () => {
+    if (!formLeadId || formLeadId === "none") {
+      toast({ title: "Lead is required", variant: "destructive" });
+      return;
+    }
     if (!formPatientId) {
       toast({ title: "Patient is required", variant: "destructive" });
       return;
     }
     const data: any = {
+      leadId: Number(formLeadId),
       patientId: Number(formPatientId),
       episodeType: formEpisodeType,
       status: formStatus,
@@ -246,6 +274,12 @@ export default function TransactionsPage() {
                         <Badge variant="outline">{ep.episodeType || "OPD"}</Badge>
                       </div>
                       <div className="flex items-center gap-4 text-sm flex-wrap">
+                        {ep.leadId && leadMap[ep.leadId] && (
+                          <span className="flex items-center gap-1 text-muted-foreground">
+                            <UserCheck className="w-4 h-4" />
+                            Lead: {`${leadMap[ep.leadId].firstName || ""} ${leadMap[ep.leadId].lastName || ""}`.trim()}
+                          </span>
+                        )}
                         <span className="flex items-center gap-1 text-muted-foreground">
                           <User className="w-4 h-4" />
                           {patientMap[ep.patientId] || `Patient #${ep.patientId}`}
@@ -289,6 +323,24 @@ export default function TransactionsPage() {
               <DialogTitle>{editing ? "Edit Consultation Episode" : "New Consultation Episode"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Lead *</Label>
+                <SearchableSelect
+                  value={formLeadId}
+                  onValueChange={handleLeadChange}
+                  disabled={!!editing}
+                  options={[
+                    { value: "none", label: "-- Select Lead --" },
+                    ...(leadsList || []).map((l: any) => ({
+                      value: String(l.id),
+                      label: `${l.firstName || ""} ${l.lastName || ""}`.trim() + (l.phone ? ` (${l.phone})` : ""),
+                    })),
+                  ]}
+                  placeholder="Search and select a lead"
+                  data-testid="episode-select-lead"
+                />
+              </div>
+
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Patient *</Label>
                 <SearchableSelect
@@ -394,7 +446,7 @@ export default function TransactionsPage() {
               <Button
                 onClick={handleSubmit}
                 className="w-full"
-                disabled={isPending || !formPatientId}
+                disabled={isPending || !formLeadId || formLeadId === "none" || !formPatientId}
                 data-testid="button-save-episode"
               >
                 {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
