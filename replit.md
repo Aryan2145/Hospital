@@ -97,6 +97,7 @@ Note: Lead Import is accessible via "Bulk Import" button on the Leads page (not 
 ### Priority 1 — Must Build
 - **Unified Communication Timeline**: Single view on lead/patient detail page showing WhatsApp messages, calls, and emails together
 - **Post-Care Follow-up Scheduler**: Configurable automated follow-up sequences (day 1, 7, 30 post-consultation). VIROC already practices post-care follow-ups (enquiring patient health, next steps). Includes physiotherapy home session scheduling. All interactions logged in patient timeline.
+- **Handover Enhancements** (simplified): Auto-escalation if not accepted in X hours, handover reason capture (dropdown/text), handover history view on lead, notification to receiving counsellor
 
 ### Priority 2 — Need to Develop
 - Churn prediction / dormant patient detection
