@@ -8,13 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import type { CrmUser, MasterRecord } from "@shared/schema";
 import {
   UserPlus, Search, ChevronDown, ChevronRight, Mail, Phone, Shield, Eye,
-  Users, UserCog, Network, List, Pencil, Trash2, KeyRound
+  Users, UserCog, Network, List, Pencil, Trash2, KeyRound, Building2, Briefcase
 } from "lucide-react";
 
 type ViewMode = "list" | "tree";
@@ -24,11 +25,25 @@ interface UserFormData {
   name: string;
   email: string;
   phone: string;
+  systemRoleId: number | null;
+  branchId: number | null;
+  departmentId: number | null;
+  designationId: number | null;
+  employmentTypeId: number | null;
   reportingTo: number | null;
   accessScopeType: string;
   phiAccessLevel: string;
+  joiningDate: string;
   status: string;
 }
+
+const EMPTY_FORM: UserFormData = {
+  code: "", name: "", email: "", phone: "",
+  systemRoleId: null, branchId: null, departmentId: null,
+  designationId: null, employmentTypeId: null,
+  reportingTo: null, accessScopeType: "Self", phiAccessLevel: "None",
+  joiningDate: "", status: "Active",
+};
 
 const ACCESS_SCOPE_OPTIONS = [
   { value: "All", label: "All (Full Access)", description: "Can view all data across all branches" },
@@ -103,8 +118,8 @@ function TreeNode({ user, allUsers, level = 0, onEdit, onDelete }: {
         </div>
         {hasChildren && <Badge variant="secondary" className="text-xs">{children.length} reports</Badge>}
         <div className="invisible group-hover:visible flex items-center gap-1">
-          <Button size="icon" variant="ghost" onClick={() => onEdit(user)} data-testid={`edit-user-${user.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
-          <Button size="icon" variant="ghost" onClick={() => onDelete(user.id)} data-testid={`delete-user-${user.id}`}><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
+          <Button size="icon" variant="ghost" onClick={() => onEdit(user)} data-testid={`button-edit-user-${user.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
+          <Button size="icon" variant="ghost" onClick={() => onDelete(user.id)} data-testid={`button-delete-user-${user.id}`}><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
         </div>
       </div>
       {expanded && hasChildren && (
@@ -127,14 +142,16 @@ export default function TeamManagement() {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [passwordTarget, setPasswordTarget] = useState<CrmUser | null>(null);
   const [newPassword, setNewPassword] = useState("");
-  const [formData, setFormData] = useState<UserFormData>({
-    code: "", name: "", email: "", phone: "",
-    reportingTo: null, accessScopeType: "Self", phiAccessLevel: "None", status: "Active",
-  });
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+  const [formData, setFormData] = useState<UserFormData>({ ...EMPTY_FORM });
 
   const { data: users = [], isLoading } = useQuery<CrmUser[]>({ queryKey: ["/api/crm-users"] });
-
   const { data: roles = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/systemRoles"] });
+  const { data: branches = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/branches"] });
+  const { data: departments = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/administrativeDepartments"] });
+  const { data: designations = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/designations"] });
+  const { data: employmentTypes = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/employmentTypes"] });
 
   const createMutation = useMutation({
     mutationFn: (data: UserFormData) => apiRequest("POST", "/api/crm-users", data),
@@ -180,12 +197,12 @@ export default function TeamManagement() {
   function closeDialog() {
     setDialogOpen(false);
     setEditingUser(null);
-    setFormData({ code: "", name: "", email: "", phone: "", reportingTo: null, accessScopeType: "Self", phiAccessLevel: "None", status: "Active" });
+    setFormData({ ...EMPTY_FORM });
   }
 
   function openCreate() {
     setEditingUser(null);
-    setFormData({ code: "", name: "", email: "", phone: "", reportingTo: null, accessScopeType: "Self", phiAccessLevel: "None", status: "Active" });
+    setFormData({ ...EMPTY_FORM });
     setDialogOpen(true);
   }
 
@@ -193,7 +210,11 @@ export default function TeamManagement() {
     setEditingUser(user);
     setFormData({
       code: user.code, name: user.name, email: user.email || "", phone: user.phone || "",
-      reportingTo: user.reportingTo, accessScopeType: user.accessScopeType, phiAccessLevel: user.phiAccessLevel, status: user.status,
+      systemRoleId: user.systemRoleId, branchId: user.branchId, departmentId: user.departmentId,
+      designationId: user.designationId, employmentTypeId: (user as any).employmentTypeId || null,
+      reportingTo: user.reportingTo, accessScopeType: user.accessScopeType, phiAccessLevel: user.phiAccessLevel,
+      joiningDate: (user as any).joiningDate ? new Date((user as any).joiningDate).toISOString().split("T")[0] : "",
+      status: user.status,
     });
     setDialogOpen(true);
   }
@@ -203,21 +224,47 @@ export default function TeamManagement() {
       toast({ title: "Validation Error", description: "Code and Name are required", variant: "destructive" });
       return;
     }
+    const payload: any = {
+      ...formData,
+      isActive: formData.status === "Active",
+      joiningDate: formData.joiningDate || null,
+    };
     if (editingUser) {
-      updateMutation.mutate({ id: editingUser.id, data: formData });
+      updateMutation.mutate({ id: editingUser.id, data: payload });
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate(payload);
     }
   }
 
-  function handleDelete(id: number) {
+  function confirmDelete(id: number) {
     const hasReports = users.some(u => u.reportingTo === id);
     if (hasReports) {
       toast({ title: "Cannot Delete", description: "User has direct reports. Reassign them first.", variant: "destructive" });
       return;
     }
-    deleteMutation.mutate(id);
+    setDeleteTargetId(id);
+    setDeleteConfirmOpen(true);
   }
+
+  function executeDelete() {
+    if (deleteTargetId !== null) {
+      deleteMutation.mutate(deleteTargetId);
+    }
+    setDeleteConfirmOpen(false);
+    setDeleteTargetId(null);
+  }
+
+  const getRoleName = (roleId: number | null) => {
+    if (!roleId) return null;
+    const role = roles.find((r: any) => r.id === roleId);
+    return role ? role.name : null;
+  };
+
+  const getBranchName = (branchId: number | null) => {
+    if (!branchId) return null;
+    const branch = branches.find((b: any) => b.id === branchId);
+    return branch ? branch.name : null;
+  };
 
   const filteredUsers = users.filter(u =>
     u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -323,10 +370,11 @@ export default function TeamManagement() {
                       <tr className="border-b bg-muted/30">
                         <th className="text-left p-3 font-medium text-muted-foreground">User</th>
                         <th className="text-left p-3 font-medium text-muted-foreground">Code</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground">Role</th>
                         <th className="text-left p-3 font-medium text-muted-foreground">Contact</th>
+                        <th className="text-left p-3 font-medium text-muted-foreground">Branch</th>
                         <th className="text-left p-3 font-medium text-muted-foreground">Reports To</th>
                         <th className="text-left p-3 font-medium text-muted-foreground">Access</th>
-                        <th className="text-left p-3 font-medium text-muted-foreground">PHI</th>
                         <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
                         <th className="text-right p-3 font-medium text-muted-foreground">Actions</th>
                       </tr>
@@ -344,30 +392,43 @@ export default function TeamManagement() {
                           </td>
                           <td className="p-3 text-muted-foreground">{user.code}</td>
                           <td className="p-3">
+                            {getRoleName(user.systemRoleId) ? (
+                              <Badge variant="outline" className="text-xs">{getRoleName(user.systemRoleId)}</Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                          </td>
+                          <td className="p-3">
                             <div className="space-y-0.5">
                               {user.email && <div className="flex items-center gap-1 text-xs text-muted-foreground"><Mail className="w-3 h-3" />{user.email}</div>}
                               {user.phone && <div className="flex items-center gap-1 text-xs text-muted-foreground"><Phone className="w-3 h-3" />{user.phone}</div>}
                             </div>
                           </td>
+                          <td className="p-3">
+                            {getBranchName(user.branchId) ? (
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground"><Building2 className="w-3 h-3" />{getBranchName(user.branchId)}</span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                          </td>
                           <td className="p-3 text-muted-foreground text-xs">{getManagerName(user.reportingTo)}</td>
                           <td className="p-3"><AccessScopeBadge scope={user.accessScopeType} /></td>
-                          <td className="p-3"><PhiBadge level={user.phiAccessLevel} /></td>
                           <td className="p-3">
-                            <Badge variant={user.isActive ? "default" : "secondary"}>
-                              {user.isActive ? "Active" : "Inactive"}
+                            <Badge variant={user.status === "Active" ? "default" : "secondary"}>
+                              {user.status}
                             </Badge>
                           </td>
                           <td className="p-3 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <Button size="icon" variant="ghost" onClick={() => { setPasswordTarget(user); setNewPassword(""); setPasswordDialogOpen(true); }} title="Set Password" data-testid={`button-password-user-${user.id}`}><KeyRound className="w-3.5 h-3.5" /></Button>
                               <Button size="icon" variant="ghost" onClick={() => openEdit(user)} data-testid={`button-edit-user-${user.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
-                              <Button size="icon" variant="ghost" onClick={() => handleDelete(user.id)} data-testid={`button-delete-user-${user.id}`}><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
+                              <Button size="icon" variant="ghost" onClick={() => confirmDelete(user.id)} data-testid={`button-delete-user-${user.id}`}><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
                             </div>
                           </td>
                         </tr>
                       ))}
                       {filteredUsers.length === 0 && (
-                        <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">No users found.</td></tr>
+                        <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">No users found.</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -384,7 +445,7 @@ export default function TeamManagement() {
                   <p className="text-center text-muted-foreground py-8">No users found.</p>
                 ) : (
                   rootUsers.map(u => (
-                    <TreeNode key={u.id} user={u} allUsers={filteredUsers} onEdit={openEdit} onDelete={handleDelete} />
+                    <TreeNode key={u.id} user={u} allUsers={filteredUsers} onEdit={openEdit} onDelete={confirmDelete} />
                   ))
                 )}
               </CardContent>
@@ -394,11 +455,15 @@ export default function TeamManagement() {
       </main>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingUser ? "Edit User" : "Add New User"}</DialogTitle>
+            <DialogDescription>
+              {editingUser ? "Update user details, role, and access permissions." : "Create a new CRM user with role and access assignments."}
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Basic Information</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="code">Code *</Label>
@@ -418,6 +483,89 @@ export default function TeamManagement() {
                 <Label htmlFor="phone">Phone</Label>
                 <Input id="phone" value={formData.phone} onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))} placeholder="+919800000007" data-testid="input-user-phone" />
               </div>
+            </div>
+
+            <div className="border-t pt-3 mt-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Role & Organisation</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>System Role</Label>
+                <SearchableSelect
+                  value={formData.systemRoleId?.toString() || "none"}
+                  onValueChange={v => setFormData(p => ({ ...p, systemRoleId: v === "none" ? null : Number(v) }))}
+                  options={[
+                    { value: "none", label: "-- No Role --" },
+                    ...roles.filter((r: any) => r.status === "Active").map((r: any) => ({ value: r.id.toString(), label: r.name }))
+                  ]}
+                  placeholder="Select role"
+                  data-testid="select-system-role"
+                />
+              </div>
+              <div>
+                <Label>Branch</Label>
+                <SearchableSelect
+                  value={formData.branchId?.toString() || "none"}
+                  onValueChange={v => setFormData(p => ({ ...p, branchId: v === "none" ? null : Number(v) }))}
+                  options={[
+                    { value: "none", label: "-- No Branch --" },
+                    ...branches.filter((b: any) => b.status === "Active").map((b: any) => ({ value: b.id.toString(), label: b.name }))
+                  ]}
+                  placeholder="Select branch"
+                  data-testid="select-branch"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Department</Label>
+                <SearchableSelect
+                  value={formData.departmentId?.toString() || "none"}
+                  onValueChange={v => setFormData(p => ({ ...p, departmentId: v === "none" ? null : Number(v) }))}
+                  options={[
+                    { value: "none", label: "-- No Department --" },
+                    ...departments.filter((d: any) => d.status === "Active").map((d: any) => ({ value: d.id.toString(), label: d.name }))
+                  ]}
+                  placeholder="Select department"
+                  data-testid="select-department"
+                />
+              </div>
+              <div>
+                <Label>Designation</Label>
+                <SearchableSelect
+                  value={formData.designationId?.toString() || "none"}
+                  onValueChange={v => setFormData(p => ({ ...p, designationId: v === "none" ? null : Number(v) }))}
+                  options={[
+                    { value: "none", label: "-- No Designation --" },
+                    ...designations.filter((d: any) => d.status === "Active").map((d: any) => ({ value: d.id.toString(), label: d.name }))
+                  ]}
+                  placeholder="Select designation"
+                  data-testid="select-designation"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Employment Type</Label>
+                <SearchableSelect
+                  value={formData.employmentTypeId?.toString() || "none"}
+                  onValueChange={v => setFormData(p => ({ ...p, employmentTypeId: v === "none" ? null : Number(v) }))}
+                  options={[
+                    { value: "none", label: "-- No Type --" },
+                    ...employmentTypes.filter((e: any) => e.status === "Active").map((e: any) => ({ value: e.id.toString(), label: e.name }))
+                  ]}
+                  placeholder="Select employment type"
+                  data-testid="select-employment-type"
+                />
+              </div>
+              <div>
+                <Label htmlFor="joining-date">Joining Date</Label>
+                <Input id="joining-date" type="date" value={formData.joiningDate} onChange={e => setFormData(p => ({ ...p, joiningDate: e.target.value }))} data-testid="input-joining-date" />
+              </div>
+            </div>
+
+            <div className="border-t pt-3 mt-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Hierarchy & Access</p>
             </div>
             <div>
               <Label>Reports To</Label>
@@ -507,6 +655,23 @@ export default function TeamManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete User</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{users.find(u => u.id === deleteTargetId)?.name}</strong>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={executeDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90" data-testid="button-confirm-delete">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

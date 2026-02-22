@@ -502,7 +502,7 @@ export async function registerRoutes(
       if (currentCrmUser.systemRoleId) {
         const allRoles = await storage.getMasterRecords("systemRoles", tid);
         const r = allRoles.find(r => r.id === currentCrmUser.systemRoleId);
-        if (r && (r as any).code === "ADMIN") isAdmin = true;
+        if (r && ((r as any).code === "ADMIN" || (r as any).code === "SYS_ADMIN")) isAdmin = true;
       }
       if (!isAdmin) return res.status(403).json({ message: "Only admins can set passwords" });
 
@@ -1488,9 +1488,25 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/crm-users", isAuthenticated, async (req, res) => {
+  async function requireAdminRole(req: any, res: any, tenantId: number): Promise<boolean> {
+    const sessionCrmUserId = req.session?.crmUserId;
+    if (!sessionCrmUserId) { res.status(403).json({ message: "Not a CRM user" }); return false; }
+    const allCrmUsers = await storage.getCrmUsers(tenantId);
+    const currentUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
+    if (!currentUser) { res.status(403).json({ message: "Not a CRM user" }); return false; }
+    if (currentUser.systemRoleId) {
+      const allRoles = await storage.getMasterRecords("systemRoles", tenantId);
+      const role = allRoles.find(r => r.id === currentUser.systemRoleId);
+      if (role && ((role as any).code === "SYS_ADMIN" || (role as any).code === "ADMIN")) return true;
+    }
+    res.status(403).json({ message: "Admin access required" });
+    return false;
+  }
+
+  app.post("/api/crm-users", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId();
+      if (!(await requireAdminRole(req, res, tid))) return;
       const body = coerceDateFields(req.body, ["joiningDate", "resetTokenExpiry"]);
       const parsed = insertCrmUserSchema.parse({ ...body, tenantId: tid });
       const user = await storage.createCrmUser(parsed);
@@ -1500,9 +1516,10 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/crm-users/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/crm-users/:id", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId();
+      if (!(await requireAdminRole(req, res, tid))) return;
       const body = coerceDateFields(req.body, ["joiningDate", "resetTokenExpiry"]);
       const parsed = insertCrmUserSchema.partial().parse(body);
       const user = await storage.updateCrmUser(Number(req.params.id), tid, parsed);
@@ -1512,9 +1529,10 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/crm-users/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/crm-users/:id", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId();
+      if (!(await requireAdminRole(req, res, tid))) return;
       await storage.deleteCrmUser(Number(req.params.id), tid);
       res.status(204).send();
     } catch (err: any) {
@@ -2407,7 +2425,7 @@ export async function registerRoutes(
     if (crmUser.systemRoleId) {
       const allRoles = await storage.getMasterRecords("systemRoles", tid);
       const role = allRoles.find(r => r.id === crmUser.systemRoleId);
-      if (role && (role as any).code === "ADMIN") return true;
+      if (role && ((role as any).code === "ADMIN" || (role as any).code === "SYS_ADMIN")) return true;
     }
     res.status(403).json({ message: "Admin access required for testing interface" });
     return false;
