@@ -36,6 +36,7 @@ const sections: { label: string; items: NavItem[] }[] = [
       { icon: Megaphone, label: "Campaigns", href: "/campaigns", page: "campaigns" },
       { icon: Users, label: "Leads", href: "/leads", page: "leads" },
       { icon: Calendar, label: "Appointments", href: "/appointments", page: "appointments" },
+      { icon: HeartPulse, label: "Consultation Episodes", href: "/transactions", page: "transactions" },
     ],
   },
   {

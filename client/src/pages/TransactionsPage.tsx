@@ -102,7 +102,7 @@ export default function TransactionsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/episodes"] });
-      toast({ title: "Episode created" });
+      toast({ title: "Consultation episode created" });
       closeDialog();
     },
     onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -115,7 +115,7 @@ export default function TransactionsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/episodes"] });
-      toast({ title: "Episode updated" });
+      toast({ title: "Consultation episode updated" });
       closeDialog();
     },
     onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -193,12 +193,12 @@ export default function TransactionsPage() {
         <div className="p-8 max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <h2 className="text-3xl font-bold tracking-tight text-foreground" data-testid="text-transactions-title">Episodes</h2>
-              <p className="text-muted-foreground mt-1">Manage treatment episodes and patient journey tracking.</p>
+              <h2 className="text-3xl font-bold tracking-tight text-foreground" data-testid="text-transactions-title">Consultation Episodes</h2>
+              <p className="text-muted-foreground mt-1">Track patient consultation episodes — from first visit through treatment to completion.</p>
             </div>
             <Button onClick={openCreate} data-testid="button-create-episode">
               <Plus className="w-4 h-4 mr-2" />
-              New Episode
+              New Consultation Episode
             </Button>
           </div>
 
@@ -227,11 +227,11 @@ export default function TransactionsPage() {
           </Card>
 
           {isLoading ? (
-            <LoadingSpinner text="Loading episodes..." />
+            <LoadingSpinner text="Loading consultation episodes..." />
           ) : filteredEpisodes.length === 0 ? (
             <Card className="p-12 text-center">
               <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">No treatment episodes found.</p>
+              <p className="text-muted-foreground">No consultation episodes found. Create one when a patient comes for consultation.</p>
             </Card>
           ) : (
             <div className="space-y-3">
@@ -286,7 +286,7 @@ export default function TransactionsPage() {
         <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editing ? "Edit Episode" : "New Treatment Episode"}</DialogTitle>
+              <DialogTitle>{editing ? "Edit Consultation Episode" : "New Consultation Episode"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
@@ -398,7 +398,7 @@ export default function TransactionsPage() {
                 data-testid="button-save-episode"
               >
                 {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
-                {editing ? "Update Episode" : "Create Episode"}
+                {editing ? "Update Episode" : "Create Consultation Episode"}
               </Button>
             </div>
           </DialogContent>

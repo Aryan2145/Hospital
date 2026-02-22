@@ -69,7 +69,7 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - `/lead-import` - Bulk Lead Import (CSV upload, column mapping, dedup strategy, import history)
 - `/appointments` - Appointment scheduling and management
 - `/campaigns` - Campaign management (create, edit, track marketing campaigns)
-- `/transactions` - Treatment episode/transaction tracking
+- `/transactions` - Consultation Episodes — track patient consultation journey from first visit through treatment to completion
 - `/connectors` - Platform Connectors + Lead Capture Rules (Meta, Google, Callyzer, Google Forms integration) [System Admin only]
 - `/email-settings` - Email/SMTP Configuration for password reset & notifications [System Admin only]
 - `/whatsapp-settings` - WhatsApp Business API integration for appointment confirmations [System Admin only]
