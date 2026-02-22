@@ -2684,8 +2684,8 @@ export async function registerRoutes(
   app.get("/api/episodes", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      const patientId = req.query.patientId ? Number(req.query.patientId) : undefined;
-      const result = await storage.getEpisodes(tid, patientId);
+      const leadId = req.query.leadId ? Number(req.query.leadId) : undefined;
+      const result = await storage.getEpisodes(tid, leadId);
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -2706,16 +2706,31 @@ export async function registerRoutes(
   app.post("/api/episodes", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      const body = coerceDateFields(req.body, ["startDate", "endDate"]);
-      const parsed = insertEpisodeSchema.parse({ ...body, tenantId: tid });
-      const ep = await storage.createEpisode(parsed);
+      const body = coerceDateFields(req.body, ["startDate", "endDate", "nextActionDate", "slaDeadline"]);
 
-      if (parsed.leadId) {
-        const lead = await storage.getLead(parsed.leadId);
-        if (lead && lead.status !== "Consultation Done" && lead.status !== "Closed Won" && lead.status !== "Closed Lost") {
-          await storage.updateLead(parsed.leadId, { status: "Consultation Done" });
-        }
+      const lead = body.leadId ? await storage.getLead(body.leadId) : null;
+      if (!lead) return res.status(400).json({ message: "Lead is required for creating an episode" });
+
+      let treatmentDeptName = "General";
+      if (body.treatmentDepartmentId) {
+        const deptRows = await pool.query("SELECT name FROM treatment_departments WHERE id = $1", [body.treatmentDepartmentId]);
+        if (deptRows.rows.length > 0) treatmentDeptName = deptRows.rows[0].name;
       }
+
+      const existingCount = await storage.getEpisodeCountForLead(lead.id, treatmentDeptName);
+      const episodeName = existingCount > 0
+        ? `${lead.name}_${treatmentDeptName}_${existingCount + 1}`
+        : `${lead.name}_${treatmentDeptName}`;
+
+      const parsed = insertEpisodeSchema.parse({
+        ...body,
+        tenantId: tid,
+        episodeName,
+        assignedCrmUserId: body.assignedCrmUserId || lead.assignedCrmUserId,
+        branchId: body.branchId || lead.branchId,
+        priority: body.priority || lead.priority || "Normal",
+      });
+      const ep = await storage.createEpisode(parsed);
 
       res.status(201).json(ep);
     } catch (err: any) {
@@ -2726,7 +2741,7 @@ export async function registerRoutes(
   app.patch("/api/episodes/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      const body = coerceDateFields(req.body, ["startDate", "endDate"]);
+      const body = coerceDateFields(req.body, ["startDate", "endDate", "nextActionDate", "slaDeadline"]);
       const parsed = insertEpisodeSchema.partial().parse(body);
       const ep = await storage.updateEpisode(Number(req.params.id), tid, parsed);
       res.json(ep);

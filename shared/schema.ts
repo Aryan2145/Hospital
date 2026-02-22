@@ -1007,6 +1007,20 @@ export const leads = pgTable("leads", {
   totalCallDuration: integer("total_call_duration_seconds").default(0),
   tags: text("tags"),
   notes: text("notes"),
+  dateOfBirth: timestamp("date_of_birth"),
+  gender: text("gender"),
+  bloodGroup: text("blood_group"),
+  secondaryPhone: text("secondary_phone"),
+  address: text("address"),
+  cityId: integer("city_id").references(() => cities.id),
+  stateId: integer("state_id").references(() => states.id),
+  pinCode: text("pin_code"),
+  areaId: integer("area_id").references(() => areas.id),
+  insuranceProvider: text("insurance_provider"),
+  insurancePolicyNumber: text("insurance_policy_number"),
+  emergencyContactName: text("emergency_contact_name"),
+  emergencyContactPhone: text("emergency_contact_phone"),
+  uhid: text("uhid"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1089,18 +1103,30 @@ export const appointments = pgTable("appointments", {
   modifiedBy: varchar("modified_by"),
 });
 
-// --- Episodes (Treatment Episodes) ---
+// --- Episodes (Treatment Opportunities) ---
 export const episodes = pgTable("episodes", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
-  patientId: integer("patient_id").notNull().references(() => patients.id),
-  leadId: integer("lead_id").references(() => leads.id),
+  leadId: integer("lead_id").notNull().references(() => leads.id),
+  patientId: integer("patient_id").references(() => patients.id),
+  episodeName: text("episode_name").notNull(),
   treatmentDepartmentId: integer("treatment_department_id").references(() => treatmentDepartments.id),
   treatmentSubDepartmentId: integer("treatment_sub_department_id").references(() => treatmentSubDepartments.id),
+  consultationTypeId: integer("consultation_type_id").references(() => consultationTypes.id),
   doctorId: integer("doctor_id").references(() => doctors.id),
   branchId: integer("branch_id").references(() => branches.id),
   episodeType: text("episode_type").default("OPD"),
-  status: text("status").notNull().default("Open"),
+  status: text("status").notNull().default("Consultation Done"),
+  priority: text("priority").default("Normal"),
+  assignedCrmUserId: integer("assigned_crm_user_id").references(() => crmUsers.id),
+  conversionStageId: integer("conversion_stage_id").references(() => conversionStages.id),
+  lostReasonId: integer("lost_reason_id").references(() => lostReasons.id),
+  lostNotes: text("lost_notes"),
+  slaBreached: boolean("sla_breached").default(false),
+  slaDeadline: timestamp("sla_deadline"),
+  nextActionTypeId: integer("next_action_type_id").references(() => nextActionTypes.id),
+  nextActionDate: timestamp("next_action_date"),
+  nextActionNotes: text("next_action_notes"),
   startDate: timestamp("start_date").defaultNow(),
   endDate: timestamp("end_date"),
   diagnosis: text("diagnosis"),
@@ -1251,6 +1277,7 @@ export const insertMasterSchema = z.object({
   name: z.string().min(1),
   status: z.string().default("Active"),
   displayOrder: z.number().default(0),
+  approvalStatus: z.string().default("Approved"),
 });
 
 // =============================================
@@ -1291,6 +1318,7 @@ export interface MasterRecord {
   name: string;
   status: string;
   displayOrder: number | null;
+  approvalStatus: string | null;
   createdAt: Date | null;
   createdBy: string | null;
   modifiedAt: Date | null;

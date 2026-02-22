@@ -81,10 +81,11 @@ export interface IStorage {
   getNextTokenNumber(doctorId: number, tenantId: number, date: string): Promise<number>;
   getDoctors(tenantId: number): Promise<any[]>;
   // Episodes
-  getEpisodes(tenantId: number, patientId?: number): Promise<Episode[]>;
+  getEpisodes(tenantId: number, leadId?: number): Promise<Episode[]>;
   getEpisode(id: number, tenantId: number): Promise<Episode | undefined>;
   createEpisode(data: InsertEpisode): Promise<Episode>;
   updateEpisode(id: number, tenantId: number, data: Partial<InsertEpisode>): Promise<Episode>;
+  getEpisodeCountForLead(leadId: number, treatmentDeptName?: string): Promise<number>;
   // Campaigns
   getCampaigns(tenantId: number): Promise<Campaign[]>;
   getCampaign(id: number, tenantId: number): Promise<Campaign | undefined>;
@@ -437,12 +438,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   // --- Episodes ---
-  async getEpisodes(tenantId: number, patientId?: number): Promise<Episode[]> {
-    if (patientId) {
+  async getEpisodes(tenantId: number, leadId?: number): Promise<Episode[]> {
+    if (leadId) {
       return await db.select().from(episodes)
-        .where(and(eq(episodes.tenantId, tenantId), eq(episodes.patientId, patientId)));
+        .where(and(eq(episodes.tenantId, tenantId), eq(episodes.leadId, leadId)))
+        .orderBy(desc(episodes.createdAt));
     }
-    return await db.select().from(episodes).where(eq(episodes.tenantId, tenantId));
+    return await db.select().from(episodes).where(eq(episodes.tenantId, tenantId)).orderBy(desc(episodes.createdAt));
   }
 
   async getEpisode(id: number, tenantId: number): Promise<Episode | undefined> {
@@ -463,6 +465,20 @@ export class DatabaseStorage implements IStorage {
       .returning();
     if (!ep) throw new Error("Episode not found");
     return ep;
+  }
+
+  async getEpisodeCountForLead(leadId: number, treatmentDeptName?: string): Promise<number> {
+    if (treatmentDeptName) {
+      const result = await db.execute(sql`
+        SELECT COUNT(*) as cnt FROM episodes 
+        WHERE lead_id = ${leadId} AND episode_name LIKE ${`%_${treatmentDeptName}%`}
+      `);
+      return Number(result.rows?.[0]?.cnt || 0);
+    }
+    const result = await db.execute(sql`
+      SELECT COUNT(*) as cnt FROM episodes WHERE lead_id = ${leadId}
+    `);
+    return Number(result.rows?.[0]?.cnt || 0);
   }
 
   // --- Campaigns ---
