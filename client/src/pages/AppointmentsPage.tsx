@@ -196,7 +196,7 @@ function DoctorScheduleView() {
         const leadRes = await apiRequest("POST", "/api/leads", {
           name: toTitleCase(newPatientName.trim()),
           phoneE164: normalizePhone(newPatientPhone.trim()),
-          status: "Raw Lead Captured",
+          status: "Appointment Booked",
           doctorId: Number(bookDoctorId),
           consultationTypeId: newPatientConsultationType ? Number(newPatientConsultationType) : undefined,
           notes: [

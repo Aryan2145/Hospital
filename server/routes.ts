@@ -1774,10 +1774,19 @@ export async function registerRoutes(
       const appt = await storage.createAppointment({ ...parsed, tokenNumber });
 
       if (parsed.leadId) {
+        const doctor = parsed.doctorId ? await db.select().from(doctors).where(and(eq(doctors.id, parsed.doctorId), eq(doctors.tenantId, tid))).then(r => r[0]) : null;
+        const rawName = doctor?.name || "Doctor";
+        const doctorName = rawName.replace(/^Dr\.?\s*/i, "");
+        const dateStr2 = parsed.appointmentDate ? new Date(parsed.appointmentDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "";
+        const timeStr = parsed.startTime || "";
+
+        await storage.updateLead(parsed.leadId, { status: "Appointment Booked" });
+
         await storage.createActivity({
           leadId: parsed.leadId, tenantId: tid, createdBy: userId,
           type: "appointment",
-          description: `Appointment booked - Token #${tokenNumber}`,
+          description: `Appointment booked with Dr. ${doctorName} on ${dateStr2}${timeStr ? ` at ${timeStr}` : ""} - Token #${tokenNumber}`,
+          newStatus: "Appointment Booked",
         });
       }
 
