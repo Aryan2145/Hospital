@@ -448,7 +448,17 @@ export async function registerRoutes(
   registerAuthRoutes(app);
 
   const [defaultTenant] = await db.select().from(tenants).limit(1);
-  const tid = defaultTenant?.id || 1;
+  const defaultTid = defaultTenant?.id || 1;
+
+  app.use("/api", (req, _res, next) => {
+    (req as any)._tenantId = (req.session as any)?.tenantId || defaultTid;
+    next();
+  });
+
+  function getTid(req: any): number {
+    return req._tenantId || defaultTid;
+  }
+  const tid = defaultTid;
 
   // --- /api/me: Get current user's CRM profile with role ---
   app.get("/api/me", isAuthenticated, async (req, res) => {
@@ -457,7 +467,8 @@ export async function registerRoutes(
       const crmUserId = session.crmUserId;
       if (!crmUserId) return res.status(401).json({ message: "Unauthorized" });
 
-      const allCrmUsers = await storage.getCrmUsers(tid);
+      const sessionTid = (req.session as any).tenantId || tid;
+      const allCrmUsers = await storage.getCrmUsers(sessionTid);
       const crmUser = allCrmUsers.find(u => u.id === crmUserId);
 
       if (!crmUser) {
@@ -467,7 +478,7 @@ export async function registerRoutes(
       let roleName = null;
       let roleCode = null;
       if (crmUser.systemRoleId) {
-        const allRoles = await storage.getMasterRecords("systemRoles", tid);
+        const allRoles = await storage.getMasterRecords("systemRoles", sessionTid);
         const role = allRoles.find(r => r.id === crmUser!.systemRoleId);
         if (role) {
           roleName = role.name;
@@ -493,14 +504,15 @@ export async function registerRoutes(
   // --- Admin: Set password for CRM user ---
   app.post("/api/crm-users/:id/set-password", isAuthenticated, async (req: any, res) => {
     try {
+      const reqTid = req.session?.tenantId || tid;
       const sessionCrmUserId = req.session?.crmUserId;
-      const allCrmUsers = await storage.getCrmUsers(tid);
+      const allCrmUsers = await storage.getCrmUsers(reqTid);
       const currentCrmUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
       if (!currentCrmUser) return res.status(403).json({ message: "Not a CRM user" });
 
       let isAdmin = false;
       if (currentCrmUser.systemRoleId) {
-        const allRoles = await storage.getMasterRecords("systemRoles", tid);
+        const allRoles = await storage.getMasterRecords("systemRoles", reqTid);
         const r = allRoles.find(r => r.id === currentCrmUser.systemRoleId);
         if (r && ((r as any).code === "ADMIN" || (r as any).code === "SYS_ADMIN")) isAdmin = true;
       }
@@ -513,7 +525,7 @@ export async function registerRoutes(
 
       const { hashPassword } = await import("./replit_integrations/auth/replitAuth");
       const passwordHash = await hashPassword(password);
-      const updated = await storage.updateCrmUser(Number(req.params.id), tid, { passwordHash });
+      const updated = await storage.updateCrmUser(Number(req.params.id), reqTid, { passwordHash });
       res.json({ success: true, userId: updated.id });
     } catch (error) {
       console.error("Error setting password:", error);
@@ -523,6 +535,11 @@ export async function registerRoutes(
 
   // --- Tenant ---
   app.get(api.tenants.get.path, isAuthenticated, async (req, res) => {
+    const sessionTenantId = (req.session as any)?.tenantId;
+    if (sessionTenantId) {
+      const [tenant] = await db.select().from(tenants).where(eq(tenants.id, sessionTenantId));
+      if (tenant) return res.json(tenant);
+    }
     const allTenants = await db.select().from(tenants);
     if (allTenants.length > 0) {
       res.json(allTenants[0]);
@@ -533,9 +550,10 @@ export async function registerRoutes(
 
   // --- Leads (with access scope filtering) ---
   app.get(api.leads.list.path, isAuthenticated, async (req: any, res) => {
-    const allLeads = await storage.getLeads(tid);
+    const reqTid = req.session?.tenantId || tid;
+    const allLeads = await storage.getLeads(reqTid);
     const sessionCrmUserId = req.session?.crmUserId;
-    const allCrmUsers = await storage.getCrmUsers(tid);
+    const allCrmUsers = await storage.getCrmUsers(reqTid);
     const crmUser = sessionCrmUserId ? allCrmUsers.find((u: any) => u.id === sessionCrmUserId) || null : null;
 
     let filtered = allLeads;
@@ -567,7 +585,7 @@ export async function registerRoutes(
 
   app.get("/api/leads/dormant", isAuthenticated, async (req: any, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const daysThreshold = Number(req.query.days) || 5;
       const allLeads = await storage.getLeads(tid);
       const now = new Date();
@@ -604,7 +622,7 @@ export async function registerRoutes(
 
   app.get("/api/tasks/today", isAuthenticated, async (req: any, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const allTasks = await storage.getTasks(tid);
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -656,7 +674,7 @@ export async function registerRoutes(
 
   app.post(api.leads.create.path, isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const input = api.leads.create.input.parse({ ...req.body, tenantId: tid });
       const lead = await storage.createLead(input);
       res.status(201).json(lead);
@@ -684,7 +702,7 @@ export async function registerRoutes(
 
   // --- Tasks ---
   app.get(api.tasks.list.path, isAuthenticated, async (req, res) => {
-    const tid = await getDefaultTenantId();
+    const tid = await getDefaultTenantId(req);
     const leadId = req.query.leadId ? Number(req.query.leadId) : undefined;
     const allTasks = await storage.getTasks(tid, leadId);
     res.json(allTasks);
@@ -692,7 +710,7 @@ export async function registerRoutes(
 
   app.post(api.tasks.create.path, isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const userId = String((req as any).session?.crmUserId || "system");
       const body = coerceDateFields(req.body, ["dueDate"]);
       const input = api.tasks.create.input.parse({
@@ -731,7 +749,7 @@ export async function registerRoutes(
 
   app.post(api.activities.create.path, isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const userId = String((req as any).session?.crmUserId || "system");
       const body = coerceDateFields(req.body, ["nextActionDate"]);
       const input = api.activities.create.input.parse({
@@ -785,7 +803,7 @@ export async function registerRoutes(
       }
       const { action, rejectionReason } = parsed.data;
       const leadId = Number(req.params.id);
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
 
       const lead = await storage.getLead(leadId);
       if (!lead) return res.status(404).json({ message: "Lead not found" });
@@ -842,7 +860,7 @@ export async function registerRoutes(
       }
       const { assignToCrmUserId } = parsed.data;
       const leadId = Number(req.params.id);
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
 
       const lead = await storage.getLead(leadId);
       if (!lead) return res.status(404).json({ message: "Lead not found" });
@@ -889,7 +907,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: parsed.error.errors[0].message });
       }
       const body = parsed.data;
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const userId = String((req as any).session?.crmUserId || "system");
 
       let existingLead = await storage.findLeadByPhone(tid, body.phoneE164);
@@ -987,9 +1005,9 @@ export async function registerRoutes(
     res.send(csvData);
   });
 
-  app.get("/api/leads/import-logs", isAuthenticated, async (_req, res) => {
+  app.get("/api/leads/import-logs", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const logs = await db.select().from(leadImportLogs)
         .where(eq(leadImportLogs.tenantId, tid))
         .orderBy(desc(leadImportLogs.startedAt))
@@ -1016,7 +1034,7 @@ export async function registerRoutes(
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const tid = await getDefaultTenantId();
+    const tid = await getDefaultTenantId(req);
     const userId = String((req as any).session?.crmUserId || "system");
     const duplicateStrategy = (req.body?.duplicateStrategy || "skip") as string;
     const columnMapping = req.body?.columnMapping ? JSON.parse(req.body.columnMapping) : null;
@@ -1254,7 +1272,7 @@ export async function registerRoutes(
       if (!spreadsheetId || !apiKey) return res.status(400).json({ message: "Missing required parameters" });
       if (!columnMapping || Object.keys(columnMapping).length === 0) return res.status(400).json({ message: "Column mapping is required" });
 
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const userId = String((req as any).session?.crmUserId || "system");
       const dedupStrategy = duplicateStrategy || "skip";
       const leadStatus = defaultLeadStatus || "Raw Lead Captured";
@@ -1416,9 +1434,9 @@ export async function registerRoutes(
 
 
   // --- Lead Capture Rules CRUD ---
-  app.get("/api/lead-capture-rules", isAuthenticated, async (_req, res) => {
+  app.get("/api/lead-capture-rules", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const rules = await db.select().from(leadCaptureRules)
         .where(eq(leadCaptureRules.tenantId, tid))
         .orderBy(desc(leadCaptureRules.createdAt));
@@ -1430,7 +1448,7 @@ export async function registerRoutes(
 
   app.post("/api/lead-capture-rules", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const body = { ...req.body, tenantId: tid, webhookToken: crypto.randomBytes(32).toString("hex") };
       const parsed = insertLeadCaptureRuleSchema.safeParse(body);
       if (!parsed.success) {
@@ -1445,7 +1463,7 @@ export async function registerRoutes(
 
   app.patch("/api/lead-capture-rules/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const id = Number(req.params.id);
       const [rule] = await db.update(leadCaptureRules)
         .set({ ...req.body, modifiedAt: new Date() })
@@ -1460,7 +1478,7 @@ export async function registerRoutes(
 
   app.delete("/api/lead-capture-rules/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const id = Number(req.params.id);
       await db.delete(leadCaptureRules)
         .where(and(eq(leadCaptureRules.id, id), eq(leadCaptureRules.tenantId, tid)));
@@ -1568,13 +1586,14 @@ export async function registerRoutes(
 
   // --- CRM Users list (for assignment dropdown) ---
   app.get("/api/crm-users/active", isAuthenticated, async (req, res) => {
-    const tid = await getDefaultTenantId();
+    const tid = await getDefaultTenantId(req);
     const users = await storage.getCrmUsers(tid);
     res.json(users.filter(u => u.isActive && u.code !== "SUPERADMIN"));
   });
 
   // Helper: get the default tenant ID
-  async function getDefaultTenantId(): Promise<number> {
+  async function getDefaultTenantId(req?: any): Promise<number> {
+    if (req?.session?.tenantId) return req.session.tenantId;
     const [t] = await db.select({ id: tenants.id }).from(tenants).limit(1);
     return t?.id ?? 1;
   }
@@ -1590,7 +1609,7 @@ export async function registerRoutes(
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const records = await storage.getMasterRecords(tableName, tid);
       res.json(records);
     } catch (err: any) {
@@ -1605,7 +1624,7 @@ export async function registerRoutes(
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const records = await storage.getMasterRecords(tableName, tid);
       const csvData = stringify(records.map(r => ({
         code: r.code,
@@ -1640,7 +1659,7 @@ export async function registerRoutes(
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const logs = await db.select().from(bulkImportLogs)
         .where(and(eq(bulkImportLogs.tableName, tableName), eq(bulkImportLogs.tenantId, tid)))
         .orderBy(desc(bulkImportLogs.startedAt))
@@ -1660,7 +1679,7 @@ export async function registerRoutes(
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const tenantId = await getDefaultTenantId();
+    const tenantId = await getDefaultTenantId(req);
     const fileName = req.file.originalname;
 
     try {
@@ -1742,7 +1761,7 @@ export async function registerRoutes(
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
-    const tid = await getDefaultTenantId();
+    const tid = await getDefaultTenantId(req);
     const record = await storage.getMasterRecord(tableName, Number(id), tid);
     if (!record) return res.status(404).json({ message: "Record not found" });
     res.json(record);
@@ -1754,7 +1773,7 @@ export async function registerRoutes(
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["leaveDate", "holidayDate", "startDate", "endDate"]);
       const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid });
       res.status(201).json(record);
@@ -1770,7 +1789,7 @@ export async function registerRoutes(
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["leaveDate", "holidayDate", "startDate", "endDate"]);
       const record = await storage.updateMasterRecord(tableName, Number(id), body, tid);
       res.json(record);
@@ -1786,7 +1805,7 @@ export async function registerRoutes(
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       await storage.deleteMasterRecord(tableName, Number(id), tid);
       res.status(204).send();
     } catch (err: any) {
@@ -1799,7 +1818,7 @@ export async function registerRoutes(
   // =============================================
   app.get("/api/crm-users", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const users = await storage.getCrmUsers(tid);
       res.json(users.filter(u => u.code !== "SUPERADMIN"));
     } catch (err: any) {
@@ -1809,7 +1828,7 @@ export async function registerRoutes(
 
   app.get("/api/crm-users/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const user = await storage.getCrmUser(Number(req.params.id), tid);
       if (!user) return res.status(404).json({ message: "User not found" });
       res.json(user);
@@ -1835,7 +1854,7 @@ export async function registerRoutes(
 
   app.post("/api/crm-users", isAuthenticated, async (req: any, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       if (!(await requireAdminRole(req, res, tid))) return;
       const body = coerceDateFields(req.body, ["joiningDate", "resetTokenExpiry"]);
       const parsed = insertCrmUserSchema.parse({ ...body, tenantId: tid });
@@ -1848,7 +1867,7 @@ export async function registerRoutes(
 
   app.patch("/api/crm-users/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       if (!(await requireAdminRole(req, res, tid))) return;
       const body = coerceDateFields(req.body, ["joiningDate", "resetTokenExpiry"]);
       const parsed = insertCrmUserSchema.partial().parse(body);
@@ -1861,7 +1880,7 @@ export async function registerRoutes(
 
   app.delete("/api/crm-users/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       if (!(await requireAdminRole(req, res, tid))) return;
       await storage.deleteCrmUser(Number(req.params.id), tid);
       res.status(204).send();
@@ -1872,7 +1891,7 @@ export async function registerRoutes(
 
   app.get("/api/crm-users/:id/team", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const directReports = await storage.getCrmUserDirectReports(Number(req.params.id), tid);
       res.json(directReports);
     } catch (err: any) {
@@ -1885,7 +1904,7 @@ export async function registerRoutes(
   // =============================================
   app.get("/api/patients", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const result = await storage.getPatients(tid);
       res.json(result);
     } catch (err: any) {
@@ -1895,7 +1914,7 @@ export async function registerRoutes(
 
   app.get("/api/patients/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const patient = await storage.getPatient(Number(req.params.id), tid);
       if (!patient) return res.status(404).json({ message: "Patient not found" });
       res.json(patient);
@@ -1906,7 +1925,7 @@ export async function registerRoutes(
 
   app.post("/api/patients", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["dateOfBirth"]);
       const parsed = insertPatientSchema.parse({ ...body, tenantId: tid });
       const patient = await storage.createPatient(parsed);
@@ -1918,7 +1937,7 @@ export async function registerRoutes(
 
   app.patch("/api/patients/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["dateOfBirth"]);
       const parsed = insertPatientSchema.partial().parse(body);
       const patient = await storage.updatePatient(Number(req.params.id), tid, parsed);
@@ -1930,7 +1949,7 @@ export async function registerRoutes(
 
   app.get("/api/patients/:id/contacts", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const result = await storage.getContactsForPatient(Number(req.params.id), tid);
       res.json(result);
     } catch (err: any) {
@@ -1940,7 +1959,7 @@ export async function registerRoutes(
 
   app.post("/api/contacts", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const parsed = insertContactSchema.parse({ ...req.body, tenantId: tid });
       const contact = await storage.createContact(parsed);
       res.status(201).json(contact);
@@ -1951,7 +1970,7 @@ export async function registerRoutes(
 
   app.patch("/api/contacts/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const parsed = insertContactSchema.partial().parse(req.body);
       const contact = await storage.updateContact(Number(req.params.id), tid, parsed);
       res.json(contact);
@@ -1962,7 +1981,7 @@ export async function registerRoutes(
 
   app.delete("/api/contacts/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       await storage.deleteContact(Number(req.params.id), tid);
       res.status(204).send();
     } catch (err: any) {
@@ -1972,7 +1991,7 @@ export async function registerRoutes(
 
   app.post("/api/patient-contact-links", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const parsed = insertPatientContactLinkSchema.parse({ ...req.body, tenantId: tid });
       const link = await storage.linkPatientContact(parsed);
       res.status(201).json(link);
@@ -1983,7 +2002,7 @@ export async function registerRoutes(
 
   app.delete("/api/patient-contact-links/:patientId/:contactId", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       await storage.unlinkPatientContact(Number(req.params.patientId), Number(req.params.contactId), tid);
       res.status(204).send();
     } catch (err: any) {
@@ -1996,7 +2015,7 @@ export async function registerRoutes(
   // =============================================
   app.get("/api/doctors-list", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const result = await storage.getDoctors(tid);
       res.json(result);
     } catch (err: any) {
@@ -2006,7 +2025,7 @@ export async function registerRoutes(
 
   app.get("/api/doctors/:id/availability", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const doctorId = Number(req.params.id);
       const date = req.query.date as string;
       if (!date) return res.status(400).json({ message: "date query parameter required (YYYY-MM-DD)" });
@@ -2050,7 +2069,7 @@ export async function registerRoutes(
   // =============================================
   app.get("/api/appointments", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const filters: Record<string, any> = {};
       if (req.query.leadId) filters.leadId = Number(req.query.leadId);
       if (req.query.patientId) filters.patientId = Number(req.query.patientId);
@@ -2068,7 +2087,7 @@ export async function registerRoutes(
 
   app.get("/api/appointments-enriched", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const filters: Record<string, any> = {};
       if (req.query.leadId) filters.leadId = Number(req.query.leadId);
       if (req.query.patientId) filters.patientId = Number(req.query.patientId);
@@ -2086,7 +2105,7 @@ export async function registerRoutes(
 
   app.get("/api/appointments/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const appt = await storage.getAppointment(Number(req.params.id), tid);
       if (!appt) return res.status(404).json({ message: "Appointment not found" });
       res.json(appt);
@@ -2097,7 +2116,7 @@ export async function registerRoutes(
 
   app.post("/api/appointments", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const userId = String((req as any).session?.crmUserId || "system");
       const body = coerceDateFields({ ...req.body, tenantId: tid, createdBy: userId, bookedBy: userId }, ["appointmentDate"]);
       const parsed = insertAppointmentSchema.parse(body);
@@ -2189,7 +2208,7 @@ export async function registerRoutes(
 
   app.patch("/api/appointments/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const parsed = insertAppointmentSchema.partial().parse(req.body);
       const appt = await storage.updateAppointment(Number(req.params.id), tid, parsed);
       res.json(appt);
@@ -2200,7 +2219,7 @@ export async function registerRoutes(
 
   app.post("/api/appointments/:id/consultation-done", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const userId = String((req as any).session?.crmUserId || "system");
       const apptId = Number(req.params.id);
       const { consultationNotes } = req.body as { consultationNotes?: string };
@@ -2234,7 +2253,7 @@ export async function registerRoutes(
 
   app.post("/api/appointments/:id/cancel", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const userId = String((req as any).session?.crmUserId || "system");
       const apptId = Number(req.params.id);
       const { cancelReason } = req.body as { cancelReason?: string };
@@ -2263,7 +2282,7 @@ export async function registerRoutes(
 
   app.post("/api/appointments/:id/reschedule", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const userId = String((req as any).session?.crmUserId || "system");
       const apptId = Number(req.params.id);
       const { appointmentDate, startTime, endTime } = req.body as { appointmentDate: string; startTime?: string; endTime?: string };
@@ -2314,7 +2333,7 @@ export async function registerRoutes(
 
   app.post("/api/appointments/:id/no-show", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const userId = String((req as any).session?.crmUserId || "system");
       const apptId = Number(req.params.id);
       const { noShowReasonId } = req.body as { noShowReasonId?: number };
@@ -2346,7 +2365,7 @@ export async function registerRoutes(
   // =============================================
   app.get("/api/campaigns", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const result = await storage.getCampaigns(tid);
       res.json(result);
     } catch (err: any) {
@@ -2356,7 +2375,7 @@ export async function registerRoutes(
 
   app.get("/api/campaigns/next-ad-number", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const { platform, objective, year, month } = req.query;
       const allCampaigns = await storage.getCampaigns(tid);
       const matching = allCampaigns.filter((c: any) =>
@@ -2374,7 +2393,7 @@ export async function registerRoutes(
 
   app.get("/api/campaigns/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const c = await storage.getCampaign(Number(req.params.id), tid);
       if (!c) return res.status(404).json({ message: "Campaign not found" });
       res.json(c);
@@ -2385,7 +2404,7 @@ export async function registerRoutes(
 
   app.post("/api/campaigns", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["startDate", "endDate"]);
       const parsed = insertCampaignSchema.parse({ ...body, tenantId: tid });
       const c = await storage.createCampaign(parsed);
@@ -2397,7 +2416,7 @@ export async function registerRoutes(
 
   app.patch("/api/campaigns/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["startDate", "endDate"]);
       const parsed = insertCampaignSchema.partial().parse(body);
       const c = await storage.updateCampaign(Number(req.params.id), tid, parsed);
@@ -2413,7 +2432,7 @@ export async function registerRoutes(
   async function requireAdminOrManager(req: any, res: any): Promise<boolean> {
     const crmUserId = req.session?.crmUserId;
     if (!crmUserId) { res.status(401).json({ message: "Unauthorized" }); return false; }
-    const tid = await getDefaultTenantId();
+    const tid = await getDefaultTenantId(req);
     const allCrmUsers = await storage.getCrmUsers(tid);
     const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
     if (!crmUser) { res.status(403).json({ message: "Not a CRM user" }); return false; }
@@ -2429,7 +2448,7 @@ export async function registerRoutes(
   async function requireSysAdmin(req: any, res: any): Promise<boolean> {
     const crmUserId = req.session?.crmUserId;
     if (!crmUserId) { res.status(401).json({ message: "Unauthorized" }); return false; }
-    const tid = await getDefaultTenantId();
+    const tid = await getDefaultTenantId(req);
     const allCrmUsers = await storage.getCrmUsers(tid);
     const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
     if (!crmUser) { res.status(403).json({ message: "Not a CRM user" }); return false; }
@@ -2445,7 +2464,7 @@ export async function registerRoutes(
   app.get("/api/connectors", isAuthenticated, async (req: any, res: any) => {
     if (!(await requireSysAdmin(req, res))) return;
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const connectors = await storage.getPlatformConnectors(tid);
       res.json(connectors);
     } catch (err: any) {
@@ -2456,7 +2475,7 @@ export async function registerRoutes(
   app.get("/api/connectors/:id", isAuthenticated, async (req: any, res: any) => {
     if (!(await requireSysAdmin(req, res))) return;
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const c = await storage.getPlatformConnector(Number(req.params.id), tid);
       if (!c) return res.status(404).json({ message: "Connector not found" });
       res.json(c);
@@ -2468,7 +2487,7 @@ export async function registerRoutes(
   app.post("/api/connectors", isAuthenticated, async (req: any, res: any) => {
     try {
       if (!(await requireSysAdmin(req, res))) return;
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const parsed = insertPlatformConnectorSchema.parse({ ...req.body, tenantId: tid });
       const c = await storage.createPlatformConnector(parsed);
       res.json(c);
@@ -2480,7 +2499,7 @@ export async function registerRoutes(
   app.patch("/api/connectors/:id", isAuthenticated, async (req: any, res: any) => {
     try {
       if (!(await requireSysAdmin(req, res))) return;
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const { tenantId: _, ...safeBody } = req.body;
       const parsed = insertPlatformConnectorSchema.partial().parse(safeBody);
       const c = await storage.updatePlatformConnector(Number(req.params.id), tid, parsed);
@@ -2493,7 +2512,7 @@ export async function registerRoutes(
   app.delete("/api/connectors/:id", isAuthenticated, async (req: any, res: any) => {
     try {
       if (!(await requireSysAdmin(req, res))) return;
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       await storage.deletePlatformConnector(Number(req.params.id), tid);
       res.json({ success: true });
     } catch (err: any) {
@@ -2504,7 +2523,7 @@ export async function registerRoutes(
   app.post("/api/connectors/:id/test", isAuthenticated, async (req: any, res: any) => {
     try {
       if (!(await requireSysAdmin(req, res))) return;
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const c = await storage.getPlatformConnector(Number(req.params.id), tid);
       if (!c) return res.status(404).json({ message: "Connector not found" });
 
@@ -2543,7 +2562,7 @@ export async function registerRoutes(
   app.post("/api/connectors/:id/sync", isAuthenticated, async (req: any, res: any) => {
     try {
       if (!(await requireSysAdmin(req, res))) return;
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const c = await storage.getPlatformConnector(Number(req.params.id), tid);
       if (!c) return res.status(404).json({ message: "Connector not found" });
       if (c.status !== "connected") return res.status(400).json({ message: "Connector not connected" });
@@ -2588,7 +2607,7 @@ export async function registerRoutes(
   // =============================================
   app.get("/api/episodes", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const patientId = req.query.patientId ? Number(req.query.patientId) : undefined;
       const result = await storage.getEpisodes(tid, patientId);
       res.json(result);
@@ -2599,7 +2618,7 @@ export async function registerRoutes(
 
   app.get("/api/episodes/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const ep = await storage.getEpisode(Number(req.params.id), tid);
       if (!ep) return res.status(404).json({ message: "Episode not found" });
       res.json(ep);
@@ -2610,7 +2629,7 @@ export async function registerRoutes(
 
   app.post("/api/episodes", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["startDate", "endDate"]);
       const parsed = insertEpisodeSchema.parse({ ...body, tenantId: tid });
       const ep = await storage.createEpisode(parsed);
@@ -2630,7 +2649,7 @@ export async function registerRoutes(
 
   app.patch("/api/episodes/:id", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["startDate", "endDate"]);
       const parsed = insertEpisodeSchema.partial().parse(body);
       const ep = await storage.updateEpisode(Number(req.params.id), tid, parsed);
@@ -2645,7 +2664,7 @@ export async function registerRoutes(
   // =============================================
   app.get("/api/audit-logs", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const entityType = req.query.entityType as string | undefined;
       const entityId = req.query.entityId ? Number(req.query.entityId) : undefined;
       const result = await storage.getAuditLogs(tid, entityType, entityId);
@@ -2657,7 +2676,7 @@ export async function registerRoutes(
 
   app.post("/api/audit-logs", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const parsed = insertAuditLogSchema.parse({ ...req.body, tenantId: tid });
       const log = await storage.createAuditLog(parsed);
       res.status(201).json(log);
@@ -2672,7 +2691,7 @@ export async function registerRoutes(
 
   app.get("/api/field-suggestions", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const status = req.query.status as string | undefined;
       const fieldName = req.query.fieldName as string | undefined;
       let query = db.select().from(customFieldSuggestions).where(eq(customFieldSuggestions.tenantId, tid));
@@ -2694,7 +2713,7 @@ export async function registerRoutes(
 
   app.post("/api/field-suggestions", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const value = req.body.suggestedValue?.trim();
       if (!value) return res.status(400).json({ message: "Suggested value cannot be empty" });
 
@@ -2722,7 +2741,7 @@ export async function registerRoutes(
     try {
       const crmUserId = (req as any).session?.crmUserId;
       if (!crmUserId) return res.status(401).json({ message: "Unauthorized" });
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const allCrmUsers = await storage.getCrmUsers(tid);
       const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
       if (!crmUser) return res.status(403).json({ message: "Not a CRM user" });
@@ -2756,7 +2775,7 @@ export async function registerRoutes(
   async function requireTestingAccess(req: any, res: any): Promise<boolean> {
     const crmUserId = req.session?.crmUserId;
     if (!crmUserId) { res.status(401).json({ message: "Unauthorized" }); return false; }
-    const tid = await getDefaultTenantId();
+    const tid = await getDefaultTenantId(req);
     const allCrmUsers = await storage.getCrmUsers(tid);
     const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
     if (!crmUser) { res.status(403).json({ message: "Not a CRM user" }); return false; }
@@ -2771,7 +2790,7 @@ export async function registerRoutes(
 
   app.get("/api/testing/stats", isAuthenticated, async (req: any, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const allLeads = await storage.getLeads(tid);
       const allPatients = await storage.getPatients(tid);
       const allCrmUsers = await storage.getCrmUsers(tid);
@@ -2825,7 +2844,7 @@ export async function registerRoutes(
 
   app.get("/api/testing/crm-users", isAuthenticated, async (req, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const allCrmUsers = await storage.getCrmUsers(tid);
       const allRoles = await storage.getMasterRecords("systemRoles", tid);
 
@@ -2845,7 +2864,7 @@ export async function registerRoutes(
 
   app.post("/api/testing/switch-role", isAuthenticated, async (req: any, res) => {
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
 
       const { targetCrmUserId } = req.body;
       if (!targetCrmUserId) return res.status(400).json({ message: "targetCrmUserId is required" });
@@ -2876,7 +2895,7 @@ export async function registerRoutes(
   app.post("/api/testing/seed-sample-data", isAuthenticated, async (req: any, res) => {
     try {
       if (!(await requireTestingAccess(req, res))) return;
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
 
       const allCrmUsers = await storage.getCrmUsers(tid);
       const allDoctors = await storage.getMasterRecords("doctors", tid);
@@ -3014,7 +3033,7 @@ export async function registerRoutes(
   app.delete("/api/testing/clear-data", isAuthenticated, async (req: any, res) => {
     try {
       if (!(await requireTestingAccess(req, res))) return;
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const { type } = req.body;
 
       if (type === "leads" || type === "all") {
@@ -3046,7 +3065,7 @@ export async function registerRoutes(
   app.get("/api/whatsapp-settings", isAuthenticated, async (req: any, res: any) => {
     if (!(await requireSysAdmin(req, res))) return;
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const allSettings = await storage.getTenantSettings(tid);
       const waSettings: Record<string, string | null> = {};
       for (const key of WA_SETTING_KEYS) {
@@ -3066,7 +3085,7 @@ export async function registerRoutes(
   app.put("/api/whatsapp-settings", isAuthenticated, async (req: any, res: any) => {
     if (!(await requireSysAdmin(req, res))) return;
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const body = req.body as Record<string, string | null>;
       if (body.wa_enabled === "true") {
         if (!body.wa_phone_number_id && !body.wa_access_token) {
@@ -3088,7 +3107,7 @@ export async function registerRoutes(
   app.post("/api/whatsapp-settings/test", isAuthenticated, async (req: any, res: any) => {
     if (!(await requireSysAdmin(req, res))) return;
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const allSettings = await storage.getTenantSettings(tid);
       const { testWhatsAppConnection, getWhatsAppConfigFromSettings } = await import("./whatsapp");
       const config = getWhatsAppConfigFromSettings(allSettings);
@@ -3106,7 +3125,7 @@ export async function registerRoutes(
   app.post("/api/whatsapp-settings/send-test", isAuthenticated, async (req: any, res: any) => {
     if (!(await requireSysAdmin(req, res))) return;
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const { phone } = req.body;
       if (!phone) return res.status(400).json({ message: "Phone number is required" });
       const allSettings = await storage.getTenantSettings(tid);
@@ -3132,7 +3151,7 @@ export async function registerRoutes(
   app.get("/api/email-settings", isAuthenticated, async (req: any, res: any) => {
     if (!(await requireSysAdmin(req, res))) return;
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const allSettings = await storage.getTenantSettings(tid);
       const emailSettings: Record<string, string | null> = {};
       for (const key of EMAIL_SETTING_KEYS) {
@@ -3152,7 +3171,7 @@ export async function registerRoutes(
   app.put("/api/email-settings", isAuthenticated, async (req: any, res: any) => {
     if (!(await requireSysAdmin(req, res))) return;
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const body = req.body as Record<string, string | null>;
       for (const key of EMAIL_SETTING_KEYS) {
         if (key in body) {
@@ -3169,7 +3188,7 @@ export async function registerRoutes(
   app.post("/api/email-settings/test", isAuthenticated, async (req: any, res: any) => {
     if (!(await requireSysAdmin(req, res))) return;
     try {
-      const tid = await getDefaultTenantId();
+      const tid = await getDefaultTenantId(req);
       const allSettings = await storage.getTenantSettings(tid);
       const smtpHost = allSettings.find(s => s.settingKey === "smtp_host")?.settingValue;
       const smtpPort = allSettings.find(s => s.settingKey === "smtp_port")?.settingValue;
