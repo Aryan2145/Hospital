@@ -110,6 +110,78 @@ const PLATFORM_UTM_MAP: Record<string, { source: string; medium: string }> = {
   Other: { source: "other", medium: "referral" },
 };
 
+const PLATFORM_CHANNELS: Record<string, { value: string; label: string }[]> = {
+  Meta: [
+    { value: "Facebook Feed", label: "Facebook Feed" },
+    { value: "Facebook Stories", label: "Facebook Stories" },
+    { value: "Facebook Reels", label: "Facebook Reels" },
+    { value: "Facebook Marketplace", label: "Facebook Marketplace" },
+    { value: "Instagram Feed", label: "Instagram Feed" },
+    { value: "Instagram Stories", label: "Instagram Stories" },
+    { value: "Instagram Reels", label: "Instagram Reels" },
+    { value: "Instagram Explore", label: "Instagram Explore" },
+    { value: "Messenger", label: "Messenger" },
+    { value: "Audience Network", label: "Audience Network" },
+    { value: "Facebook Lead Forms", label: "Facebook Lead Forms" },
+    { value: "Instagram Lead Forms", label: "Instagram Lead Forms" },
+  ],
+  Google: [
+    { value: "Google Search", label: "Google Search" },
+    { value: "Google Display", label: "Google Display Network" },
+    { value: "Google Shopping", label: "Google Shopping" },
+    { value: "Google Discovery", label: "Google Discovery" },
+    { value: "Google Maps", label: "Google Maps" },
+    { value: "Gmail Ads", label: "Gmail Ads" },
+    { value: "Google Performance Max", label: "Performance Max" },
+  ],
+  LinkedIn: [
+    { value: "LinkedIn Feed", label: "LinkedIn Feed" },
+    { value: "LinkedIn Sponsored InMail", label: "Sponsored InMail" },
+    { value: "LinkedIn Text Ads", label: "Text Ads" },
+    { value: "LinkedIn Dynamic Ads", label: "Dynamic Ads" },
+    { value: "LinkedIn Lead Gen Forms", label: "Lead Gen Forms" },
+  ],
+  X: [
+    { value: "X Timeline", label: "Timeline" },
+    { value: "X Search", label: "Search Results" },
+    { value: "X Trends", label: "Trends" },
+  ],
+  YouTube: [
+    { value: "YouTube Pre-roll", label: "Pre-roll (Skippable)" },
+    { value: "YouTube Non-skip", label: "Non-skippable" },
+    { value: "YouTube Bumper", label: "Bumper Ads (6 sec)" },
+    { value: "YouTube Discovery", label: "Discovery Ads" },
+    { value: "YouTube Shorts", label: "YouTube Shorts" },
+  ],
+  Microsoft: [
+    { value: "Bing Search", label: "Bing Search" },
+    { value: "Microsoft Audience", label: "Microsoft Audience Network" },
+    { value: "Microsoft Shopping", label: "Microsoft Shopping" },
+  ],
+  WhatsApp: [
+    { value: "WhatsApp Broadcast", label: "Broadcast Messages" },
+    { value: "WhatsApp Click-to-Chat", label: "Click-to-Chat Ads" },
+    { value: "WhatsApp Status", label: "Status / Stories" },
+  ],
+  Offline: [
+    { value: "Print", label: "Print (Newspaper/Magazine)" },
+    { value: "TV", label: "Television" },
+    { value: "Radio", label: "Radio" },
+    { value: "Hoarding", label: "Hoarding / Billboard" },
+    { value: "Pamphlet", label: "Pamphlet / Flyer" },
+    { value: "Event", label: "Event / Camp" },
+    { value: "Referral", label: "Doctor Referral" },
+    { value: "Walk-in", label: "Walk-in" },
+  ],
+  Other: [
+    { value: "SMS", label: "SMS" },
+    { value: "Email", label: "Email" },
+    { value: "Website", label: "Website" },
+    { value: "Blog", label: "Blog / Content" },
+    { value: "Other", label: "Other" },
+  ],
+};
+
 function generateYears(): { value: string; label: string }[] {
   const currentYear = new Date().getFullYear();
   return Array.from({ length: 5 }, (_, i) => {
@@ -662,7 +734,7 @@ export default function CampaignsPage() {
                     <Label className="text-xs font-medium text-muted-foreground">Platform *</Label>
                     <SearchableSelect
                       value={formPlatform}
-                      onValueChange={setFormPlatform}
+                      onValueChange={(v) => { setFormPlatform(v); setFormChannel(""); }}
                       placeholder="Select platform"
                       options={PLATFORMS}
                       data-testid="select-campaign-platform"
@@ -739,12 +811,11 @@ export default function CampaignsPage() {
                     <SearchableSelect
                       value={formChannel}
                       onValueChange={setFormChannel}
-                      placeholder="Select channel"
+                      placeholder={formPlatform ? "Select channel" : "Select platform first"}
+                      disabled={!formPlatform}
                       options={[
                         { value: "", label: "None" },
-                        ...(channelsList?.filter((ch: any) => ch.status === "Active").map((ch: any) => ({
-                          value: ch.name, label: ch.name,
-                        })) || []),
+                        ...(formPlatform && PLATFORM_CHANNELS[formPlatform] ? PLATFORM_CHANNELS[formPlatform] : []),
                       ]}
                       data-testid="select-campaign-channel"
                     />
