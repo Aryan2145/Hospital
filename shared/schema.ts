@@ -1193,6 +1193,27 @@ export const insertEpisodeSchema = createInsertSchema(episodes).omit({ id: true,
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
 
 // =============================================
+// CUSTOM FIELD SUGGESTIONS (for "Other" options pending admin review)
+// =============================================
+export const customFieldSuggestions = pgTable("custom_field_suggestions", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  fieldName: text("field_name").notNull(),
+  suggestedValue: text("suggested_value").notNull(),
+  targetTable: text("target_table"),
+  status: text("status").notNull().default("Pending"),
+  suggestedBy: varchar("suggested_by"),
+  reviewedBy: varchar("reviewed_by"),
+  reviewNotes: text("review_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  reviewedAt: timestamp("reviewed_at"),
+});
+
+export const insertCustomFieldSuggestionSchema = createInsertSchema(customFieldSuggestions).omit({ id: true, createdAt: true, reviewedAt: true });
+export type CustomFieldSuggestion = typeof customFieldSuggestions.$inferSelect;
+export type InsertCustomFieldSuggestion = z.infer<typeof insertCustomFieldSuggestionSchema>;
+
+// =============================================
 // BULK IMPORT LOG
 // =============================================
 export const bulkImportLogs = pgTable("bulk_import_logs", {

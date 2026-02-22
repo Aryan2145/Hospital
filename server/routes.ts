@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -2305,6 +2305,89 @@ export async function registerRoutes(
       const parsed = insertAuditLogSchema.parse({ ...req.body, tenantId: tid });
       const log = await storage.createAuditLog(parsed);
       res.status(201).json(log);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // =============================================
+  // CUSTOM FIELD SUGGESTIONS (for "Other" options)
+  // =============================================
+
+  app.get("/api/field-suggestions", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const status = req.query.status as string | undefined;
+      const fieldName = req.query.fieldName as string | undefined;
+      let query = db.select().from(customFieldSuggestions).where(eq(customFieldSuggestions.tenantId, tid));
+      if (status) {
+        query = db.select().from(customFieldSuggestions).where(and(eq(customFieldSuggestions.tenantId, tid), eq(customFieldSuggestions.status, status)));
+      }
+      if (fieldName) {
+        query = db.select().from(customFieldSuggestions).where(and(eq(customFieldSuggestions.tenantId, tid), eq(customFieldSuggestions.fieldName, fieldName)));
+      }
+      if (status && fieldName) {
+        query = db.select().from(customFieldSuggestions).where(and(eq(customFieldSuggestions.tenantId, tid), eq(customFieldSuggestions.status, status), eq(customFieldSuggestions.fieldName, fieldName)));
+      }
+      const results = await query.orderBy(desc(customFieldSuggestions.createdAt));
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/field-suggestions", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const value = req.body.suggestedValue?.trim();
+      if (!value) return res.status(400).json({ message: "Suggested value cannot be empty" });
+
+      const existing = await db.select().from(customFieldSuggestions).where(
+        and(
+          eq(customFieldSuggestions.tenantId, tid),
+          eq(customFieldSuggestions.fieldName, req.body.fieldName || ""),
+          eq(customFieldSuggestions.suggestedValue, value),
+          eq(customFieldSuggestions.status, "Pending")
+        )
+      );
+      if (existing.length > 0) return res.status(200).json(existing[0]);
+
+      const crmUserId = (req as any).session?.crmUserId;
+      const suggestedBy = crmUserId ? String(crmUserId) : "unknown";
+      const parsed = insertCustomFieldSuggestionSchema.parse({ ...req.body, tenantId: tid, suggestedValue: value, suggestedBy });
+      const [result] = await db.insert(customFieldSuggestions).values(parsed).returning();
+      res.status(201).json(result);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/field-suggestions/:id", isAuthenticated, async (req, res) => {
+    try {
+      const crmUserId = (req as any).session?.crmUserId;
+      if (!crmUserId) return res.status(401).json({ message: "Unauthorized" });
+      const tid = await getDefaultTenantId();
+      const allCrmUsers = await storage.getCrmUsers(tid);
+      const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
+      if (!crmUser) return res.status(403).json({ message: "Not a CRM user" });
+      if (crmUser.systemRoleId) {
+        const allRoles = await storage.getMasterRecords("systemRoles", tid);
+        const role = allRoles.find(r => r.id === crmUser.systemRoleId);
+        if (!role || !["ADMIN", "SYS_ADMIN"].includes((role as any).code)) {
+          return res.status(403).json({ message: "Admin access required to review suggestions" });
+        }
+      } else {
+        return res.status(403).json({ message: "Admin access required to review suggestions" });
+      }
+
+      const id = Number(req.params.id);
+      const { status, reviewNotes } = req.body;
+      const reviewedBy = String(crmUserId);
+      const [result] = await db.update(customFieldSuggestions)
+        .set({ status, reviewNotes, reviewedBy, reviewedAt: new Date() })
+        .where(eq(customFieldSuggestions.id, id))
+        .returning();
+      res.json(result);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
     }

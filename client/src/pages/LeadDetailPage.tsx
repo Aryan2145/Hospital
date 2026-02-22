@@ -551,6 +551,7 @@ function QuickActions({ lead }: { lead: any }) {
   const [apptDialogOpen, setApptDialogOpen] = useState(false);
   const [callNotes, setCallNotes] = useState("");
   const [callOutcome, setCallOutcome] = useState("");
+  const [callOutcomeOther, setCallOutcomeOther] = useState("");
   const [callDuration, setCallDuration] = useState("");
   const [callNextActionTypeId, setCallNextActionTypeId] = useState("");
   const [callNextActionDate, setCallNextActionDate] = useState("");
@@ -576,17 +577,38 @@ function QuickActions({ lead }: { lead: any }) {
   const effectiveStatusChange = callStatusChange && callStatusChange !== "__none__" ? callStatusChange : null;
   const effectiveNextActionTypeId = callNextActionTypeId && callNextActionTypeId !== "__none__" ? Number(callNextActionTypeId) : null;
 
-  const handleLogCall = () => {
+  const handleLogCall = async () => {
     if (effectiveStatusChange && !isValidTransition(lead.status, effectiveStatusChange)) {
       toast({ title: "Invalid status transition", description: `Cannot move from "${lead.status}" to "${effectiveStatusChange}"`, variant: "destructive" });
       return;
+    }
+
+    const finalOutcome = callOutcome === "__other__" ? callOutcomeOther.trim() : callOutcome;
+    if (callOutcome === "__other__" && !callOutcomeOther.trim()) {
+      toast({ title: "Please enter the outcome", variant: "destructive" });
+      return;
+    }
+
+    if (callOutcome === "__other__" && callOutcomeOther.trim()) {
+      try {
+        await fetch("/api/field-suggestions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            fieldName: "Call Outcome",
+            suggestedValue: callOutcomeOther.trim(),
+            targetTable: "call_outcomes",
+          }),
+        });
+      } catch (e) {}
     }
 
     const activityData: any = {
       leadId: lead.id,
       type: "call",
       description: callNotes || "Phone call",
-      outcome: callOutcome || undefined,
+      outcome: finalOutcome || undefined,
       callDurationSeconds: callDuration ? parseInt(callDuration) * 60 : undefined,
       callDirection: "Outbound",
       tenantId: 1,
@@ -621,6 +643,7 @@ function QuickActions({ lead }: { lead: any }) {
 
         setCallNotes("");
         setCallOutcome("");
+        setCallOutcomeOther("");
         setCallDuration("");
         setCallNextActionTypeId("");
         setCallNextActionDate("");
@@ -678,17 +701,30 @@ function QuickActions({ lead }: { lead: any }) {
                 <label className="text-xs font-medium text-muted-foreground">Outcome</label>
                 <SearchableSelect
                   value={callOutcome}
-                  onValueChange={setCallOutcome}
+                  onValueChange={(val) => {
+                    setCallOutcome(val);
+                    if (val !== "__other__") setCallOutcomeOther("");
+                  }}
                   options={[
                     { value: "Connected", label: "Connected" },
                     { value: "No Answer", label: "No Answer" },
                     { value: "Busy", label: "Busy" },
                     { value: "Voicemail", label: "Voicemail" },
                     { value: "Wrong Number", label: "Wrong Number" },
+                    { value: "__other__", label: "Other (type below)" },
                   ]}
                   placeholder="Select outcome"
                   data-testid="select-call-outcome"
                 />
+                {callOutcome === "__other__" && (
+                  <Input
+                    className="mt-2 text-xs"
+                    value={callOutcomeOther}
+                    onChange={(e) => setCallOutcomeOther(e.target.value)}
+                    placeholder="Type custom outcome..."
+                    data-testid="input-call-outcome-other"
+                  />
+                )}
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Duration (minutes)</label>

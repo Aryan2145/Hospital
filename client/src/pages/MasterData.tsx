@@ -4,6 +4,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { MASTER_CATEGORIES } from "@shared/routes";
+import { MASTER_TABLE_REGISTRY } from "@shared/schema";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -182,6 +183,52 @@ export default function MasterData() {
     enabled: !!selectedTable && showImportLogs,
   });
 
+  const { data: pendingSuggestions = [] } = useQuery<any[]>({
+    queryKey: ["/api/field-suggestions", "Pending"],
+    queryFn: async () => {
+      const res = await fetch(`/api/field-suggestions?status=Pending`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+  });
+
+  const reviewSuggestion = useMutation({
+    mutationFn: async ({ id, status, reviewNotes }: { id: number; status: string; reviewNotes?: string }) => {
+      await apiRequest("PATCH", `/api/field-suggestions/${id}`, { status, reviewNotes, reviewedBy: "admin" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/field-suggestions"] });
+      toast({ title: "Suggestion reviewed" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const addToMaster = useMutation({
+    mutationFn: async ({ suggestion }: { suggestion: any }) => {
+      const registryKeys = Object.values(MASTER_TABLE_REGISTRY);
+      if (suggestion.targetTable && registryKeys.includes(suggestion.targetTable)) {
+        const code = suggestion.suggestedValue.toUpperCase().replace(/\s+/g, "_").slice(0, 20);
+        await apiRequest("POST", `/api/masters/${suggestion.targetTable}`, {
+          code,
+          name: suggestion.suggestedValue,
+          status: "Active",
+          displayOrder: 0,
+        });
+      }
+      await apiRequest("PATCH", `/api/field-suggestions/${suggestion.id}`, { status: "Approved", reviewedBy: "admin" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/field-suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/masters"] });
+      toast({ title: "Suggestion approved" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
       await apiRequest("POST", `/api/masters/${selectedTable}`, data);
@@ -338,7 +385,72 @@ export default function MasterData() {
 
         <main className="flex-1 overflow-auto p-4">
           {!selectedCategory ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="space-y-4">
+              {pendingSuggestions.length > 0 && (
+                <Card className="p-4 border-amber-200 bg-amber-50" data-testid="card-pending-suggestions">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                      <h3 className="font-semibold text-amber-800">
+                        Pending Field Suggestions ({pendingSuggestions.length})
+                      </h3>
+                    </div>
+                  </div>
+                  <p className="text-xs text-amber-700 mb-3">
+                    Users have suggested new values. Review and approve to add them to master data.
+                  </p>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Field</TableHead>
+                        <TableHead className="text-xs">Suggested Value</TableHead>
+                        <TableHead className="text-xs">Suggested By</TableHead>
+                        <TableHead className="text-xs">Date</TableHead>
+                        <TableHead className="text-xs text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pendingSuggestions.map((s: any) => (
+                        <TableRow key={s.id} data-testid={`row-suggestion-${s.id}`}>
+                          <TableCell className="text-xs font-medium">{s.fieldName}</TableCell>
+                          <TableCell className="text-xs">{s.suggestedValue}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{s.suggestedBy || "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {s.createdAt ? new Date(s.createdAt).toLocaleDateString() : "—"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50"
+                                onClick={() => addToMaster.mutate({ suggestion: s })}
+                                disabled={addToMaster.isPending}
+                                data-testid={`button-approve-suggestion-${s.id}`}
+                              >
+                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                Add to Master
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50"
+                                onClick={() => reviewSuggestion.mutate({ id: s.id, status: "Rejected" })}
+                                disabled={reviewSuggestion.isPending}
+                                data-testid={`button-reject-suggestion-${s.id}`}
+                              >
+                                <XCircle className="h-3 w-3 mr-1" />
+                                Reject
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </Card>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {MASTER_CATEGORIES.map((cat) => (
                 <Card
                   key={cat.category}
@@ -364,6 +476,7 @@ export default function MasterData() {
                   </div>
                 </Card>
               ))}
+              </div>
             </div>
           ) : !selectedTable ? (
             <div>
