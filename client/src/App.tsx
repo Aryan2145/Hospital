@@ -19,6 +19,7 @@ import CampaignsPage from "@/pages/CampaignsPage";
 import TransactionsPage from "@/pages/TransactionsPage";
 import ConnectorsPage from "@/pages/ConnectorsPage";
 import EmailSettingsPage from "@/pages/EmailSettingsPage";
+import WhatsAppSettingsPage from "@/pages/WhatsAppSettingsPage";
 import PendingApproval from "@/pages/PendingApproval";
 import TestingInterface from "@/pages/TestingInterface";
 import LeadImportPage from "@/pages/LeadImportPage";
@@ -93,6 +94,12 @@ function Router() {
       <Route path="/email-settings">
         {isAuthenticated ? (
           <RoleGate page="email-settings"><EmailSettingsPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/whatsapp-settings">
+        {isAuthenticated ? (
+          <RoleGate page="whatsapp-settings"><WhatsAppSettingsPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

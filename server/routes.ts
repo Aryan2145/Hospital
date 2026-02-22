@@ -1788,6 +1788,49 @@ export async function registerRoutes(
           description: `Appointment booked with Dr. ${doctorName} on ${dateStr2}${timeStr ? ` at ${timeStr}` : ""} - Token #${tokenNumber}`,
           newStatus: "Appointment Booked",
         });
+
+        // Send WhatsApp confirmation (non-blocking)
+        (async () => {
+          try {
+            const allSettings = await storage.getTenantSettings(tid);
+            const { getWhatsAppConfigFromSettings, sendWhatsAppTemplate, sendWhatsAppText, formatPhoneForWhatsApp } = await import("./whatsapp");
+            const waConfig = getWhatsAppConfigFromSettings(allSettings);
+            if (!waConfig.enabled) return;
+
+            const lead = await storage.getLead(parsed.leadId);
+            if (!lead?.phoneE164) return;
+
+            const waPhone = formatPhoneForWhatsApp(lead.phoneE164);
+            const confirmMsg = `Hello ${lead.name || ""},\n\nYour appointment has been confirmed at VIROC Hospital.\n\nDoctor: Dr. ${doctorName}\nDate: ${dateStr2}\nTime: ${timeStr}\nToken: #${tokenNumber}\n\nPlease arrive 15 minutes before your scheduled time.\n\nThank you,\nVIROC Hospital`;
+
+            if (waConfig.templateName && waConfig.templateName !== "none") {
+              await sendWhatsAppTemplate(waConfig, {
+                to: waPhone,
+                templateName: waConfig.templateName,
+                components: [{
+                  type: "body",
+                  parameters: [
+                    { type: "text", text: lead.name || "Patient" },
+                    { type: "text", text: `Dr. ${doctorName}` },
+                    { type: "text", text: dateStr2 },
+                    { type: "text", text: timeStr },
+                    { type: "text", text: String(tokenNumber) },
+                  ],
+                }],
+              });
+            } else {
+              await sendWhatsAppText(waConfig, waPhone, confirmMsg);
+            }
+
+            await storage.createActivity({
+              leadId: parsed.leadId, tenantId: tid, createdBy: "system",
+              type: "whatsapp",
+              description: `WhatsApp appointment confirmation sent to ${lead.phoneE164}`,
+            });
+          } catch (waErr: any) {
+            console.error("[WhatsApp] Failed to send appointment confirmation:", waErr.message);
+          }
+        })();
       }
 
       res.status(201).json(appt);
@@ -2551,6 +2594,92 @@ export async function registerRoutes(
       }
 
       res.json({ message: `Cleared ${type} data` });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =============================================
+  // WHATSAPP SETTINGS ROUTES (SYS_ADMIN only)
+  // =============================================
+  const WA_SETTING_KEYS = ["wa_phone_number_id", "wa_access_token", "wa_business_account_id", "wa_enabled", "wa_template_appointment", "wa_test_phone"];
+
+  app.get("/api/whatsapp-settings", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireSysAdmin(req, res))) return;
+    try {
+      const tid = await getDefaultTenantId();
+      const allSettings = await storage.getTenantSettings(tid);
+      const waSettings: Record<string, string | null> = {};
+      for (const key of WA_SETTING_KEYS) {
+        const found = allSettings.find(s => s.settingKey === key);
+        if (key === "wa_access_token" && found?.settingValue) {
+          waSettings[key] = "••••••••";
+        } else {
+          waSettings[key] = found?.settingValue ?? null;
+        }
+      }
+      res.json(waSettings);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/whatsapp-settings", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireSysAdmin(req, res))) return;
+    try {
+      const tid = await getDefaultTenantId();
+      const body = req.body as Record<string, string | null>;
+      if (body.wa_enabled === "true") {
+        if (!body.wa_phone_number_id && !body.wa_access_token) {
+          return res.status(400).json({ message: "Phone Number ID and Access Token are required when enabling WhatsApp" });
+        }
+      }
+      for (const key of WA_SETTING_KEYS) {
+        if (key in body) {
+          if (key === "wa_access_token" && body[key] === "••••••••") continue;
+          await storage.setTenantSetting(tid, key, body[key] ?? null);
+        }
+      }
+      res.json({ success: true, message: "WhatsApp settings saved" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/whatsapp-settings/test", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireSysAdmin(req, res))) return;
+    try {
+      const tid = await getDefaultTenantId();
+      const allSettings = await storage.getTenantSettings(tid);
+      const { testWhatsAppConnection, getWhatsAppConfigFromSettings } = await import("./whatsapp");
+      const config = getWhatsAppConfigFromSettings(allSettings);
+      const result = await testWhatsAppConnection(config);
+      if (result.success) {
+        res.json({ success: true, message: result.message });
+      } else {
+        res.status(400).json({ message: result.message });
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/whatsapp-settings/send-test", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireSysAdmin(req, res))) return;
+    try {
+      const tid = await getDefaultTenantId();
+      const { phone } = req.body;
+      if (!phone) return res.status(400).json({ message: "Phone number is required" });
+      const allSettings = await storage.getTenantSettings(tid);
+      const { getWhatsAppConfigFromSettings, sendWhatsAppText, formatPhoneForWhatsApp } = await import("./whatsapp");
+      const config = getWhatsAppConfigFromSettings(allSettings);
+      if (!config.enabled) return res.status(400).json({ message: "WhatsApp is not enabled" });
+      const result = await sendWhatsAppText(config, formatPhoneForWhatsApp(phone), "Hello from VIROC Hospital CRM! This is a test message to confirm your WhatsApp integration is working.");
+      if (result.success) {
+        res.json({ success: true, message: `Test message sent successfully! Message ID: ${result.messageId}` });
+      } else {
+        res.status(400).json({ message: `Failed to send: ${result.error}` });
+      }
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

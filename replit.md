@@ -72,12 +72,13 @@ Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead
 - `/transactions` - Treatment episode/transaction tracking
 - `/connectors` - Platform Connectors + Lead Capture Rules (Meta, Google, Callyzer, Google Forms integration) [System Admin only]
 - `/email-settings` - Email/SMTP Configuration for password reset & notifications [System Admin only]
+- `/whatsapp-settings` - WhatsApp Business API integration for appointment confirmations [System Admin only]
 - `/team` - Team Management (CRM Users, org hierarchy, access scoping)
 - `/masters` - Master Data Management (all 9 categories, 50+ tables)
 - `/testing` - Testing Interface [System Admin only]
 
 ## Role Hierarchy
-- **SYS_ADMIN (System Admin)**: Technical admin - full access to everything including connectors, email settings, testing
+- **SYS_ADMIN (System Admin)**: Technical admin - full access to everything including connectors, email settings, WhatsApp, testing
 - **ADMIN (CRM Admin)**: Business admin - dashboard, leads, appointments, campaigns, transactions, team, masters
 - **MANAGER**: Team manager - dashboard, leads, appointments, campaigns, transactions, team
 - **AGENT / COUNSELLOR**: Frontline - dashboard, leads, appointments, transactions
@@ -87,11 +88,12 @@ Navigation organized into 4 sections following the lead lifecycle flow:
 1. **Reports & Dashboards**: Dashboard
 2. **Transactions** (full lifecycle): Campaigns → Leads → Appointments
 3. **Masters**: Master Data
-4. **Configurations**: Team (CRM Admin+), Connectors (System Admin), Email Settings (System Admin), Testing (System Admin)
+4. **Configurations**: Team (CRM Admin+), Connectors (System Admin), Email Settings (System Admin), WhatsApp (System Admin), Testing (System Admin)
 
 Note: Lead Import is accessible via "Bulk Import" button on the Leads page (not a separate sidebar item).
 
 ## Recent Changes
+- 2026-02-22: WhatsApp Business API integration - Settings page for configuration, auto-send appointment confirmation messages, test connection/message, activity logging for sent messages
 - 2026-02-22: Enhanced Campaign Management - Dropdown-based auto-generated campaign names (Company_Platform_Objective_Year_Month_AdNumber), auto-generated UTM parameters, campaign detail view, funnel stage, target audience tracking, budget in INR
 - 2026-02-21: Proper case enforcement - All master data, lead names, and CRM user names auto-converted to title case (e.g., "ramesh modi" → "Ramesh Modi")
 - 2026-02-21: Bulk Lead Import page - CSV upload with column mapping, phone normalization, dedup strategies (Skip/UpdateBlank/Overwrite), import history logs
