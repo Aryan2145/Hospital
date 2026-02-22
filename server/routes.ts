@@ -1240,7 +1240,7 @@ export async function registerRoutes(
   app.get("/api/crm-users/active", isAuthenticated, async (req, res) => {
     const tid = await getDefaultTenantId();
     const users = await storage.getCrmUsers(tid);
-    res.json(users.filter(u => u.isActive));
+    res.json(users.filter(u => u.isActive && u.code !== "SUPERADMIN"));
   });
 
   // Helper: get the default tenant ID
@@ -1471,7 +1471,7 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId();
       const users = await storage.getCrmUsers(tid);
-      res.json(users);
+      res.json(users.filter(u => u.code !== "SUPERADMIN"));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
