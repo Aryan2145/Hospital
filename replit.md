@@ -111,6 +111,19 @@ Note: Lead Import is accessible via "Bulk Import" button on the Leads page (not 
 - Google/Practo/JustDial review monitoring
 - CSAT/NPS dashboards
 
+### Phase 2 Dashboard — Forecasting & Pipeline Analytics (build after 2-3 months of data)
+- Win rate forecasting, revenue projections (monthly/quarterly)
+- Lead-to-conversion probability by source
+- Doctor appointment utilization & availability forecast
+- Churn probability model, peak season prediction
+- Start simple: conversion rate by source, avg days-to-conversion, doctor utilization rate
+
+### Multi-Location Enhancements (foundation already exists — tenantId, branches, access scoping)
+- Cross-location appointment scheduling UI
+- Consolidated dashboard with branch drill-down
+- Multi-branch lead auto-routing (patient pincode → nearest branch)
+- Cross-location doctor availability view
+
 ### Low-Hanging Fruit — Quick Wins
 - Lead temperature indicator (hot/warm/cold based on days since last activity)
 - Dormant lead auto-detection alerts
