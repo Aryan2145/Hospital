@@ -51,6 +51,7 @@ export default function TransactionsPage() {
   const [editing, setEditing] = useState<Episode | null>(null);
   const [filterStatus, setFilterStatus] = useState("");
 
+  const [showAllLeads, setShowAllLeads] = useState(false);
   const [formLeadId, setFormLeadId] = useState("");
   const [formPatientId, setFormPatientId] = useState("");
   const [formDoctorId, setFormDoctorId] = useState("");
@@ -68,7 +69,7 @@ export default function TransactionsPage() {
     queryKey: ["/api/episodes"],
   });
 
-  const { data: leadsList } = useQuery<any[]>({
+  const { data: bookedLeads } = useQuery<any[]>({
     queryKey: ["/api/leads", { status: "Appointment Booked" }],
     queryFn: async () => {
       const res = await fetch("/api/leads?status=Appointment%20Booked");
@@ -76,6 +77,18 @@ export default function TransactionsPage() {
       return res.json();
     },
   });
+
+  const { data: allLeads } = useQuery<any[]>({
+    queryKey: ["/api/leads", { status: "all" }],
+    queryFn: async () => {
+      const res = await fetch("/api/leads");
+      if (!res.ok) throw new Error("Failed to fetch leads");
+      return res.json();
+    },
+    enabled: showAllLeads,
+  });
+
+  const leadsList = showAllLeads ? allLeads : bookedLeads;
 
   const { data: patientsList } = useQuery<any[]>({
     queryKey: ["/api/patients"],
@@ -329,14 +342,28 @@ export default function TransactionsPage() {
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label className="text-xs font-medium text-muted-foreground">Lead (Appointment Booked) *</Label>
+                <div className="flex items-center justify-between mb-1">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Lead {showAllLeads ? "(All)" : "(Appointment Booked)"} *
+                  </Label>
+                  {!editing && (
+                    <button
+                      type="button"
+                      className="text-xs text-primary hover:underline"
+                      onClick={() => { setShowAllLeads(!showAllLeads); setFormLeadId(""); }}
+                      data-testid="toggle-all-leads"
+                    >
+                      {showAllLeads ? "Show Appointment Booked only" : "Show all leads"}
+                    </button>
+                  )}
+                </div>
                 <SearchableSelect
                   value={formLeadId}
                   onValueChange={handleLeadChange}
                   disabled={!!editing}
                   options={(leadsList || []).map((l: any) => ({
                     value: String(l.id),
-                    label: `${l.firstName || ""} ${l.lastName || ""}`.trim() + (l.phone ? ` (${l.phone})` : ""),
+                    label: `${l.firstName || ""} ${l.lastName || ""}`.trim() + (l.phone ? ` (${l.phone})` : "") + (showAllLeads ? ` [${l.status || ""}]` : ""),
                   }))}
                   placeholder="Search and select a lead"
                   data-testid="episode-select-lead"
