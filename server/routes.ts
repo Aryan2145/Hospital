@@ -1954,6 +1954,24 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/campaigns/next-ad-number", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId();
+      const { platform, objective, year, month } = req.query;
+      const allCampaigns = await storage.getCampaigns(tid);
+      const matching = allCampaigns.filter((c: any) =>
+        c.platform === platform && c.objective === objective && c.year === year && c.month === month
+      );
+      const maxNum = matching.reduce((max: number, c: any) => {
+        const m = c.adNumber?.match(/Ad(\d+)/);
+        return m ? Math.max(max, parseInt(m[1])) : max;
+      }, 0);
+      res.json({ nextAdNumber: `Ad${maxNum + 1}` });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/campaigns/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId();

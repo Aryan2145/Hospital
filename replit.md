@@ -90,6 +90,7 @@ Navigation organized into 4 sections following the lead lifecycle flow:
 4. **Configurations**: Team (CRM Admin+), Connectors (System Admin), Email Settings (System Admin), Testing (System Admin)
 
 ## Recent Changes
+- 2026-02-22: Enhanced Campaign Management - Dropdown-based auto-generated campaign names (Company_Platform_Objective_Year_Month_AdNumber), auto-generated UTM parameters, campaign detail view, funnel stage, target audience tracking, budget in INR
 - 2026-02-21: Proper case enforcement - All master data, lead names, and CRM user names auto-converted to title case (e.g., "ramesh modi" → "Ramesh Modi")
 - 2026-02-21: Bulk Lead Import page - CSV upload with column mapping, phone normalization, dedup strategies (Skip/UpdateBlank/Overwrite), import history logs
 - 2026-02-21: Lead Capture Rules - Configurable field mapping per connector for auto-importing leads from Meta, Google Forms, Callyzer, etc. with assignment strategies, dedup handling, webhook endpoints
