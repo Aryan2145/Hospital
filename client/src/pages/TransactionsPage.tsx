@@ -51,7 +51,7 @@ export default function TransactionsPage() {
   const [editing, setEditing] = useState<Episode | null>(null);
   const [filterStatus, setFilterStatus] = useState("");
 
-  const [showAllLeads, setShowAllLeads] = useState(false);
+  const [showAllLeads, setShowAllLeads] = useState(true);
   const [formLeadId, setFormLeadId] = useState("");
   const [formPatientId, setFormPatientId] = useState("");
   const [formDoctorId, setFormDoctorId] = useState("");
@@ -67,10 +67,14 @@ export default function TransactionsPage() {
 
   const { data: episodes, isLoading } = useQuery<Episode[]>({
     queryKey: ["/api/episodes"],
+    retry: 2,
+    staleTime: 30000,
   });
 
-  const { data: allLeads } = useQuery<any[]>({
+  const { data: allLeads, isLoading: leadsLoading, error: leadsError } = useQuery<any[]>({
     queryKey: ["/api/leads"],
+    retry: 2,
+    staleTime: 30000,
   });
 
   const leadsList = useMemo(() => {
@@ -120,6 +124,7 @@ export default function TransactionsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/episodes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
       toast({ title: "Consultation episode created" });
       closeDialog();
     },
@@ -345,17 +350,28 @@ export default function TransactionsPage() {
                     </button>
                   )}
                 </div>
-                <SearchableSelect
-                  value={formLeadId}
-                  onValueChange={handleLeadChange}
-                  disabled={!!editing}
-                  options={(leadsList || []).map((l: any) => ({
-                    value: String(l.id),
-                    label: (l.name || "Unnamed Lead") + (l.phoneE164 ? ` (${l.phoneE164})` : "") + (showAllLeads ? ` [${l.status || ""}]` : ""),
-                  }))}
-                  placeholder="Search and select a lead"
-                  data-testid="episode-select-lead"
-                />
+                {leadsLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading leads...
+                  </div>
+                ) : leadsError ? (
+                  <div className="text-sm text-destructive py-2">
+                    Failed to load leads. Please refresh the page.
+                  </div>
+                ) : (
+                  <SearchableSelect
+                    value={formLeadId}
+                    onValueChange={handleLeadChange}
+                    disabled={!!editing}
+                    options={(leadsList || []).map((l: any) => ({
+                      value: String(l.id),
+                      label: (l.name || "Unnamed Lead") + (l.phoneE164 ? ` (${l.phoneE164})` : "") + (showAllLeads ? ` [${l.status || ""}]` : ""),
+                    }))}
+                    placeholder="Search and select a lead"
+                    data-testid="episode-select-lead"
+                  />
+                )}
               </div>
 
               <div>
