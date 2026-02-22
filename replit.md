@@ -23,6 +23,19 @@ The platform is built with a modern web stack:
 - **API Structure:** Follows a RESTful approach, with generic CRUD endpoints for master data and specific endpoints for core entities like Leads, Episodes, Patients, and CRM Users.
 - **Branding:** Dynamic per-tenant branding configuration for logo, favicon, display name, and color scheme.
 
+### System Admin Panel (Feb 2026)
+- **Separate admin panel** at `/admin/*` routes, completely invisible to CRM users
+- **Dark sidebar** (slate-900) with orange accent, distinct from CRM's blue theme
+- **AdminLayout** component with its own navigation, "Back to CRM" link
+- **Only SYS_ADMIN** users can access; a discreet "Admin Panel" button appears in CRM sidebar footer
+- **Pages:** Platform Overview (dashboard stats), Hospital Management, Subscription Plans, Subscriptions, Payment Records
+- **Subscription & Billing:** Manual payment tracking (MVP), Razorpay/PayU integration planned for later
+  - `subscription_plans` table: Plan name, code, billing cycle, price, feature limits (users, leads, branches)
+  - `tenant_subscriptions` table: Tenant-plan assignment with start/end dates, grace period, auto-renewal, suspension
+  - `subscription_payments` table: Manual payment recording with method, transaction ref, invoice number, period
+- **Tenant Suspension:** When tenant is suspended (payment overdue), CRM users see "Service Temporarily Suspended" screen. SYS_ADMIN can still access admin panel.
+- **Tenant fields added:** `subscriptionStatus`, `onboardedAt`, `contactPerson`, `contactEmail`, `contactPhone`
+
 ## External Dependencies
 - **Replit Auth:** For user authentication leveraging OpenID Connect.
 - **Google Sheets API:** Integration for bulk lead import.

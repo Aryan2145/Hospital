@@ -9,7 +9,6 @@ import {
   Database,
   UserCog,
   Shield,
-  FlaskConical,
   Megaphone,
   Plug,
   Mail,
@@ -17,8 +16,8 @@ import {
   HeartPulse,
   FileSpreadsheet,
   Paintbrush,
-  Building2,
   ClipboardCheck,
+  Settings2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -56,12 +55,10 @@ const sections: { label: string; items: NavItem[] }[] = [
     items: [
       { icon: UserCog, label: "Team", href: "/team", page: "team" },
       { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
-      { icon: Building2, label: "Hospitals", href: "/tenant-management", page: "connectors" },
       { icon: FileSpreadsheet, label: "Google Sheets Import", href: "/google-sheets-import", page: "leads" },
       { icon: Paintbrush, label: "Branding", href: "/branding", page: "branding" },
       { icon: Mail, label: "Email Settings", href: "/email-settings", page: "email-settings" },
       { icon: MessageSquare, label: "WhatsApp", href: "/whatsapp-settings", page: "whatsapp-settings" },
-      { icon: FlaskConical, label: "Testing", href: "/testing", page: "testing" },
     ],
   },
 ];
@@ -72,6 +69,7 @@ export function Sidebar() {
   const { crmUser, roleName, roleCode, canViewPage } = useCurrentUser();
   const { displayName: tenantDisplayName, logoUrl: tenantLogo } = useTenantBranding();
 
+  const { isSysAdmin } = useCurrentUser();
   const displayName = crmUser?.name || `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User";
   const displayEmail = crmUser?.email || user?.email || "";
 
@@ -154,6 +152,19 @@ export function Sidebar() {
           </div>
         </div>
         <p className="text-xs text-muted-foreground truncate mb-2 px-1" data-testid="text-user-email">{displayEmail}</p>
+        {isSysAdmin && (
+          <Link href="/admin">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full mb-2 border-orange-200 text-orange-700 hover:bg-orange-50 hover:text-orange-800"
+              data-testid="button-admin-panel"
+            >
+              <Settings2 className="w-3.5 h-3.5 mr-2" />
+              Admin Panel
+            </Button>
+          </Link>
+        )}
         <Button
           variant="outline"
           size="sm"

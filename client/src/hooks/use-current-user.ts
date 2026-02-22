@@ -21,6 +21,7 @@ export interface CrmUserProfile {
 
 export interface MeResponse {
   status: "active" | "unregistered";
+  tenantSubscriptionStatus?: string;
   crmUser?: CrmUserProfile;
   authUserId?: string;
   authEmail?: string;
@@ -58,6 +59,7 @@ export function useCurrentUser() {
   const isSysAdmin = roleCode === "SYS_ADMIN";
   const isAdmin = roleCode === "ADMIN" || roleCode === "SYS_ADMIN";
   const isManager = roleCode === "MANAGER";
+  const tenantSuspended = data?.tenantSubscriptionStatus === "Suspended";
 
   return {
     meData: data,
@@ -70,6 +72,7 @@ export function useCurrentUser() {
     isSysAdmin,
     isAdmin,
     isManager,
+    tenantSuspended,
     canViewPage,
   };
 }

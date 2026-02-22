@@ -8,6 +8,7 @@ import NotFound from "@/pages/not-found";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { AlertTriangle } from "lucide-react";
 
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
@@ -27,17 +28,46 @@ import LeadImportPage from "@/pages/LeadImportPage";
 import GoogleSheetsImportPage from "@/pages/GoogleSheetsImportPage";
 import BrandingSettings from "@/pages/BrandingSettings";
 import EpisodeDetailPage from "@/pages/EpisodeDetailPage";
-import TenantManagementPage from "@/pages/TenantManagement";
 import MasterApprovalPage from "@/pages/MasterApproval";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
+import AdminDashboard from "@/pages/admin/AdminDashboard";
+import AdminHospitals from "@/pages/admin/AdminHospitals";
+import AdminPlans from "@/pages/admin/AdminPlans";
+import AdminSubscriptions from "@/pages/admin/AdminSubscriptions";
+import AdminPayments from "@/pages/admin/AdminPayments";
+
+function TenantSuspended() {
+  return (
+    <div className="h-screen flex items-center justify-center bg-slate-50" data-testid="tenant-suspended-screen">
+      <div className="text-center max-w-md p-8">
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+          <AlertTriangle className="w-8 h-8 text-red-600" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900 mb-2" data-testid="text-suspended-title">Service Temporarily Suspended</h2>
+        <p className="text-slate-500 mb-4" data-testid="text-suspended-message">Your hospital's CRM access has been temporarily suspended. This is usually due to a pending payment or subscription renewal.</p>
+        <p className="text-sm text-slate-400">Please contact your system administrator or the myProSys team to resolve this.</p>
+      </div>
+    </div>
+  );
+}
 
 function RoleGate({ page, children }: { page: string; children: React.ReactNode }) {
-  const { isLoading, isRegistered, canViewPage } = useCurrentUser();
+  const { isLoading, isRegistered, canViewPage, tenantSuspended, isSysAdmin } = useCurrentUser();
 
   if (isLoading) return <div className="h-screen flex items-center justify-center"><LoadingSpinner /></div>;
   if (!isRegistered) return <PendingApproval />;
+  if (tenantSuspended && !isSysAdmin) return <TenantSuspended />;
   if (!canViewPage(page)) return <Redirect to="/" />;
+
+  return <>{children}</>;
+}
+
+function SysAdminGate({ children }: { children: React.ReactNode }) {
+  const { isLoading, isRegistered, isSysAdmin } = useCurrentUser();
+
+  if (isLoading) return <div className="h-screen flex items-center justify-center"><LoadingSpinner /></div>;
+  if (!isRegistered || !isSysAdmin) return <Redirect to="/" />;
 
   return <>{children}</>;
 }
@@ -133,12 +163,6 @@ function Router() {
         ) : <Landing />}
       </Route>
 
-      <Route path="/tenant-management">
-        {isAuthenticated ? (
-          <RoleGate page="connectors"><TenantManagementPage /></RoleGate>
-        ) : <Landing />}
-      </Route>
-
       <Route path="/master-approval">
         {isAuthenticated ? (
           <RoleGate page="masters"><MasterApprovalPage /></RoleGate>
@@ -163,6 +187,22 @@ function Router() {
 
       <Route path="/reset-password">
         {isAuthenticated ? <Redirect to="/" /> : <ResetPassword />}
+      </Route>
+
+      <Route path="/admin">
+        {isAuthenticated ? <SysAdminGate><AdminDashboard /></SysAdminGate> : <Landing />}
+      </Route>
+      <Route path="/admin/hospitals">
+        {isAuthenticated ? <SysAdminGate><AdminHospitals /></SysAdminGate> : <Landing />}
+      </Route>
+      <Route path="/admin/plans">
+        {isAuthenticated ? <SysAdminGate><AdminPlans /></SysAdminGate> : <Landing />}
+      </Route>
+      <Route path="/admin/subscriptions">
+        {isAuthenticated ? <SysAdminGate><AdminSubscriptions /></SysAdminGate> : <Landing />}
+      </Route>
+      <Route path="/admin/payments">
+        {isAuthenticated ? <SysAdminGate><AdminPayments /></SysAdminGate> : <Landing />}
       </Route>
 
       <Route component={NotFound} />

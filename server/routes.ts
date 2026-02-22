@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -12,7 +12,7 @@ import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCateg
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, sql, count, gte, lte } from "drizzle-orm";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -455,6 +455,35 @@ export async function registerRoutes(
     next();
   });
 
+  app.use("/api", async (req: any, res, next) => {
+    const path = req.path;
+    if (path === "/me" || path.startsWith("/auth") || path.startsWith("/admin") || path === "/login" || path === "/callback" || path === "/logout") {
+      return next();
+    }
+    try {
+      const sessionTid = req.session?.tenantId || defaultTid;
+      const [tenantRow] = await db.select().from(tenants).where(eq(tenants.id, sessionTid));
+      if (tenantRow?.subscriptionStatus === "Suspended") {
+        const crmUserId = req.session?.crmUserId;
+        if (crmUserId) {
+          const allCrmUsers = await storage.getCrmUsers(sessionTid);
+          const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
+          if (crmUser?.systemRoleId) {
+            const allRoles = await storage.getMasterRecords("systemRoles", sessionTid);
+            const role = allRoles.find((r: any) => r.id === crmUser.systemRoleId);
+            if (role && (role as any).code === "SYS_ADMIN") {
+              return next();
+            }
+          }
+        }
+        return res.status(403).json({ message: "Service temporarily suspended. Please contact your administrator." });
+      }
+      next();
+    } catch (err) {
+      next();
+    }
+  });
+
   function getTid(req: any): number {
     return req._tenantId || defaultTid;
   }
@@ -487,8 +516,13 @@ export async function registerRoutes(
       }
 
       const { passwordHash: _, ...safeCrmUser } = crmUser as any;
+
+      const [tenantRow] = await db.select().from(tenants).where(eq(tenants.id, sessionTid));
+      const tenantSubscriptionStatus = tenantRow?.subscriptionStatus || "Active";
+
       res.json({
         status: "active",
+        tenantSubscriptionStatus,
         crmUser: {
           ...safeCrmUser,
           roleName,
@@ -3446,6 +3480,265 @@ export async function registerRoutes(
         return res.status(400).json({ message: "SMTP settings incomplete. Please save settings first." });
       }
       res.json({ success: true, message: "SMTP configuration looks valid. Test email would be sent to configured admin email." });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =============================================
+  // SYSTEM ADMIN MIDDLEWARE
+  // =============================================
+  async function isSysAdmin(req: any, res: any, next: any) {
+    try {
+      const session = req.session as any;
+      const crmUserId = session?.crmUserId;
+      if (!crmUserId) return res.status(403).json({ message: "Forbidden" });
+
+      const sessionTid = session?.tenantId || tid;
+      const allCrmUsers = await storage.getCrmUsers(sessionTid);
+      const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
+      if (!crmUser) return res.status(403).json({ message: "Forbidden" });
+
+      if (crmUser.systemRoleId) {
+        const allRoles = await storage.getMasterRecords("systemRoles", sessionTid);
+        const role = allRoles.find((r: any) => r.id === crmUser.systemRoleId);
+        if (role && (role as any).code === "SYS_ADMIN") {
+          return next();
+        }
+      }
+      return res.status(403).json({ message: "Forbidden: System Admin access required" });
+    } catch (err) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+  }
+
+  // =============================================
+  // SYSTEM ADMIN APIs (Platform Management)
+  // =============================================
+
+  // Admin Dashboard stats
+  app.get("/api/admin/stats", isAuthenticated, isSysAdmin, async (req: any, res) => {
+    try {
+      const [tenantCount] = await db.select({ count: count() }).from(tenants);
+      const [userCount] = await db.select({ count: count() }).from(crmUsers);
+      const [leadCount] = await db.select({ count: count() }).from(leads);
+      const [episodeCount] = await db.select({ count: count() }).from(episodes);
+      const [activeSubs] = await db.select({ count: count() }).from(tenantSubscriptions).where(eq(tenantSubscriptions.status, "Active"));
+      const [suspendedTenants] = await db.select({ count: count() }).from(tenants).where(eq(tenants.subscriptionStatus, "Suspended"));
+
+      const allTenantsList = await db.select().from(tenants).orderBy(tenants.id);
+      const tenantStats = [];
+      for (const t of allTenantsList) {
+        const [tUsers] = await db.select({ count: count() }).from(crmUsers).where(eq(crmUsers.tenantId, t.id));
+        const [tLeads] = await db.select({ count: count() }).from(leads).where(eq(leads.tenantId, t.id));
+        const [tEpisodes] = await db.select({ count: count() }).from(episodes).where(eq(episodes.tenantId, t.id));
+        tenantStats.push({
+          tenantId: t.id,
+          tenantName: t.name,
+          displayName: t.displayName,
+          subdomain: t.subdomain,
+          subscriptionStatus: t.subscriptionStatus,
+          users: tUsers.count,
+          leads: tLeads.count,
+          episodes: tEpisodes.count,
+        });
+      }
+
+      res.json({
+        totalTenants: tenantCount.count,
+        totalUsers: userCount.count,
+        totalLeads: leadCount.count,
+        totalEpisodes: episodeCount.count,
+        activeSubscriptions: activeSubs.count,
+        suspendedTenants: suspendedTenants.count,
+        tenantStats,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Subscription Plans CRUD
+  app.get("/api/admin/plans", isAuthenticated, isSysAdmin, async (req, res) => {
+    try {
+      const plans = await db.select().from(subscriptionPlans).orderBy(subscriptionPlans.price);
+      res.json(plans);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/plans", isAuthenticated, isSysAdmin, async (req, res) => {
+    try {
+      const parsed = insertSubscriptionPlanSchema.parse(req.body);
+      const [plan] = await db.insert(subscriptionPlans).values(parsed).returning();
+      res.status(201).json(plan);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/admin/plans/:id", isAuthenticated, isSysAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const [updated] = await db.update(subscriptionPlans).set({ ...req.body, modifiedAt: new Date() }).where(eq(subscriptionPlans.id, id)).returning();
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // Tenant Subscriptions CRUD
+  app.get("/api/admin/subscriptions", isAuthenticated, isSysAdmin, async (req, res) => {
+    try {
+      const subs = await db.select().from(tenantSubscriptions).orderBy(desc(tenantSubscriptions.createdAt));
+      const plans = await db.select().from(subscriptionPlans);
+      const allTenantsList = await db.select().from(tenants);
+
+      const enriched = subs.map(s => ({
+        ...s,
+        tenantName: allTenantsList.find(t => t.id === s.tenantId)?.name || "Unknown",
+        planName: plans.find(p => p.id === s.planId)?.name || "Unknown",
+      }));
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/subscriptions", isAuthenticated, isSysAdmin, async (req, res) => {
+    try {
+      const body = coerceDateFields(req.body, ["startDate", "endDate"]);
+      const parsed = insertTenantSubscriptionSchema.parse(body);
+      const [sub] = await db.insert(tenantSubscriptions).values(parsed).returning();
+      await db.update(tenants).set({ subscriptionStatus: "Active" }).where(eq(tenants.id, parsed.tenantId));
+      res.status(201).json(sub);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/admin/subscriptions/:id", isAuthenticated, isSysAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const body = coerceDateFields(req.body, ["startDate", "endDate", "suspendedAt"]);
+      const [updated] = await db.update(tenantSubscriptions).set({ ...body, modifiedAt: new Date() }).where(eq(tenantSubscriptions.id, id)).returning();
+
+      if (body.status === "Suspended") {
+        await db.update(tenants).set({ subscriptionStatus: "Suspended" }).where(eq(tenants.id, updated.tenantId));
+      } else if (body.status === "Active") {
+        await db.update(tenants).set({ subscriptionStatus: "Active" }).where(eq(tenants.id, updated.tenantId));
+      }
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // Suspend / Activate tenant
+  app.post("/api/admin/tenants/:id/suspend", isAuthenticated, isSysAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { reason } = req.body;
+      await db.update(tenants).set({ subscriptionStatus: "Suspended" }).where(eq(tenants.id, id));
+      const activeSubs = await db.select().from(tenantSubscriptions).where(and(eq(tenantSubscriptions.tenantId, id), eq(tenantSubscriptions.status, "Active")));
+      for (const sub of activeSubs) {
+        await db.update(tenantSubscriptions).set({ status: "Suspended", suspendedAt: new Date(), suspendedReason: reason || "Payment overdue", modifiedAt: new Date() }).where(eq(tenantSubscriptions.id, sub.id));
+      }
+      res.json({ message: "Tenant suspended" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/tenants/:id/activate", isAuthenticated, isSysAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      await db.update(tenants).set({ subscriptionStatus: "Active" }).where(eq(tenants.id, id));
+      const suspendedSubs = await db.select().from(tenantSubscriptions).where(and(eq(tenantSubscriptions.tenantId, id), eq(tenantSubscriptions.status, "Suspended")));
+      for (const sub of suspendedSubs) {
+        await db.update(tenantSubscriptions).set({ status: "Active", suspendedAt: null, suspendedReason: null, modifiedAt: new Date() }).where(eq(tenantSubscriptions.id, sub.id));
+      }
+      res.json({ message: "Tenant activated" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Update tenant details (admin)
+  app.patch("/api/admin/tenants/:id", isAuthenticated, isSysAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { contactPerson, contactEmail, contactPhone, displayName } = req.body;
+      const updateData: any = {};
+      if (contactPerson !== undefined) updateData.contactPerson = contactPerson;
+      if (contactEmail !== undefined) updateData.contactEmail = contactEmail;
+      if (contactPhone !== undefined) updateData.contactPhone = contactPhone;
+      if (displayName !== undefined) updateData.displayName = displayName;
+      const [updated] = await db.update(tenants).set(updateData).where(eq(tenants.id, id)).returning();
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // Subscription Payments CRUD
+  app.get("/api/admin/payments", isAuthenticated, isSysAdmin, async (req, res) => {
+    try {
+      const tenantId = req.query.tenantId ? Number(req.query.tenantId) : undefined;
+      let payments;
+      if (tenantId) {
+        payments = await db.select().from(subscriptionPayments).where(eq(subscriptionPayments.tenantId, tenantId)).orderBy(desc(subscriptionPayments.paymentDate));
+      } else {
+        payments = await db.select().from(subscriptionPayments).orderBy(desc(subscriptionPayments.paymentDate));
+      }
+      const allTenantsList = await db.select().from(tenants);
+      const enriched = payments.map(p => ({
+        ...p,
+        tenantName: allTenantsList.find(t => t.id === p.tenantId)?.name || "Unknown",
+      }));
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/payments", isAuthenticated, isSysAdmin, async (req, res) => {
+    try {
+      const body = coerceDateFields(req.body, ["paymentDate", "periodStart", "periodEnd"]);
+      const parsed = insertSubscriptionPaymentSchema.parse(body);
+      const [payment] = await db.insert(subscriptionPayments).values(parsed).returning();
+      res.status(201).json(payment);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // Tenant detail for admin view (with subscription + payment history)
+  app.get("/api/admin/tenants/:id", isAuthenticated, isSysAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const [tenant] = await db.select().from(tenants).where(eq(tenants.id, id));
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+
+      const subs = await db.select().from(tenantSubscriptions).where(eq(tenantSubscriptions.tenantId, id)).orderBy(desc(tenantSubscriptions.startDate));
+      const payments = await db.select().from(subscriptionPayments).where(eq(subscriptionPayments.tenantId, id)).orderBy(desc(subscriptionPayments.paymentDate));
+      const plans = await db.select().from(subscriptionPlans);
+      const [userCount] = await db.select({ count: count() }).from(crmUsers).where(eq(crmUsers.tenantId, id));
+      const [leadCount] = await db.select({ count: count() }).from(leads).where(eq(leads.tenantId, id));
+
+      const enrichedSubs = subs.map(s => ({
+        ...s,
+        planName: plans.find(p => p.id === s.planId)?.name || "Unknown",
+      }));
+
+      res.json({
+        ...tenant,
+        subscriptions: enrichedSubs,
+        payments,
+        userCount: userCount.count,
+        leadCount: leadCount.count,
+      });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
