@@ -93,6 +93,9 @@ Navigation organized into 4 sections following the lead lifecycle flow:
 Note: Lead Import is accessible via "Bulk Import" button on the Leads page (not a separate sidebar item).
 
 ## Recent Changes
+- 2026-02-22: Google Sheets Lead Extraction - Connect Google Sheet via API key, auto-detect columns, map to CRM fields, preview data, import leads with dedup/auto-assign. Multi-sheet tab support with header re-fetch on tab switch. Route: /google-sheets-import
+- 2026-02-22: Kanban board fix - Added missing columns for Reminder Running, Unqualified, Nurture statuses; fixed orphaned "Converted" leads migrated to "Closed Won"
+- 2026-02-22: Auto-status on episode creation - Creating consultation episode auto-updates lead status to "Consultation Done"
 - 2026-02-22: WhatsApp Business API integration - Settings page for configuration, auto-send appointment confirmation messages, test connection/message, activity logging for sent messages
 - 2026-02-22: Enhanced Campaign Management - Dropdown-based auto-generated campaign names (Company_Platform_Objective_Year_Month_AdNumber), auto-generated UTM parameters, campaign detail view, funnel stage, target audience tracking, budget in INR
 - 2026-02-21: Proper case enforcement - All master data, lead names, and CRM user names auto-converted to title case (e.g., "ramesh modi" → "Ramesh Modi")

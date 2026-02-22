@@ -23,6 +23,7 @@ import WhatsAppSettingsPage from "@/pages/WhatsAppSettingsPage";
 import PendingApproval from "@/pages/PendingApproval";
 import TestingInterface from "@/pages/TestingInterface";
 import LeadImportPage from "@/pages/LeadImportPage";
+import GoogleSheetsImportPage from "@/pages/GoogleSheetsImportPage";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 
@@ -112,6 +113,12 @@ function Router() {
       <Route path="/lead-import">
         {isAuthenticated ? (
           <RoleGate page="leads"><LeadImportPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/google-sheets-import">
+        {isAuthenticated ? (
+          <RoleGate page="leads"><GoogleSheetsImportPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

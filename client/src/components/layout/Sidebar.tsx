@@ -15,6 +15,7 @@ import {
   Mail,
   MessageSquare,
   HeartPulse,
+  FileSpreadsheet,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -50,6 +51,7 @@ const sections: { label: string; items: NavItem[] }[] = [
     items: [
       { icon: UserCog, label: "Team", href: "/team", page: "team" },
       { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
+      { icon: FileSpreadsheet, label: "Google Sheets Import", href: "/google-sheets-import", page: "leads" },
       { icon: Mail, label: "Email Settings", href: "/email-settings", page: "email-settings" },
       { icon: MessageSquare, label: "WhatsApp", href: "/whatsapp-settings", page: "whatsapp-settings" },
       { icon: FlaskConical, label: "Testing", href: "/testing", page: "testing" },

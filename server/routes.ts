@@ -1085,6 +1085,250 @@ export async function registerRoutes(
     }
   });
 
+  // --- Google Sheets Lead Extraction ---
+  app.post("/api/google-sheets/headers", isAuthenticated, async (req, res) => {
+    try {
+      const { sheetUrl, apiKey } = req.body;
+      if (!sheetUrl) return res.status(400).json({ message: "Sheet URL is required" });
+      if (!apiKey) return res.status(400).json({ message: "Google API Key is required" });
+
+      const spreadsheetId = extractSpreadsheetId(sheetUrl);
+      if (!spreadsheetId) return res.status(400).json({ message: "Invalid Google Sheets URL. Please provide a valid URL like: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit" });
+
+      const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?key=${apiKey}&fields=properties.title,sheets.properties`;
+      const metaResp = await fetch(metaUrl);
+      if (!metaResp.ok) {
+        const errData = await metaResp.json().catch(() => ({}));
+        if (metaResp.status === 403) {
+          return res.status(400).json({ message: "Access denied. Make sure the sheet is shared as 'Anyone with the link can view' and the API key is valid." });
+        }
+        if (metaResp.status === 404) {
+          return res.status(400).json({ message: "Sheet not found. Please check the URL." });
+        }
+        return res.status(400).json({ message: errData?.error?.message || "Failed to access the sheet" });
+      }
+      const metaData = await metaResp.json();
+      const sheetTitle = metaData?.properties?.title || "Unknown Sheet";
+      const sheetsList = (metaData?.sheets || []).map((s: any) => ({
+        title: s.properties?.title || "Sheet1",
+        sheetId: s.properties?.sheetId,
+      }));
+      const sheets = sheetsList.map((s: any) => s.title);
+
+      const gidMatch = sheetUrl.match(/[#&]gid=(\d+)/);
+      let targetSheet = sheets[0] || "Sheet1";
+      if (gidMatch) {
+        const gid = Number(gidMatch[1]);
+        const matched = sheetsList.find((s: any) => s.sheetId === gid);
+        if (matched) targetSheet = matched.title;
+      }
+
+      const range = `'${targetSheet}'!1:1`;
+      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`;
+      const response = await fetch(apiUrl);
+
+      if (!response.ok) {
+        return res.status(400).json({ message: "Failed to read headers from the sheet." });
+      }
+
+      const data = await response.json();
+      const headers = data.values?.[0] || [];
+      if (headers.length === 0) {
+        return res.status(400).json({ message: "No headers found in the first row of the sheet." });
+      }
+
+      res.json({ headers, sheetTitle, sheets, spreadsheetId, selectedSheet: targetSheet });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/google-sheets/preview", isAuthenticated, async (req, res) => {
+    try {
+      const { spreadsheetId, apiKey, sheetName } = req.body;
+      if (!spreadsheetId || !apiKey) return res.status(400).json({ message: "Missing required parameters" });
+
+      const range = sheetName ? `'${sheetName}'!A1:Z10` : "Sheet1!A1:Z10";
+      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`;
+      const response = await fetch(apiUrl);
+
+      if (!response.ok) return res.status(400).json({ message: "Failed to preview sheet data" });
+
+      const data = await response.json();
+      const rows = data.values || [];
+      res.json({ rows, totalPreview: rows.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/google-sheets/import", isAuthenticated, async (req, res) => {
+    try {
+      const { spreadsheetId, apiKey, sheetName, columnMapping, duplicateStrategy, defaultLeadStatus, defaultTags } = req.body;
+      if (!spreadsheetId || !apiKey) return res.status(400).json({ message: "Missing required parameters" });
+      if (!columnMapping || Object.keys(columnMapping).length === 0) return res.status(400).json({ message: "Column mapping is required" });
+
+      const tid = await getDefaultTenantId();
+      const userId = String((req as any).session?.crmUserId || "system");
+      const dedupStrategy = duplicateStrategy || "skip";
+      const leadStatus = defaultLeadStatus || "Raw Lead Captured";
+
+      const range = sheetName ? `'${sheetName}'` : "Sheet1";
+      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`;
+      const response = await fetch(apiUrl);
+
+      if (!response.ok) return res.status(400).json({ message: "Failed to fetch sheet data" });
+
+      const data = await response.json();
+      const allRows = data.values || [];
+      if (allRows.length < 2) return res.status(400).json({ message: "Sheet has no data rows (only headers or empty)" });
+
+      const headers = allRows[0] as string[];
+      const dataRows = allRows.slice(1);
+
+      let successCount = 0;
+      let failureCount = 0;
+      let duplicateCount = 0;
+      let updatedCount = 0;
+      const errors: { row: number; message: string }[] = [];
+
+      for (let i = 0; i < dataRows.length; i++) {
+        const row = dataRows[i];
+        const mapped: Record<string, string> = {};
+
+        for (const [crmField, sheetCol] of Object.entries(columnMapping)) {
+          if (sheetCol && typeof sheetCol === "string") {
+            const colIndex = headers.indexOf(sheetCol);
+            if (colIndex >= 0 && row[colIndex]) {
+              mapped[crmField] = row[colIndex];
+            }
+          }
+        }
+
+        const name = toProperCase((mapped.name || "").trim());
+        let phone = (mapped.phoneE164 || mapped.phone || mapped.phoneNumber || mapped.mobile || "").trim();
+        const email = (mapped.email || "").trim();
+
+        if (!name && !phone) {
+          failureCount++;
+          errors.push({ row: i + 2, message: "Missing required field: name or phone" });
+          continue;
+        }
+
+        if (!phone) {
+          failureCount++;
+          errors.push({ row: i + 2, message: "Missing required field: phone number" });
+          continue;
+        }
+
+        phone = normalizePhone(phone);
+
+        const existingLead = await storage.findLeadByPhone(tid, phone);
+
+        if (existingLead) {
+          if (dedupStrategy === "skip") {
+            duplicateCount++;
+            continue;
+          } else if (dedupStrategy === "update_blank") {
+            const updates: Record<string, any> = {};
+            if (!existingLead.email && email) updates.email = email;
+            if (!existingLead.name && name) updates.name = name;
+            if (!existingLead.utmSource && mapped.utmSource) updates.utmSource = mapped.utmSource;
+            if (!existingLead.utmMedium && mapped.utmMedium) updates.utmMedium = mapped.utmMedium;
+            if (!existingLead.utmCampaign && mapped.utmCampaign) updates.utmCampaign = mapped.utmCampaign;
+            if (!existingLead.notes && mapped.notes) updates.notes = mapped.notes;
+            if (!existingLead.tags && (mapped.tags || defaultTags)) updates.tags = mapped.tags || defaultTags;
+            if (Object.keys(updates).length > 0) {
+              await storage.updateLead(existingLead.id, updates);
+              updatedCount++;
+            } else {
+              duplicateCount++;
+            }
+            continue;
+          } else if (dedupStrategy === "overwrite") {
+            const updates: Record<string, any> = {};
+            if (name) updates.name = name;
+            if (email) updates.email = email;
+            if (mapped.utmSource) updates.utmSource = mapped.utmSource;
+            if (mapped.utmMedium) updates.utmMedium = mapped.utmMedium;
+            if (mapped.utmCampaign) updates.utmCampaign = mapped.utmCampaign;
+            if (mapped.notes) updates.notes = mapped.notes;
+            if (mapped.tags || defaultTags) updates.tags = mapped.tags || defaultTags;
+            if (mapped.priority) updates.priority = mapped.priority;
+            if (Object.keys(updates).length > 0) {
+              await storage.updateLead(existingLead.id, updates);
+              updatedCount++;
+            } else {
+              duplicateCount++;
+            }
+            continue;
+          }
+        }
+
+        try {
+          const assignedUser = await storage.getNextAssignableCrmUser(tid);
+          await storage.createLead({
+            tenantId: tid,
+            name: name || "Unknown",
+            phoneE164: phone,
+            email: email || undefined,
+            status: leadStatus,
+            tags: mapped.tags || defaultTags || undefined,
+            utmSource: mapped.utmSource || "Google Sheets",
+            utmMedium: mapped.utmMedium || undefined,
+            utmCampaign: mapped.utmCampaign || undefined,
+            utmTerm: mapped.utmTerm || undefined,
+            utmContent: mapped.utmContent || undefined,
+            notes: mapped.notes || mapped.callSummary || undefined,
+            priority: mapped.priority || "Normal",
+            assignedCrmUserId: assignedUser?.id,
+            assignedTo: assignedUser?.name,
+          });
+
+          successCount++;
+        } catch (err: any) {
+          failureCount++;
+          errors.push({ row: i + 2, message: err.message });
+        }
+      }
+
+      const [importLog] = await db.insert(leadImportLogs).values({
+        tenantId: tid,
+        fileName: `Google Sheet: ${sheetName || "Sheet1"}`,
+        source: "google_sheets",
+        totalRows: dataRows.length,
+        successCount,
+        duplicateCount,
+        updatedCount,
+        failureCount,
+        duplicateStrategy: dedupStrategy,
+        status: failureCount === 0 ? "Completed" : "Completed with Issues",
+        errorDetails: errors.length > 0 ? errors : null,
+        columnMapping: columnMapping || null,
+        importedBy: userId,
+        completedAt: new Date(),
+      }).returning();
+
+      res.json({
+        importLogId: importLog.id,
+        totalRows: dataRows.length,
+        successCount,
+        duplicateCount,
+        updatedCount,
+        failureCount,
+        errors: errors.slice(0, 50),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  function extractSpreadsheetId(url: string): string | null {
+    const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    return match ? match[1] : null;
+  }
+
+
   // --- Lead Capture Rules CRUD ---
   app.get("/api/lead-capture-rules", isAuthenticated, async (_req, res) => {
     try {
