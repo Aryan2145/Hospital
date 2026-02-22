@@ -124,6 +124,12 @@ Note: Lead Import is accessible via "Bulk Import" button on the Leads page (not 
 - Multi-branch lead auto-routing (patient pincode → nearest branch)
 - Cross-location doctor availability view
 
+### RBAC Enhancements (current: 4-tier roles + access scoping + PHI levels)
+- Field-level permissions beyond PHI (hide doctor notes, financials from certain roles)
+- Edit-own-leads restriction (agents can only modify their assigned leads)
+- Time-based access restrictions (later phase)
+- IP-based access control (enterprise feature, later phase)
+
 ### Low-Hanging Fruit — Quick Wins
 - Lead temperature indicator (hot/warm/cold based on days since last activity)
 - Dormant lead auto-detection alerts
