@@ -12,7 +12,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { Plus, Pencil, Megaphone, Calendar, DollarSign, Loader2 } from "lucide-react";
+import { Plus, Pencil, Megaphone, Calendar, IndianRupee, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
 interface Campaign {
@@ -176,8 +176,8 @@ export default function CampaignsPage() {
                     )}
                     {c.budget != null && (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <DollarSign className="w-3.5 h-3.5" />
-                        <span>Budget: {c.budget.toLocaleString()}</span>
+                        <IndianRupee className="w-3.5 h-3.5" />
+                        <span>Budget: ₹{c.budget.toLocaleString("en-IN")}</span>
                       </div>
                     )}
                     {(c.startDate || c.endDate) && (

@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useDoctors } from "@/hooks/use-leads";
-import { Plus, Pencil, FileText, Calendar, DollarSign, Loader2, Stethoscope, User } from "lucide-react";
+import { Plus, Pencil, FileText, Calendar, IndianRupee, Loader2, Stethoscope, User } from "lucide-react";
 import { format } from "date-fns";
 
 interface Episode {
@@ -267,9 +267,9 @@ export default function TransactionsPage() {
                       {ep.diagnosis && <p className="text-xs text-muted-foreground">Diagnosis: {ep.diagnosis}</p>}
                       {(ep.estimatedCost != null || ep.actualCost != null) && (
                         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <DollarSign className="w-3.5 h-3.5" />
-                          {ep.estimatedCost != null && <span>Est: {ep.estimatedCost.toLocaleString()}</span>}
-                          {ep.actualCost != null && <span>Actual: {ep.actualCost.toLocaleString()}</span>}
+                          <IndianRupee className="w-3.5 h-3.5" />
+                          {ep.estimatedCost != null && <span>Est: ₹{ep.estimatedCost.toLocaleString("en-IN")}</span>}
+                          {ep.actualCost != null && <span>Actual: ₹{ep.actualCost.toLocaleString("en-IN")}</span>}
                         </div>
                       )}
                     </div>

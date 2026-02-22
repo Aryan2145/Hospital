@@ -15,7 +15,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import {
   Plus, Settings, RefreshCw, Trash2, CheckCircle2, XCircle,
   Wifi, WifiOff, ArrowUpRight, BarChart3, Eye, MousePointerClick,
-  DollarSign, Target, Loader2, Zap, Globe, TrendingUp,
+  IndianRupee, Target, Loader2, Zap, Globe, TrendingUp,
   Copy, Pencil, Link2,
 } from "lucide-react";
 import { SiFacebook, SiGoogle, SiLinkedin, SiX } from "react-icons/si";
@@ -217,10 +217,10 @@ const PLATFORM_TEMPLATES: PlatformTemplate[] = [
 const METRIC_LABELS: Record<string, { label: string; icon: any; format: (v: number) => string }> = {
   impressions: { label: "Impressions", icon: Eye, format: (v) => v.toLocaleString() },
   clicks: { label: "Clicks", icon: MousePointerClick, format: (v) => v.toLocaleString() },
-  spend: { label: "Spend", icon: DollarSign, format: (v) => `$${v.toLocaleString()}` },
+  spend: { label: "Spend", icon: IndianRupee, format: (v) => `₹${v.toLocaleString("en-IN")}` },
   ctr: { label: "CTR", icon: TrendingUp, format: (v) => `${v.toFixed(2)}%` },
   conversions: { label: "Conversions", icon: Target, format: (v) => v.toLocaleString() },
-  cpc: { label: "CPC", icon: DollarSign, format: (v) => `$${v.toFixed(2)}` },
+  cpc: { label: "CPC", icon: IndianRupee, format: (v) => `₹${v.toFixed(2)}` },
 };
 
 export default function ConnectorsPage() {
