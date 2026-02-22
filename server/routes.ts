@@ -2807,6 +2807,7 @@ export async function registerRoutes(
             linkedin: { impressions: 18500, clicks: 620, spend: 1850, ctr: 3.35, conversions: 42, cpc: 2.98 },
             twitter: { impressions: 28700, clicks: 980, spend: 1200, ctr: 3.41, conversions: 67, cpc: 1.22 },
             bing: { impressions: 15200, clicks: 510, spend: 890, ctr: 3.36, conversions: 34, cpc: 1.75 },
+            callyzer: { totalCalls: 1247, incomingCalls: 583, outgoingCalls: 664, missedCalls: 89, connectedCalls: 1158, avgCallDuration: 185, totalEmployees: 12 },
           };
 
           await storage.updatePlatformConnector(c.id, tid, {
@@ -2843,6 +2844,7 @@ export async function registerRoutes(
         linkedin: { impressions: 18500, clicks: 620, spend: 1850, ctr: 3.35, conversions: 42, cpc: 2.98 },
         twitter: { impressions: 28700, clicks: 980, spend: 1200, ctr: 3.41, conversions: 67, cpc: 1.22 },
         bing: { impressions: 15200, clicks: 510, spend: 890, ctr: 3.36, conversions: 34, cpc: 1.75 },
+        callyzer: { totalCalls: 1247, incomingCalls: 583, outgoingCalls: 664, missedCalls: 89, connectedCalls: 1158, avgCallDuration: 185, totalEmployees: 12 },
       };
 
       const base = baseMetrics[c.platform] || baseMetrics.meta;

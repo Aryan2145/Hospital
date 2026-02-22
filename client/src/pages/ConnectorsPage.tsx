@@ -16,7 +16,7 @@ import {
   Plus, Settings, RefreshCw, Trash2, CheckCircle2, XCircle,
   Wifi, WifiOff, ArrowUpRight, BarChart3, Eye, MousePointerClick,
   IndianRupee, Target, Loader2, Zap, Globe, TrendingUp,
-  Copy, Pencil, Link2,
+  Copy, Pencil, Link2, Phone,
 } from "lucide-react";
 import { SiFacebook, SiGoogle, SiLinkedin, SiX } from "react-icons/si";
 
@@ -212,6 +212,18 @@ const PLATFORM_TEMPLATES: PlatformTemplate[] = [
       { key: "accountId", label: "Account ID", type: "text", placeholder: "Account Number" },
     ],
   },
+  {
+    id: "callyzer",
+    name: "Callyzer",
+    icon: Phone,
+    color: "text-emerald-600",
+    bgColor: "bg-emerald-50 dark:bg-emerald-950/30",
+    description: "Connect to Callyzer for real-time call tracking, employee call analytics, call recordings, and team performance monitoring.",
+    credentialFields: [
+      { key: "apiKey", label: "API Access Key", type: "password", placeholder: "Your Callyzer API Key (from Connectors > API Config)" },
+      { key: "webhookUrl", label: "Webhook URL (Optional)", type: "text", placeholder: "https://your-domain.com/api/webhook/callyzer" },
+    ],
+  },
 ];
 
 const METRIC_LABELS: Record<string, { label: string; icon: any; format: (v: number) => string }> = {
@@ -221,6 +233,13 @@ const METRIC_LABELS: Record<string, { label: string; icon: any; format: (v: numb
   ctr: { label: "CTR", icon: TrendingUp, format: (v) => `${v.toFixed(2)}%` },
   conversions: { label: "Conversions", icon: Target, format: (v) => v.toLocaleString() },
   cpc: { label: "CPC", icon: IndianRupee, format: (v) => `₹${v.toFixed(2)}` },
+  totalCalls: { label: "Total Calls", icon: Phone, format: (v) => v.toLocaleString() },
+  incomingCalls: { label: "Incoming", icon: Phone, format: (v) => v.toLocaleString() },
+  outgoingCalls: { label: "Outgoing", icon: Phone, format: (v) => v.toLocaleString() },
+  missedCalls: { label: "Missed", icon: Phone, format: (v) => v.toLocaleString() },
+  connectedCalls: { label: "Connected", icon: CheckCircle2, format: (v) => v.toLocaleString() },
+  avgCallDuration: { label: "Avg Duration", icon: BarChart3, format: (v) => `${Math.floor(v / 60)}m ${v % 60}s` },
+  totalEmployees: { label: "Employees", icon: Target, format: (v) => v.toLocaleString() },
 };
 
 export default function ConnectorsPage() {
