@@ -26,6 +26,9 @@ import TestingInterface from "@/pages/TestingInterface";
 import LeadImportPage from "@/pages/LeadImportPage";
 import GoogleSheetsImportPage from "@/pages/GoogleSheetsImportPage";
 import BrandingSettings from "@/pages/BrandingSettings";
+import EpisodeDetailPage from "@/pages/EpisodeDetailPage";
+import TenantManagementPage from "@/pages/TenantManagement";
+import MasterApprovalPage from "@/pages/MasterApproval";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 
@@ -121,6 +124,24 @@ function Router() {
       <Route path="/google-sheets-import">
         {isAuthenticated ? (
           <RoleGate page="leads"><GoogleSheetsImportPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/episodes/:id">
+        {isAuthenticated ? (
+          <RoleGate page="transactions"><EpisodeDetailPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/tenant-management">
+        {isAuthenticated ? (
+          <RoleGate page="connectors"><TenantManagementPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/master-approval">
+        {isAuthenticated ? (
+          <RoleGate page="masters"><MasterApprovalPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

@@ -19,11 +19,9 @@ const COLUMNS = [
   { id: "Qualified", title: "Qualified", color: "bg-indigo-100 text-indigo-800" },
   { id: "Appointment Booked", title: "Appt Booked", color: "bg-purple-100 text-purple-800" },
   { id: "Reminder Running", title: "Reminder", color: "bg-orange-100 text-orange-800" },
-  { id: "Consultation Done", title: "Consultation", color: "bg-green-100 text-green-800" },
-  { id: "Closed Won", title: "Closed Won", color: "bg-emerald-100 text-emerald-800" },
-  { id: "Closed Lost", title: "Closed Lost", color: "bg-red-100 text-red-800" },
   { id: "Unqualified", title: "Unqualified", color: "bg-gray-100 text-gray-800" },
   { id: "Nurture", title: "Nurture", color: "bg-teal-100 text-teal-800" },
+  { id: "Closed Lost", title: "Closed Lost", color: "bg-red-100 text-red-800" },
 ];
 
 export function KanbanBoard({ leads }: KanbanBoardProps) {

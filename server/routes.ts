@@ -7,7 +7,7 @@ import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, treatmentSubDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
@@ -621,6 +621,164 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error uploading branding image:", error);
       res.status(500).json({ message: "Failed to upload image" });
+    }
+  });
+
+  // --- Tenant Management (System Admin only) ---
+  app.get("/api/tenants/all", isAuthenticated, async (req, res) => {
+    try {
+      const allTenantsList = await db.select().from(tenants).orderBy(tenants.id);
+      res.json(allTenantsList);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/tenants", isAuthenticated, async (req, res) => {
+    try {
+      const tenantSchema = z.object({
+        name: z.string().min(1),
+        subdomain: z.string().min(1),
+        displayName: z.string().optional(),
+        primaryColor: z.string().optional(),
+        secondaryColor: z.string().optional(),
+      });
+      const parsed = tenantSchema.parse(req.body);
+      const [newTenant] = await db.insert(tenants).values({
+        name: toProperCase(parsed.name),
+        subdomain: parsed.subdomain.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+        displayName: parsed.displayName || parsed.name,
+        primaryColor: parsed.primaryColor || "#005b9f",
+        secondaryColor: parsed.secondaryColor || "#f0f7fc",
+      }).returning();
+
+      const existingRoles = await storage.getMasterRecords("systemRoles", newTenant.id);
+      if (existingRoles.length === 0) {
+        const defaultRoles = [
+          { code: "SYS_ADMIN", name: "System Admin" },
+          { code: "ADMIN", name: "CRM Admin" },
+          { code: "MANAGER", name: "Manager" },
+          { code: "AGENT", name: "Agent" },
+          { code: "COUNSELLOR", name: "Counsellor" },
+        ];
+        for (const role of defaultRoles) {
+          await storage.createMasterRecord("systemRoles", {
+            tenantId: newTenant.id,
+            code: role.code,
+            name: role.name,
+            status: "Active",
+            displayOrder: 0,
+            approvalStatus: "Approved",
+          });
+        }
+      }
+
+      res.status(201).json(newTenant);
+    } catch (err: any) {
+      if (err.message?.includes("duplicate key")) {
+        return res.status(400).json({ message: "A hospital with this subdomain already exists" });
+      }
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // --- Master Data Approval (CRM Admin+) ---
+  app.get("/api/masters-pending", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const tableName = req.query.tableName as string | undefined;
+      const tables = tableName ? [tableName] : Object.keys(MASTER_TABLE_REGISTRY);
+      const pendingItems: any[] = [];
+
+      for (const tbl of tables) {
+        const pgTbl = MASTER_TABLE_REGISTRY[tbl];
+        if (!pgTbl) continue;
+        try {
+          const result = await pool.query(
+            `SELECT *, '${tbl}' as table_name FROM "${pgTbl}" WHERE tenant_id = $1 AND approval_status = 'Pending' ORDER BY created_at DESC`,
+            [tid]
+          );
+          for (const row of result.rows) {
+            pendingItems.push({
+              id: row.id,
+              tableName: tbl,
+              code: row.code,
+              name: row.name,
+              status: row.status,
+              approvalStatus: row.approval_status,
+              createdAt: row.created_at,
+              createdBy: row.created_by,
+            });
+          }
+        } catch (_) { /* skip tables without approval_status */ }
+      }
+
+      res.json(pendingItems);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/masters/:tableName/:id/approve", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const tableName = req.params.tableName as string;
+      const id = Number(req.params.id);
+      const pgTbl = MASTER_TABLE_REGISTRY[tableName];
+      if (!pgTbl) return res.status(400).json({ message: "Unknown table" });
+
+      await pool.query(
+        `UPDATE "${pgTbl}" SET approval_status = 'Approved', modified_at = NOW() WHERE id = $1 AND tenant_id = $2`,
+        [id, tid]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/masters/:tableName/:id/reject", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const tableName = req.params.tableName as string;
+      const id = Number(req.params.id);
+      const pgTbl = MASTER_TABLE_REGISTRY[tableName];
+      if (!pgTbl) return res.status(400).json({ message: "Unknown table" });
+
+      await pool.query(
+        `UPDATE "${pgTbl}" SET approval_status = 'Rejected', modified_at = NOW() WHERE id = $1 AND tenant_id = $2`,
+        [id, tid]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // --- Inline Master Creation (creates with Pending status) ---
+  app.post("/api/masters/:tableName/quick-add", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const tableName = req.params.tableName as string;
+      const pgTbl = MASTER_TABLE_REGISTRY[tableName];
+      if (!pgTbl) return res.status(400).json({ message: "Unknown table" });
+
+      const name = toProperCase(req.body.name || "");
+      if (!name) return res.status(400).json({ message: "Name is required" });
+
+      const code = name.toUpperCase().replace(/\s+/g, "_").substring(0, 50);
+
+      const record = await storage.createMasterRecord(tableName, {
+        tenantId: tid,
+        code,
+        name,
+        status: "Active",
+        displayOrder: 0,
+        approvalStatus: "Pending",
+      });
+      res.status(201).json(record);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
     }
   });
 

@@ -724,6 +724,7 @@ export class DatabaseStorage implements IStorage {
       name: row.name,
       status: row.status,
       displayOrder: row.display_order,
+      approvalStatus: row.approval_status || "Approved",
       createdAt: row.created_at,
       createdBy: row.created_by,
       modifiedAt: row.modified_at,

@@ -17,6 +17,8 @@ import {
   HeartPulse,
   FileSpreadsheet,
   Paintbrush,
+  Building2,
+  ClipboardCheck,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -46,6 +48,7 @@ const sections: { label: string; items: NavItem[] }[] = [
     label: "Masters",
     items: [
       { icon: Database, label: "Master Data", href: "/masters", page: "masters" },
+      { icon: ClipboardCheck, label: "Approval Queue", href: "/master-approval", page: "masters" },
     ],
   },
   {
@@ -53,6 +56,7 @@ const sections: { label: string; items: NavItem[] }[] = [
     items: [
       { icon: UserCog, label: "Team", href: "/team", page: "team" },
       { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
+      { icon: Building2, label: "Hospitals", href: "/tenant-management", page: "connectors" },
       { icon: FileSpreadsheet, label: "Google Sheets Import", href: "/google-sheets-import", page: "leads" },
       { icon: Paintbrush, label: "Branding", href: "/branding", page: "branding" },
       { icon: Mail, label: "Email Settings", href: "/email-settings", page: "email-settings" },

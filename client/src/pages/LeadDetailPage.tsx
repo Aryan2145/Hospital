@@ -1,7 +1,7 @@
 import { useRoute, useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers, useDoctors, useDoctorAvailability, useCreateAppointment, useNextActionTypes } from "@/hooks/use-leads";
+import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers, useDoctors, useDoctorAvailability, useCreateAppointment, useNextActionTypes, useEpisodes } from "@/hooks/use-leads";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -113,6 +113,8 @@ export default function LeadDetailPage() {
       {lead.handoverStatus === "Pending" && <HandoverBanner lead={lead} />}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden lg:border-r border-border">
+          <DemographicsSection lead={lead} />
+          <EpisodesSection lead={lead} />
           <ActivityTimeline leadId={lead.id} />
         </div>
         <div className="w-full lg:w-80 flex flex-col overflow-y-auto bg-muted/20 border-t lg:border-t-0">
@@ -1100,6 +1102,111 @@ function QuickActions({ lead }: { lead: any }) {
           </DialogContent>
         </Dialog>
       </div>
+    </div>
+  );
+}
+
+function DemographicsSection({ lead }: { lead: any }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const hasDemo = lead.dateOfBirth || lead.gender || lead.bloodGroup || lead.address || lead.pinCode || lead.secondaryPhone || lead.insuranceProvider || lead.insurancePolicyNumber;
+
+  if (!hasDemo && !expanded) {
+    return (
+      <div className="px-4 py-2 border-b border-border">
+        <button
+          className="text-xs text-primary hover:underline flex items-center gap-1"
+          onClick={() => setExpanded(true)}
+          data-testid="button-show-demographics"
+        >
+          <User className="w-3 h-3" />
+          Show Patient Demographics
+        </button>
+      </div>
+    );
+  }
+
+  const infoItem = (label: string, value: any) => {
+    if (!value) return null;
+    return (
+      <div className="flex flex-col">
+        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</span>
+        <span className="text-xs text-foreground">{String(value)}</span>
+      </div>
+    );
+  };
+
+  return (
+    <div className="px-4 py-3 border-b border-border bg-muted/10">
+      <button
+        className="text-xs font-semibold text-foreground flex items-center gap-2 mb-2 w-full"
+        onClick={() => setExpanded(!expanded)}
+        data-testid="button-toggle-demographics"
+      >
+        <User className="w-3.5 h-3.5 text-primary" />
+        Patient Demographics
+        <ChevronRight className={cn("w-3 h-3 ml-auto transition-transform", expanded && "rotate-90")} />
+      </button>
+      {expanded && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
+          {infoItem("Gender", lead.gender)}
+          {infoItem("Date of Birth", lead.dateOfBirth ? format(new Date(lead.dateOfBirth), "MMM d, yyyy") : null)}
+          {infoItem("Blood Group", lead.bloodGroup)}
+          {infoItem("Secondary Phone", lead.secondaryPhone)}
+          {infoItem("Address", lead.address)}
+          {infoItem("Pin Code", lead.pinCode)}
+          {infoItem("Insurance Provider", lead.insuranceProvider)}
+          {infoItem("Policy Number", lead.insurancePolicyNumber)}
+          {infoItem("HMS Patient ID", lead.hmsPatientId)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EpisodesSection({ lead }: { lead: any }) {
+  const { data: episodes, isLoading } = useEpisodes(lead.id);
+  const [, setLocation] = useLocation();
+
+  return (
+    <div className="px-4 py-3 border-b border-border">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold text-foreground flex items-center gap-2" data-testid="text-episodes-heading">
+          <Target className="w-3.5 h-3.5 text-primary" />
+          Treatment Episodes ({episodes?.length || 0})
+        </h3>
+      </div>
+      {isLoading ? (
+        <div className="text-xs text-muted-foreground py-2">Loading episodes...</div>
+      ) : !episodes?.length ? (
+        <p className="text-xs text-muted-foreground py-1">No episodes yet. Episodes are created after first consultation.</p>
+      ) : (
+        <div className="space-y-2">
+          {episodes.map((ep: any) => (
+            <Card
+              key={ep.id}
+              className="p-2.5 cursor-pointer hover:bg-accent/50 transition-colors"
+              onClick={() => setLocation(`/episodes/${ep.id}`)}
+              data-testid={`card-episode-${ep.id}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-foreground truncate">{ep.episodeName}</span>
+                    <Badge className={cn("text-[10px] shrink-0", getStatusColor(ep.status))}>{ep.status}</Badge>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
+                    {ep.episodeType && <span>{ep.episodeType}</span>}
+                    {ep.startDate && <span>Started {format(new Date(ep.startDate), "MMM d, yyyy")}</span>}
+                    {ep.estimatedCost && <span>Est: ₹{ep.estimatedCost.toLocaleString()}</span>}
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

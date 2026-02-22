@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
-import { type InsertLead, type InsertActivity, type InsertTask, type CrmUser } from "@shared/schema";
+import { type InsertLead, type InsertActivity, type InsertTask, type CrmUser, type Episode } from "@shared/schema";
 
 export function useLeads(status?: string, search?: string) {
   return useQuery({
@@ -306,6 +306,87 @@ export function useAppointmentAction() {
       queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
       queryClient.invalidateQueries({ queryKey: [api.leads.list.path] });
+    },
+  });
+}
+
+export function useEpisodes(leadId?: number) {
+  return useQuery<Episode[]>({
+    queryKey: ["/api/episodes", leadId],
+    queryFn: async () => {
+      const url = leadId ? `/api/episodes?leadId=${leadId}` : "/api/episodes";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch episodes");
+      return res.json();
+    },
+    enabled: leadId !== undefined,
+  });
+}
+
+export function useCreateEpisode() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch("/api/episodes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to create episode");
+      }
+      return res.json();
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/episodes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/episodes", vars.leadId] });
+      queryClient.invalidateQueries({ queryKey: [api.leads.list.path] });
+    },
+  });
+}
+
+export function useUpdateEpisode() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: any) => {
+      const res = await fetch(`/api/episodes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to update episode");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/episodes"] });
+    },
+  });
+}
+
+export function useQuickAddMaster() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tableName, name }: { tableName: string; name: string }) => {
+      const res = await fetch(`/api/masters/${tableName}/quick-add`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to add item");
+      }
+      return res.json();
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/masters/${vars.tableName}`] });
     },
   });
 }
