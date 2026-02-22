@@ -4,18 +4,20 @@ import { useLeads, useCreateLead } from "@/hooks/use-leads";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Filter } from "lucide-react";
+import { Plus, Search, Filter, FileUp } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertLeadSchema, InsertLead } from "@shared/schema";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useState } from "react";
+import { useLocation } from "wouter";
 
 export default function LeadsWorkspace() {
   const [search, setSearch] = useState("");
   const { data: leads, isLoading } = useLeads(undefined, search);
   const [open, setOpen] = useState(false);
+  const [, navigate] = useLocation();
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
@@ -43,6 +45,11 @@ export default function LeadsWorkspace() {
               </div>
               <Button variant="outline" size="icon" className="shrink-0">
                 <Filter className="w-4 h-4" />
+              </Button>
+
+              <Button variant="outline" className="shrink-0" onClick={() => navigate("/lead-import")} data-testid="button-bulk-import">
+                <FileUp className="w-4 h-4 mr-2" />
+                Bulk Import
               </Button>
               
               <Dialog open={open} onOpenChange={setOpen}>
