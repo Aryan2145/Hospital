@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./Sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useTenantBranding } from "@/hooks/use-tenant-branding";
 
 export function AppLayout({ children, className }: { children: React.ReactNode; className?: string }) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
+  const { displayName, logoUrl } = useTenantBranding();
 
   if (isMobile) {
     return (
@@ -26,7 +28,8 @@ export function AppLayout({ children, className }: { children: React.ReactNode; 
             </SheetContent>
           </Sheet>
           <div className="flex items-center gap-2">
-            <span className="font-bold text-lg tracking-tight" style={{ color: 'hsl(208, 79%, 28%)' }}>VIROC</span>
+            {logoUrl && <img src={logoUrl} alt="Logo" className="h-6 w-6 object-contain rounded" />}
+            <span className="font-bold text-lg tracking-tight" style={{ color: 'hsl(208, 79%, 28%)' }}>{displayName}</span>
             <span className="text-xs text-muted-foreground font-medium">CRM</span>
           </div>
         </header>

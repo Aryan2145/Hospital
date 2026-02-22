@@ -548,6 +548,82 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/tenants/branding", isAuthenticated, async (req, res) => {
+    try {
+      const sessionTenantId = (req.session as any)?.tenantId;
+      if (!sessionTenantId) return res.status(401).json({ message: "Unauthorized" });
+
+      const sessionCrmUserId = (req.session as any)?.crmUserId;
+      const allCrmUsers = await storage.getCrmUsers(sessionTenantId);
+      const crmUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
+      if (!crmUser) return res.status(403).json({ message: "Forbidden" });
+
+      const allRoles = await storage.getMasterRecords("systemRoles", sessionTenantId);
+      const userRole = allRoles.find((r: any) => r.id === crmUser.systemRoleId);
+      if (!userRole || userRole.code !== "SYS_ADMIN") {
+        return res.status(403).json({ message: "Only System Admin can update branding" });
+      }
+
+      const brandingSchema = z.object({
+        displayName: z.string().min(1).max(200).optional(),
+        primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+        secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+      });
+      const parsed = brandingSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid branding data", errors: parsed.error.errors });
+      }
+      const { displayName, primaryColor, secondaryColor } = parsed.data;
+      const updateData: any = {};
+      if (displayName !== undefined) updateData.displayName = displayName;
+      if (primaryColor !== undefined) updateData.primaryColor = primaryColor;
+      if (secondaryColor !== undefined) updateData.secondaryColor = secondaryColor;
+
+      const [updated] = await db.update(tenants).set(updateData).where(eq(tenants.id, sessionTenantId)).returning();
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating branding:", error);
+      res.status(500).json({ message: "Failed to update branding" });
+    }
+  });
+
+  app.post("/api/tenants/branding/logo", isAuthenticated, upload.single("file"), async (req, res) => {
+    try {
+      const sessionTenantId = (req.session as any)?.tenantId;
+      if (!sessionTenantId) return res.status(401).json({ message: "Unauthorized" });
+
+      const sessionCrmUserId = (req.session as any)?.crmUserId;
+      const allCrmUsers = await storage.getCrmUsers(sessionTenantId);
+      const crmUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
+      if (!crmUser) return res.status(403).json({ message: "Forbidden" });
+
+      const allRoles = await storage.getMasterRecords("systemRoles", sessionTenantId);
+      const userRole = allRoles.find((r: any) => r.id === crmUser.systemRoleId);
+      if (!userRole || userRole.code !== "SYS_ADMIN") {
+        return res.status(403).json({ message: "Only System Admin can update branding" });
+      }
+
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+      const ext = req.file.originalname.split('.').pop()?.toLowerCase() || 'png';
+      const allowedExts = ['png', 'jpg', 'jpeg', 'svg', 'ico', 'webp'];
+      if (!allowedExts.includes(ext)) {
+        return res.status(400).json({ message: "Invalid file type. Allowed: PNG, JPG, SVG, ICO, WEBP" });
+      }
+
+      const base64Data = req.file.buffer.toString("base64");
+      const mimeType = req.file.mimetype;
+      const dataUrl = `data:${mimeType};base64,${base64Data}`;
+
+      const field = req.query.type === "favicon" ? "faviconUrl" : "logoUrl";
+      const [updated] = await db.update(tenants).set({ [field]: dataUrl }).where(eq(tenants.id, sessionTenantId)).returning();
+      res.json(updated);
+    } catch (error) {
+      console.error("Error uploading branding image:", error);
+      res.status(500).json({ message: "Failed to upload image" });
+    }
+  });
+
   // --- Leads (with access scope filtering) ---
   app.get(api.leads.list.path, isAuthenticated, async (req: any, res) => {
     const reqTid = req.session?.tenantId || tid;

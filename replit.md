@@ -1,7 +1,7 @@
-# VIROC Hospital CRM Platform
+# myProSys Hospital CRM Platform
 
 ## Overview
-Multi-tenant Hospital CRM platform designed for VIROC Hospital. Manages the Lead-to-Consultation-to-Conversion lifecycle with SLA tracking, telephony integration support, and role-based access.
+Multi-tenant Hospital CRM platform branded as myProSys Hospital CRM. Manages the Lead-to-Consultation-to-Conversion lifecycle with SLA tracking, telephony integration support, and role-based access. White-labeled platform where each tenant (hospital) can configure their own branding (logo, favicon, display name, colors).
 
 ## Architecture
 - **Frontend:** React + Vite + Tailwind CSS + shadcn/ui
@@ -142,6 +142,7 @@ Note: Lead Import is accessible via "Bulk Import" button on the Leads page (not 
 - Dormant lead auto-detection alerts
 
 ## Recent Changes
+- 2026-02-22: myProSys White-Label Branding - Platform rebranded from VIROC to myProSys Hospital CRM. Per-tenant branding settings (logo, favicon, display name, colors) with System Admin configuration page (/branding). Dynamic favicon and browser tab title per tenant. Tenant logo shown in sidebar.
 - 2026-02-22: Google Sheets Lead Extraction - Connect Google Sheet via API key, auto-detect columns, map to CRM fields, preview data, import leads with dedup/auto-assign. Multi-sheet tab support with header re-fetch on tab switch. Route: /google-sheets-import
 - 2026-02-22: Kanban board fix - Added missing columns for Reminder Running, Unqualified, Nurture statuses; fixed orphaned "Converted" leads migrated to "Closed Won"
 - 2026-02-22: Auto-status on episode creation - Creating consultation episode auto-updates lead status to "Consultation Done"

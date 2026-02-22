@@ -3,6 +3,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DynamicFavicon } from "@/components/DynamicFavicon";
 import NotFound from "@/pages/not-found";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -24,6 +25,7 @@ import PendingApproval from "@/pages/PendingApproval";
 import TestingInterface from "@/pages/TestingInterface";
 import LeadImportPage from "@/pages/LeadImportPage";
 import GoogleSheetsImportPage from "@/pages/GoogleSheetsImportPage";
+import BrandingSettings from "@/pages/BrandingSettings";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 
@@ -122,6 +124,12 @@ function Router() {
         ) : <Landing />}
       </Route>
 
+      <Route path="/branding">
+        {isAuthenticated ? (
+          <RoleGate page="branding"><BrandingSettings /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
       <Route path="/testing">
         {isAuthenticated ? (
           <RoleGate page="testing"><TestingInterface /></RoleGate>
@@ -145,6 +153,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        <DynamicFavicon />
         <Toaster />
         <Router />
       </TooltipProvider>

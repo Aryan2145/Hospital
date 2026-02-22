@@ -16,9 +16,11 @@ import {
   MessageSquare,
   HeartPulse,
   FileSpreadsheet,
+  Paintbrush,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useTenantBranding } from "@/hooks/use-tenant-branding";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -52,6 +54,7 @@ const sections: { label: string; items: NavItem[] }[] = [
       { icon: UserCog, label: "Team", href: "/team", page: "team" },
       { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
       { icon: FileSpreadsheet, label: "Google Sheets Import", href: "/google-sheets-import", page: "leads" },
+      { icon: Paintbrush, label: "Branding", href: "/branding", page: "branding" },
       { icon: Mail, label: "Email Settings", href: "/email-settings", page: "email-settings" },
       { icon: MessageSquare, label: "WhatsApp", href: "/whatsapp-settings", page: "whatsapp-settings" },
       { icon: FlaskConical, label: "Testing", href: "/testing", page: "testing" },
@@ -63,6 +66,7 @@ export function Sidebar() {
   const [location] = useLocation();
   const { logout, user } = useAuth();
   const { crmUser, roleName, roleCode, canViewPage } = useCurrentUser();
+  const { displayName: tenantDisplayName, logoUrl: tenantLogo } = useTenantBranding();
 
   const displayName = crmUser?.name || `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User";
   const displayEmail = crmUser?.email || user?.email || "";
@@ -78,12 +82,16 @@ export function Sidebar() {
     <div className="h-screen w-64 bg-card border-r border-border flex flex-col z-20">
       <div className="p-6 border-b border-border/50">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center shadow-lg shadow-primary/20">
-            <Activity className="w-6 h-6 text-white" />
-          </div>
+          {tenantLogo ? (
+            <img src={tenantLogo} alt="Logo" className="h-10 max-w-[40px] object-contain rounded-xl" data-testid="img-sidebar-logo" />
+          ) : (
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center shadow-lg shadow-primary/20">
+              <Activity className="w-6 h-6 text-white" />
+            </div>
+          )}
           <div>
-            <h1 className="font-bold text-xl tracking-tight" style={{color: 'hsl(208, 79%, 28%)'}}>VIROC</h1>
-            <p className="text-xs text-muted-foreground font-medium">CRM Workspace</p>
+            <h1 className="font-bold text-lg tracking-tight leading-tight" style={{color: 'hsl(208, 79%, 28%)'}} data-testid="text-sidebar-brand">{tenantDisplayName}</h1>
+            <p className="text-xs text-muted-foreground font-medium">Hospital CRM</p>
           </div>
         </div>
       </div>

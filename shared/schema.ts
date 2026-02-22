@@ -14,6 +14,8 @@ export const tenants = pgTable("tenants", {
   name: text("name").notNull(),
   subdomain: text("subdomain").notNull().unique(),
   logoUrl: text("logo_url"),
+  faviconUrl: text("favicon_url"),
+  displayName: text("display_name"),
   primaryColor: text("primary_color").default('#005b9f'),
   secondaryColor: text("secondary_color").default('#f0f7fc'),
   createdAt: timestamp("created_at").defaultNow(),
