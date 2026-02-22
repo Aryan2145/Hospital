@@ -15,7 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, addWeeks, subWeeks, isSameMonth, isSameDay, isToday } from "date-fns";
 import { useState, useMemo } from "react";
-import { Calendar, Clock, User, Hash, CheckCircle2, XCircle, RotateCcw, AlertTriangle, Stethoscope, Plus, Loader2, ChevronLeft, ChevronRight, Building, ListOrdered, CalendarDays, UserPlus, Phone } from "lucide-react";
+import { Calendar, Clock, User, Hash, CheckCircle2, XCircle, RotateCcw, AlertTriangle, Stethoscope, Plus, Loader2, ChevronLeft, ChevronRight, Building, ListOrdered, CalendarDays, UserPlus, Phone, Search, ChevronDown, ChevronUp, Users, Filter } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -95,8 +95,11 @@ function DoctorScheduleView() {
   const appointmentAction = useAppointmentAction();
   const createAppointment = useCreateAppointment();
 
-  const [selectedDoctor, setSelectedDoctor] = useState("");
+  const [selectedDoctor, setSelectedDoctor] = useState("all");
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [collapsedDoctors, setCollapsedDoctors] = useState<Set<string>>(new Set());
 
   const filters: Record<string, string> = {};
   if (selectedDoctor && selectedDoctor !== "all") filters.doctorId = selectedDoctor;
@@ -273,17 +276,145 @@ function DoctorScheduleView() {
     );
   };
 
-  const selectedDoctorName = useMemo(() => {
-    if (!selectedDoctor || selectedDoctor === "all") return "All Doctors";
-    return doctorsList?.find((d: any) => String(d.id) === selectedDoctor)?.name || "Doctor";
-  }, [selectedDoctor, doctorsList]);
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: 0, scheduled: 0, done: 0, noshow: 0, cancelled: 0 };
+    appointments?.forEach((a: any) => {
+      counts.all++;
+      if (a.status === "Scheduled" || a.status === "Rescheduled") counts.scheduled++;
+      else if (a.status === "Consultation Done" || a.status === "Completed") counts.done++;
+      else if (a.status === "No Show") counts.noshow++;
+      else if (a.status === "Cancelled") counts.cancelled++;
+    });
+    return counts;
+  }, [appointments]);
 
-  const scheduledCount = appointments?.filter((a: any) => a.status === "Scheduled" || a.status === "Rescheduled").length || 0;
-  const completedCount = appointments?.filter((a: any) => a.status === "Consultation Done" || a.status === "Completed").length || 0;
+  const filteredAppointments = useMemo(() => {
+    let filtered = appointments || [];
+    if (statusFilter === "scheduled") filtered = filtered.filter((a: any) => a.status === "Scheduled" || a.status === "Rescheduled");
+    else if (statusFilter === "done") filtered = filtered.filter((a: any) => a.status === "Consultation Done" || a.status === "Completed");
+    else if (statusFilter === "noshow") filtered = filtered.filter((a: any) => a.status === "No Show");
+    else if (statusFilter === "cancelled") filtered = filtered.filter((a: any) => a.status === "Cancelled");
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter((a: any) => {
+        const name = (a.patientName || a.leadName || "").toLowerCase();
+        const phone = (a.patientPhone || a.leadPhone || "").toLowerCase();
+        const doctor = (a.doctorName || "").toLowerCase();
+        return name.includes(q) || phone.includes(q) || doctor.includes(q);
+      });
+    }
+    return filtered;
+  }, [appointments, statusFilter, searchQuery]);
+
+  const isAllDoctors = !selectedDoctor || selectedDoctor === "all";
+
+  const doctorGroups = useMemo(() => {
+    if (!isAllDoctors) return null;
+    const groups: Record<string, { doctorName: string; doctorId: string; appointments: any[]; scheduled: number; done: number }> = {};
+    filteredAppointments.forEach((appt: any) => {
+      const dId = String(appt.doctorId);
+      if (!groups[dId]) {
+        groups[dId] = { doctorName: appt.doctorName || `Doctor #${dId}`, doctorId: dId, appointments: [], scheduled: 0, done: 0 };
+      }
+      groups[dId].appointments.push(appt);
+      if (appt.status === "Scheduled" || appt.status === "Rescheduled") groups[dId].scheduled++;
+      if (appt.status === "Consultation Done" || appt.status === "Completed") groups[dId].done++;
+    });
+    return Object.values(groups).sort((a, b) => a.doctorName.localeCompare(b.doctorName));
+  }, [filteredAppointments, isAllDoctors]);
+
+  const toggleDoctor = (doctorId: string) => {
+    setCollapsedDoctors(prev => {
+      const next = new Set(prev);
+      if (next.has(doctorId)) next.delete(doctorId);
+      else next.add(doctorId);
+      return next;
+    });
+  };
+
+  const STATUS_FILTERS = [
+    { key: "all", label: "All", color: "bg-gray-100 text-gray-700 hover:bg-gray-200", activeColor: "bg-[#0f4c81] text-white" },
+    { key: "scheduled", label: "Upcoming", color: "bg-blue-50 text-blue-700 hover:bg-blue-100", activeColor: "bg-blue-600 text-white" },
+    { key: "done", label: "Done", color: "bg-green-50 text-green-700 hover:bg-green-100", activeColor: "bg-green-600 text-white" },
+    { key: "noshow", label: "No Show", color: "bg-orange-50 text-orange-700 hover:bg-orange-100", activeColor: "bg-orange-600 text-white" },
+    { key: "cancelled", label: "Cancelled", color: "bg-red-50 text-red-700 hover:bg-red-100", activeColor: "bg-red-600 text-white" },
+  ];
+
+  const renderAppointmentRow = (appt: any, idx: number, showDoctor: boolean) => {
+    const name = appt.patientName || appt.leadName || "—";
+    const phone = appt.patientPhone || appt.leadPhone || "—";
+    const isActive = appt.status === "Scheduled" || appt.status === "Rescheduled";
+    return (
+      <tr key={appt.id} className={cn("border-b hover:bg-muted/30 transition-colors", idx % 2 === 0 ? "bg-white" : "bg-muted/10")} data-testid={`row-appointment-${appt.id}`}>
+        <td className="py-1.5 px-2 text-muted-foreground text-xs w-10">
+          {appt.tokenNumber ? <Badge variant="outline" className="text-[10px] gap-0.5 h-5"><Hash className="w-2.5 h-2.5" />{appt.tokenNumber}</Badge> : idx + 1}
+        </td>
+        <td className="py-1.5 px-2 font-medium text-xs w-28">
+          <div className="flex items-center gap-1">
+            <Clock className="w-3 h-3 text-primary flex-shrink-0" />
+            {appt.startTime || "—"}
+            {appt.endTime && <span className="text-muted-foreground">-{appt.endTime}</span>}
+          </div>
+        </td>
+        <td className="py-1.5 px-2">
+          <div className="text-xs font-medium">{name}</div>
+          {appt.patientName && appt.leadName && (
+            <div className="text-[10px] text-muted-foreground">Lead: {appt.leadName}</div>
+          )}
+        </td>
+        <td className="py-1.5 px-2 text-xs text-muted-foreground">{phone}</td>
+        {showDoctor && (
+          <td className="py-1.5 px-2 text-xs">
+            <div className="flex items-center gap-1">
+              <Stethoscope className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+              <span className="truncate max-w-[120px]">{appt.doctorName || `#${appt.doctorId}`}</span>
+            </div>
+          </td>
+        )}
+        <td className="py-1.5 px-2 text-xs">
+          {appt.branchName ? (
+            <div className="flex items-center gap-1">
+              <Building className="w-2.5 h-2.5 text-muted-foreground flex-shrink-0" />
+              <span className="truncate max-w-[80px]">{appt.branchName}</span>
+            </div>
+          ) : "—"}
+        </td>
+        <td className="py-1.5 px-2">
+          <Badge className={cn("text-[10px] h-5", STATUS_COLORS[appt.status] || "bg-gray-100 text-gray-700")}>
+            {appt.status}
+          </Badge>
+          {appt.rescheduleCount > 0 && (
+            <Badge variant="outline" className="text-[9px] ml-0.5 gap-0.5 text-amber-600 h-4">
+              <RotateCcw className="w-2 h-2" />{appt.rescheduleCount}x
+            </Badge>
+          )}
+        </td>
+        <td className="py-1.5 px-2 text-right">
+          {isActive && (
+            <div className="flex gap-0.5 justify-end">
+              <Button size="sm" variant="outline" className="text-[10px] h-6 px-1.5" onClick={() => setActionDialog({ type: "consultation-done", appt })} data-testid={`button-consult-done-${appt.id}`}>
+                <CheckCircle2 className="w-3 h-3 mr-0.5" />Done
+              </Button>
+              <Button size="sm" variant="outline" className="text-[10px] h-6 px-1.5" onClick={() => setActionDialog({ type: "reschedule", appt })} data-testid={`button-reschedule-${appt.id}`}>
+                <RotateCcw className="w-3 h-3 mr-0.5" />Rsch
+              </Button>
+              <Button size="sm" variant="outline" className="text-[10px] h-6 px-1.5" onClick={() => setActionDialog({ type: "no-show", appt })} data-testid={`button-noshow-${appt.id}`}>
+                <AlertTriangle className="w-3 h-3" />
+              </Button>
+              <Button size="sm" variant="outline" className="text-[10px] h-6 px-1.5 text-destructive" onClick={() => setActionDialog({ type: "cancel", appt })} data-testid={`button-cancel-${appt.id}`}>
+                <XCircle className="w-3 h-3" />
+              </Button>
+            </div>
+          )}
+        </td>
+      </tr>
+    );
+  };
 
   return (
-    <div className="space-y-4">
-      <Card className="p-4">
+    <div className="space-y-3">
+      <Card className="p-3">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[200px]">
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Doctor</label>
@@ -304,129 +435,162 @@ function DoctorScheduleView() {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
+              className="h-9"
               data-testid="schedule-filter-date"
             />
           </div>
-          <Button onClick={() => setBookingOpen(true)} data-testid="button-book-new-appointment">
-            <Plus className="w-4 h-4 mr-2" />
+          <div className="flex-1 min-w-[180px]">
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Search</label>
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search patient, phone, doctor..."
+                className="pl-8 h-9"
+                data-testid="schedule-search"
+              />
+            </div>
+          </div>
+          <Button onClick={() => setBookingOpen(true)} data-testid="button-book-new-appointment" className="h-9">
+            <Plus className="w-4 h-4 mr-1.5" />
             Book Appointment
           </Button>
         </div>
       </Card>
 
-      <div className="flex items-center gap-4 text-sm">
+      <div className="grid grid-cols-5 gap-2">
+        <Card className={cn("p-2.5 cursor-pointer transition-all border-2", statusFilter === "all" ? "border-[#0f4c81] bg-[#0f4c81]/5" : "border-transparent hover:border-gray-200")} onClick={() => setStatusFilter("all")} data-testid="stat-card-all">
+          <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Total</div>
+          <div className="text-2xl font-bold text-[#0f4c81]">{statusCounts.all}</div>
+          <div className="text-[10px] text-muted-foreground">{selectedDate ? format(new Date(selectedDate + "T12:00:00"), "MMM d") : "All"}</div>
+        </Card>
+        <Card className={cn("p-2.5 cursor-pointer transition-all border-2", statusFilter === "scheduled" ? "border-blue-500 bg-blue-50" : "border-transparent hover:border-blue-100")} onClick={() => setStatusFilter("scheduled")} data-testid="stat-card-scheduled">
+          <div className="text-[10px] font-medium text-blue-600 uppercase tracking-wider">Upcoming</div>
+          <div className="text-2xl font-bold text-blue-700">{statusCounts.scheduled}</div>
+          <div className="text-[10px] text-muted-foreground">Scheduled + Rescheduled</div>
+        </Card>
+        <Card className={cn("p-2.5 cursor-pointer transition-all border-2", statusFilter === "done" ? "border-green-500 bg-green-50" : "border-transparent hover:border-green-100")} onClick={() => setStatusFilter("done")} data-testid="stat-card-done">
+          <div className="text-[10px] font-medium text-green-600 uppercase tracking-wider">Done</div>
+          <div className="text-2xl font-bold text-green-700">{statusCounts.done}</div>
+          <div className="text-[10px] text-muted-foreground">Consultation Done</div>
+        </Card>
+        <Card className={cn("p-2.5 cursor-pointer transition-all border-2", statusFilter === "noshow" ? "border-orange-500 bg-orange-50" : "border-transparent hover:border-orange-100")} onClick={() => setStatusFilter("noshow")} data-testid="stat-card-noshow">
+          <div className="text-[10px] font-medium text-orange-600 uppercase tracking-wider">No Show</div>
+          <div className="text-2xl font-bold text-orange-700">{statusCounts.noshow}</div>
+          <div className="text-[10px] text-muted-foreground">Did not arrive</div>
+        </Card>
+        <Card className={cn("p-2.5 cursor-pointer transition-all border-2", statusFilter === "cancelled" ? "border-red-500 bg-red-50" : "border-transparent hover:border-red-100")} onClick={() => setStatusFilter("cancelled")} data-testid="stat-card-cancelled">
+          <div className="text-[10px] font-medium text-red-600 uppercase tracking-wider">Cancelled</div>
+          <div className="text-2xl font-bold text-red-700">{statusCounts.cancelled}</div>
+          <div className="text-[10px] text-muted-foreground">Cancelled appts</div>
+        </Card>
+      </div>
+
+      <div className="flex items-center justify-between text-sm">
         <div className="flex items-center gap-2">
-          <Stethoscope className="w-4 h-4 text-primary" />
-          <span className="font-semibold">{selectedDoctorName}</span>
-          <span className="text-muted-foreground">|</span>
           <Calendar className="w-4 h-4 text-primary" />
           <span className="font-semibold">{selectedDate ? format(new Date(selectedDate + "T12:00:00"), "EEEE, MMMM d, yyyy") : "All Dates"}</span>
+          {isAllDoctors && doctorGroups && (
+            <>
+              <span className="text-muted-foreground mx-1">|</span>
+              <Users className="w-4 h-4 text-primary" />
+              <span className="text-muted-foreground">{doctorGroups.length} doctors</span>
+            </>
+          )}
         </div>
-        <div className="flex items-center gap-3 ml-auto">
-          <Badge variant="outline" className="gap-1">{appointments?.length || 0} total</Badge>
-          <Badge className="bg-blue-100 text-blue-700 gap-1">{scheduledCount} upcoming</Badge>
-          <Badge className="bg-green-100 text-green-700 gap-1">{completedCount} done</Badge>
+        <div className="flex items-center gap-1.5">
+          {STATUS_FILTERS.map(sf => (
+            <button
+              key={sf.key}
+              className={cn(
+                "px-2.5 py-1 rounded-full text-xs font-medium transition-colors",
+                statusFilter === sf.key ? sf.activeColor : sf.color
+              )}
+              onClick={() => setStatusFilter(sf.key)}
+              data-testid={`filter-status-${sf.key}`}
+            >
+              {sf.label} ({statusCounts[sf.key as keyof typeof statusCounts]})
+            </button>
+          ))}
         </div>
       </div>
 
       {isLoading ? (
         <LoadingSpinner text="Loading schedule..." />
-      ) : !appointments || appointments.length === 0 ? (
-        <Card className="p-12 text-center">
-          <Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">No appointments found for the selected filters</p>
+      ) : filteredAppointments.length === 0 ? (
+        <Card className="p-8 text-center">
+          <Calendar className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
+          <p className="text-muted-foreground text-sm">
+            {searchQuery ? `No appointments matching "${searchQuery}"` : "No appointments found for the selected filters"}
+          </p>
         </Card>
+      ) : isAllDoctors && doctorGroups ? (
+        <div className="space-y-2">
+          {doctorGroups.map((group) => {
+            const isCollapsed = collapsedDoctors.has(group.doctorId);
+            return (
+              <Card key={group.doctorId} className="overflow-hidden" data-testid={`doctor-group-${group.doctorId}`}>
+                <button
+                  className="w-full flex items-center justify-between p-3 hover:bg-muted/30 transition-colors text-left"
+                  onClick={() => toggleDoctor(group.doctorId)}
+                  data-testid={`toggle-doctor-${group.doctorId}`}
+                >
+                  <div className="flex items-center gap-3">
+                    {isCollapsed ? <ChevronRight className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                    <Stethoscope className="w-4 h-4 text-primary" />
+                    <span className="font-semibold text-sm">{group.doctorName}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">{group.appointments.length} appts</Badge>
+                    <Badge className="bg-blue-100 text-blue-700 text-xs">{group.scheduled} upcoming</Badge>
+                    <Badge className="bg-green-100 text-green-700 text-xs">{group.done} done</Badge>
+                  </div>
+                </button>
+                {!isCollapsed && (
+                  <div className="border-t">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-muted/40">
+                          <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase w-10">#</th>
+                          <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase w-28">Time</th>
+                          <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Patient</th>
+                          <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Phone</th>
+                          <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Branch</th>
+                          <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Status</th>
+                          <th className="text-right py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.appointments.map((appt: any, idx: number) => renderAppointmentRow(appt, idx, false))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
       ) : (
-        <div className="border rounded-lg overflow-hidden">
+        <Card className="overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-muted/50 border-b">
-                <th className="text-left p-3 font-medium text-muted-foreground">#</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Time</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Patient / Lead</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Phone</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Doctor</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Branch</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Notes</th>
-                <th className="text-right p-3 font-medium text-muted-foreground">Actions</th>
+              <tr className="bg-muted/40 border-b">
+                <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase w-10">#</th>
+                <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase w-28">Time</th>
+                <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Patient</th>
+                <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Phone</th>
+                <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Doctor</th>
+                <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Branch</th>
+                <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Status</th>
+                <th className="text-right py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {appointments.map((appt: any, idx: number) => {
-                const name = appt.patientName || appt.leadName || "—";
-                const phone = appt.patientPhone || appt.leadPhone || "—";
-                const isActive = appt.status === "Scheduled" || appt.status === "Rescheduled";
-                return (
-                  <tr key={appt.id} className={cn("border-b hover:bg-muted/30 transition-colors", idx % 2 === 0 ? "bg-white" : "bg-muted/10")} data-testid={`row-appointment-${appt.id}`}>
-                    <td className="p-3 text-muted-foreground">
-                      {appt.tokenNumber ? <Badge variant="outline" className="text-xs gap-0.5"><Hash className="w-3 h-3" />{appt.tokenNumber}</Badge> : idx + 1}
-                    </td>
-                    <td className="p-3 font-medium">
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-primary" />
-                        {appt.startTime || "—"}
-                        {appt.endTime && <span className="text-muted-foreground">- {appt.endTime}</span>}
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      <div className="font-medium">{name}</div>
-                      {appt.patientName && appt.leadName && (
-                        <div className="text-xs text-muted-foreground">Lead: {appt.leadName}</div>
-                      )}
-                    </td>
-                    <td className="p-3 text-muted-foreground">{phone}</td>
-                    <td className="p-3">
-                      <div className="flex items-center gap-1.5">
-                        <Stethoscope className="w-3.5 h-3.5 text-muted-foreground" />
-                        {appt.doctorName || `#${appt.doctorId}`}
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      {appt.branchName ? (
-                        <div className="flex items-center gap-1.5 text-xs">
-                          <Building className="w-3 h-3 text-muted-foreground" />
-                          {appt.branchName}
-                        </div>
-                      ) : "—"}
-                    </td>
-                    <td className="p-3">
-                      <Badge className={cn("text-xs", STATUS_COLORS[appt.status] || "bg-gray-100 text-gray-700")}>
-                        {appt.status}
-                      </Badge>
-                      {appt.rescheduleCount > 0 && (
-                        <Badge variant="outline" className="text-[10px] ml-1 gap-0.5 text-amber-600">
-                          <RotateCcw className="w-2.5 h-2.5" />{appt.rescheduleCount}x
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="p-3 max-w-[150px] truncate text-xs text-muted-foreground" title={appt.notes || ""}>
-                      {appt.notes || "—"}
-                    </td>
-                    <td className="p-3 text-right">
-                      {isActive && (
-                        <div className="flex gap-1 justify-end">
-                          <Button size="sm" variant="outline" className="text-xs h-7 px-2" onClick={() => setActionDialog({ type: "consultation-done", appt })} data-testid={`button-consult-done-${appt.id}`}>
-                            <CheckCircle2 className="w-3 h-3 mr-1" />Done
-                          </Button>
-                          <Button size="sm" variant="outline" className="text-xs h-7 px-2" onClick={() => setActionDialog({ type: "reschedule", appt })} data-testid={`button-reschedule-${appt.id}`}>
-                            <RotateCcw className="w-3 h-3 mr-1" />Reschedule
-                          </Button>
-                          <Button size="sm" variant="outline" className="text-xs h-7 px-2" onClick={() => setActionDialog({ type: "no-show", appt })} data-testid={`button-noshow-${appt.id}`}>
-                            <AlertTriangle className="w-3 h-3 mr-1" />No Show
-                          </Button>
-                          <Button size="sm" variant="outline" className="text-xs h-7 px-2 text-destructive" onClick={() => setActionDialog({ type: "cancel", appt })} data-testid={`button-cancel-${appt.id}`}>
-                            <XCircle className="w-3 h-3 mr-1" />Cancel
-                          </Button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+              {filteredAppointments.map((appt: any, idx: number) => renderAppointmentRow(appt, idx, true))}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
 
       <Dialog open={actionDialog?.type === "consultation-done"} onOpenChange={(open) => !open && setActionDialog(null)}>
