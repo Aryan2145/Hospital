@@ -69,26 +69,15 @@ export default function TransactionsPage() {
     queryKey: ["/api/episodes"],
   });
 
-  const { data: bookedLeads } = useQuery<any[]>({
-    queryKey: ["/api/leads", { status: "Appointment Booked" }],
-    queryFn: async () => {
-      const res = await fetch("/api/leads?status=Appointment%20Booked");
-      if (!res.ok) throw new Error("Failed to fetch leads");
-      return res.json();
-    },
-  });
-
   const { data: allLeads } = useQuery<any[]>({
-    queryKey: ["/api/leads", { status: "all" }],
-    queryFn: async () => {
-      const res = await fetch("/api/leads");
-      if (!res.ok) throw new Error("Failed to fetch leads");
-      return res.json();
-    },
-    enabled: showAllLeads,
+    queryKey: ["/api/leads"],
   });
 
-  const leadsList = showAllLeads ? allLeads : bookedLeads;
+  const leadsList = useMemo(() => {
+    if (!allLeads) return [];
+    if (showAllLeads) return allLeads;
+    return allLeads.filter((l: any) => l.status === "Appointment Booked");
+  }, [allLeads, showAllLeads]);
 
   const { data: patientsList } = useQuery<any[]>({
     queryKey: ["/api/patients"],
@@ -102,9 +91,9 @@ export default function TransactionsPage() {
 
   const leadMap = useMemo(() => {
     const map: Record<number, any> = {};
-    leadsList?.forEach((l: any) => { map[l.id] = l; });
+    allLeads?.forEach((l: any) => { map[l.id] = l; });
     return map;
-  }, [leadsList]);
+  }, [allLeads]);
 
   const patientMap = useMemo(() => {
     const map: Record<number, string> = {};
@@ -295,7 +284,7 @@ export default function TransactionsPage() {
                         {ep.leadId && leadMap[ep.leadId] && (
                           <span className="flex items-center gap-1 text-muted-foreground">
                             <UserCheck className="w-4 h-4" />
-                            Lead: {`${leadMap[ep.leadId].firstName || ""} ${leadMap[ep.leadId].lastName || ""}`.trim()}
+                            Lead: {leadMap[ep.leadId].name || "Unnamed Lead"}
                           </span>
                         )}
                         <span className="flex items-center gap-1 text-muted-foreground">
@@ -363,7 +352,7 @@ export default function TransactionsPage() {
                   disabled={!!editing}
                   options={(leadsList || []).map((l: any) => ({
                     value: String(l.id),
-                    label: `${l.firstName || ""} ${l.lastName || ""}`.trim() + (l.phone ? ` (${l.phone})` : "") + (showAllLeads ? ` [${l.status || ""}]` : ""),
+                    label: (l.name || "Unnamed Lead") + (l.phoneE164 ? ` (${l.phoneE164})` : "") + (showAllLeads ? ` [${l.status || ""}]` : ""),
                   }))}
                   placeholder="Search and select a lead"
                   data-testid="episode-select-lead"
