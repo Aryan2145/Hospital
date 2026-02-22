@@ -130,6 +130,12 @@ Note: Lead Import is accessible via "Bulk Import" button on the Leads page (not 
 - Time-based access restrictions (later phase)
 - IP-based access control (enterprise feature, later phase)
 
+### Third-Party Integrations (scoped to CRM lifecycle only)
+- HMS/HMIS OPD consultation sync (push or pull) — auto-update lead status when consultation happens in HMS
+- Google Calendar sync for doctor schedules (nice-to-have, manual management already works)
+- Teleconsultation as appointment type (low effort — add meeting link field to existing appointment infrastructure)
+- Out of CRM scope: Payment processing, inventory, pharmacy, accounting, PACS — these belong in HMS
+
 ### Low-Hanging Fruit — Quick Wins
 - Lead temperature indicator (hot/warm/cold based on days since last activity)
 - Dormant lead auto-detection alerts
