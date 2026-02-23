@@ -248,7 +248,6 @@ export const MASTER_CATEGORIES = [
     tables: [
       { key: "doctors", label: "Doctor" },
       { key: "opdTimings", label: "OPD Timing" },
-      { key: "surgeryWindows", label: "Surgery Window" },
       { key: "doctorLeaveExceptions", label: "Doctor Leave Exception" },
       { key: "doctorSpecialityMappings", label: "Doctor Speciality Mapping" },
     ]

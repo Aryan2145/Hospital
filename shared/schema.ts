@@ -400,22 +400,6 @@ export const opdTimings = pgTable("opd_timings", {
   modifiedBy: varchar("modified_by"),
 });
 
-export const surgeryWindows = pgTable("surgery_windows", {
-  id: serial("id").primaryKey(),
-  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
-  doctorId: integer("doctor_id").notNull().references(() => doctors.id),
-  branchId: integer("branch_id").references(() => branches.id),
-  dayOfWeek: text("day_of_week").notNull(),
-  startTime: time("start_time").notNull(),
-  endTime: time("end_time").notNull(),
-  status: text("status").notNull().default("Active"),
-  displayOrder: integer("display_order").default(0),
-  createdAt: timestamp("created_at").defaultNow(),
-  createdBy: varchar("created_by"),
-  modifiedAt: timestamp("modified_at").defaultNow(),
-  modifiedBy: varchar("modified_by"),
-});
-
 export const doctorLeaveExceptions = pgTable("doctor_leave_exceptions", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
@@ -1471,7 +1455,6 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   consultationTypes: "consultation_types",
   doctors: "doctors",
   opdTimings: "opd_timings",
-  surgeryWindows: "surgery_windows",
   doctorLeaveExceptions: "doctor_leave_exceptions",
   leadSourceCategories: "lead_source_categories",
   leadSources: "lead_sources",
