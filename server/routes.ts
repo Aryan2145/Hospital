@@ -8,7 +8,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db, pool } from "./db";
-import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, treatmentSubDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks } from "@shared/schema";
+import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, treatmentSubDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks, doctorLeaveExceptions } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -2336,6 +2336,37 @@ export async function registerRoutes(
       }
 
       res.json({ available: true, dayOfWeek, slots });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =============================================
+  // DOCTOR AVAILABILITY / LEAVE CALENDAR
+  // =============================================
+  app.get("/api/doctor-leaves", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const doctorId = req.query.doctorId ? Number(req.query.doctorId) : undefined;
+      const results = await db
+        .select({
+          id: doctorLeaveExceptions.id,
+          doctorId: doctorLeaveExceptions.doctorId,
+          doctorName: doctors.name,
+          leaveDate: doctorLeaveExceptions.leaveDate,
+          leaveEndDate: doctorLeaveExceptions.leaveEndDate,
+          reason: doctorLeaveExceptions.reason,
+          status: doctorLeaveExceptions.status,
+        })
+        .from(doctorLeaveExceptions)
+        .innerJoin(doctors, eq(doctorLeaveExceptions.doctorId, doctors.id))
+        .where(
+          doctorId
+            ? and(eq(doctorLeaveExceptions.tenantId, tid), eq(doctorLeaveExceptions.doctorId, doctorId), eq(doctorLeaveExceptions.status, "Active"))
+            : and(eq(doctorLeaveExceptions.tenantId, tid), eq(doctorLeaveExceptions.status, "Active"))
+        )
+        .orderBy(doctorLeaveExceptions.leaveDate);
+      res.json(results);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

@@ -28,6 +28,7 @@ import LeadImportPage from "@/pages/LeadImportPage";
 import GoogleSheetsImportPage from "@/pages/GoogleSheetsImportPage";
 import BrandingSettings from "@/pages/BrandingSettings";
 import EpisodeDetailPage from "@/pages/EpisodeDetailPage";
+import DoctorAvailabilityPage from "@/pages/DoctorAvailabilityPage";
 import MasterApprovalPage from "@/pages/MasterApproval";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
@@ -104,6 +105,12 @@ function Router() {
       <Route path="/appointments">
         {isAuthenticated ? (
           <RoleGate page="appointments"><AppointmentsPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/doctor-availability">
+        {isAuthenticated ? (
+          <RoleGate page="appointments"><DoctorAvailabilityPage /></RoleGate>
         ) : <Landing />}
       </Route>
 
