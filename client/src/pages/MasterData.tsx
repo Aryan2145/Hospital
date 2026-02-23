@@ -79,7 +79,7 @@ interface ImportLog {
 interface ExtraField {
   key: string;
   label: string;
-  type: "text" | "number" | "boolean" | "select" | "ref" | "time";
+  type: "text" | "number" | "boolean" | "select" | "ref" | "time" | "multiselect";
   options?: string[];
   refTable?: string;
 }
@@ -121,7 +121,7 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
   opdTimings: [
     { key: "doctorId", label: "Doctor", type: "ref", refTable: "doctors" },
     { key: "branchId", label: "Branch", type: "ref", refTable: "branches" },
-    { key: "dayOfWeek", label: "Day of Week", type: "select", options: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
+    { key: "dayOfWeek", label: "Day(s) of Week", type: "multiselect", options: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
     { key: "startTime", label: "Start Time", type: "time" },
     { key: "endTime", label: "End Time", type: "time" },
     { key: "maxPatients", label: "Max Patients", type: "number" },
@@ -325,7 +325,7 @@ export default function MasterData() {
   function resetForm() {
     const base: Record<string, any> = { code: "", name: "", status: "Active", displayOrder: 0 };
     extraFields.forEach((f) => {
-      base[f.key] = f.type === "number" ? 0 : f.type === "boolean" ? false : "";
+      base[f.key] = f.type === "number" ? 0 : f.type === "boolean" ? false : f.type === "multiselect" ? [] : "";
     });
     setFormData(base);
     setEditingRecord(null);
@@ -350,7 +350,24 @@ export default function MasterData() {
     if (editingRecord) {
       updateMutation.mutate({ id: editingRecord.id, data: formData });
     } else {
-      createMutation.mutate(formData);
+      const multiselectField = extraFields.find(f => f.type === "multiselect");
+      if (multiselectField && Array.isArray(formData[multiselectField.key]) && formData[multiselectField.key].length > 0) {
+        const days = formData[multiselectField.key] as string[];
+        let completed = 0;
+        days.forEach((day) => {
+          const record = { ...formData, [multiselectField.key]: day };
+          createMutation.mutate(record, {
+            onSuccess: () => {
+              completed++;
+              if (completed === days.length) {
+                toast({ title: `${days.length} slot(s) created successfully` });
+              }
+            },
+          });
+        });
+      } else {
+        createMutation.mutate(formData);
+      }
     }
   }
 
@@ -807,6 +824,54 @@ export default function MasterData() {
                           placeholder={`Select ${field.label}`}
                           data-testid={`select-${field.key}`}
                         />
+                      ) : field.type === "multiselect" && field.options ? (
+                        editingRecord ? (
+                          <SearchableSelect
+                            value={formData[field.key] || ""}
+                            onValueChange={(val) => setFormData({ ...formData, [field.key]: val })}
+                            options={field.options.map((opt) => ({ value: opt, label: opt }))}
+                            placeholder={`Select ${field.label}`}
+                            data-testid={`select-${field.key}`}
+                          />
+                        ) : (
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {field.options.map((opt) => {
+                              const selected = Array.isArray(formData[field.key]) && formData[field.key].includes(opt);
+                              return (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                                    selected
+                                      ? "bg-primary text-primary-foreground border-primary"
+                                      : "bg-muted text-muted-foreground border-border hover:bg-accent"
+                                  }`}
+                                  onClick={() => {
+                                    const current = Array.isArray(formData[field.key]) ? formData[field.key] : [];
+                                    const updated = selected
+                                      ? current.filter((d: string) => d !== opt)
+                                      : [...current, opt];
+                                    setFormData({ ...formData, [field.key]: updated });
+                                  }}
+                                  data-testid={`toggle-${field.key}-${opt}`}
+                                >
+                                  {opt.substring(0, 3)}
+                                </button>
+                              );
+                            })}
+                            <button
+                              type="button"
+                              className="px-3 py-1.5 rounded-full text-xs font-medium border border-dashed border-primary text-primary hover:bg-primary/10 transition-colors"
+                              onClick={() => {
+                                const allSelected = Array.isArray(formData[field.key]) && formData[field.key].length === field.options!.length;
+                                setFormData({ ...formData, [field.key]: allSelected ? [] : [...field.options!] });
+                              }}
+                              data-testid={`toggle-${field.key}-all`}
+                            >
+                              {Array.isArray(formData[field.key]) && formData[field.key].length === field.options.length ? "Clear" : "All"}
+                            </button>
+                          </div>
+                        )
                       ) : field.type === "ref" && field.refTable ? (
                         <SearchableSelect
                           value={formData[field.key] ? String(formData[field.key]) : ""}
