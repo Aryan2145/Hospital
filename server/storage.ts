@@ -86,6 +86,7 @@ export interface IStorage {
   createEpisode(data: InsertEpisode): Promise<Episode>;
   updateEpisode(id: number, tenantId: number, data: Partial<InsertEpisode>): Promise<Episode>;
   getEpisodeCountForLead(leadId: number, treatmentDeptName?: string): Promise<number>;
+  getEpisodeCountForPatient(patientId: number, treatmentDeptName?: string): Promise<number>;
   // Campaigns
   getCampaigns(tenantId: number): Promise<Campaign[]>;
   getCampaign(id: number, tenantId: number): Promise<Campaign | undefined>;
@@ -477,6 +478,20 @@ export class DatabaseStorage implements IStorage {
     }
     const result = await db.execute(sql`
       SELECT COUNT(*) as cnt FROM episodes WHERE lead_id = ${leadId}
+    `);
+    return Number(result.rows?.[0]?.cnt || 0);
+  }
+
+  async getEpisodeCountForPatient(patientId: number, treatmentDeptName?: string): Promise<number> {
+    if (treatmentDeptName) {
+      const result = await db.execute(sql`
+        SELECT COUNT(*) as cnt FROM episodes 
+        WHERE patient_id = ${patientId} AND episode_name LIKE ${`%_${treatmentDeptName}%`}
+      `);
+      return Number(result.rows?.[0]?.cnt || 0);
+    }
+    const result = await db.execute(sql`
+      SELECT COUNT(*) as cnt FROM episodes WHERE patient_id = ${patientId}
     `);
     return Number(result.rows?.[0]?.cnt || 0);
   }

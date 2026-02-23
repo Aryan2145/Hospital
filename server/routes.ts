@@ -2946,7 +2946,7 @@ export async function registerRoutes(
 
       if (!lead && body.patientId) {
         const leadRows = await pool.query(
-          "SELECT id FROM leads WHERE patient_id = $1 AND tenant_id = $2 LIMIT 1",
+          "SELECT id FROM leads WHERE patient_id = $1 AND tenant_id = $2 ORDER BY id DESC LIMIT 1",
           [body.patientId, tid]
         );
         if (leadRows.rows.length > 0) {
@@ -2975,7 +2975,10 @@ export async function registerRoutes(
         if (deptRows.rows.length > 0) treatmentDeptName = deptRows.rows[0].name;
       }
 
-      const existingCount = await storage.getEpisodeCountForLead(lead.id, treatmentDeptName);
+      const patientId = body.patientId || lead.patientId;
+      const existingCount = patientId
+        ? await storage.getEpisodeCountForPatient(patientId, treatmentDeptName)
+        : await storage.getEpisodeCountForLead(lead.id, treatmentDeptName);
       const episodeName = existingCount > 0
         ? `${patientName}_${treatmentDeptName}_${existingCount + 1}`
         : `${patientName}_${treatmentDeptName}`;

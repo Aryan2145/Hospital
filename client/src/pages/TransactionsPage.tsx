@@ -228,15 +228,13 @@ export default function TransactionsPage() {
       toast({ title: "Patient is required", variant: "destructive" });
       return;
     }
-    const leadForPatient = patientToLeadMap[Number(formPatientId)];
-    if (!leadForPatient) {
+    if (!selectedPatientLead && !editing) {
       toast({ title: "No lead record found for this patient. The patient must have been converted from a lead first.", variant: "destructive" });
       return;
     }
 
     const data: any = {
       patientId: Number(formPatientId),
-      leadId: leadForPatient.id,
       episodeType: formEpisodeType,
       status: formStatus,
     };
