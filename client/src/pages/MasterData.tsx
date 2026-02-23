@@ -79,9 +79,10 @@ interface ImportLog {
 interface ExtraField {
   key: string;
   label: string;
-  type: "text" | "number" | "boolean" | "select" | "ref" | "time" | "multiselect";
+  type: "text" | "number" | "boolean" | "select" | "ref" | "time" | "multiselect" | "date";
   options?: string[];
   refTable?: string;
+  autoGenCodeName?: boolean;
 }
 
 const EXTRA_FIELDS: Record<string, ExtraField[]> = {
@@ -126,6 +127,12 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "endTime", label: "End Time", type: "time" },
     { key: "maxPatients", label: "Max Patients", type: "number" },
     { key: "slotDuration", label: "Slot Duration (min)", type: "number" },
+  ],
+  doctorLeaveExceptions: [
+    { key: "doctorId", label: "Doctor", type: "ref", refTable: "doctors" },
+    { key: "leaveDate", label: "Leave From", type: "date" },
+    { key: "leaveEndDate", label: "Leave To (optional)", type: "date" },
+    { key: "reason", label: "Reason", type: "text" },
   ],
   templates: [
     { key: "category", label: "Category", type: "select", options: ["SMS", "Email", "WhatsApp", "Push"] },
@@ -340,22 +347,46 @@ export default function MasterData() {
       displayOrder: record.displayOrder ?? 0,
     };
     extraFields.forEach((f) => {
-      base[f.key] = record[f.key] ?? (f.type === "number" ? 0 : f.type === "boolean" ? false : "");
+      let val = record[f.key] ?? (f.type === "number" ? 0 : f.type === "boolean" ? false : "");
+      if (f.type === "date" && val) {
+        try {
+          val = new Date(val).toISOString().split("T")[0];
+        } catch {}
+      }
+      base[f.key] = val;
     });
     setFormData(base);
     setIsDialogOpen(true);
   }
 
+  const autoCodeNameTables = ["doctorLeaveExceptions"];
+  const isAutoCodeName = selectedTable ? autoCodeNameTables.includes(selectedTable) : false;
+
+  function autoGenerateCodeName(data: Record<string, any>): Record<string, any> {
+    if (!isAutoCodeName) return data;
+    const result = { ...data };
+    if (selectedTable === "doctorLeaveExceptions") {
+      const doctorRecords = refDataMap["doctors"] || [];
+      const doctor = doctorRecords.find((r: any) => r.id === data.doctorId);
+      const doctorName = doctor ? doctor.name : `Dr-${data.doctorId}`;
+      const dateStr = data.leaveDate || "no-date";
+      result.code = `LEAVE-${data.doctorId}-${dateStr}`;
+      result.name = `${doctorName} - ${dateStr}${data.leaveEndDate ? ` to ${data.leaveEndDate}` : ""}`;
+    }
+    return result;
+  }
+
   function handleSubmit() {
     if (editingRecord) {
-      updateMutation.mutate({ id: editingRecord.id, data: formData });
+      const data = autoGenerateCodeName(formData);
+      updateMutation.mutate({ id: editingRecord.id, data });
     } else {
       const multiselectField = extraFields.find(f => f.type === "multiselect");
       if (multiselectField && Array.isArray(formData[multiselectField.key]) && formData[multiselectField.key].length > 0) {
         const days = formData[multiselectField.key] as string[];
         let completed = 0;
         days.forEach((day) => {
-          const record = { ...formData, [multiselectField.key]: day };
+          const record = autoGenerateCodeName({ ...formData, [multiselectField.key]: day });
           createMutation.mutate(record, {
             onSuccess: () => {
               completed++;
@@ -366,7 +397,8 @@ export default function MasterData() {
           });
         });
       } else {
-        createMutation.mutate(formData);
+        const data = autoGenerateCodeName(formData);
+        createMutation.mutate(data);
       }
     }
   }
@@ -667,10 +699,10 @@ export default function MasterData() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Code</TableHead>
-                      <TableHead>Name</TableHead>
+                      {!isAutoCodeName && <TableHead>Code</TableHead>}
+                      {!isAutoCodeName && <TableHead>Name</TableHead>}
                       <TableHead>Status</TableHead>
-                      <TableHead>Order</TableHead>
+                      {!isAutoCodeName && <TableHead>Order</TableHead>}
                       {extraFields.map((f) => (
                         <TableHead key={f.key}>{f.label}</TableHead>
                       ))}
@@ -693,14 +725,14 @@ export default function MasterData() {
                     ) : (
                       filteredRecords.map((record) => (
                         <TableRow key={record.id} data-testid={`row-master-${record.id}`}>
-                          <TableCell className="font-mono text-sm">{record.code}</TableCell>
-                          <TableCell>{record.name}</TableCell>
+                          {!isAutoCodeName && <TableCell className="font-mono text-sm">{record.code}</TableCell>}
+                          {!isAutoCodeName && <TableCell>{record.name}</TableCell>}
                           <TableCell>
                             <Badge variant={record.status === "Active" ? "default" : "secondary"}>
                               {record.status}
                             </Badge>
                           </TableCell>
-                          <TableCell>{record.displayOrder ?? 0}</TableCell>
+                          {!isAutoCodeName && <TableCell>{record.displayOrder ?? 0}</TableCell>}
                           {extraFields.map((f) => {
                             let displayVal: any = record[f.key] ?? "-";
                             if (f.type === "boolean") {
@@ -709,6 +741,10 @@ export default function MasterData() {
                               const refRecords = refDataMap[f.refTable] || [];
                               const refRecord = refRecords.find((r: any) => r.id === record[f.key]);
                               displayVal = refRecord ? refRecord.name : record[f.key];
+                            } else if (f.type === "date" && record[f.key]) {
+                              try {
+                                displayVal = new Date(record[f.key]).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+                              } catch { displayVal = record[f.key]; }
                             }
                             return (
                               <TableCell key={f.key} className="text-sm">
@@ -759,24 +795,28 @@ export default function MasterData() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">Code</label>
-              <Input
-                value={formData.code}
-                onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                placeholder="e.g. ORTHO"
-                data-testid="input-code"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Name</label>
-              <Input
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g. Orthopaedics"
-                data-testid="input-name"
-              />
-            </div>
+            {!isAutoCodeName && (
+              <>
+                <div>
+                  <label className="text-sm font-medium">Code</label>
+                  <Input
+                    value={formData.code}
+                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                    placeholder="e.g. ORTHO"
+                    data-testid="input-code"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Name</label>
+                  <Input
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="e.g. Orthopaedics"
+                    data-testid="input-name"
+                  />
+                </div>
+              </>
+            )}
             <div>
               <label className="text-sm font-medium">Status</label>
               <SearchableSelect
@@ -914,6 +954,13 @@ export default function MasterData() {
                       ) : field.type === "time" ? (
                         <Input
                           type="time"
+                          value={formData[field.key] ?? ""}
+                          onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
+                          data-testid={`input-${field.key}`}
+                        />
+                      ) : field.type === "date" ? (
+                        <Input
+                          type="date"
                           value={formData[field.key] ?? ""}
                           onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
                           data-testid={`input-${field.key}`}

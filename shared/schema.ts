@@ -419,8 +419,11 @@ export const surgeryWindows = pgTable("surgery_windows", {
 export const doctorLeaveExceptions = pgTable("doctor_leave_exceptions", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: varchar("code").notNull().default(""),
+  name: varchar("name").notNull().default(""),
   doctorId: integer("doctor_id").notNull().references(() => doctors.id),
   leaveDate: timestamp("leave_date").notNull(),
+  leaveEndDate: timestamp("leave_end_date"),
   reason: text("reason"),
   status: text("status").notNull().default("Active"),
   displayOrder: integer("display_order").default(0),

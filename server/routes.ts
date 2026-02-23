@@ -2042,7 +2042,7 @@ export async function registerRoutes(
     }
     try {
       const tid = await getDefaultTenantId(req);
-      const body = coerceDateFields(req.body, ["leaveDate", "holidayDate", "startDate", "endDate"]);
+      const body = coerceDateFields(req.body, ["leaveDate", "leaveEndDate", "holidayDate", "startDate", "endDate"]);
       const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid });
       res.status(201).json(record);
     } catch (err: any) {
@@ -2058,7 +2058,7 @@ export async function registerRoutes(
     }
     try {
       const tid = await getDefaultTenantId(req);
-      const body = coerceDateFields(req.body, ["leaveDate", "holidayDate", "startDate", "endDate"]);
+      const body = coerceDateFields(req.body, ["leaveDate", "leaveEndDate", "holidayDate", "startDate", "endDate"]);
       const record = await storage.updateMasterRecord(tableName, Number(id), body, tid);
       res.json(record);
     } catch (err: any) {
