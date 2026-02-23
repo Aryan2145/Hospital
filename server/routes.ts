@@ -376,8 +376,17 @@ async function seedDatabase() {
       { code: "PRE_OP", name: "Pre-Operative Assessment" },
       { code: "POST_OP", name: "Post-Operative Review" },
       { code: "PHYSIO", name: "Physiotherapy Session" },
+      { code: "PHYSIO_HOME", name: "Physiotherapy (Home Visit)" },
+      { code: "STITCH_REMOVAL", name: "Stitch Removal" },
+      { code: "DRESSING", name: "Dressing Change" },
+      { code: "WOUND_CARE", name: "Wound Care" },
+      { code: "CAST_REMOVAL", name: "Cast / Splint Removal" },
+      { code: "REHAB", name: "Rehabilitation Session" },
+      { code: "INJECTION", name: "Injection / Infusion" },
+      { code: "INVESTIGATION", name: "Investigation / Lab Test" },
       { code: "SECOND_OPINION", name: "Second Opinion" },
       { code: "HOME_COUNSEL", name: "Home Counselling" },
+      { code: "TELE_CONSULT", name: "Tele-Consultation" },
     ]) {
       await db.insert(appointmentTypes).values({ tenantId: tid, ...at, status: "Active", displayOrder: 0 });
     }

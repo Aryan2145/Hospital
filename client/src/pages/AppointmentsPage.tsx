@@ -115,7 +115,6 @@ function DoctorScheduleView() {
   const { data: patientsList } = useQuery<any[]>({ queryKey: ["/api/patients"] });
   const { data: appointmentTypes } = useQuery<any[]>({ queryKey: ["/api/masters/appointmentTypes"] });
   const { data: consultationTypesList } = useQuery<any[]>({ queryKey: ["/api/masters/consultationTypes"] });
-
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookDoctorId, setBookDoctorId] = useState("");
   const [bookDate, setBookDate] = useState("");
@@ -123,6 +122,9 @@ function DoctorScheduleView() {
   const [bookLeadId, setBookLeadId] = useState("");
   const [bookPatientId, setBookPatientId] = useState("");
   const [bookApptTypeId, setBookApptTypeId] = useState("");
+  const [bookServiceLocation, setBookServiceLocation] = useState("At Hospital");
+  const [bookServiceAddress, setBookServiceAddress] = useState("");
+  const [bookEpisodeId, setBookEpisodeId] = useState("");
   const [bookNotes, setBookNotes] = useState("");
   const [bookMode, setBookMode] = useState<"existing" | "new">("new");
 
@@ -146,6 +148,9 @@ function DoctorScheduleView() {
     setBookLeadId("");
     setBookPatientId("");
     setBookApptTypeId("");
+    setBookServiceLocation("At Hospital");
+    setBookServiceAddress("");
+    setBookEpisodeId("");
     setBookNotes("");
     setBookMode("new");
     setNewPatientName("");
@@ -154,6 +159,17 @@ function DoctorScheduleView() {
     setNewPatientGender("");
     setNewPatientConsultationType("");
   };
+
+  const selectedLeadForEpisodes = bookMode === "existing" && bookLeadId && bookLeadId !== "none" ? bookLeadId : null;
+  const { data: episodesList } = useQuery<any[]>({
+    queryKey: ["/api/episodes", { leadId: selectedLeadForEpisodes }],
+    queryFn: async () => {
+      const res = await fetch(`/api/episodes?leadId=${selectedLeadForEpisodes}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedLeadForEpisodes,
+  });
 
   const [bookManualTime, setBookManualTime] = useState("");
 
@@ -233,6 +249,9 @@ function DoctorScheduleView() {
     if (bookPatientId && bookPatientId !== "none") data.patientId = Number(bookPatientId);
     if (bookApptTypeId && bookApptTypeId !== "none") data.appointmentTypeId = Number(bookApptTypeId);
     if (bookMode === "new" && newPatientConsultationType) data.consultationTypeId = Number(newPatientConsultationType);
+    if (bookServiceLocation) data.serviceLocation = bookServiceLocation;
+    if (bookServiceLocation === "Home Visit" && bookServiceAddress) data.serviceAddress = bookServiceAddress;
+    if (bookEpisodeId && bookEpisodeId !== "none") data.episodeId = Number(bookEpisodeId);
     if (bookNotes) data.notes = bookNotes;
 
     createAppointment.mutate(data, {
@@ -380,14 +399,21 @@ function DoctorScheduleView() {
           ) : "—"}
         </td>
         <td className="py-1.5 px-2">
-          <Badge className={cn("text-[10px] h-5", STATUS_COLORS[appt.status] || "bg-gray-100 text-gray-700")}>
-            {appt.status}
-          </Badge>
-          {appt.rescheduleCount > 0 && (
-            <Badge variant="outline" className="text-[9px] ml-0.5 gap-0.5 text-amber-600 h-4">
-              <RotateCcw className="w-2 h-2" />{appt.rescheduleCount}x
+          <div className="flex flex-wrap gap-0.5">
+            <Badge className={cn("text-[10px] h-5", STATUS_COLORS[appt.status] || "bg-gray-100 text-gray-700")}>
+              {appt.status}
             </Badge>
-          )}
+            {appt.serviceLocation && appt.serviceLocation !== "At Hospital" && (
+              <Badge variant="outline" className="text-[9px] h-4 gap-0.5 text-violet-600 border-violet-200">
+                {appt.serviceLocation === "Home Visit" ? "Home" : "Tele"}
+              </Badge>
+            )}
+            {appt.rescheduleCount > 0 && (
+              <Badge variant="outline" className="text-[9px] h-4 gap-0.5 text-amber-600">
+                <RotateCcw className="w-2 h-2" />{appt.rescheduleCount}x
+              </Badge>
+            )}
+          </div>
         </td>
         <td className="py-1.5 px-2 text-right">
           {isActive && (
@@ -850,6 +876,44 @@ function DoctorScheduleView() {
                 data-testid="book-select-type"
               />
             </div>
+            <div>
+              <Label className="text-xs font-medium text-muted-foreground">Service Location</Label>
+              <SearchableSelect
+                value={bookServiceLocation}
+                onValueChange={setBookServiceLocation}
+                options={[
+                  { value: "At Hospital", label: "At Hospital" },
+                  { value: "Home Visit", label: "Home Visit" },
+                  { value: "Tele-Consultation", label: "Tele-Consultation" },
+                ]}
+                placeholder="Where will this happen?"
+                data-testid="book-select-service-location"
+              />
+            </div>
+            {bookServiceLocation === "Home Visit" && (
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Home Address</Label>
+                <Textarea value={bookServiceAddress} onChange={(e) => setBookServiceAddress(e.target.value)} placeholder="Patient's home address for the visit..." rows={2} data-testid="book-input-service-address" />
+              </div>
+            )}
+            {bookMode === "existing" && episodesList && episodesList.length > 0 && (
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Link to Episode (optional)</Label>
+                <SearchableSelect
+                  value={bookEpisodeId}
+                  onValueChange={setBookEpisodeId}
+                  options={[
+                    { value: "none", label: "No Episode" },
+                    ...episodesList.map((ep: any) => ({
+                      value: String(ep.id),
+                      label: `${ep.episodeName} (${ep.status})`,
+                    })),
+                  ]}
+                  placeholder="Link to treatment episode"
+                  data-testid="book-select-episode"
+                />
+              </div>
+            )}
             <div>
               <Label className="text-xs font-medium text-muted-foreground">Notes (optional)</Label>
               <Textarea value={bookNotes} onChange={(e) => setBookNotes(e.target.value)} placeholder="Appointment notes..." rows={2} data-testid="book-input-notes" />
