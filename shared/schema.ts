@@ -436,6 +436,8 @@ export const doctorLeaveExceptions = pgTable("doctor_leave_exceptions", {
 export const doctorSpecialityMappings = pgTable("doctor_speciality_mappings", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: varchar("code").notNull().default(""),
+  name: varchar("name").notNull().default(""),
   doctorId: integer("doctor_id").notNull().references(() => doctors.id),
   treatmentSubDepartmentId: integer("treatment_sub_department_id").notNull().references(() => treatmentSubDepartments.id),
   isPrimary: boolean("is_primary").default(false),

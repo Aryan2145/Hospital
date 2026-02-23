@@ -134,6 +134,11 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "leaveEndDate", label: "Leave To (optional)", type: "date" },
     { key: "reason", label: "Reason", type: "text" },
   ],
+  doctorSpecialityMappings: [
+    { key: "doctorId", label: "Doctor", type: "ref", refTable: "doctors" },
+    { key: "treatmentSubDepartmentId", label: "Speciality (Sub-Department)", type: "ref", refTable: "treatmentSubDepartments" },
+    { key: "isPrimary", label: "Is Primary Speciality", type: "boolean" },
+  ],
   templates: [
     { key: "category", label: "Category", type: "select", options: ["SMS", "Email", "WhatsApp", "Push"] },
     { key: "subject", label: "Subject", type: "text" },
@@ -359,7 +364,7 @@ export default function MasterData() {
     setIsDialogOpen(true);
   }
 
-  const autoCodeNameTables = ["doctorLeaveExceptions"];
+  const autoCodeNameTables = ["doctorLeaveExceptions", "doctorSpecialityMappings"];
   const isAutoCodeName = selectedTable ? autoCodeNameTables.includes(selectedTable) : false;
 
   function autoGenerateCodeName(data: Record<string, any>): Record<string, any> {
@@ -372,6 +377,15 @@ export default function MasterData() {
       const dateStr = data.leaveDate || "no-date";
       result.code = `LEAVE-${data.doctorId}-${dateStr}`;
       result.name = `${doctorName} - ${dateStr}${data.leaveEndDate ? ` to ${data.leaveEndDate}` : ""}`;
+    } else if (selectedTable === "doctorSpecialityMappings") {
+      const doctorRecords = refDataMap["doctors"] || [];
+      const specRecords = refDataMap["treatmentSubDepartments"] || [];
+      const doctor = doctorRecords.find((r: any) => r.id === data.doctorId);
+      const spec = specRecords.find((r: any) => r.id === data.treatmentSubDepartmentId);
+      const doctorName = doctor ? doctor.name : `Dr-${data.doctorId}`;
+      const specName = spec ? spec.name : `Spec-${data.treatmentSubDepartmentId}`;
+      result.code = `DRSPC-${data.doctorId}-${data.treatmentSubDepartmentId}`;
+      result.name = `${doctorName} → ${specName}${data.isPrimary ? " (Primary)" : ""}`;
     }
     return result;
   }
