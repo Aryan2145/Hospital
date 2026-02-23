@@ -859,17 +859,46 @@ export default function MasterData() {
                                 </button>
                               );
                             })}
-                            <button
-                              type="button"
-                              className="px-3 py-1.5 rounded-full text-xs font-medium border border-dashed border-primary text-primary hover:bg-primary/10 transition-colors"
-                              onClick={() => {
-                                const allSelected = Array.isArray(formData[field.key]) && formData[field.key].length === field.options!.length;
-                                setFormData({ ...formData, [field.key]: allSelected ? [] : [...field.options!] });
-                              }}
-                              data-testid={`toggle-${field.key}-all`}
-                            >
-                              {Array.isArray(formData[field.key]) && formData[field.key].length === field.options.length ? "Clear" : "All"}
-                            </button>
+                            {(() => {
+                              const currentDays = Array.isArray(formData[field.key]) ? formData[field.key] : [];
+                              const monSat = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+                              const isMonSat = monSat.every(d => currentDays.includes(d)) && !currentDays.includes("Sunday");
+                              const isAll = field.options!.every((d: string) => currentDays.includes(d));
+                              return (
+                                <>
+                                  <button
+                                    type="button"
+                                    className={`px-3 py-1.5 rounded-full text-xs font-medium border border-dashed transition-colors ${
+                                      isMonSat ? "bg-primary/10 border-primary text-primary" : "border-primary text-primary hover:bg-primary/10"
+                                    }`}
+                                    onClick={() => setFormData({ ...formData, [field.key]: isMonSat ? [] : [...monSat] })}
+                                    data-testid={`toggle-${field.key}-mon-sat`}
+                                  >
+                                    Mon–Sat
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={`px-3 py-1.5 rounded-full text-xs font-medium border border-dashed transition-colors ${
+                                      isAll ? "bg-primary/10 border-primary text-primary" : "border-muted-foreground/30 text-muted-foreground hover:bg-accent"
+                                    }`}
+                                    onClick={() => setFormData({ ...formData, [field.key]: isAll ? [] : [...field.options!] })}
+                                    data-testid={`toggle-${field.key}-all`}
+                                  >
+                                    All 7
+                                  </button>
+                                  {currentDays.length > 0 && (
+                                    <button
+                                      type="button"
+                                      className="px-3 py-1.5 rounded-full text-xs font-medium border border-dashed border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors"
+                                      onClick={() => setFormData({ ...formData, [field.key]: [] })}
+                                      data-testid={`toggle-${field.key}-clear`}
+                                    >
+                                      Clear
+                                    </button>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         )
                       ) : field.type === "ref" && field.refTable ? (
