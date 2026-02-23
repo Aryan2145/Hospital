@@ -12,7 +12,7 @@ import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCateg
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import { desc, eq, and, sql, count, gte, lte } from "drizzle-orm";
+import { desc, eq, and, sql, count, gte, lte, isNull } from "drizzle-orm";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -433,18 +433,62 @@ async function seedDatabase() {
     await storage.createLead({ tenantId: tid, name: "Jyoti Sharma", phoneE164: "+919876543211", email: "jyoti.sharma@gmail.com", status: "Qualified" });
     await storage.createLead({ tenantId: tid, name: "Bhavesh Solanki", phoneE164: "+919876543212", status: "Contacted" });
     await storage.createLead({ tenantId: tid, name: "Hansaben Desai", phoneE164: "+919876543213", email: "hansa.desai@yahoo.com", status: "Appointment Booked" });
-    await storage.createLead({ tenantId: tid, name: "Vijay Chauhan", phoneE164: "+919876543214", status: "Consultation Done" });
+    const leadVijay = await storage.createLead({ tenantId: tid, name: "Vijay Chauhan", phoneE164: "+919876543214", status: "Consultation Done" });
     await storage.createLead({ tenantId: tid, name: "Niraben Modi", phoneE164: "+919876543215", email: "nira.modi@gmail.com", status: "Raw Lead Captured" });
     await storage.createLead({ tenantId: tid, name: "Suresh Thakor", phoneE164: "+919876543216", status: "Qualified" });
     await storage.createLead({ tenantId: tid, name: "Kalpanaben Joshi", phoneE164: "+919876543217", email: "kalpana.j@hotmail.com", status: "Contacted" });
-    await storage.createLead({ tenantId: tid, name: "Prakash Pandya", phoneE164: "+919876543218", status: "Appointment Booked" });
+    const leadPrakash = await storage.createLead({ tenantId: tid, name: "Prakash Pandya", phoneE164: "+919876543218", status: "Appointment Booked" });
     await storage.createLead({ tenantId: tid, name: "Geeta Rathod", phoneE164: "+919876543219", email: "geeta.rathod@gmail.com", status: "Nurture" });
     await storage.createLead({ tenantId: tid, name: "Mahesh Vaghela", phoneE164: "+919876543220", status: "Raw Lead Captured" });
-    await storage.createLead({ tenantId: tid, name: "Sangitaben Parikh", phoneE164: "+919876543221", email: "sangita.p@gmail.com", status: "Consultation Done" });
+    const leadSangita = await storage.createLead({ tenantId: tid, name: "Sangitaben Parikh", phoneE164: "+919876543221", email: "sangita.p@gmail.com", status: "Consultation Done" });
+
+    // ── Patients (converted from Consultation Done leads) ──
+    const patVijay = await storage.createPatient({ tenantId: tid, firstName: "Vijay", lastName: "Chauhan", primaryPhone: "+919876543214", gender: "Male", bloodGroup: "B+", uhid: "UHID-00001", status: "Active" });
+    await storage.updateLead(leadVijay.id, { patientId: patVijay.id });
+
+    const patSangita = await storage.createPatient({ tenantId: tid, firstName: "Sangitaben", lastName: "Parikh", primaryPhone: "+919876543221", email: "sangita.p@gmail.com", gender: "Female", bloodGroup: "A+", uhid: "UHID-00002", status: "Active" });
+    await storage.updateLead(leadSangita.id, { patientId: patSangita.id });
+
+    const patPrakash = await storage.createPatient({ tenantId: tid, firstName: "Prakash", lastName: "Pandya", primaryPhone: "+919876543218", gender: "Male", bloodGroup: "O+", uhid: "UHID-00003", status: "Active" });
+    await storage.updateLead(leadPrakash.id, { patientId: patPrakash.id });
 
     console.log("Database seeded successfully with VIROC Hospital data from viroc.in");
   } catch (error) {
     console.error("Error seeding database:", error);
+  }
+}
+
+async function ensurePatientsForConvertedLeads() {
+  try {
+    const allTenantRows = await db.select({ id: tenants.id }).from(tenants);
+    for (const t of allTenantRows) {
+      const tid = t.id;
+      const leadsWithoutPatient = await db.select().from(leads)
+        .where(and(eq(leads.tenantId, tid), isNull(leads.patientId), eq(leads.status, "Consultation Done")));
+
+      for (const lead of leadsWithoutPatient) {
+        const nameParts = lead.name.split(" ");
+        const fn = nameParts[0] || "Patient";
+        const ln = nameParts.slice(1).join(" ") || "";
+
+        const [patient] = await db.insert(patients).values({
+          tenantId: tid,
+          firstName: fn,
+          lastName: ln,
+          primaryPhone: lead.phoneE164,
+          email: lead.email,
+          uhid: `UHID-AUTO-${lead.id}`,
+          status: "Active",
+        }).returning();
+
+        await db.update(leads).set({ patientId: patient.id }).where(eq(leads.id, lead.id));
+      }
+      if (leadsWithoutPatient.length > 0) {
+        console.log(`Auto-created ${leadsWithoutPatient.length} patient(s) for tenant ${tid} from Consultation Done leads`);
+      }
+    }
+  } catch (error) {
+    console.error("Error in ensurePatientsForConvertedLeads:", error);
   }
 }
 
@@ -3296,25 +3340,51 @@ export async function registerRoutes(
       }
 
       if (type === "all" || type === "patients") {
-        for (let i = 0; i < Math.min(limitedCount, 10); i++) {
-          const fn = firstNames[Math.floor(Math.random() * firstNames.length)];
-          const ln = lastNames[Math.floor(Math.random() * lastNames.length)];
-          const phone = phoneBase + String(Math.floor(10000000 + Math.random() * 89999999));
-          const genders = ["Male", "Female"];
-          const bloodGroups = ["A+", "B+", "O+", "AB+", "A-", "B-"];
+        const allLeadsForPatients = await storage.getLeads(tid);
+        const leadsWithoutPatient = allLeadsForPatients.filter(l => !l.patientId);
+        const bloodGroups = ["A+", "B+", "O+", "AB+", "A-", "B-"];
 
-          await storage.createPatient({
+        for (let i = 0; i < Math.min(leadsWithoutPatient.length, limitedCount, 10); i++) {
+          const lead = leadsWithoutPatient[i];
+          const nameParts = lead.name.split(" ");
+          const fn = nameParts[0] || "Patient";
+          const ln = nameParts.slice(1).join(" ") || "";
+
+          const patient = await storage.createPatient({
             tenantId: tid,
             firstName: fn,
             lastName: ln,
-            primaryPhone: phone,
-            email: `${fn.toLowerCase()}.${ln.toLowerCase()}${i}@gmail.com`,
-            gender: genders[Math.floor(Math.random() * genders.length)],
+            primaryPhone: lead.phoneE164,
+            email: lead.email || `${fn.toLowerCase()}.${(ln || "user").toLowerCase()}${i}@gmail.com`,
+            gender: i % 2 === 0 ? "Male" : "Female",
             bloodGroup: bloodGroups[Math.floor(Math.random() * bloodGroups.length)],
-            uhid: `UHID-${String(1000 + i).padStart(5, "0")}`,
+            uhid: `UHID-${String(Date.now()).slice(-5)}-${i + 1}`,
             status: "Active",
           });
+
+          await storage.updateLead(lead.id, { patientId: patient.id });
           created.patients++;
+        }
+
+        if (leadsWithoutPatient.length === 0) {
+          for (let i = 0; i < Math.min(limitedCount, 5); i++) {
+            const fn = firstNames[Math.floor(Math.random() * firstNames.length)];
+            const ln = lastNames[Math.floor(Math.random() * lastNames.length)];
+            const phone = phoneBase + String(Math.floor(10000000 + Math.random() * 89999999));
+
+            await storage.createPatient({
+              tenantId: tid,
+              firstName: fn,
+              lastName: ln,
+              primaryPhone: phone,
+              email: `${fn.toLowerCase()}.${ln.toLowerCase()}${i}@gmail.com`,
+              gender: i % 2 === 0 ? "Male" : "Female",
+              bloodGroup: bloodGroups[Math.floor(Math.random() * bloodGroups.length)],
+              uhid: `UHID-${String(Date.now()).slice(-5)}-${i + 1}`,
+              status: "Active",
+            });
+            created.patients++;
+          }
         }
       }
 
@@ -3815,6 +3885,7 @@ export async function registerRoutes(
 
   // Seed the database
   await seedDatabase();
+  await ensurePatientsForConvertedLeads();
   await ensureSuperAdmin();
 
   return httpServer;
