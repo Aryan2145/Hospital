@@ -391,6 +391,7 @@ export const opdTimings = pgTable("opd_timings", {
   startTime: time("start_time").notNull(),
   endTime: time("end_time").notNull(),
   maxPatients: integer("max_patients"),
+  slotDuration: integer("slot_duration"),
   status: text("status").notNull().default("Active"),
   displayOrder: integer("display_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),

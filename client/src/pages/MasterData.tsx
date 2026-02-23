@@ -79,8 +79,9 @@ interface ImportLog {
 interface ExtraField {
   key: string;
   label: string;
-  type: "text" | "number" | "boolean" | "select";
+  type: "text" | "number" | "boolean" | "select" | "ref" | "time";
   options?: string[];
+  refTable?: string;
 }
 
 const EXTRA_FIELDS: Record<string, ExtraField[]> = {
@@ -118,10 +119,11 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "consultationFee", label: "Consultation Fee", type: "number" },
   ],
   opdTimings: [
-    { key: "doctorId", label: "Doctor ID", type: "number" },
+    { key: "doctorId", label: "Doctor", type: "ref", refTable: "doctors" },
+    { key: "branchId", label: "Branch", type: "ref", refTable: "branches" },
     { key: "dayOfWeek", label: "Day of Week", type: "select", options: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
-    { key: "startTime", label: "Start Time", type: "text" },
-    { key: "endTime", label: "End Time", type: "text" },
+    { key: "startTime", label: "Start Time", type: "time" },
+    { key: "endTime", label: "End Time", type: "time" },
     { key: "maxPatients", label: "Max Patients", type: "number" },
     { key: "slotDuration", label: "Slot Duration (min)", type: "number" },
   ],
@@ -181,6 +183,24 @@ export default function MasterData() {
       return res.json();
     },
     enabled: !!selectedTable && showImportLogs,
+  });
+
+  const extraFields = selectedTable ? EXTRA_FIELDS[selectedTable] || [] : [];
+  const refTables = Array.from(new Set(extraFields.filter(f => f.type === "ref" && f.refTable).map(f => f.refTable!)));
+
+  const { data: refDataMap = {} } = useQuery<Record<string, MasterRecord[]>>({
+    queryKey: ["/api/masters/ref-data", ...refTables],
+    queryFn: async () => {
+      const result: Record<string, MasterRecord[]> = {};
+      for (const table of refTables) {
+        try {
+          const res = await fetch(`/api/masters/${table}`, { credentials: "include" });
+          if (res.ok) result[table] = await res.json();
+        } catch {}
+      }
+      return result;
+    },
+    enabled: refTables.length > 0,
   });
 
   const { data: pendingSuggestions = [] } = useQuery<any[]>({
@@ -301,8 +321,6 @@ export default function MasterData() {
       toast({ title: "Import Failed", description: err.message, variant: "destructive" });
     },
   });
-
-  const extraFields = selectedTable ? (EXTRA_FIELDS[selectedTable] || []) : [];
 
   function resetForm() {
     const base: Record<string, any> = { code: "", name: "", status: "Active", displayOrder: 0 };
@@ -666,13 +684,21 @@ export default function MasterData() {
                             </Badge>
                           </TableCell>
                           <TableCell>{record.displayOrder ?? 0}</TableCell>
-                          {extraFields.map((f) => (
-                            <TableCell key={f.key} className="text-sm">
-                              {f.type === "boolean"
-                                ? (record[f.key] ? "Yes" : "No")
-                                : (record[f.key] ?? "-")}
-                            </TableCell>
-                          ))}
+                          {extraFields.map((f) => {
+                            let displayVal: any = record[f.key] ?? "-";
+                            if (f.type === "boolean") {
+                              displayVal = record[f.key] ? "Yes" : "No";
+                            } else if (f.type === "ref" && f.refTable && record[f.key]) {
+                              const refRecords = refDataMap[f.refTable] || [];
+                              const refRecord = refRecords.find((r: any) => r.id === record[f.key]);
+                              displayVal = refRecord ? refRecord.name : record[f.key];
+                            }
+                            return (
+                              <TableCell key={f.key} className="text-sm">
+                                {displayVal}
+                              </TableCell>
+                            );
+                          })}
                           <TableCell>
                             <div className="flex items-center gap-1">
                               <Button
@@ -780,6 +806,23 @@ export default function MasterData() {
                           options={field.options.map((opt) => ({ value: opt, label: opt }))}
                           placeholder={`Select ${field.label}`}
                           data-testid={`select-${field.key}`}
+                        />
+                      ) : field.type === "ref" && field.refTable ? (
+                        <SearchableSelect
+                          value={formData[field.key] ? String(formData[field.key]) : ""}
+                          onValueChange={(val) => setFormData({ ...formData, [field.key]: parseInt(val) || 0 })}
+                          options={(refDataMap[field.refTable] || [])
+                            .filter((r: any) => r.status === "Active")
+                            .map((r: any) => ({ value: String(r.id), label: r.name }))}
+                          placeholder={`Select ${field.label}`}
+                          data-testid={`select-${field.key}`}
+                        />
+                      ) : field.type === "time" ? (
+                        <Input
+                          type="time"
+                          value={formData[field.key] ?? ""}
+                          onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })}
+                          data-testid={`input-${field.key}`}
                         />
                       ) : (
                         <Input
