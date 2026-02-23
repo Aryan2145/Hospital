@@ -13,14 +13,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useDoctors } from "@/hooks/use-leads";
-import { Plus, Pencil, FileText, Calendar, IndianRupee, Loader2, Stethoscope, User, UserCheck } from "lucide-react";
+import { Plus, Pencil, FileText, Calendar, IndianRupee, Loader2, Stethoscope, User, UserCheck, Activity } from "lucide-react";
 import { format } from "date-fns";
+import { Link } from "wouter";
 
 interface Episode {
   id: number;
   tenantId: number;
   patientId: number;
   leadId: number | null;
+  episodeName: string;
   treatmentDepartmentId: number | null;
   treatmentSubDepartmentId: number | null;
   doctorId: number | null;
@@ -39,11 +41,32 @@ interface Episode {
 }
 
 const STATUS_COLORS: Record<string, string> = {
+  "Consultation Done": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
   "Open": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  "Treatment Planning": "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
+  "Surgery Scheduled": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+  "Surgery Done": "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300",
   "In Treatment": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+  "Post Care": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300",
+  "Follow Up": "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
+  "Closed Won": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
   "Closed": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  "Closed Lost": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
   "Cancelled": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
 };
+
+const EPISODE_STATUSES = [
+  "Consultation Done",
+  "Treatment Planning",
+  "Surgery Scheduled",
+  "Surgery Done",
+  "In Treatment",
+  "Post Care",
+  "Follow Up",
+  "Closed Won",
+  "Closed Lost",
+  "Cancelled",
+];
 
 export default function TransactionsPage() {
   const { toast } = useToast();
@@ -51,12 +74,11 @@ export default function TransactionsPage() {
   const [editing, setEditing] = useState<Episode | null>(null);
   const [filterStatus, setFilterStatus] = useState("");
 
-  const [showAllLeads, setShowAllLeads] = useState(true);
-  const [formLeadId, setFormLeadId] = useState("");
   const [formPatientId, setFormPatientId] = useState("");
   const [formDoctorId, setFormDoctorId] = useState("");
+  const [formTreatmentDeptId, setFormTreatmentDeptId] = useState("");
   const [formEpisodeType, setFormEpisodeType] = useState("OPD");
-  const [formStatus, setFormStatus] = useState("Open");
+  const [formStatus, setFormStatus] = useState("Consultation Done");
   const [formStartDate, setFormStartDate] = useState("");
   const [formEndDate, setFormEndDate] = useState("");
   const [formDiagnosis, setFormDiagnosis] = useState("");
@@ -71,17 +93,11 @@ export default function TransactionsPage() {
     staleTime: 30000,
   });
 
-  const { data: allLeads, isLoading: leadsLoading, error: leadsError } = useQuery<any[]>({
+  const { data: allLeads } = useQuery<any[]>({
     queryKey: ["/api/leads"],
     retry: 2,
     staleTime: 30000,
   });
-
-  const leadsList = useMemo(() => {
-    if (!allLeads) return [];
-    if (showAllLeads) return allLeads;
-    return allLeads.filter((l: any) => l.status === "Appointment Booked");
-  }, [allLeads, showAllLeads]);
 
   const { data: patientsList } = useQuery<any[]>({
     queryKey: ["/api/patients"],
@@ -100,16 +116,38 @@ export default function TransactionsPage() {
   }, [allLeads]);
 
   const patientMap = useMemo(() => {
-    const map: Record<number, string> = {};
-    patientsList?.forEach((p: any) => { map[p.id] = `${p.firstName || ""} ${p.lastName || ""}`.trim() || `Patient #${p.id}`; });
+    const map: Record<number, any> = {};
+    patientsList?.forEach((p: any) => {
+      map[p.id] = {
+        name: `${p.firstName || ""} ${p.lastName || ""}`.trim() || `Patient #${p.id}`,
+        phone: p.primaryPhone || "",
+        ...p,
+      };
+    });
     return map;
   }, [patientsList]);
+
+  const patientToLeadMap = useMemo(() => {
+    const map: Record<number, any> = {};
+    allLeads?.forEach((l: any) => {
+      if (l.patientId) {
+        map[l.patientId] = l;
+      }
+    });
+    return map;
+  }, [allLeads]);
 
   const doctorMap = useMemo(() => {
     const map: Record<number, string> = {};
     doctorsList?.forEach((d: any) => { map[d.id] = d.name; });
     return map;
   }, [doctorsList]);
+
+  const treatmentDeptMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    treatmentDepts?.forEach((d: any) => { map[d.id] = d.name; });
+    return map;
+  }, [treatmentDepts]);
 
   const filteredEpisodes = useMemo(() => {
     if (!episodes) return [];
@@ -125,7 +163,7 @@ export default function TransactionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/episodes"] });
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-      toast({ title: "Consultation episode created" });
+      toast({ title: "Episode created successfully" });
       closeDialog();
     },
     onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -138,29 +176,21 @@ export default function TransactionsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/episodes"] });
-      toast({ title: "Consultation episode updated" });
+      toast({ title: "Episode updated successfully" });
       closeDialog();
     },
     onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  const handleLeadChange = (leadId: string) => {
-    setFormLeadId(leadId);
-    if (leadId && leadId !== "none") {
-      const lead = leadMap[Number(leadId)];
-      if (lead?.patientId) {
-        setFormPatientId(String(lead.patientId));
-      }
-    }
-  };
+  const selectedPatientLead = formPatientId ? patientToLeadMap[Number(formPatientId)] : null;
 
   const openCreate = () => {
     setEditing(null);
-    setFormLeadId("");
     setFormPatientId("");
     setFormDoctorId("");
+    setFormTreatmentDeptId("");
     setFormEpisodeType("OPD");
-    setFormStatus("Open");
+    setFormStatus("Consultation Done");
     setFormStartDate(new Date().toISOString().split("T")[0]);
     setFormEndDate("");
     setFormDiagnosis("");
@@ -173,9 +203,9 @@ export default function TransactionsPage() {
 
   const openEdit = (ep: Episode) => {
     setEditing(ep);
-    setFormLeadId(ep.leadId ? String(ep.leadId) : "");
-    setFormPatientId(String(ep.patientId));
+    setFormPatientId(ep.patientId ? String(ep.patientId) : "");
     setFormDoctorId(ep.doctorId ? String(ep.doctorId) : "");
+    setFormTreatmentDeptId(ep.treatmentDepartmentId ? String(ep.treatmentDepartmentId) : "");
     setFormEpisodeType(ep.episodeType || "OPD");
     setFormStatus(ep.status);
     setFormStartDate(ep.startDate ? ep.startDate.split("T")[0] : "");
@@ -194,20 +224,23 @@ export default function TransactionsPage() {
   };
 
   const handleSubmit = () => {
-    if (!formLeadId || formLeadId === "none") {
-      toast({ title: "Lead is required", variant: "destructive" });
-      return;
-    }
     if (!formPatientId) {
       toast({ title: "Patient is required", variant: "destructive" });
       return;
     }
+    const leadForPatient = patientToLeadMap[Number(formPatientId)];
+    if (!leadForPatient) {
+      toast({ title: "No lead record found for this patient. The patient must have been converted from a lead first.", variant: "destructive" });
+      return;
+    }
+
     const data: any = {
-      leadId: Number(formLeadId),
       patientId: Number(formPatientId),
+      leadId: leadForPatient.id,
       episodeType: formEpisodeType,
       status: formStatus,
     };
+    if (formTreatmentDeptId && formTreatmentDeptId !== "none") data.treatmentDepartmentId = Number(formTreatmentDeptId);
     if (formDoctorId && formDoctorId !== "none") data.doctorId = Number(formDoctorId);
     if (formStartDate) data.startDate = formStartDate;
     if (formEndDate) data.endDate = formEndDate;
@@ -233,11 +266,11 @@ export default function TransactionsPage() {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground" data-testid="text-transactions-title">Consultation Episodes</h2>
-              <p className="text-muted-foreground mt-1">Track patient consultation episodes — from first visit through treatment to completion.</p>
+              <p className="text-muted-foreground mt-1">Each episode tracks one treatment journey — from consultation through to completion.</p>
             </div>
             <Button onClick={openCreate} data-testid="button-create-episode">
               <Plus className="w-4 h-4 mr-2" />
-              New Consultation Episode
+              New Episode
             </Button>
           </div>
 
@@ -250,10 +283,7 @@ export default function TransactionsPage() {
                   onValueChange={setFilterStatus}
                   options={[
                     { value: "all", label: "All statuses" },
-                    { value: "Open", label: "Open" },
-                    { value: "In Treatment", label: "In Treatment" },
-                    { value: "Closed", label: "Closed" },
-                    { value: "Cancelled", label: "Cancelled" },
+                    ...EPISODE_STATUSES.map((s) => ({ value: s, label: s })),
                   ]}
                   placeholder="All statuses"
                   data-testid="filter-episode-status"
@@ -266,64 +296,76 @@ export default function TransactionsPage() {
           </Card>
 
           {isLoading ? (
-            <LoadingSpinner text="Loading consultation episodes..." />
+            <LoadingSpinner text="Loading episodes..." />
           ) : filteredEpisodes.length === 0 ? (
             <Card className="p-12 text-center">
               <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">No consultation episodes found. Create one when a patient comes for consultation.</p>
+              <p className="text-muted-foreground">No episodes found. Create one when a patient completes their consultation.</p>
             </Card>
           ) : (
             <div className="space-y-3">
-              {filteredEpisodes.map((ep) => (
-                <Card key={ep.id} className="p-4" data-testid={`card-episode-${ep.id}`}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge className={STATUS_COLORS[ep.status] || "bg-gray-100 text-gray-700"}>
-                          {ep.status}
-                        </Badge>
-                        <Badge variant="outline">{ep.episodeType || "OPD"}</Badge>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm flex-wrap">
-                        {ep.leadId && leadMap[ep.leadId] && (
-                          <span className="flex items-center gap-1 text-muted-foreground">
-                            <UserCheck className="w-4 h-4" />
-                            Lead: {leadMap[ep.leadId].name || "Unnamed Lead"}
+              {filteredEpisodes.map((ep) => {
+                const patient = patientMap[ep.patientId];
+                const patientName = patient?.name || `Patient #${ep.patientId}`;
+                const lead = ep.leadId ? leadMap[ep.leadId] : null;
+                const deptName = ep.treatmentDepartmentId ? treatmentDeptMap[ep.treatmentDepartmentId] : null;
+
+                return (
+                  <Card key={ep.id} className="p-4 hover:shadow-md transition-shadow" data-testid={`card-episode-${ep.id}`}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sm" data-testid={`text-episode-name-${ep.id}`}>
+                            {ep.episodeName || `Episode #${ep.id}`}
                           </span>
-                        )}
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <User className="w-4 h-4" />
-                          {patientMap[ep.patientId] || `Patient #${ep.patientId}`}
-                        </span>
-                        {ep.doctorId && (
-                          <span className="flex items-center gap-1 text-muted-foreground">
-                            <Stethoscope className="w-4 h-4" />
-                            {doctorMap[ep.doctorId] || `Doctor #${ep.doctorId}`}
-                          </span>
-                        )}
-                        {ep.startDate && (
-                          <span className="flex items-center gap-1 text-muted-foreground">
-                            <Calendar className="w-4 h-4" />
-                            {format(new Date(ep.startDate), "MMM dd, yyyy")}
-                            {ep.endDate && ` - ${format(new Date(ep.endDate), "MMM dd, yyyy")}`}
-                          </span>
-                        )}
-                      </div>
-                      {ep.diagnosis && <p className="text-xs text-muted-foreground">Diagnosis: {ep.diagnosis}</p>}
-                      {(ep.estimatedCost != null || ep.actualCost != null) && (
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <IndianRupee className="w-3.5 h-3.5" />
-                          {ep.estimatedCost != null && <span>Est: ₹{ep.estimatedCost.toLocaleString("en-IN")}</span>}
-                          {ep.actualCost != null && <span>Actual: ₹{ep.actualCost.toLocaleString("en-IN")}</span>}
+                          <Badge className={STATUS_COLORS[ep.status] || "bg-gray-100 text-gray-700"} data-testid={`badge-episode-status-${ep.id}`}>
+                            {ep.status}
+                          </Badge>
+                          <Badge variant="outline" data-testid={`badge-episode-type-${ep.id}`}>{ep.episodeType || "OPD"}</Badge>
+                          {deptName && <Badge variant="secondary" className="text-[10px]" data-testid={`badge-episode-dept-${ep.id}`}>{deptName}</Badge>}
                         </div>
-                      )}
+                        <div className="flex items-center gap-4 text-sm flex-wrap">
+                          <span className="flex items-center gap-1 text-muted-foreground" data-testid={`text-episode-patient-${ep.id}`}>
+                            <User className="w-4 h-4" />
+                            {patientName}
+                          </span>
+                          {ep.doctorId && (
+                            <span className="flex items-center gap-1 text-muted-foreground" data-testid={`text-episode-doctor-${ep.id}`}>
+                              <Stethoscope className="w-4 h-4" />
+                              {doctorMap[ep.doctorId] || `Doctor #${ep.doctorId}`}
+                            </span>
+                          )}
+                          {ep.startDate && (
+                            <span className="flex items-center gap-1 text-muted-foreground" data-testid={`text-episode-dates-${ep.id}`}>
+                              <Calendar className="w-4 h-4" />
+                              {format(new Date(ep.startDate), "MMM dd, yyyy")}
+                              {ep.endDate && ` → ${format(new Date(ep.endDate), "MMM dd, yyyy")}`}
+                            </span>
+                          )}
+                        </div>
+                        {ep.diagnosis && <p className="text-xs text-muted-foreground" data-testid={`text-episode-diagnosis-${ep.id}`}>Diagnosis: {ep.diagnosis}</p>}
+                        {(ep.estimatedCost != null || ep.actualCost != null) && (
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            <IndianRupee className="w-3.5 h-3.5" />
+                            {ep.estimatedCost != null && <span>Est: ₹{ep.estimatedCost.toLocaleString("en-IN")}</span>}
+                            {ep.actualCost != null && <span>Actual: ₹{ep.actualCost.toLocaleString("en-IN")}</span>}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Link href={`/episodes/${ep.id}`}>
+                          <Button size="icon" variant="ghost" data-testid={`button-view-episode-${ep.id}`}>
+                            <Activity className="w-4 h-4" />
+                          </Button>
+                        </Link>
+                        <Button size="icon" variant="ghost" onClick={() => openEdit(ep)} data-testid={`button-edit-episode-${ep.id}`}>
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <Button size="icon" variant="ghost" onClick={() => openEdit(ep)} data-testid={`button-edit-episode-${ep.id}`}>
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
@@ -331,62 +373,58 @@ export default function TransactionsPage() {
         <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editing ? "Edit Consultation Episode" : "New Consultation Episode"}</DialogTitle>
+              <DialogTitle>{editing ? "Edit Episode" : "New Episode"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <Label className="text-xs font-medium text-muted-foreground">
-                    Lead {showAllLeads ? "(All)" : "(Appointment Booked)"} *
-                  </Label>
-                  {!editing && (
-                    <button
-                      type="button"
-                      className="text-xs text-primary hover:underline"
-                      onClick={() => { setShowAllLeads(!showAllLeads); setFormLeadId(""); }}
-                      data-testid="toggle-all-leads"
-                    >
-                      {showAllLeads ? "Show Appointment Booked only" : "Show all leads"}
-                    </button>
-                  )}
-                </div>
-                {leadsLoading ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Loading leads...
-                  </div>
-                ) : leadsError ? (
-                  <div className="text-sm text-destructive py-2">
-                    Failed to load leads. Please refresh the page.
-                  </div>
-                ) : (
-                  <SearchableSelect
-                    value={formLeadId}
-                    onValueChange={handleLeadChange}
-                    disabled={!!editing}
-                    options={(leadsList || []).map((l: any) => ({
-                      value: String(l.id),
-                      label: (l.name || "Unnamed Lead") + (l.phoneE164 ? ` (${l.phoneE164})` : "") + (showAllLeads ? ` [${l.status || ""}]` : ""),
-                    }))}
-                    placeholder="Search and select a lead"
-                    data-testid="episode-select-lead"
-                  />
-                )}
-              </div>
-
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Patient *</Label>
                 <SearchableSelect
                   value={formPatientId}
                   onValueChange={setFormPatientId}
                   disabled={!!editing}
-                  options={(patientsList || []).map((p: any) => ({
-                    value: String(p.id),
-                    label: `${p.firstName} ${p.lastName}${p.phone ? ` (${p.phone})` : ""}`,
-                  }))}
-                  placeholder="Select patient"
+                  options={(patientsList || [])
+                    .filter((p: any) => p.status === "Active")
+                    .map((p: any) => ({
+                      value: String(p.id),
+                      label: `${p.firstName || ""} ${p.lastName || ""}`.trim() + (p.primaryPhone ? ` (${p.primaryPhone})` : ""),
+                    }))}
+                  placeholder="Search patient by name or phone..."
                   data-testid="episode-select-patient"
                 />
+                {formPatientId && selectedPatientLead && (
+                  <div className="mt-1.5 p-2 rounded-md bg-muted/50 border text-xs space-y-0.5">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <UserCheck className="w-3 h-3" />
+                      <span>Lead: <strong>{selectedPatientLead.name}</strong></span>
+                      <Badge variant="outline" className="text-[9px] h-4 ml-1">{selectedPatientLead.status}</Badge>
+                    </div>
+                  </div>
+                )}
+                {formPatientId && !selectedPatientLead && (
+                  <div className="mt-1.5 p-2 rounded-md bg-destructive/5 border border-destructive/10 text-xs text-destructive">
+                    No lead record linked to this patient. A lead must be converted to a patient first.
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Treatment Department *</Label>
+                <SearchableSelect
+                  value={formTreatmentDeptId}
+                  onValueChange={setFormTreatmentDeptId}
+                  options={[
+                    { value: "none", label: "General" },
+                    ...(treatmentDepts || [])
+                      .filter((d: any) => d.status === "Active")
+                      .map((d: any) => ({
+                        value: String(d.id),
+                        label: d.name,
+                      })),
+                  ]}
+                  placeholder="e.g. Orthopaedics, Cardiology, Trauma..."
+                  data-testid="episode-select-treatment-dept"
+                />
+                <p className="text-[10px] text-muted-foreground mt-0.5">This drives the episode name. E.g., "Raj Kumar_Orthopaedics"</p>
               </div>
 
               <div>
@@ -396,10 +434,12 @@ export default function TransactionsPage() {
                   onValueChange={setFormDoctorId}
                   options={[
                     { value: "none", label: "None" },
-                    ...(doctorsList || []).map((d: any) => ({
-                      value: String(d.id),
-                      label: d.name,
-                    })),
+                    ...(doctorsList || [])
+                      .filter((d: any) => d.status === "Active")
+                      .map((d: any) => ({
+                        value: String(d.id),
+                        label: d.name,
+                      })),
                   ]}
                   placeholder="Select doctor (optional)"
                   data-testid="episode-select-doctor"
@@ -417,6 +457,7 @@ export default function TransactionsPage() {
                       { value: "IPD", label: "IPD" },
                       { value: "Surgery", label: "Surgery" },
                       { value: "Emergency", label: "Emergency" },
+                      { value: "Day Care", label: "Day Care" },
                     ]}
                     placeholder="Select type"
                     data-testid="episode-select-type"
@@ -427,12 +468,7 @@ export default function TransactionsPage() {
                   <SearchableSelect
                     value={formStatus}
                     onValueChange={setFormStatus}
-                    options={[
-                      { value: "Open", label: "Open" },
-                      { value: "In Treatment", label: "In Treatment" },
-                      { value: "Closed", label: "Closed" },
-                      { value: "Cancelled", label: "Cancelled" },
-                    ]}
+                    options={EPISODE_STATUSES.map((s) => ({ value: s, label: s }))}
                     placeholder="Select status"
                     data-testid="episode-select-status"
                   />
@@ -452,21 +488,21 @@ export default function TransactionsPage() {
 
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Diagnosis</Label>
-                <Input value={formDiagnosis} onChange={(e) => setFormDiagnosis(e.target.value)} placeholder="Diagnosis" data-testid="episode-input-diagnosis" />
+                <Input value={formDiagnosis} onChange={(e) => setFormDiagnosis(e.target.value)} placeholder="e.g. ACL tear, Right knee" data-testid="episode-input-diagnosis" />
               </div>
 
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Treatment Plan</Label>
-                <Textarea value={formTreatmentPlan} onChange={(e) => setFormTreatmentPlan(e.target.value)} placeholder="Treatment plan..." rows={2} data-testid="episode-input-treatment" />
+                <Textarea value={formTreatmentPlan} onChange={(e) => setFormTreatmentPlan(e.target.value)} placeholder="Treatment plan details..." rows={2} data-testid="episode-input-treatment" />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs font-medium text-muted-foreground">Estimated Cost</Label>
+                  <Label className="text-xs font-medium text-muted-foreground">Estimated Cost (₹)</Label>
                   <Input type="number" value={formEstimatedCost} onChange={(e) => setFormEstimatedCost(e.target.value)} placeholder="0" data-testid="episode-input-est-cost" />
                 </div>
                 <div>
-                  <Label className="text-xs font-medium text-muted-foreground">Actual Cost</Label>
+                  <Label className="text-xs font-medium text-muted-foreground">Actual Cost (₹)</Label>
                   <Input type="number" value={formActualCost} onChange={(e) => setFormActualCost(e.target.value)} placeholder="0" data-testid="episode-input-actual-cost" />
                 </div>
               </div>
@@ -479,11 +515,11 @@ export default function TransactionsPage() {
               <Button
                 onClick={handleSubmit}
                 className="w-full"
-                disabled={isPending || !formLeadId || formLeadId === "none" || !formPatientId}
+                disabled={isPending || !formPatientId || (!editing && !selectedPatientLead)}
                 data-testid="button-save-episode"
               >
                 {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
-                {editing ? "Update Episode" : "Create Consultation Episode"}
+                {editing ? "Update Episode" : "Create Episode"}
               </Button>
             </div>
           </DialogContent>

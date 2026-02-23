@@ -2942,8 +2942,32 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["startDate", "endDate", "nextActionDate", "slaDeadline"]);
 
-      const lead = body.leadId ? await storage.getLead(body.leadId) : null;
-      if (!lead) return res.status(400).json({ message: "Lead is required for creating an episode" });
+      let lead = body.leadId ? await storage.getLead(body.leadId) : null;
+
+      if (!lead && body.patientId) {
+        const leadRows = await pool.query(
+          "SELECT id FROM leads WHERE patient_id = $1 AND tenant_id = $2 LIMIT 1",
+          [body.patientId, tid]
+        );
+        if (leadRows.rows.length > 0) {
+          lead = await storage.getLead(leadRows.rows[0].id);
+          body.leadId = leadRows.rows[0].id;
+        }
+      }
+
+      if (!lead) return res.status(400).json({ message: "No lead found for this patient. The patient must be linked to a lead." });
+
+      let patientName = lead.name;
+      if (body.patientId) {
+        const patientRows = await pool.query(
+          "SELECT first_name, last_name FROM patients WHERE id = $1",
+          [body.patientId]
+        );
+        if (patientRows.rows.length > 0) {
+          const p = patientRows.rows[0];
+          patientName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || lead.name;
+        }
+      }
 
       let treatmentDeptName = "General";
       if (body.treatmentDepartmentId) {
@@ -2953,8 +2977,8 @@ export async function registerRoutes(
 
       const existingCount = await storage.getEpisodeCountForLead(lead.id, treatmentDeptName);
       const episodeName = existingCount > 0
-        ? `${lead.name}_${treatmentDeptName}_${existingCount + 1}`
-        : `${lead.name}_${treatmentDeptName}`;
+        ? `${patientName}_${treatmentDeptName}_${existingCount + 1}`
+        : `${patientName}_${treatmentDeptName}`;
 
       const parsed = insertEpisodeSchema.parse({
         ...body,
