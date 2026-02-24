@@ -1059,7 +1059,31 @@ export async function registerRoutes(
     try {
       const body = coerceDateFields(req.body, ["nextActionDate"]);
       const input = api.leads.update.input.parse(body);
-      const lead = await storage.updateLead(Number(req.params.id), input);
+      const leadId = Number(req.params.id);
+
+      let lead = await storage.updateLead(leadId, input);
+
+      if (input.status === "Consultation Done" && !lead.patientId) {
+        try {
+          const tid = await getDefaultTenantId(req);
+          const nameParts = lead.name.split(" ");
+          const fn = nameParts[0] || "Patient";
+          const ln = nameParts.slice(1).join(" ") || "";
+          const [patient] = await db.insert(patients).values({
+            tenantId: tid,
+            firstName: fn,
+            lastName: ln,
+            primaryPhone: lead.phoneE164,
+            email: lead.email,
+            uhid: `UHID-AUTO-${lead.id}`,
+            status: "Active",
+          }).returning();
+          lead = await storage.updateLead(leadId, { patientId: patient.id });
+        } catch (patErr: any) {
+          console.error("Auto-create patient failed:", patErr.message);
+        }
+      }
+
       res.json(lead);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -2587,6 +2611,7 @@ export async function registerRoutes(
       });
 
       if (appt.leadId) {
+        const lead = await storage.getLead(appt.leadId);
         await storage.updateLead(appt.leadId, { status: "Consultation Done" });
         await storage.createActivity({
           leadId: appt.leadId, tenantId: tid, createdBy: userId,
@@ -2595,6 +2620,22 @@ export async function registerRoutes(
           oldStatus: "Appointment Booked",
           newStatus: "Consultation Done",
         });
+
+        if (lead && !lead.patientId) {
+          const nameParts = lead.name.split(" ");
+          const fn = nameParts[0] || "Patient";
+          const ln = nameParts.slice(1).join(" ") || "";
+          const [patient] = await db.insert(patients).values({
+            tenantId: tid,
+            firstName: fn,
+            lastName: ln,
+            primaryPhone: lead.phoneE164,
+            email: lead.email,
+            uhid: `UHID-AUTO-${lead.id}`,
+            status: "Active",
+          }).returning();
+          await storage.updateLead(appt.leadId, { patientId: patient.id });
+        }
       }
 
       res.json(updated);
