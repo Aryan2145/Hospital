@@ -896,15 +896,28 @@ export default function MasterData() {
                     <div key={field.key}>
                       <label className="text-sm font-medium">{field.label}</label>
                       {field.type === "boolean" ? (
-                        <SearchableSelect
-                          value={formData[field.key] ? "true" : "false"}
-                          onValueChange={(val) => setFormData({ ...formData, [field.key]: val === "true" })}
-                          options={[
-                            { value: "true", label: "Yes" },
-                            { value: "false", label: "No" },
-                          ]}
-                          data-testid={`select-${field.key}`}
-                        />
+                        <div className="flex gap-2 mt-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={formData[field.key] ? "default" : "outline"}
+                            className="flex-1"
+                            onClick={() => setFormData({ ...formData, [field.key]: true })}
+                            data-testid={`select-${field.key}-yes`}
+                          >
+                            Yes
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={!formData[field.key] ? "default" : "outline"}
+                            className="flex-1"
+                            onClick={() => setFormData({ ...formData, [field.key]: false })}
+                            data-testid={`select-${field.key}-no`}
+                          >
+                            No
+                          </Button>
+                        </div>
                       ) : field.type === "select" && field.options ? (
                         <SearchableSelect
                           value={formData[field.key] || ""}
