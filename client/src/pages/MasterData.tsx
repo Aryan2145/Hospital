@@ -86,14 +86,7 @@ interface ExtraField {
 }
 
 const EXTRA_FIELDS: Record<string, ExtraField[]> = {
-  leadStatuses: [
-    { key: "stageOrder", label: "Stage Order", type: "number" },
-    { key: "isTerminal", label: "Is Terminal", type: "boolean" },
-    { key: "stageGroup", label: "Stage Group", type: "select", options: ["New", "Working", "Qualified", "Converted", "Closed"] },
-  ],
-  leadSources: [
-    { key: "categoryId", label: "Source Category", type: "ref", refTable: "leadSourceCategories" },
-  ],
+  // CATEGORY 1: LOCATION MASTERS
   states: [
     { key: "countryId", label: "Country", type: "ref", refTable: "countries" },
   ],
@@ -103,21 +96,55 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
   areas: [
     { key: "cityId", label: "City", type: "ref", refTable: "cities" },
     { key: "pinCode", label: "PIN Code", type: "text" },
+    { key: "serviceable", label: "Serviceable", type: "boolean" },
+    { key: "defaultNearestBranchId", label: "Default Nearest Branch", type: "ref", refTable: "branches" },
   ],
+
+  // CATEGORY 2: ORGANISATION MASTERS
   branches: [
     { key: "organisationId", label: "Organisation", type: "ref", refTable: "organisations" },
     { key: "cityId", label: "City", type: "ref", refTable: "cities" },
     { key: "address", label: "Address", type: "text" },
     { key: "phone", label: "Phone", type: "text" },
-    { key: "email", label: "Email", type: "text" },
   ],
-  doctors: [
-    { key: "speciality", label: "Speciality", type: "text" },
-    { key: "qualification", label: "Qualification", type: "text" },
-    { key: "registrationNo", label: "Registration No", type: "text" },
+  administrativeSubDepartments: [
+    { key: "departmentId", label: "Department", type: "ref", refTable: "administrativeDepartments" },
+  ],
+  callingLines: [
+    { key: "phoneNumber", label: "Phone Number", type: "text" },
+    { key: "provider", label: "Provider", type: "text" },
+  ],
+  userLineAssignments: [
+    { key: "crmUserId", label: "CRM User", type: "ref", refTable: "crmUsers" },
+    { key: "callingLineId", label: "Calling Line", type: "ref", refTable: "callingLines" },
+    { key: "isPrimary", label: "Is Primary Line", type: "boolean" },
+  ],
+  crmUsers: [
+    { key: "email", label: "Email", type: "text" },
+    { key: "phone", label: "Phone", type: "text" },
     { key: "branchId", label: "Branch", type: "ref", refTable: "branches" },
-    { key: "departmentId", label: "Department", type: "ref", refTable: "treatmentDepartments" },
-    { key: "consultationFee", label: "Consultation Fee (₹)", type: "number" },
+    { key: "departmentId", label: "Department", type: "ref", refTable: "administrativeDepartments" },
+    { key: "designationId", label: "Designation", type: "ref", refTable: "designations" },
+    { key: "employmentTypeId", label: "Employment Type", type: "ref", refTable: "employmentTypes" },
+    { key: "systemRoleId", label: "System Role", type: "ref", refTable: "systemRoles" },
+    { key: "accessScopeType", label: "Access Scope", type: "select", options: ["All", "Branch", "Department", "Self"] },
+    { key: "phiAccessLevel", label: "PHI Access Level", type: "select", options: ["Full", "Masked", "None"] },
+    { key: "isActive", label: "Is Active", type: "boolean" },
+  ],
+
+  // CATEGORY 3: TREATMENT MASTERS
+  treatmentSubDepartments: [
+    { key: "treatmentDepartmentId", label: "Treatment Department", type: "ref", refTable: "treatmentDepartments" },
+  ],
+
+  // CATEGORY 4: DOCTORS MASTERS
+  doctors: [
+    { key: "specialization", label: "Specialization", type: "text" },
+    { key: "qualification", label: "Qualification", type: "text" },
+    { key: "branchId", label: "Branch", type: "ref", refTable: "branches" },
+    { key: "treatmentDepartmentId", label: "Department", type: "ref", refTable: "treatmentDepartments" },
+    { key: "phone", label: "Phone", type: "text" },
+    { key: "email", label: "Email", type: "text" },
   ],
   opdTimings: [
     { key: "doctorId", label: "Doctor", type: "ref", refTable: "doctors" },
@@ -139,24 +166,66 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "treatmentSubDepartmentId", label: "Specialities (Sub-Departments)", type: "multiref", refTable: "treatmentSubDepartments" },
     { key: "isPrimary", label: "Is Primary Speciality", type: "boolean" },
   ],
+
+  // CATEGORY 5: LEAD GENERATION MASTERS
+  leadSources: [
+    { key: "categoryId", label: "Source Category", type: "ref", refTable: "leadSourceCategories" },
+  ],
+  referrers: [
+    { key: "type", label: "Type", type: "select", options: ["Doctor", "Patient", "Hospital", "Agent", "Other"] },
+    { key: "phone", label: "Phone", type: "text" },
+    { key: "email", label: "Email", type: "text" },
+  ],
+  corporateInsurances: [
+    { key: "type", label: "Type", type: "select", options: ["Corporate", "Insurance", "TPA"] },
+  ],
+
+  // CATEGORY 6: CONSULTATION MASTERS
+  conversionStages: [
+    { key: "sequence", label: "Sequence Order", type: "number" },
+    { key: "isTerminal", label: "Is Terminal", type: "boolean" },
+    { key: "isBusinessAchieved", label: "Is Business Achieved", type: "boolean" },
+  ],
+
+  // CATEGORY 7: ACTIVITY & WORKFLOW MASTERS
+  leadStatuses: [
+    { key: "sequence", label: "Sequence Order", type: "number" },
+    { key: "isTerminal", label: "Is Terminal", type: "boolean" },
+    { key: "isBusinessAchieved", label: "Is Business Achieved", type: "boolean" },
+    { key: "requiresNextTask", label: "Requires Next Task", type: "boolean" },
+    { key: "allowNurtureOption", label: "Allow Nurture Option", type: "boolean" },
+    { key: "defaultOwnerRole", label: "Default Owner Role", type: "select", options: ["AGENT", "COUNSELLOR", "MANAGER", "ADMIN"] },
+  ],
+
+  // CATEGORY 8: COMMUNICATION MASTERS
   templates: [
-    { key: "category", label: "Category", type: "select", options: ["SMS", "Email", "WhatsApp", "Push"] },
+    { key: "channel", label: "Channel", type: "select", options: ["SMS", "Email", "WhatsApp", "Push"] },
     { key: "subject", label: "Subject", type: "text" },
     { key: "body", label: "Body", type: "text" },
   ],
   holidays: [
-    { key: "date", label: "Date", type: "text" },
-    { key: "isRecurring", label: "Is Recurring", type: "boolean" },
+    { key: "holidayDate", label: "Holiday Date", type: "date" },
   ],
+  tags: [
+    { key: "color", label: "Color", type: "text" },
+  ],
+
+  // CATEGORY 9: GOVERNANCE MASTERS
   slaRules: [
-    { key: "entity", label: "Entity", type: "text" },
-    { key: "metric", label: "Metric", type: "text" },
-    { key: "thresholdMinutes", label: "Threshold (minutes)", type: "number" },
-    { key: "escalationLevel", label: "Escalation Level", type: "number" },
+    { key: "triggerEvent", label: "Trigger Event", type: "text" },
+    { key: "timeLimitMinutes", label: "Time Limit (minutes)", type: "number" },
+    { key: "appliesToRole", label: "Applies To Role", type: "select", options: ["AGENT", "COUNSELLOR", "MANAGER", "ADMIN", "All"] },
+    { key: "escalationRole", label: "Escalation Role", type: "select", options: ["MANAGER", "ADMIN", "SYS_ADMIN"] },
   ],
-  conversionStages: [
-    { key: "stageOrder", label: "Stage Order", type: "number" },
-    { key: "isTerminal", label: "Is Terminal", type: "boolean" },
+  reminderPolicies: [
+    { key: "offsetMinutes", label: "Offset (minutes before)", type: "number" },
+    { key: "channel", label: "Channel", type: "select", options: ["SMS", "Email", "WhatsApp", "Push"] },
+    { key: "fallbackChannel", label: "Fallback Channel", type: "select", options: ["SMS", "Email", "WhatsApp", "Push"] },
+  ],
+  dataRetentionPolicies: [
+    { key: "entityType", label: "Entity Type", type: "select", options: ["Lead", "Episode", "Patient", "Activity", "Task", "Appointment"] },
+    { key: "retentionMonths", label: "Retention Period (months)", type: "number" },
+    { key: "action", label: "Action", type: "select", options: ["archive", "anonymize", "delete"] },
   ],
 };
 
