@@ -115,6 +115,9 @@ function DoctorScheduleView() {
   const { data: patientsList } = useQuery<any[]>({ queryKey: ["/api/patients"] });
   const { data: appointmentTypes } = useQuery<any[]>({ queryKey: ["/api/masters/appointmentTypes"] });
   const { data: consultationTypesList } = useQuery<any[]>({ queryKey: ["/api/masters/consultationTypes"] });
+  const { data: branchesListSchedule } = useBranches();
+  const activeBranches = (branchesListSchedule || []).filter((b: any) => b.status === "Active");
+  const defaultBranchId = activeBranches.length > 0 ? String(activeBranches[0].id) : "";
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookDoctorId, setBookDoctorId] = useState("");
   const [bookDate, setBookDate] = useState("");
@@ -124,6 +127,7 @@ function DoctorScheduleView() {
   const [bookApptTypeId, setBookApptTypeId] = useState("");
   const [bookServiceLocation, setBookServiceLocation] = useState("At Hospital");
   const [bookServiceAddress, setBookServiceAddress] = useState("");
+  const [bookBranchId, setBookBranchId] = useState("");
   const [bookEpisodeId, setBookEpisodeId] = useState("");
   const [bookNotes, setBookNotes] = useState("");
   const [bookMode, setBookMode] = useState<"existing" | "new">("new");
@@ -150,6 +154,7 @@ function DoctorScheduleView() {
     setBookApptTypeId("");
     setBookServiceLocation("At Hospital");
     setBookServiceAddress("");
+    setBookBranchId("");
     setBookEpisodeId("");
     setBookNotes("");
     setBookMode("new");
@@ -251,6 +256,8 @@ function DoctorScheduleView() {
     if (bookMode === "new" && newPatientConsultationType) data.consultationTypeId = Number(newPatientConsultationType);
     if (bookServiceLocation) data.serviceLocation = bookServiceLocation;
     if (bookServiceLocation === "Home Visit" && bookServiceAddress) data.serviceAddress = bookServiceAddress;
+    const effectiveBranchId = bookBranchId && bookBranchId !== "none" ? bookBranchId : defaultBranchId;
+    if (effectiveBranchId) data.branchId = Number(effectiveBranchId);
     if (bookEpisodeId && bookEpisodeId !== "none") data.episodeId = Number(bookEpisodeId);
     if (bookNotes) data.notes = bookNotes;
 
@@ -876,19 +883,31 @@ function DoctorScheduleView() {
                 data-testid="book-select-type"
               />
             </div>
-            <div>
-              <Label className="text-xs font-medium text-muted-foreground">Service Location</Label>
-              <SearchableSelect
-                value={bookServiceLocation}
-                onValueChange={setBookServiceLocation}
-                options={[
-                  { value: "At Hospital", label: "At Hospital" },
-                  { value: "Home Visit", label: "Home Visit" },
-                  { value: "Tele-Consultation", label: "Tele-Consultation" },
-                ]}
-                placeholder="Where will this happen?"
-                data-testid="book-select-service-location"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Branch</Label>
+                <SearchableSelect
+                  value={bookBranchId || defaultBranchId}
+                  onValueChange={setBookBranchId}
+                  options={activeBranches.map((b: any) => ({ value: String(b.id), label: b.name }))}
+                  placeholder="Select branch"
+                  data-testid="book-select-branch"
+                />
+              </div>
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Service Location</Label>
+                <SearchableSelect
+                  value={bookServiceLocation}
+                  onValueChange={setBookServiceLocation}
+                  options={[
+                    { value: "At Hospital", label: "At Hospital" },
+                    { value: "Home Visit", label: "Home Visit" },
+                    { value: "Tele-Consultation", label: "Tele-Consultation" },
+                  ]}
+                  placeholder="Where will this happen?"
+                  data-testid="book-select-service-location"
+                />
+              </div>
             </div>
             {bookServiceLocation === "Home Visit" && (
               <div>

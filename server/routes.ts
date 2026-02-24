@@ -2497,6 +2497,15 @@ export async function registerRoutes(
       const body = coerceDateFields({ ...req.body, tenantId: tid, createdBy: userId, bookedBy: userId }, ["appointmentDate"]);
       const parsed = insertAppointmentSchema.parse(body);
 
+      if (!parsed.branchId) {
+        const allBranches = await db.select().from(branches)
+          .where(and(eq(branches.tenantId, tid), eq(branches.status, "Active")))
+          .limit(1);
+        if (allBranches.length > 0) {
+          (parsed as any).branchId = allBranches[0].id;
+        }
+      }
+
       const dateStr = new Date(parsed.appointmentDate).toISOString().split("T")[0];
 
       if (parsed.startTime) {
