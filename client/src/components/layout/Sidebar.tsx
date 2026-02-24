@@ -11,8 +11,6 @@ import {
   Shield,
   Megaphone,
   Plug,
-  Mail,
-  MessageSquare,
   HeartPulse,
   FileSpreadsheet,
   Paintbrush,
@@ -59,8 +57,6 @@ const sections: { label: string; items: NavItem[] }[] = [
       { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
       { icon: FileSpreadsheet, label: "Google Sheets Import", href: "/google-sheets-import", page: "leads" },
       { icon: Paintbrush, label: "Branding", href: "/branding", page: "branding" },
-      { icon: Mail, label: "Email Settings", href: "/email-settings", page: "email-settings" },
-      { icon: MessageSquare, label: "WhatsApp", href: "/whatsapp-settings", page: "whatsapp-settings" },
     ],
   },
 ];

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +17,7 @@ import {
   Plus, Settings, RefreshCw, Trash2, CheckCircle2, XCircle,
   Wifi, WifiOff, ArrowUpRight, BarChart3, Eye, MousePointerClick,
   IndianRupee, Target, Loader2, Zap, Globe, TrendingUp,
-  Copy, Pencil, Link2, Phone,
+  Copy, Pencil, Link2, Phone, Mail, MessageSquare,
 } from "lucide-react";
 import { SiFacebook, SiGoogle, SiLinkedin, SiX } from "react-icons/si";
 
@@ -244,6 +245,7 @@ const METRIC_LABELS: Record<string, { label: string; icon: any; format: (v: numb
 
 export default function ConnectorsPage() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [configDialog, setConfigDialog] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformTemplate | null>(null);
   const [editingConnector, setEditingConnector] = useState<PlatformConnector | null>(null);
@@ -539,9 +541,9 @@ export default function ConnectorsPage() {
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
-              <h1 className="text-xl md:text-2xl font-bold" data-testid="text-page-title">Platform Connectors</h1>
+              <h1 className="text-xl md:text-2xl font-bold" data-testid="text-page-title">Connectors</h1>
               <p className="text-sm text-muted-foreground mt-1">
-                Connect marketing platforms to draw live insights and campaign performance data
+                Connect marketing platforms, communication channels, and external services
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -558,6 +560,7 @@ export default function ConnectorsPage() {
             </div>
           ) : (
             <>
+              <h2 className="text-lg font-semibold">Marketing Platforms</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {PLATFORM_TEMPLATES.map((template) => {
                   const connector = getConnectorForPlatform(template.id);
@@ -685,6 +688,69 @@ export default function ConnectorsPage() {
                     </Card>
                   );
                 })}
+              </div>
+
+              <div>
+                <h2 className="text-lg font-semibold mb-3">Communication & Notifications</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  <Card data-testid="card-connector-email">
+                    <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-md bg-blue-50 dark:bg-blue-950/30">
+                          <Mail className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">Email (SMTP)</CardTitle>
+                          <p className="text-xs text-muted-foreground mt-1">Password resets & notifications</p>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Configure SMTP server for sending password reset emails, system notifications, and transactional emails to patients and staff.
+                      </p>
+                      <div className="flex items-center gap-2 pt-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate("/email-settings")}
+                          data-testid="button-configure-email"
+                        >
+                          <Settings className="h-3.5 w-3.5 mr-1.5" /> Configure
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card data-testid="card-connector-whatsapp">
+                    <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-md bg-green-50 dark:bg-green-950/30">
+                          <MessageSquare className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">WhatsApp Business</CardTitle>
+                          <p className="text-xs text-muted-foreground mt-1">Patient communication</p>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Connect WhatsApp Business API for automated appointment confirmations, patient reminders, and two-way messaging.
+                      </p>
+                      <div className="flex items-center gap-2 pt-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate("/whatsapp-settings")}
+                          data-testid="button-configure-whatsapp"
+                        >
+                          <Settings className="h-3.5 w-3.5 mr-1.5" /> Configure
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
 
               {connectors.length > 0 && connectors.some((c) => c.status === "connected" && c.metricsCache) && (
