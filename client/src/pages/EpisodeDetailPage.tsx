@@ -9,7 +9,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { getStatusColor, getValidEpisodeTransitions, getPriorityColor } from "@/lib/lead-status";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -18,7 +18,27 @@ import {
   Stethoscope,
   IndianRupee,
   FileText,
+  Clock,
+  CheckCircle2,
+  CircleDot,
+  Circle,
+  XCircle,
+  ArrowRightCircle,
+  PlusCircle,
+  User,
 } from "lucide-react";
+
+interface AuditLogEntry {
+  id: number;
+  entityType: string;
+  entityId: number;
+  action: string;
+  oldValues: Record<string, any> | null;
+  newValues: Record<string, any> | null;
+  changedFields: string | null;
+  performedBy: string | null;
+  createdAt: string;
+}
 
 export default function EpisodeDetailPage() {
   const [, params] = useRoute("/episodes/:id");
@@ -33,6 +53,16 @@ export default function EpisodeDetailPage() {
       const res = await fetch(`/api/episodes/${episodeId}`, { credentials: "include" });
       if (res.status === 404) return null;
       if (!res.ok) throw new Error("Failed to fetch episode");
+      return res.json();
+    },
+    enabled: !!episodeId,
+  });
+
+  const { data: auditLogs = [] } = useQuery<AuditLogEntry[]>({
+    queryKey: ["/api/audit-logs", "episode", episodeId],
+    queryFn: async () => {
+      const res = await fetch(`/api/audit-logs?entityType=episode&entityId=${episodeId}`, { credentials: "include" });
+      if (!res.ok) return [];
       return res.json();
     },
     enabled: !!episodeId,
@@ -88,6 +118,8 @@ export default function EpisodeDetailPage() {
   ];
 
   const currentStageIndex = FUNNEL_STAGES.indexOf(episode.status);
+
+  const journeyEvents = buildJourneyTimeline(episode, auditLogs);
 
   return (
     <AppLayout className="flex-1 flex flex-col h-full overflow-hidden">
@@ -149,9 +181,9 @@ export default function EpisodeDetailPage() {
                     className={cn(
                       "px-3 py-1.5 rounded text-[11px] font-medium whitespace-nowrap border transition-colors",
                       isCurrent && "bg-primary text-primary-foreground border-primary",
-                      isPast && !isCurrent && "bg-green-100 text-green-800 border-green-200",
+                      isPast && !isCurrent && "bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300 border-green-200 dark:border-green-800",
                       !isCurrent && !isPast && !isDiscontinued && "bg-muted text-muted-foreground border-border",
-                      isDiscontinued && "bg-red-50 text-red-400 border-red-200",
+                      isDiscontinued && "bg-red-50 dark:bg-red-950/30 text-red-400 dark:text-red-500 border-red-200 dark:border-red-800",
                     )}
                     data-testid={`funnel-stage-${stage.toLowerCase().replace(/\s+/g, "-")}`}
                   >
@@ -164,6 +196,91 @@ export default function EpisodeDetailPage() {
               );
             })}
           </div>
+        </Card>
+
+        <Card className="p-4" data-testid="card-episode-journey-timeline">
+          <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-primary" />
+            Journey Timeline
+          </h3>
+          {journeyEvents.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Clock className="w-8 h-8 mx-auto mb-2 opacity-40" />
+              <p className="text-sm">No journey events recorded yet</p>
+              <p className="text-xs mt-1">Status changes will appear here as the episode progresses</p>
+            </div>
+          ) : (
+            <div className="relative" data-testid="journey-timeline">
+              <div className="absolute left-[15px] top-2 bottom-2 w-0.5 bg-border" />
+              <div className="space-y-0">
+                {journeyEvents.map((event, idx) => (
+                  <div key={event.id} className="relative flex gap-3 pb-5 last:pb-0" data-testid={`timeline-event-${idx}`}>
+                    <div className="relative z-10 flex-shrink-0 mt-0.5">
+                      {event.type === "created" && (
+                        <div className="w-[30px] h-[30px] rounded-full bg-blue-100 dark:bg-blue-950/50 flex items-center justify-center">
+                          <PlusCircle className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        </div>
+                      )}
+                      {event.type === "status_change" && !event.isTerminal && (
+                        <div className="w-[30px] h-[30px] rounded-full bg-amber-100 dark:bg-amber-950/50 flex items-center justify-center">
+                          <ArrowRightCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                        </div>
+                      )}
+                      {event.type === "status_change" && event.isTerminal && event.newStatus === "Completed" && (
+                        <div className="w-[30px] h-[30px] rounded-full bg-green-100 dark:bg-green-950/50 flex items-center justify-center">
+                          <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400" />
+                        </div>
+                      )}
+                      {event.type === "status_change" && event.isTerminal && event.newStatus === "Discontinued" && (
+                        <div className="w-[30px] h-[30px] rounded-full bg-red-100 dark:bg-red-950/50 flex items-center justify-center">
+                          <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0 pt-0.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-foreground" data-testid={`timeline-event-title-${idx}`}>
+                            {event.title}
+                          </p>
+                          {event.description && (
+                            <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>
+                          )}
+                          {event.statusTransition && (
+                            <div className="flex items-center gap-1.5 mt-1.5">
+                              <Badge variant="outline" className={cn("text-[10px] py-0 h-5", getStatusColor(event.statusTransition.from))}>
+                                {event.statusTransition.from}
+                              </Badge>
+                              <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                              <Badge variant="outline" className={cn("text-[10px] py-0 h-5", getStatusColor(event.statusTransition.to))}>
+                                {event.statusTransition.to}
+                              </Badge>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-[11px] text-muted-foreground whitespace-nowrap">
+                            {format(new Date(event.timestamp), "MMM d, yyyy")}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground/70">
+                            {format(new Date(event.timestamp), "h:mm a")}
+                          </p>
+                        </div>
+                      </div>
+                      {event.performedBy && (
+                        <div className="flex items-center gap-1 mt-1.5 text-[11px] text-muted-foreground">
+                          <User className="w-3 h-3" />
+                          <span>{event.performedBy}</span>
+                          <span className="mx-1">·</span>
+                          <span>{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </Card>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -209,7 +326,7 @@ export default function EpisodeDetailPage() {
 
           {episode.lostNotes && (
             <Card className="p-4 border-red-200 bg-red-50/50" data-testid="card-episode-lost">
-              <h3 className="text-sm font-semibold text-red-800 mb-2">Lost Details</h3>
+              <h3 className="text-sm font-semibold text-red-800 mb-2">Discontinued Details</h3>
               <p className="text-xs text-red-700">{episode.lostNotes}</p>
             </Card>
           )}
@@ -217,6 +334,101 @@ export default function EpisodeDetailPage() {
       </div>
     </AppLayout>
   );
+}
+
+interface JourneyEvent {
+  id: string;
+  type: "created" | "status_change";
+  title: string;
+  description?: string;
+  timestamp: string;
+  performedBy?: string;
+  statusTransition?: { from: string; to: string };
+  newStatus?: string;
+  isTerminal?: boolean;
+}
+
+function buildJourneyTimeline(episode: any, auditLogs: AuditLogEntry[]): JourneyEvent[] {
+  const events: JourneyEvent[] = [];
+
+  const sortedLogs = [...auditLogs].sort((a, b) =>
+    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
+  const hasCreatedLog = sortedLogs.some(log => log.action === "created");
+
+  if (!hasCreatedLog && (episode.startDate || episode.createdAt)) {
+    events.push({
+      id: "ep-created",
+      type: "created",
+      title: "Episode Created",
+      description: `${episode.episodeName} — treatment journey started`,
+      timestamp: episode.startDate || episode.createdAt,
+    });
+  }
+
+  for (const log of sortedLogs) {
+    if (log.action === "created") {
+      const newVals = log.newValues as Record<string, any> | null;
+      events.push({
+        id: `audit-${log.id}`,
+        type: "created",
+        title: "Episode Created",
+        description: newVals?.episodeName ? `${newVals.episodeName} — treatment journey started` : "Treatment journey started",
+        timestamp: log.createdAt,
+        performedBy: log.performedBy || undefined,
+      });
+    } else if (log.action === "status_change") {
+      const oldVals = log.oldValues as Record<string, any> | null;
+      const newVals = log.newValues as Record<string, any> | null;
+      const fromStatus = oldVals?.status || "Unknown";
+      const toStatus = newVals?.status || "Unknown";
+      const terminalStatuses = ["Completed", "Discontinued"];
+      events.push({
+        id: `audit-${log.id}`,
+        type: "status_change",
+        title: getStatusChangeTitle(toStatus),
+        description: getStatusChangeDescription(fromStatus, toStatus),
+        timestamp: log.createdAt,
+        performedBy: log.performedBy || undefined,
+        statusTransition: { from: fromStatus, to: toStatus },
+        newStatus: toStatus,
+        isTerminal: terminalStatuses.includes(toStatus),
+      });
+    }
+  }
+
+  return events;
+}
+
+function getStatusChangeTitle(toStatus: string): string {
+  switch (toStatus) {
+    case "Treatment Planning": return "Moved to Treatment Planning";
+    case "Surgery Scheduled": return "Surgery Scheduled";
+    case "Surgery Done": return "Surgery Completed";
+    case "In Treatment": return "Treatment Started";
+    case "Post Care": return "Moved to Post Care";
+    case "Follow Up": return "Follow Up Initiated";
+    case "Completed": return "Episode Completed";
+    case "Discontinued": return "Episode Discontinued";
+    case "Consultation Done": return "Returned to Consultation Done";
+    default: return `Status changed to ${toStatus}`;
+  }
+}
+
+function getStatusChangeDescription(from: string, to: string): string {
+  switch (to) {
+    case "Treatment Planning": return "Patient's treatment plan is being prepared by the clinical team";
+    case "Surgery Scheduled": return "Surgery date and logistics have been confirmed";
+    case "Surgery Done": return "Surgical procedure has been completed successfully";
+    case "In Treatment": return "Patient is actively undergoing treatment";
+    case "Post Care": return "Patient is in post-treatment care and recovery phase";
+    case "Follow Up": return "Follow-up appointments and monitoring initiated";
+    case "Completed": return "Treatment journey completed successfully";
+    case "Discontinued": return "Patient chose not to proceed with treatment";
+    case "Consultation Done": return "Episode has been restarted from consultation stage";
+    default: return `Status changed from ${from} to ${to}`;
+  }
 }
 
 function InfoRow({ label, value, link }: { label: string; value: any; link?: string }) {

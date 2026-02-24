@@ -3038,6 +3038,20 @@ export async function registerRoutes(
       });
       const ep = await storage.createEpisode(parsed);
 
+      const userName = (req as any).user?.firstName && (req as any).user?.lastName
+        ? `${(req as any).user.firstName} ${(req as any).user.lastName}`
+        : (req as any).user?.email || "System";
+      await storage.createAuditLog({
+        tenantId: tid,
+        entityType: "episode",
+        entityId: ep.id,
+        action: "created",
+        oldValues: null,
+        newValues: { status: ep.status, episodeName: ep.episodeName, patientId: ep.patientId },
+        changedFields: "status,episodeName",
+        performedBy: userName,
+      });
+
       res.status(201).json(ep);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -3047,13 +3061,34 @@ export async function registerRoutes(
   app.patch("/api/episodes/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+      const oldEpisode = await storage.getEpisode(episodeId, tid);
       const body = coerceDateFields(req.body, ["startDate", "endDate", "nextActionDate", "slaDeadline"]);
       const terminalStatuses = ["Completed", "Discontinued"];
       if (body.status && terminalStatuses.includes(body.status) && !body.endDate) {
         body.endDate = new Date();
       }
       const parsed = insertEpisodeSchema.partial().parse(body);
-      const ep = await storage.updateEpisode(Number(req.params.id), tid, parsed);
+      const ep = await storage.updateEpisode(episodeId, tid, parsed);
+
+      if (oldEpisode && body.status && body.status !== oldEpisode.status) {
+        const changedFields: string[] = ["status"];
+        if (body.endDate) changedFields.push("endDate");
+        const userName = (req as any).user?.firstName && (req as any).user?.lastName
+          ? `${(req as any).user.firstName} ${(req as any).user.lastName}`
+          : (req as any).user?.email || "System";
+        await storage.createAuditLog({
+          tenantId: tid,
+          entityType: "episode",
+          entityId: episodeId,
+          action: "status_change",
+          oldValues: { status: oldEpisode.status },
+          newValues: { status: body.status },
+          changedFields: changedFields.join(","),
+          performedBy: userName,
+        });
+      }
+
       res.json(ep);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
