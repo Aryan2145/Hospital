@@ -12,7 +12,7 @@ import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCateg
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import { desc, eq, and, sql, count, gte, lte, isNull } from "drizzle-orm";
+import { desc, eq, and, sql, count, gte, lte, isNull, inArray } from "drizzle-orm";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -2088,11 +2088,65 @@ export async function registerRoutes(
   app.get("/api/callyzer-webhook-logs", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
+      const { from, to, callType, status, employeeNumber, limit: limitParam } = req.query as Record<string, string>;
+      const conditions: any[] = [eq(callyzerWebhookLogs.tenantId, tid)];
+      if (from) conditions.push(gte(callyzerWebhookLogs.createdAt, new Date(from)));
+      if (to) conditions.push(lte(callyzerWebhookLogs.createdAt, new Date(to + "T23:59:59")));
+      if (callType) conditions.push(eq(callyzerWebhookLogs.callType, callType));
+      if (status) conditions.push(eq(callyzerWebhookLogs.processingStatus, status));
+      if (employeeNumber) conditions.push(eq(callyzerWebhookLogs.employeeNumber, employeeNumber));
+
       const logs = await db.select().from(callyzerWebhookLogs)
-        .where(eq(callyzerWebhookLogs.tenantId, tid))
+        .where(and(...conditions))
         .orderBy(desc(callyzerWebhookLogs.createdAt))
-        .limit(100);
-      res.json(logs);
+        .limit(parseInt(limitParam || "500"));
+
+      const crmUserIds = Array.from(new Set(logs.filter(l => l.matchedCrmUserId).map(l => l.matchedCrmUserId!)));
+      const leadIds = Array.from(new Set(logs.filter(l => l.matchedLeadId).map(l => l.matchedLeadId!)));
+      const allCrmUsers = await storage.getCrmUsers(tid);
+      const crmUserMap: Record<number, string> = {};
+      allCrmUsers.forEach(u => { crmUserMap[u.id] = u.name || "Unknown"; });
+
+      const leadMap: Record<number, string> = {};
+      if (leadIds.length > 0) {
+        const allLeads = await db.select({ id: leads.id, name: leads.name }).from(leads).where(and(eq(leads.tenantId, tid), inArray(leads.id, leadIds)));
+        allLeads.forEach(l => { leadMap[l.id] = l.name || "Unknown"; });
+      }
+
+      const enrichedLogs = logs.map(l => ({
+        ...l,
+        crmUserName: l.matchedCrmUserId ? (crmUserMap[l.matchedCrmUserId] || null) : null,
+        leadName: l.matchedLeadId ? (leadMap[l.matchedLeadId] || null) : null,
+      }));
+
+      const totalCalls = logs.length;
+      const incomingCalls = logs.filter(l => l.callType?.toLowerCase().includes("incoming")).length;
+      const outgoingCalls = logs.filter(l => l.callType?.toLowerCase().includes("outgoing")).length;
+      const missedCalls = logs.filter(l => l.callType?.toLowerCase().includes("missed")).length;
+      const matchedCalls = logs.filter(l => l.processingStatus === "matched").length;
+      const unmatchedCalls = logs.filter(l => l.processingStatus === "unmatched").length;
+      const totalDuration = logs.reduce((sum, l) => sum + (l.callDuration || 0), 0);
+      const avgDuration = totalCalls > 0 ? Math.round(totalDuration / totalCalls) : 0;
+
+      const employeeStats: Record<string, { name: string; total: number; incoming: number; outgoing: number; missed: number; totalDuration: number; matched: number }> = {};
+      logs.forEach(l => {
+        const emp = l.employeeNumber || "Unknown";
+        if (!employeeStats[emp]) {
+          employeeStats[emp] = { name: l.matchedCrmUserId ? (crmUserMap[l.matchedCrmUserId] || emp) : emp, total: 0, incoming: 0, outgoing: 0, missed: 0, totalDuration: 0, matched: 0 };
+        }
+        employeeStats[emp].total++;
+        if (l.callType?.toLowerCase().includes("incoming")) employeeStats[emp].incoming++;
+        if (l.callType?.toLowerCase().includes("outgoing")) employeeStats[emp].outgoing++;
+        if (l.callType?.toLowerCase().includes("missed")) employeeStats[emp].missed++;
+        employeeStats[emp].totalDuration += (l.callDuration || 0);
+        if (l.processingStatus === "matched") employeeStats[emp].matched++;
+      });
+
+      res.json({
+        logs: enrichedLogs,
+        summary: { totalCalls, incomingCalls, outgoingCalls, missedCalls, matchedCalls, unmatchedCalls, totalDuration, avgDuration },
+        employeeStats: Object.values(employeeStats).sort((a, b) => b.total - a.total),
+      });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

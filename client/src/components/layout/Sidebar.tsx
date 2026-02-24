@@ -16,6 +16,7 @@ import {
   ClipboardCheck,
   Settings2,
   CalendarOff,
+  Phone,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -30,6 +31,7 @@ const sections: { label: string; items: NavItem[] }[] = [
     label: "Reports & Dashboards",
     items: [
       { icon: LayoutDashboard, label: "Dashboard", href: "/", page: "dashboard" },
+      { icon: Phone, label: "Callyzer Reports", href: "/callyzer-reports", page: "connectors" },
     ],
   },
   {

@@ -37,6 +37,7 @@ import AdminHospitals from "@/pages/admin/AdminHospitals";
 import AdminPlans from "@/pages/admin/AdminPlans";
 import AdminSubscriptions from "@/pages/admin/AdminSubscriptions";
 import AdminPayments from "@/pages/admin/AdminPayments";
+import CallyzerReportsPage from "@/pages/CallyzerReportsPage";
 
 function TenantSuspended() {
   return (
@@ -129,6 +130,12 @@ function Router() {
       <Route path="/transactions">
         {isAuthenticated ? (
           <RoleGate page="transactions"><TransactionsPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/callyzer-reports">
+        {isAuthenticated ? (
+          <RoleGate page="connectors"><CallyzerReportsPage /></RoleGate>
         ) : <Landing />}
       </Route>
 
