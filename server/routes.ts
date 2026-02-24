@@ -80,15 +80,13 @@ async function seedDatabase() {
     const [org] = await db.insert(organisations).values({ tenantId: tid, code: "VIROC", name: "VIROC Super Speciality Orthopaedic Hospital", status: "Active", displayOrder: 1 }).returning();
     const [mainBranch] = await db.insert(branches).values({ tenantId: tid, organisationId: org.id, code: "VIROC-HQ", name: "VIROC Karelibaug (Main)", address: "Society No. 5 B, Nivruti Colony, Opp. Lohana Lewa Samaj Wadi, Aryakanya Vidyalaya Road, Karelibaug, Vadodara - 390018", phone: "+916356300400", status: "Active", displayOrder: 1 }).returning();
 
-    // Administrative Departments
-    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "ORTHO", name: "Orthopaedics & Joint Replacement", status: "Active", displayOrder: 1 });
-    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "SPINE", name: "Spine Surgery", status: "Active", displayOrder: 2 });
-    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "SPORTS", name: "Sports Injury & Arthroscopy", status: "Active", displayOrder: 3 });
-    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "PAIN", name: "Advanced Pain Clinic", status: "Active", displayOrder: 4 });
-    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "PHYSIO", name: "Physiotherapy & Rehabilitation", status: "Active", displayOrder: 5 });
-    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "ICU", name: "Surgical ICU & Critical Care", status: "Active", displayOrder: 6 });
-    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "RADIO", name: "Radiology & Imaging", status: "Active", displayOrder: 7 });
-    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "PHARM", name: "In-house Pharmacy", status: "Active", displayOrder: 8 });
+    // Administrative Departments (office/staff departments)
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "MKT", name: "Marketing", status: "Active", displayOrder: 1 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "SALES", name: "Sales", status: "Active", displayOrder: 2 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "HR", name: "HR", status: "Active", displayOrder: 3 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "IT", name: "IT", status: "Active", displayOrder: 4 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "ACCT", name: "Accounts", status: "Active", displayOrder: 5 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "FO", name: "Front Office", status: "Active", displayOrder: 6 });
 
     // Designations
     await db.insert(designations).values({ tenantId: tid, code: "MD", name: "Managing Director", status: "Active", displayOrder: 1 });
