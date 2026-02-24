@@ -92,21 +92,21 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "stageGroup", label: "Stage Group", type: "select", options: ["New", "Working", "Qualified", "Converted", "Closed"] },
   ],
   leadSources: [
-    { key: "categoryId", label: "Category ID", type: "number" },
+    { key: "categoryId", label: "Source Category", type: "ref", refTable: "leadSourceCategories" },
   ],
   states: [
-    { key: "countryId", label: "Country ID", type: "number" },
+    { key: "countryId", label: "Country", type: "ref", refTable: "countries" },
   ],
   cities: [
-    { key: "stateId", label: "State ID", type: "number" },
+    { key: "stateId", label: "State", type: "ref", refTable: "states" },
   ],
   areas: [
-    { key: "cityId", label: "City ID", type: "number" },
+    { key: "cityId", label: "City", type: "ref", refTable: "cities" },
     { key: "pinCode", label: "PIN Code", type: "text" },
   ],
   branches: [
-    { key: "organisationId", label: "Organisation ID", type: "number" },
-    { key: "cityId", label: "City ID", type: "number" },
+    { key: "organisationId", label: "Organisation", type: "ref", refTable: "organisations" },
+    { key: "cityId", label: "City", type: "ref", refTable: "cities" },
     { key: "address", label: "Address", type: "text" },
     { key: "phone", label: "Phone", type: "text" },
     { key: "email", label: "Email", type: "text" },
@@ -115,9 +115,9 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "speciality", label: "Speciality", type: "text" },
     { key: "qualification", label: "Qualification", type: "text" },
     { key: "registrationNo", label: "Registration No", type: "text" },
-    { key: "branchId", label: "Branch ID", type: "number" },
-    { key: "departmentId", label: "Department ID", type: "number" },
-    { key: "consultationFee", label: "Consultation Fee", type: "number" },
+    { key: "branchId", label: "Branch", type: "ref", refTable: "branches" },
+    { key: "departmentId", label: "Department", type: "ref", refTable: "treatmentDepartments" },
+    { key: "consultationFee", label: "Consultation Fee (₹)", type: "number" },
   ],
   opdTimings: [
     { key: "doctorId", label: "Doctor", type: "ref", refTable: "doctors" },
