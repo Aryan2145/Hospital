@@ -1,8 +1,12 @@
 import * as React from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 export interface SearchableSelectOption {
   value: string;
@@ -35,6 +39,7 @@ export function SearchableSelect({
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
 
   const selectedOption = options.find((o) => o.value === value);
 
@@ -46,9 +51,11 @@ export function SearchableSelect({
 
   React.useEffect(() => {
     if (open) {
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 0);
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 50);
+      });
     } else {
       setSearch("");
     }
@@ -63,37 +70,32 @@ export function SearchableSelect({
           aria-expanded={open}
           disabled={disabled}
           className={cn(
-            "w-full justify-between font-normal",
+            "w-full justify-between font-normal h-9",
             !selectedOption && "text-muted-foreground",
             triggerClassName
           )}
           data-testid={dataTestId}
         >
-          <span className="truncate">{selectedOption ? selectedOption.label : placeholder}</span>
+          <span className="truncate">
+            {selectedOption ? selectedOption.label : placeholder}
+          </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className={cn("p-0 z-[200]", className)}
+        ref={contentRef}
+        className={cn("p-0", className)}
         align="start"
         sideOffset={4}
+        style={{ zIndex: 9999 }}
         onOpenAutoFocus={(e) => {
           e.preventDefault();
-          inputRef.current?.focus();
-        }}
-        onInteractOutside={(e) => {
-          e.preventDefault();
-        }}
-        onPointerDownOutside={(e) => {
-          const target = e.target as HTMLElement;
-          if (!target.closest("[data-radix-popper-content-wrapper]")) {
-            setOpen(false);
-          }
+          setTimeout(() => inputRef.current?.focus(), 50);
         }}
       >
         <div className="flex flex-col">
           <div className="flex items-center border-b px-3">
-            <svg className="mr-2 h-4 w-4 shrink-0 opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
             <input
               ref={inputRef}
               className="flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
@@ -102,15 +104,18 @@ export function SearchableSelect({
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Escape") {
+                  e.stopPropagation();
                   setOpen(false);
                 }
               }}
               data-testid={dataTestId ? `${dataTestId}-search` : undefined}
             />
           </div>
-          <div className="max-h-[300px] overflow-y-auto p-1">
+          <div className="max-h-[200px] overflow-y-auto p-1">
             {filtered.length === 0 ? (
-              <div className="py-6 text-center text-sm text-muted-foreground">No results found.</div>
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No results found.
+              </div>
             ) : (
               filtered.map((option) => (
                 <div
@@ -124,9 +129,18 @@ export function SearchableSelect({
                     setOpen(false);
                     setSearch("");
                   }}
-                  data-testid={dataTestId ? `${dataTestId}-option-${option.value}` : undefined}
+                  data-testid={
+                    dataTestId
+                      ? `${dataTestId}-option-${option.value}`
+                      : undefined
+                  }
                 >
-                  <Check className={cn("mr-2 h-4 w-4", value === option.value ? "opacity-100" : "opacity-0")} />
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      value === option.value ? "opacity-100" : "opacity-0"
+                    )}
+                  />
                   <span className="truncate">{option.label}</span>
                 </div>
               ))
