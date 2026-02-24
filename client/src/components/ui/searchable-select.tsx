@@ -84,13 +84,16 @@ export function SearchableSelect({
       </PopoverTrigger>
       <PopoverContent
         ref={contentRef}
-        className={cn("p-0", className)}
+        className={cn("p-0 w-[--radix-popover-trigger-width]", className)}
         align="start"
         sideOffset={4}
-        style={{ zIndex: 9999 }}
+        style={{ zIndex: 99999, pointerEvents: "auto" }}
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           setTimeout(() => inputRef.current?.focus(), 50);
+        }}
+        onInteractOutside={(e) => {
+          e.preventDefault();
         }}
       >
         <div className="flex flex-col">
