@@ -2528,7 +2528,14 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       if (!(await requireAdminRole(req, res, tid))) return;
-      await storage.deleteCrmUser(Number(req.params.id), tid);
+      const userId = Number(req.params.id);
+      await db.update(leads).set({ assignedCrmUserId: null }).where(and(eq(leads.tenantId, tid), eq(leads.assignedCrmUserId, userId)));
+      await db.update(leads).set({ handoverFromUserId: null }).where(and(eq(leads.tenantId, tid), eq(leads.handoverFromUserId, userId)));
+      await db.update(leads).set({ handoverToUserId: null }).where(and(eq(leads.tenantId, tid), eq(leads.handoverToUserId, userId)));
+      await db.update(episodes).set({ assignedCrmUserId: null }).where(and(eq(episodes.tenantId, tid), eq(episodes.assignedCrmUserId, userId)));
+      await db.update(tasks).set({ assignedCrmUserId: null }).where(and(eq(tasks.tenantId, tid), eq(tasks.assignedCrmUserId, userId)));
+      await db.update(callyzerWebhookLogs).set({ matchedCrmUserId: null }).where(and(eq(callyzerWebhookLogs.tenantId, tid), eq(callyzerWebhookLogs.matchedCrmUserId, userId)));
+      await storage.deleteCrmUser(userId, tid);
       res.status(204).send();
     } catch (err: any) {
       res.status(500).json({ message: err.message });
