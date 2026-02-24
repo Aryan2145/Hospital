@@ -1,0 +1,442 @@
+CALLYZER TO RGB CRM INTEGRATION GUIDE
+Based on my deep study of both platforms, here's your complete step-by-step integration guide for pulling call data, employee data, and master data from Callyzer to your RGB CRM using webhook API.
+
+OVERVIEW: INTEGRATION ARCHITECTURE
+Your integration will work through these three main data flows:
+
+CALL DATA → From Callyzer Call Log APIs to RGB CRM
+
+EMPLOYEE DATA → From Callyzer Employee APIs to RGB CRM
+
+MASTER DATA → Configuration data from Callyzer to RGB CRM
+
+PART 1: UNDERSTANDING CALLYZER API FUNDAMENTALS
+Key Technical Details from Callyzer
+​
+API Base URL: https://api1.callyzer.co/api/v2.1/
+
+Rate Limiting: One request per 2 seconds (429 Too Many Requests if exceeded)
+
+Authentication: Bearer token in Authorization header
+
+Format: Authorization: Bearer <YOUR_API_TOKEN>
+
+Content Type: All requests must be application/json
+
+PART 2: GETTING YOUR CALLYZER API TOKEN
+Step 1: Generate API Access Key
+Follow these steps in Callyzer:
+
+Navigate to Connectors > API & Webhook > API Config
+
+Click Generate API Access Key
+
+Enter your Callyzer login credentials
+
+Click Generate Token
+
+CRITICAL: Save this token securely - you'll need it for all API calls to Callyzer.
+
+PART 3: DATA TYPES AVAILABLE FOR INTEGRATION
+A. CALL DATA (Most Important)
+Callyzer can provide you with comprehensive call information:
+​
+
+Call History API Endpoint: /call-log/history (POST)
+
+Key Call Data Fields Available:
+
+id - Unique call log identifier
+
+emp_name, emp_code, emp_number - Employee details
+
+emp_tags - Employee tags/categories
+
+client_name, client_number - Customer/contact details
+
+client_country_code - Country code for phone
+
+duration - Call duration in seconds
+
+call_type - Incoming/Outgoing/Missed/Rejected
+
+call_date - Date in yyyy-mm-dd format
+
+call_time - Time in 24-hour format
+
+note - Call notes
+
+call_recording_url - Link to call recording
+
+crm_status - Lead status (e.g., "Positive", "Not Interested")
+
+reminder_date & reminder_time - Callback details
+
+synced_at - When synced to Callyzer
+
+modified_at - Last modification timestamp
+
+lead_id - Link to lead in Callyzer (NEW in v2.1)
+
+Call Summary Data: Also available via /call-log/summary for aggregated metrics
+
+B. EMPLOYEE DATA
+Employee API Endpoint: /employee/get (GET)
+
+Key Employee Fields:
+
+emp_name - Employee name
+
+emp_code - Employee code/ID
+
+emp_number - Registered phone number
+
+emp_country_code - Country code
+
+emp_tags - Tags assigned to employee
+
+app_version - Installed Callyzer app version
+
+registered_at - Registration date/time
+
+is_lead_active - Whether lead feature is active
+
+is_call_recording_active - Call recording status
+
+device_details - Device model, Android version, etc.
+
+last_call_at - Last call timestamp
+
+last_sync_req_at - Last sync request
+
+C. LEAD DATA (Bonus)
+Lead API Endpoint: /lead/get (POST)
+
+You can also pull lead data with:
+
+first_name, last_name
+
+contact_numbers (up to 2)
+
+email
+
+lead_tags
+
+lead_status
+
+assigned_to - Employee assignments
+
+last_call_log - Last interaction
+
+no_of_attempts - Call attempts
+
+PART 4: UNDERSTANDING YOUR RGB CRM CONNECTOR ECOSYSTEM
+From your RGB CRM connectors page, I can see:
+​
+
+Current Status: 1 Connected (Meta/Facebook)
+
+Callyzer Integration: Marked as "Not configured" - Ready for setup!
+
+Description: "Connect to Callyzer for real-time call tracking, employee call analytics, call recordings, and team performance monitoring."
+
+Your CRM already recognizes Callyzer as a connector, which means there's likely a native integration option in your CRM system.
+
+PART 5: WEBHOOK API INTEGRATION APPROACH
+How Webhooks Work (Your Data Flow)
+Callyzer sends data via HTTP POST to your RGB CRM webhook endpoint
+
+RGB CRM receives the data in JSON format
+
+Your CRM system processes and stores the data
+
+Creating Callyzer Webhooks
+​
+In Callyzer, navigate to: Connectors > API & Webhook > Webhook Config
+
+Steps:
+
+Click Create Webhook
+
+Webhook URL - This is where RGB CRM will receive Callyzer data
+
+Secret - A security token to validate webhook authenticity
+
+Select Version - Use v2.1 (latest)
+
+Skip Exclude Numbers - Choose Yes/No based on your business logic
+
+Alert Email - Optional email alerts for webhook failures (max 5 emails)
+
+Example Callyzer Webhook Payload:
+
+json
+[
+  {
+    "emp_name": "Employee Name",
+    "emp_code": "102",
+    "emp_country_code": "91",
+    "emp_number": "98765xxxxx",
+    "emp_tags": ["emp1", "ABC"],
+    "call_logs": [
+      {
+        "id": "XgnkwIIXrlKYMem-mDNAP7DPkVfFsV3-4lIhEogXFLU",
+        "client_name": "My Contact Name",
+        "client_country_code": "91",
+        "client_number": "80907xxxxx",
+        "duration": "30",
+        "call_type": "Incoming",
+        "call_date": "2023-09-13",
+        "call_time": "17:49:41",
+        "note": "all about the call",
+        "call_recording_url": "https://media1.callyzer.co/file/callyzer-audios/TESD56409978/20230113_234589.mp3",
+        "crm_status": "Not Interested",
+        "reminder_date": "2023-09-15",
+        "reminder_time": "16:50:34",
+        "synced_at": "2023-09-13 17:50:00",
+        "modified_at": "2023-09-13 17:52:00",
+        "lead_id": "DLe37-2Kc2QoudFUsBudkw"
+      }
+    ]
+  }
+]
+PART 6: STEP-BY-STEP IMPLEMENTATION GUIDE
+STEP 1: Create Webhook Endpoint in RGB CRM
+You need to create an API endpoint in RGB CRM that can receive Callyzer webhook data.
+
+Endpoint Configuration:
+
+URL: https://viroc.rgbindia.com/api/integrations/callyzer (example)
+
+Method: POST
+
+Content-Type: application/json
+
+Authentication: Bearer token or API key
+
+STEP 2: Set Up Data Mapping
+Map Callyzer fields to your RGB CRM fields:
+
+Callyzer Field	RGB CRM Field	Data Type	Notes
+emp_number	employee_phone	String	Main employee identifier
+emp_name	employee_name	String	
+emp_code	employee_code	String	
+emp_tags	employee_tags	Array	Store as comma-separated
+client_number	lead_phone	String	Link to lead record
+client_name	lead_name	String	
+call_type	call_type	Enum	Incoming/Outgoing/Missed/Rejected
+duration	call_duration_seconds	Integer	
+call_date + call_time	call_timestamp	DateTime	Combine into single field
+note	call_notes	Text	
+crm_status	lead_status	String	Create mapping table
+call_recording_url	recording_url	URL	Store link to audio
+lead_id	callyzer_lead_id	String	For cross-referencing
+STEP 3: Set Up Webhook in Callyzer
+In Callyzer Dashboard:
+
+Go to Connectors > API & Webhook > Webhook Config
+
+Click Create Webhook
+
+Enter:
+
+Webhook URL: Your RGB CRM endpoint from Step 1
+
+Secret: Generate a secure key (e.g., using openssl or a password generator)
+
+Version: v2.1
+
+Skip Exclude Numbers: No (unless you want to exclude certain phone numbers)
+
+Alert Email: superadmin@viroc.in
+
+Click Test Webhook - Verify RGB CRM receives test data
+
+Click Create Webhook
+
+STEP 4: Implement Webhook Receiver in RGB CRM
+Your RGB CRM backend should have code like this (pseudo-code for different languages):
+
+Python (Flask) Example:
+
+python
+from flask import Flask, request, jsonify
+import hmac
+import hashlib
+
+app = Flask(__name__)
+CALLYZER_SECRET = "your_webhook_secret_key"
+
+@app.route('/api/integrations/callyzer', methods=['POST'])
+def receive_callyzer_webhook():
+    # Validate webhook signature
+    signature = request.headers.get('X-Callyzer-Signature')
+    body = request.get_data()
+    
+    expected_sig = hmac.new(
+        CALLYZER_SECRET.encode(),
+        body,
+        hashlib.sha256
+    ).hexdigest()
+    
+    if signature != expected_sig:
+        return jsonify({"error": "Invalid signature"}), 401
+    
+    # Parse webhook data
+    data = request.json
+    
+    # Process each employee's call logs
+    for employee_group in data:
+        emp_number = employee_group['emp_number']
+        emp_name = employee_group['emp_name']
+        
+        # Get or create employee in RGB CRM
+        employee = Employee.get_or_create(
+            phone=emp_number,
+            name=emp_name
+        )
+        
+        # Process each call
+        for call in employee_group['call_logs']:
+            # Get or create lead
+            lead = Lead.get_or_create(
+                phone=call['client_number'],
+                name=call['client_name']
+            )
+            
+            # Create call record
+            call_record = CallLog.create(
+                employee=employee,
+                lead=lead,
+                call_type=call['call_type'],
+                duration=call['duration'],
+                call_datetime=f"{call['call_date']} {call['call_time']}",
+                notes=call['note'],
+                recording_url=call['call_recording_url'],
+                status=call.get('crm_status'),
+                callyzer_id=call['id']
+            )
+            
+            # Link to Callyzer lead if available
+            if 'lead_id' in call:
+                call_record.callyzer_lead_id = call['lead_id']
+                call_record.save()
+    
+    return jsonify({"status": "success", "message": "Data received"}), 200
+STEP 5: Handle Data Validation & Error Management
+Implement validation for:
+
+Phone number format - Validate international format
+
+Date/Time formats - Handle timezone conversions
+
+Null/Empty fields - Define fallback values
+
+Duplicate detection - Prevent duplicate call records using callyzer_id
+
+Rate limiting - Respect Callyzer's 2-second rate limit
+
+Error Handling:
+
+Store failed webhook attempts in a queue for retry
+
+Log all errors with timestamp and request details
+
+Send alerts for critical failures
+
+STEP 6: For EMPLOYEE DATA (Pull Approach)
+Unlike webhooks (push), you may want to PULL employee data on a schedule.
+
+Scheduled Pull Method:
+
+python
+import requests
+from datetime import datetime, timedelta
+
+CALLYZER_API_TOKEN = "your_api_token"
+CALLYZER_BASE_URL = "https://api1.callyzer.co/api/v2.1"
+
+def sync_employees_from_callyzer():
+    """Run this daily via cron job"""
+    
+    headers = {
+        "Authorization": f"Bearer {CALLYZER_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    # Fetch all employees
+    response = requests.get(
+        f"{CALLYZER_BASE_URL}/employee/get",
+        headers=headers,
+        params={
+            "page_no": 1,
+            "page_size": 100
+        }
+    )
+    
+    if response.status_code == 200:
+        employees = response.json()['result']
+        
+        for emp in employees:
+            # Create or update employee in RGB CRM
+            Employee.create_or_update(
+                phone=emp['emp_number'],
+                code=emp['emp_code'],
+                name=emp['emp_name'],
+                country_code=emp['emp_country_code'],
+                tags=emp.get('emp_tags', []),
+                app_version=emp.get('app_version'),
+                lead_active=emp.get('is_lead_active'),
+                recording_active=emp.get('is_call_recording_active'),
+                last_call_at=emp.get('last_call_at'),
+                device_info=emp.get('device_details')
+            )
+STEP 7: For CALL HISTORY DATA (Pull Approach)
+If you want historical call data, use the /call-log/history endpoint:
+
+Sample API Request:
+
+python
+import requests
+import time
+from datetime import datetime, timedelta
+
+def fetch_call_history(days_back=7):
+    """Fetch last 7 days of call history"""
+    
+    headers = {
+        "Authorization": f"Bearer {CALLYZER_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    # Calculate timestamps (must be UNIX in UTC)
+    now = datetime.utcnow()
+    past = now - timedelta(days=days_back)
+    
+    call_to_timestamp = int(now.timestamp())
+    call_from_timestamp = int(past.timestamp())
+    
+    payload = {
+        "call_from": call_from_timestamp,
+        "call_to": call_to_timestamp,
+        "page_no": 1,
+        "page_size": 100
+    }
+    
+    response = requests.post(
+        f"{CALLYZER_BASE_URL}/call-log/history",
+        headers=headers,
+        json=payload
+    )
+    
+    if response.status_code == 200:
+        calls = response.json()['result']
+        
+        for call in calls:
+            # Process each call
+            process_call_record(call)
+    
+    # RESPECT RATE LIMIT: Wait 2 seconds between requests
+    time.sleep(2)
+STEP 8: Handle Advanced Filters
+Call Summary Report Example:
