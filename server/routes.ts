@@ -3031,6 +3031,7 @@ export async function registerRoutes(
         ...body,
         tenantId: tid,
         episodeName,
+        startDate: body.startDate || new Date(),
         assignedCrmUserId: body.assignedCrmUserId || lead.assignedCrmUserId,
         branchId: body.branchId || lead.branchId,
         priority: body.priority || lead.priority || "Normal",
@@ -3047,6 +3048,10 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["startDate", "endDate", "nextActionDate", "slaDeadline"]);
+      const terminalStatuses = ["Closed Won", "Closed Lost", "Cancelled"];
+      if (body.status && terminalStatuses.includes(body.status) && !body.endDate) {
+        body.endDate = new Date();
+      }
       const parsed = insertEpisodeSchema.partial().parse(body);
       const ep = await storage.updateEpisode(Number(req.params.id), tid, parsed);
       res.json(ep);

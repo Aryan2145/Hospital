@@ -79,8 +79,6 @@ export default function TransactionsPage() {
   const [formTreatmentDeptId, setFormTreatmentDeptId] = useState("");
   const [formEpisodeType, setFormEpisodeType] = useState("OPD");
   const [formStatus, setFormStatus] = useState("Consultation Done");
-  const [formStartDate, setFormStartDate] = useState("");
-  const [formEndDate, setFormEndDate] = useState("");
   const [formDiagnosis, setFormDiagnosis] = useState("");
   const [formTreatmentPlan, setFormTreatmentPlan] = useState("");
   const [formEstimatedCost, setFormEstimatedCost] = useState("");
@@ -191,8 +189,6 @@ export default function TransactionsPage() {
     setFormTreatmentDeptId("");
     setFormEpisodeType("OPD");
     setFormStatus("Consultation Done");
-    setFormStartDate(new Date().toISOString().split("T")[0]);
-    setFormEndDate("");
     setFormDiagnosis("");
     setFormTreatmentPlan("");
     setFormEstimatedCost("");
@@ -208,8 +204,6 @@ export default function TransactionsPage() {
     setFormTreatmentDeptId(ep.treatmentDepartmentId ? String(ep.treatmentDepartmentId) : "");
     setFormEpisodeType(ep.episodeType || "OPD");
     setFormStatus(ep.status);
-    setFormStartDate(ep.startDate ? ep.startDate.split("T")[0] : "");
-    setFormEndDate(ep.endDate ? ep.endDate.split("T")[0] : "");
     setFormDiagnosis(ep.diagnosis || "");
     setFormTreatmentPlan(ep.treatmentPlan || "");
     setFormEstimatedCost(ep.estimatedCost != null ? String(ep.estimatedCost) : "");
@@ -240,8 +234,6 @@ export default function TransactionsPage() {
     };
     if (formTreatmentDeptId && formTreatmentDeptId !== "none") data.treatmentDepartmentId = Number(formTreatmentDeptId);
     if (formDoctorId && formDoctorId !== "none") data.doctorId = Number(formDoctorId);
-    if (formStartDate) data.startDate = formStartDate;
-    if (formEndDate) data.endDate = formEndDate;
     if (formDiagnosis) data.diagnosis = formDiagnosis;
     if (formTreatmentPlan) data.treatmentPlan = formTreatmentPlan;
     if (formEstimatedCost) data.estimatedCost = Number(formEstimatedCost);
@@ -470,17 +462,6 @@ export default function TransactionsPage() {
                     placeholder="Select status"
                     data-testid="episode-select-status"
                   />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs font-medium text-muted-foreground">Start Date</Label>
-                  <Input type="date" value={formStartDate} onChange={(e) => setFormStartDate(e.target.value)} data-testid="episode-input-start" />
-                </div>
-                <div>
-                  <Label className="text-xs font-medium text-muted-foreground">End Date</Label>
-                  <Input type="date" value={formEndDate} onChange={(e) => setFormEndDate(e.target.value)} data-testid="episode-input-end" />
                 </div>
               </div>
 
