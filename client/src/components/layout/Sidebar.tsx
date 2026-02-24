@@ -12,7 +12,6 @@ import {
   Megaphone,
   Plug,
   HeartPulse,
-  FileSpreadsheet,
   Paintbrush,
   ClipboardCheck,
   Settings2,
@@ -55,7 +54,6 @@ const sections: { label: string; items: NavItem[] }[] = [
     items: [
       { icon: UserCog, label: "Team", href: "/team", page: "team" },
       { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
-      { icon: FileSpreadsheet, label: "Google Sheets Import", href: "/google-sheets-import", page: "leads" },
       { icon: Paintbrush, label: "Branding", href: "/branding", page: "branding" },
     ],
   },

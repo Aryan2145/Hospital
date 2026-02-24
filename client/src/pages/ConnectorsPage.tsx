@@ -17,7 +17,7 @@ import {
   Plus, Settings, RefreshCw, Trash2, CheckCircle2, XCircle,
   Wifi, WifiOff, ArrowUpRight, BarChart3, Eye, MousePointerClick,
   IndianRupee, Target, Loader2, Zap, Globe, TrendingUp,
-  Copy, Pencil, Link2, Phone, Mail, MessageSquare,
+  Copy, Pencil, Link2, Phone, Mail, MessageSquare, FileSpreadsheet,
 } from "lucide-react";
 import { SiFacebook, SiGoogle, SiLinkedin, SiX } from "react-icons/si";
 
@@ -691,8 +691,37 @@ export default function ConnectorsPage() {
               </div>
 
               <div>
-                <h2 className="text-lg font-semibold mb-3">Communication & Notifications</h2>
+                <h2 className="text-lg font-semibold mb-3">Communication & Data Import</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  <Card data-testid="card-connector-google-sheets">
+                    <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-md bg-emerald-50 dark:bg-emerald-950/30">
+                          <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">Google Sheets Import</CardTitle>
+                          <p className="text-xs text-muted-foreground mt-1">Bulk lead import</p>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Import leads in bulk from Google Sheets with field mapping, duplicate handling, and automatic assignment.
+                      </p>
+                      <div className="flex items-center gap-2 pt-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate("/google-sheets-import")}
+                          data-testid="button-configure-google-sheets"
+                        >
+                          <Settings className="h-3.5 w-3.5 mr-1.5" /> Configure
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
                   <Card data-testid="card-connector-email">
                     <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
                       <div className="flex items-center gap-3">
