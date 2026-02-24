@@ -34,6 +34,7 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   const selectedOption = options.find((o) => o.value === value);
 
@@ -43,8 +44,18 @@ export function SearchableSelect({
     return options.filter((o) => o.label.toLowerCase().includes(term));
   }, [options, search]);
 
+  React.useEffect(() => {
+    if (open) {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
+    } else {
+      setSearch("");
+    }
+  }, [open]);
+
   return (
-    <Popover open={open} onOpenChange={setOpen} modal={true}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -62,15 +73,38 @@ export function SearchableSelect({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className={cn("p-0 z-[100]", className)} align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+      <PopoverContent
+        className={cn("p-0 z-[200]", className)}
+        align="start"
+        sideOffset={4}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          inputRef.current?.focus();
+        }}
+        onInteractOutside={(e) => {
+          e.preventDefault();
+        }}
+        onPointerDownOutside={(e) => {
+          const target = e.target as HTMLElement;
+          if (!target.closest("[data-radix-popper-content-wrapper]")) {
+            setOpen(false);
+          }
+        }}
+      >
         <div className="flex flex-col">
           <div className="flex items-center border-b px-3">
             <svg className="mr-2 h-4 w-4 shrink-0 opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
             <input
+              ref={inputRef}
               className="flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
               placeholder={searchPlaceholder}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setOpen(false);
+                }
+              }}
               data-testid={dataTestId ? `${dataTestId}-search` : undefined}
             />
           </div>
