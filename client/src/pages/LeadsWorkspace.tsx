@@ -5,16 +5,21 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, Filter, FileUp } from "lucide-react";
+import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, Mail, Calendar, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertLeadSchema, InsertLead } from "@shared/schema";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { getStatusColor, getPriorityColor } from "@/lib/lead-status";
+import { format, formatDistanceToNow } from "date-fns";
+import { cn } from "@/lib/utils";
 
 export default function LeadsWorkspace() {
   const [search, setSearch] = useState("");
@@ -30,6 +35,7 @@ export default function LeadsWorkspace() {
 
   const { data: leads, isLoading } = useLeads(undefined, debouncedSearch);
   const [open, setOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [, navigate] = useLocation();
 
   return (
@@ -54,9 +60,26 @@ export default function LeadsWorkspace() {
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              <Button variant="outline" size="icon" className="shrink-0">
-                <Filter className="w-4 h-4" />
-              </Button>
+              <div className="flex items-center border rounded-md overflow-hidden shrink-0">
+                <Button
+                  variant={viewMode === "kanban" ? "default" : "ghost"}
+                  size="icon"
+                  className="h-9 w-9 rounded-none"
+                  onClick={() => setViewMode("kanban")}
+                  data-testid="button-view-kanban"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={viewMode === "list" ? "default" : "ghost"}
+                  size="icon"
+                  className="h-9 w-9 rounded-none"
+                  onClick={() => setViewMode("list")}
+                  data-testid="button-view-list"
+                >
+                  <List className="w-4 h-4" />
+                </Button>
+              </div>
 
               <Button variant="outline" size="sm" className="shrink-0" onClick={() => navigate("/lead-import")} data-testid="button-bulk-import">
                 <FileUp className="w-4 h-4 md:mr-2" />
@@ -85,7 +108,11 @@ export default function LeadsWorkspace() {
           {isLoading ? (
             <LoadingSpinner text="Loading leads..." />
           ) : leads ? (
-            <KanbanBoard leads={leads} />
+            viewMode === "kanban" ? (
+              <KanbanBoard leads={leads} />
+            ) : (
+              <LeadsListView leads={leads} />
+            )
           ) : (
              <div className="flex items-center justify-center h-full text-muted-foreground">
                 Failed to load leads.
@@ -93,6 +120,135 @@ export default function LeadsWorkspace() {
           )}
         </div>
     </AppLayout>
+  );
+}
+
+function LeadsListView({ leads }: { leads: any[] }) {
+  const [sortField, setSortField] = useState<string>("createdAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [, navigate] = useLocation();
+
+  const toggleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDir("desc");
+    }
+  };
+
+  const SortHeader = ({ field, children }: { field: string; children: React.ReactNode }) => (
+    <TableHead
+      className="cursor-pointer select-none hover:bg-muted/50 transition-colors"
+      onClick={() => toggleSort(field)}
+      data-testid={`sort-${field}`}
+    >
+      <div className="flex items-center gap-1">
+        {children}
+        {sortField === field ? (
+          sortDir === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+        ) : (
+          <ArrowUpDown className="w-3 h-3 opacity-30" />
+        )}
+      </div>
+    </TableHead>
+  );
+
+  const sorted = [...leads].sort((a, b) => {
+    let aVal = a[sortField];
+    let bVal = b[sortField];
+    if (aVal == null) return 1;
+    if (bVal == null) return -1;
+    if (typeof aVal === "string") aVal = aVal.toLowerCase();
+    if (typeof bVal === "string") bVal = bVal.toLowerCase();
+    if (aVal < bVal) return sortDir === "asc" ? -1 : 1;
+    if (aVal > bVal) return sortDir === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  return (
+    <div className="h-full overflow-auto rounded-lg border bg-card">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/30">
+            <SortHeader field="name">Name</SortHeader>
+            <TableHead>Contact</TableHead>
+            <SortHeader field="status">Status</SortHeader>
+            <SortHeader field="priority">Priority</SortHeader>
+            <TableHead>Next Action</TableHead>
+            <SortHeader field="createdAt">Created</SortHeader>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {sorted.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+                No leads found.
+              </TableCell>
+            </TableRow>
+          ) : (
+            sorted.map((lead) => (
+              <TableRow
+                key={lead.id}
+                className="cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => navigate(`/leads/${lead.id}`)}
+                data-testid={`row-lead-${lead.id}`}
+              >
+                <TableCell>
+                  <div>
+                    <span className="font-medium text-foreground" data-testid={`text-lead-name-${lead.id}`}>{lead.name}</span>
+                    {lead.hmsPatientId && (
+                      <span className="ml-2 text-[10px] text-muted-foreground font-mono">#{lead.hmsPatientId}</span>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                    {lead.phoneE164 && (
+                      <span className="flex items-center gap-1" data-testid={`text-lead-phone-${lead.id}`}>
+                        <Phone className="w-3 h-3" /> {lead.phoneE164}
+                      </span>
+                    )}
+                    {lead.email && (
+                      <span className="flex items-center gap-1" data-testid={`text-lead-email-${lead.id}`}>
+                        <Mail className="w-3 h-3" /> {lead.email}
+                      </span>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge className={cn("text-[10px] whitespace-nowrap", getStatusColor(lead.status))} data-testid={`badge-status-${lead.id}`}>
+                    {lead.status}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {lead.priority && (
+                    <Badge variant="outline" className={cn("text-[10px]", getPriorityColor(lead.priority))} data-testid={`badge-priority-${lead.id}`}>
+                      {lead.priority}
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {lead.nextActionDate ? (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Calendar className="w-3 h-3" />
+                      <span>{format(new Date(lead.nextActionDate), "MMM d, h:mm a")}</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground/50">—</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <span className="text-xs text-muted-foreground" data-testid={`text-lead-created-${lead.id}`}>
+                    {lead.createdAt ? formatDistanceToNow(new Date(lead.createdAt), { addSuffix: true }) : "—"}
+                  </span>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
