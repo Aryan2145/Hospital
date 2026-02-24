@@ -367,6 +367,9 @@ export default function MasterData() {
   const autoCodeNameTables = ["doctorLeaveExceptions", "doctorSpecialityMappings"];
   const isAutoCodeName = selectedTable ? autoCodeNameTables.includes(selectedTable) : false;
 
+  const hideStatusDisplayOrderTables = ["doctorLeaveExceptions", "doctorSpecialityMappings"];
+  const hideStatusDisplayOrder = selectedTable ? hideStatusDisplayOrderTables.includes(selectedTable) : false;
+
   function autoGenerateCodeName(data: Record<string, any>): Record<string, any> {
     if (!isAutoCodeName) return data;
     const result = { ...data };
@@ -715,8 +718,8 @@ export default function MasterData() {
                     <TableRow>
                       {!isAutoCodeName && <TableHead>Code</TableHead>}
                       {!isAutoCodeName && <TableHead>Name</TableHead>}
-                      <TableHead>Status</TableHead>
-                      {!isAutoCodeName && <TableHead>Order</TableHead>}
+                      {!hideStatusDisplayOrder && <TableHead>Status</TableHead>}
+                      {!isAutoCodeName && !hideStatusDisplayOrder && <TableHead>Order</TableHead>}
                       {extraFields.map((f) => (
                         <TableHead key={f.key}>{f.label}</TableHead>
                       ))}
@@ -741,12 +744,14 @@ export default function MasterData() {
                         <TableRow key={record.id} data-testid={`row-master-${record.id}`}>
                           {!isAutoCodeName && <TableCell className="font-mono text-sm">{record.code}</TableCell>}
                           {!isAutoCodeName && <TableCell>{record.name}</TableCell>}
-                          <TableCell>
-                            <Badge variant={record.status === "Active" ? "default" : "secondary"}>
-                              {record.status}
-                            </Badge>
-                          </TableCell>
-                          {!isAutoCodeName && <TableCell>{record.displayOrder ?? 0}</TableCell>}
+                          {!hideStatusDisplayOrder && (
+                            <TableCell>
+                              <Badge variant={record.status === "Active" ? "default" : "secondary"}>
+                                {record.status}
+                              </Badge>
+                            </TableCell>
+                          )}
+                          {!isAutoCodeName && !hideStatusDisplayOrder && <TableCell>{record.displayOrder ?? 0}</TableCell>}
                           {extraFields.map((f) => {
                             let displayVal: any = record[f.key] ?? "-";
                             if (f.type === "boolean") {
@@ -831,27 +836,31 @@ export default function MasterData() {
                 </div>
               </>
             )}
-            <div>
-              <label className="text-sm font-medium">Status</label>
-              <SearchableSelect
-                value={formData.status}
-                onValueChange={(val) => setFormData({ ...formData, status: val })}
-                options={[
-                  { value: "Active", label: "Active" },
-                  { value: "Inactive", label: "Inactive" },
-                ]}
-                data-testid="select-status"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Display Order</label>
-              <Input
-                type="number"
-                value={formData.displayOrder}
-                onChange={(e) => setFormData({ ...formData, displayOrder: parseInt(e.target.value) || 0 })}
-                data-testid="input-display-order"
-              />
-            </div>
+            {!hideStatusDisplayOrder && (
+              <>
+                <div>
+                  <label className="text-sm font-medium">Status</label>
+                  <SearchableSelect
+                    value={formData.status}
+                    onValueChange={(val) => setFormData({ ...formData, status: val })}
+                    options={[
+                      { value: "Active", label: "Active" },
+                      { value: "Inactive", label: "Inactive" },
+                    ]}
+                    data-testid="select-status"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Display Order</label>
+                  <Input
+                    type="number"
+                    value={formData.displayOrder}
+                    onChange={(e) => setFormData({ ...formData, displayOrder: parseInt(e.target.value) || 0 })}
+                    data-testid="input-display-order"
+                  />
+                </div>
+              </>
+            )}
 
             {extraFields.length > 0 && (
               <div className="border-t pt-4 mt-2">
