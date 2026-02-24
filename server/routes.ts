@@ -2502,10 +2502,35 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       if (!(await requireAdminRole(req, res, tid))) return;
-      const body = coerceDateFields(req.body, ["joiningDate", "resetTokenExpiry"]);
-      const parsed = insertCrmUserSchema.parse({ ...body, tenantId: tid });
+      const { password, confirmPassword, ...rest } = req.body;
+      const body = coerceDateFields(rest, ["joiningDate", "resetTokenExpiry"]);
+
+      if (!body.phone || !body.phone.trim()) {
+        return res.status(400).json({ message: "Mobile number is required (used as login username)" });
+      }
+      const normalizedPhone = body.phone.trim().replace(/\s+/g, "");
+      body.phone = normalizedPhone;
+
+      const existingUsers = await storage.getCrmUsers(tid);
+      const phoneDuplicate = existingUsers.find((u: any) => u.phone === normalizedPhone);
+      if (phoneDuplicate) {
+        return res.status(400).json({ message: "A user with this mobile number already exists" });
+      }
+
+      if (!password || password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+      if (confirmPassword && password !== confirmPassword) {
+        return res.status(400).json({ message: "Passwords do not match" });
+      }
+
+      const { hashPassword } = await import("./replit_integrations/auth/replitAuth");
+      const passwordHash = await hashPassword(password);
+
+      const parsed = insertCrmUserSchema.parse({ ...body, tenantId: tid, passwordHash });
       const user = await storage.createCrmUser(parsed);
-      res.status(201).json(user);
+      const { passwordHash: _, ...safeUser } = user as any;
+      res.status(201).json(safeUser);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
     }

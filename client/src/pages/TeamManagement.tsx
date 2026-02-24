@@ -25,6 +25,8 @@ interface UserFormData {
   name: string;
   email: string;
   phone: string;
+  password: string;
+  confirmPassword: string;
   systemRoleId: number | null;
   branchId: number | null;
   departmentId: number | null;
@@ -39,6 +41,7 @@ interface UserFormData {
 
 const EMPTY_FORM: UserFormData = {
   code: "", name: "", email: "", phone: "",
+  password: "", confirmPassword: "",
   systemRoleId: null, branchId: null, departmentId: null,
   designationId: null, employmentTypeId: null,
   reportingTo: null, accessScopeType: "Self", phiAccessLevel: "None",
@@ -224,12 +227,28 @@ export default function TeamManagement() {
       toast({ title: "Validation Error", description: "Code and Name are required", variant: "destructive" });
       return;
     }
+    if (!formData.phone.trim()) {
+      toast({ title: "Validation Error", description: "Mobile number is required (used as login username)", variant: "destructive" });
+      return;
+    }
+    if (!editingUser) {
+      if (!formData.password || formData.password.length < 6) {
+        toast({ title: "Validation Error", description: "Password must be at least 6 characters", variant: "destructive" });
+        return;
+      }
+      if (formData.password !== formData.confirmPassword) {
+        toast({ title: "Validation Error", description: "Passwords do not match", variant: "destructive" });
+        return;
+      }
+    }
+    const { confirmPassword, ...rest } = formData;
     const payload: any = {
-      ...formData,
+      ...rest,
       isActive: formData.status === "Active",
       joiningDate: formData.joiningDate || null,
     };
     if (editingUser) {
+      delete payload.password;
       updateMutation.mutate({ id: editingUser.id, data: payload });
     } else {
       createMutation.mutate(payload);
@@ -475,14 +494,31 @@ export default function TeamManagement() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
+                <Label htmlFor="phone">Mobile Number (Username) *</Label>
+                <Input id="phone" value={formData.phone} onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))} placeholder="+919800000007" data-testid="input-user-phone" />
+                <p className="text-xs text-muted-foreground mt-1">Used as login username</p>
+              </div>
+              <div>
                 <Label htmlFor="email">Email</Label>
                 <Input id="email" type="email" value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} placeholder="john@viroc.in" data-testid="input-user-email" />
               </div>
-              <div>
-                <Label htmlFor="phone">Phone</Label>
-                <Input id="phone" value={formData.phone} onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))} placeholder="+919800000007" data-testid="input-user-phone" />
-              </div>
             </div>
+
+            {!editingUser && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="password">Password *</Label>
+                  <Input id="password" type="password" value={formData.password} onChange={e => setFormData(p => ({ ...p, password: e.target.value }))} placeholder="Minimum 6 characters" data-testid="input-user-password" />
+                </div>
+                <div>
+                  <Label htmlFor="confirm-password">Confirm Password *</Label>
+                  <Input id="confirm-password" type="password" value={formData.confirmPassword} onChange={e => setFormData(p => ({ ...p, confirmPassword: e.target.value }))} placeholder="Re-enter password" data-testid="input-user-confirm-password" />
+                  {formData.confirmPassword && formData.password !== formData.confirmPassword && (
+                    <p className="text-xs text-destructive mt-1">Passwords do not match</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="border-t pt-3 mt-1">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Role & Organisation</p>
