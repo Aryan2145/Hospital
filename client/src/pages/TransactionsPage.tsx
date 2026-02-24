@@ -24,7 +24,6 @@ interface Episode {
   leadId: number | null;
   episodeName: string;
   treatmentDepartmentId: number | null;
-  treatmentSubDepartmentId: number | null;
   doctorId: number | null;
   branchId: number | null;
   episodeType: string | null;

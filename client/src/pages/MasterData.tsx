@@ -112,9 +112,6 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "address", label: "Address", type: "text" },
     { key: "phone", label: "Phone", type: "text" },
   ],
-  administrativeSubDepartments: [
-    { key: "departmentId", label: "Department", type: "ref", refTable: "administrativeDepartments" },
-  ],
   callingLines: [
     { key: "phoneNumber", label: "Phone Number", type: "text" },
     { key: "provider", label: "Provider", type: "text" },
@@ -135,11 +132,6 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "accessScopeType", label: "Access Scope", type: "select", options: ["All", "Branch", "Department", "Self"] },
     { key: "phiAccessLevel", label: "PHI Access Level", type: "select", options: ["Full", "Masked", "None"] },
     { key: "isActive", label: "Is Active", type: "boolean" },
-  ],
-
-  // CATEGORY 3: TREATMENT MASTERS
-  treatmentSubDepartments: [
-    { key: "treatmentDepartmentId", label: "Treatment Department", type: "ref", refTable: "treatmentDepartments" },
   ],
 
   // CATEGORY 4: DOCTORS MASTERS
@@ -166,12 +158,6 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "leaveEndDate", label: "Leave To (optional)", type: "date" },
     { key: "reason", label: "Reason", type: "text" },
   ],
-  doctorSpecialityMappings: [
-    { key: "doctorId", label: "Doctor", type: "ref", refTable: "doctors" },
-    { key: "treatmentSubDepartmentId", label: "Specialities (Sub-Departments)", type: "multiref", refTable: "treatmentSubDepartments" },
-    { key: "isPrimary", label: "Is Primary Speciality", type: "boolean" },
-  ],
-
   // CATEGORY 5: LEAD GENERATION MASTERS
   leadSources: [
     { key: "categoryId", label: "Source Category", type: "ref", refTable: "leadSourceCategories" },
@@ -475,10 +461,10 @@ export default function MasterData() {
     setIsDialogOpen(true);
   }
 
-  const autoCodeNameTables = ["doctorLeaveExceptions", "doctorSpecialityMappings", "opdTimings"];
+  const autoCodeNameTables = ["doctorLeaveExceptions", "opdTimings"];
   const isAutoCodeName = selectedTable ? autoCodeNameTables.includes(selectedTable) : false;
 
-  const hideStatusDisplayOrderTables = ["doctorLeaveExceptions", "doctorSpecialityMappings", "opdTimings"];
+  const hideStatusDisplayOrderTables = ["doctorLeaveExceptions", "opdTimings"];
   const hideStatusDisplayOrder = selectedTable ? hideStatusDisplayOrderTables.includes(selectedTable) : false;
 
   function autoGenerateCodeName(data: Record<string, any>): Record<string, any> {
@@ -491,15 +477,6 @@ export default function MasterData() {
       const dateStr = data.leaveDate || "no-date";
       result.code = `LEAVE-${data.doctorId}-${dateStr}`;
       result.name = `${doctorName} - ${dateStr}${data.leaveEndDate ? ` to ${data.leaveEndDate}` : ""}`;
-    } else if (selectedTable === "doctorSpecialityMappings") {
-      const doctorRecords = refDataMap["doctors"] || [];
-      const specRecords = refDataMap["treatmentSubDepartments"] || [];
-      const doctor = doctorRecords.find((r: any) => r.id === data.doctorId);
-      const spec = specRecords.find((r: any) => r.id === data.treatmentSubDepartmentId);
-      const doctorName = doctor ? doctor.name : `Dr-${data.doctorId}`;
-      const specName = spec ? spec.name : `Spec-${data.treatmentSubDepartmentId}`;
-      result.code = `DRSPC-${data.doctorId}-${data.treatmentSubDepartmentId}`;
-      result.name = `${doctorName} → ${specName}${data.isPrimary ? " (Primary)" : ""}`;
     } else if (selectedTable === "opdTimings") {
       const doctorRecords = refDataMap["doctors"] || [];
       const branchRecords = refDataMap["branches"] || [];

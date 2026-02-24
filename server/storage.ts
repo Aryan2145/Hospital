@@ -673,11 +673,11 @@ export class DatabaseStorage implements IStorage {
 
   private static CODE_PREFIXES: Record<string, string> = {
     countries: "CTRY", states: "ST", cities: "CTY", areas: "AREA", branchServiceability: "BRSVC",
-    organisations: "ORG", branches: "BR", administrativeDepartments: "ADPT", administrativeSubDepartments: "ASDPT",
+    organisations: "ORG", branches: "BR", administrativeDepartments: "ADPT",
     designations: "DESG", employmentTypes: "EMPT", systemRoles: "ROLE",
     callingLines: "CLINE", userLineAssignments: "ULA",
-    treatmentDepartments: "TDPT", treatmentSubDepartments: "TSDPT", consultationTypes: "CTYPE",
-    doctors: "DOC", opdTimings: "OPD", doctorLeaveExceptions: "LEAVE", doctorSpecialityMappings: "DRSPC",
+    treatmentDepartments: "TDPT", consultationTypes: "CTYPE",
+    doctors: "DOC", opdTimings: "OPD", doctorLeaveExceptions: "LEAVE",
     leadSourceCategories: "LSCAT", leadSources: "LSRC", campaignChannels: "CMPCH",
     utmSources: "UTMS", utmMediums: "UTMM", utmCampaigns: "UTMC", utmTerms: "UTMT", utmContents: "UTMCN",
     referrers: "REF", corporateInsurances: "CINS", leadCreationChannels: "LDCH",
@@ -706,7 +706,7 @@ export class DatabaseStorage implements IStorage {
     data.created_at = now;
     data.modified_at = now;
 
-    const skipAutoCode = ["doctorLeaveExceptions", "doctorSpecialityMappings", "opdTimings"];
+    const skipAutoCode = ["doctorLeaveExceptions", "opdTimings"];
     if (!skipAutoCode.includes(tableName)) {
       if (!data.code || data.code.trim() === "") {
         data.code = await this.generateCode(tableName, pgTable, data.tenantId || data.tenant_id);

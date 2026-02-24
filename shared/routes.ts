@@ -226,7 +226,6 @@ export const MASTER_CATEGORIES = [
       { key: "organisations", label: "Organisation" },
       { key: "branches", label: "Branch" },
       { key: "administrativeDepartments", label: "Administrative Department" },
-      { key: "administrativeSubDepartments", label: "Administrative Sub-Department" },
       { key: "designations", label: "Designation" },
       { key: "employmentTypes", label: "Employment Type" },
       { key: "systemRoles", label: "System Role" },
@@ -239,7 +238,6 @@ export const MASTER_CATEGORIES = [
     category: "Treatment & Providers",
     tables: [
       { key: "treatmentDepartments", label: "Treatment Department" },
-      { key: "treatmentSubDepartments", label: "Treatment Sub-Department" },
       { key: "consultationTypes", label: "Consultation Type" },
     ]
   },
@@ -249,7 +247,6 @@ export const MASTER_CATEGORIES = [
       { key: "doctors", label: "Doctor" },
       { key: "opdTimings", label: "OPD Timing" },
       { key: "doctorLeaveExceptions", label: "Doctor Leave Configuration" },
-      { key: "doctorSpecialityMappings", label: "Doctor Speciality Mapping" },
     ]
   },
   {

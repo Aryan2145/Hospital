@@ -8,7 +8,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db, pool } from "./db";
-import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, treatmentSubDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks, doctorLeaveExceptions } from "@shared/schema";
+import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks, doctorLeaveExceptions } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -116,30 +116,13 @@ async function seedDatabase() {
     await db.insert(callingLines).values({ tenantId: tid, code: "CRM", name: "CRM Outbound Line", status: "Active", displayOrder: 2 });
     await db.insert(callingLines).values({ tenantId: tid, code: "COUNSELLING", name: "Home Counselling Line", status: "Active", displayOrder: 3 });
 
-    // ── Treatment Departments & Sub-Departments ──
-    const [tdJoint] = await db.insert(treatmentDepartments).values({ tenantId: tid, code: "JOINT_REPL", name: "Joint Replacement", status: "Active", displayOrder: 1 }).returning();
-    const [tdSpine] = await db.insert(treatmentDepartments).values({ tenantId: tid, code: "SPINE_SURG", name: "Spine Surgery", status: "Active", displayOrder: 2 }).returning();
-    const [tdSportsInj] = await db.insert(treatmentDepartments).values({ tenantId: tid, code: "SPORTS_INJ", name: "Sports Injury & Arthroscopy", status: "Active", displayOrder: 3 }).returning();
-    const [tdTrauma] = await db.insert(treatmentDepartments).values({ tenantId: tid, code: "TRAUMA", name: "Fracture & Trauma", status: "Active", displayOrder: 4 }).returning();
-    const [tdPainMgmt] = await db.insert(treatmentDepartments).values({ tenantId: tid, code: "PAIN_MGMT", name: "Pain Management", status: "Active", displayOrder: 5 }).returning();
-    const [tdFoot] = await db.insert(treatmentDepartments).values({ tenantId: tid, code: "FOOT_ANKLE", name: "Foot & Ankle Surgery", status: "Active", displayOrder: 6 }).returning();
-
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdJoint.id, code: "ROBOTIC_NKR", name: "Robotic Natural Knee Replacement", status: "Active", displayOrder: 1 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdJoint.id, code: "TKR", name: "Total Knee Replacement", status: "Active", displayOrder: 2 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdJoint.id, code: "THR", name: "Total Hip Replacement", status: "Active", displayOrder: 3 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdJoint.id, code: "REV_JOINT", name: "Revision Joint Replacement", status: "Active", displayOrder: 4 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdSpine.id, code: "ENDO_SPINE", name: "Endoscopic Spine Surgery", status: "Active", displayOrder: 1 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdSpine.id, code: "MIS_SPINE", name: "Minimally Invasive Spine Surgery", status: "Active", displayOrder: 2 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdSpine.id, code: "BACK_SCHOOL", name: "Back School", status: "Active", displayOrder: 3 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdSportsInj.id, code: "ARTHROSCOPY", name: "Arthroscopic Surgery", status: "Active", displayOrder: 1 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdSportsInj.id, code: "LIGAMENT", name: "Ligament Reconstruction", status: "Active", displayOrder: 2 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdTrauma.id, code: "FRACTURE_MIS", name: "Minimal Invasive Fracture Surgery", status: "Active", displayOrder: 1 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdTrauma.id, code: "POLYTRAUMA", name: "Polytrauma Management", status: "Active", displayOrder: 2 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdTrauma.id, code: "ILIZAROV", name: "Ilizarov Technique", status: "Active", displayOrder: 3 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdPainMgmt.id, code: "INJECTION", name: "Pain Injection Therapy", status: "Active", displayOrder: 1 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdPainMgmt.id, code: "RF_ABLATION", name: "Radiofrequency Ablation", status: "Active", displayOrder: 2 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdFoot.id, code: "ANKLE_SURG", name: "Ankle Surgery", status: "Active", displayOrder: 1 });
-    await db.insert(treatmentSubDepartments).values({ tenantId: tid, treatmentDepartmentId: tdFoot.id, code: "FOOT_RECON", name: "Foot Reconstruction", status: "Active", displayOrder: 2 });
+    // ── Treatment Departments ──
+    await db.insert(treatmentDepartments).values({ tenantId: tid, code: "JOINT_REPL", name: "Joint Replacement", status: "Active", displayOrder: 1 });
+    await db.insert(treatmentDepartments).values({ tenantId: tid, code: "SPINE_SURG", name: "Spine Surgery", status: "Active", displayOrder: 2 });
+    await db.insert(treatmentDepartments).values({ tenantId: tid, code: "SPORTS_INJ", name: "Sports Injury & Arthroscopy", status: "Active", displayOrder: 3 });
+    await db.insert(treatmentDepartments).values({ tenantId: tid, code: "TRAUMA", name: "Fracture & Trauma", status: "Active", displayOrder: 4 });
+    await db.insert(treatmentDepartments).values({ tenantId: tid, code: "PAIN_MGMT", name: "Pain Management", status: "Active", displayOrder: 5 });
+    await db.insert(treatmentDepartments).values({ tenantId: tid, code: "FOOT_ANKLE", name: "Foot & Ankle Surgery", status: "Active", displayOrder: 6 });
 
     // Consultation Types (services offered)
     for (const ct of [

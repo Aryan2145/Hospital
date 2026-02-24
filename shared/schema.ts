@@ -198,20 +198,6 @@ export const administrativeDepartments = pgTable("administrative_departments", {
   modifiedBy: varchar("modified_by"),
 });
 
-export const administrativeSubDepartments = pgTable("administrative_sub_departments", {
-  id: serial("id").primaryKey(),
-  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
-  departmentId: integer("department_id").notNull().references(() => administrativeDepartments.id),
-  code: text("code").notNull(),
-  name: text("name").notNull(),
-  status: text("status").notNull().default("Active"),
-  displayOrder: integer("display_order").default(0),
-  approvalStatus: text("approval_status").default("Approved"),
-  createdAt: timestamp("created_at").defaultNow(),
-  createdBy: varchar("created_by"),
-  modifiedAt: timestamp("modified_at").defaultNow(),
-  modifiedBy: varchar("modified_by"),
-});
 
 export const designations = pgTable("designations", {
   id: serial("id").primaryKey(),
@@ -331,20 +317,6 @@ export const treatmentDepartments = pgTable("treatment_departments", {
   modifiedBy: varchar("modified_by"),
 });
 
-export const treatmentSubDepartments = pgTable("treatment_sub_departments", {
-  id: serial("id").primaryKey(),
-  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
-  treatmentDepartmentId: integer("treatment_department_id").notNull().references(() => treatmentDepartments.id),
-  code: text("code").notNull(),
-  name: text("name").notNull(),
-  status: text("status").notNull().default("Active"),
-  displayOrder: integer("display_order").default(0),
-  approvalStatus: text("approval_status").default("Approved"),
-  createdAt: timestamp("created_at").defaultNow(),
-  createdBy: varchar("created_by"),
-  modifiedAt: timestamp("modified_at").defaultNow(),
-  modifiedBy: varchar("modified_by"),
-});
 
 export const consultationTypes = pgTable("consultation_types", {
   id: serial("id").primaryKey(),
@@ -417,21 +389,6 @@ export const doctorLeaveExceptions = pgTable("doctor_leave_exceptions", {
   modifiedBy: varchar("modified_by"),
 });
 
-export const doctorSpecialityMappings = pgTable("doctor_speciality_mappings", {
-  id: serial("id").primaryKey(),
-  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
-  code: varchar("code").notNull().default(""),
-  name: varchar("name").notNull().default(""),
-  doctorId: integer("doctor_id").notNull().references(() => doctors.id),
-  treatmentSubDepartmentId: integer("treatment_sub_department_id").notNull().references(() => treatmentSubDepartments.id),
-  isPrimary: boolean("is_primary").default(false),
-  status: text("status").notNull().default("Active"),
-  displayOrder: integer("display_order").default(0),
-  createdAt: timestamp("created_at").defaultNow(),
-  createdBy: varchar("created_by"),
-  modifiedAt: timestamp("modified_at").defaultNow(),
-  modifiedBy: varchar("modified_by"),
-});
 
 // =============================================
 // CATEGORY 5: LEAD GENERATION MASTERS
@@ -1013,7 +970,6 @@ export const leads = pgTable("leads", {
   leadSourceCategoryId: integer("lead_source_category_id").references(() => leadSourceCategories.id),
   doctorId: integer("doctor_id").references(() => doctors.id),
   treatmentDepartmentId: integer("treatment_department_id").references(() => treatmentDepartments.id),
-  treatmentSubDepartmentId: integer("treatment_sub_department_id").references(() => treatmentSubDepartments.id),
   consultationTypeId: integer("consultation_type_id").references(() => consultationTypes.id),
   priority: text("priority").default("Normal"),
   leadScore: integer("lead_score").default(0),
@@ -1153,7 +1109,6 @@ export const episodes = pgTable("episodes", {
   patientId: integer("patient_id").references(() => patients.id),
   episodeName: text("episode_name").notNull(),
   treatmentDepartmentId: integer("treatment_department_id").references(() => treatmentDepartments.id),
-  treatmentSubDepartmentId: integer("treatment_sub_department_id").references(() => treatmentSubDepartments.id),
   consultationTypeId: integer("consultation_type_id").references(() => consultationTypes.id),
   doctorId: integer("doctor_id").references(() => doctors.id),
   branchId: integer("branch_id").references(() => branches.id),
@@ -1468,7 +1423,6 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   organisations: "organisations",
   branches: "branches",
   administrativeDepartments: "administrative_departments",
-  administrativeSubDepartments: "administrative_sub_departments",
   designations: "designations",
   employmentTypes: "employment_types",
   systemRoles: "system_roles",
@@ -1476,7 +1430,6 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   callingLines: "calling_lines",
   userLineAssignments: "user_line_assignments",
   treatmentDepartments: "treatment_departments",
-  treatmentSubDepartments: "treatment_sub_departments",
   consultationTypes: "consultation_types",
   doctors: "doctors",
   opdTimings: "opd_timings",
@@ -1508,7 +1461,6 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   holidays: "holidays",
   tags: "tags",
   pinCodes: "pin_codes",
-  doctorSpecialityMappings: "doctor_speciality_mappings",
   slaRules: "sla_rules",
   reminderPolicies: "reminder_policies",
   dataRetentionPolicies: "data_retention_policies",

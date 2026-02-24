@@ -388,7 +388,6 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
   const { data: leadSourceCategories = [] } = useMasterData("lead_source_categories");
   const { data: leadSources = [] } = useMasterData("lead_sources");
   const { data: treatmentDepartments = [] } = useMasterData("treatment_departments");
-  const { data: treatmentSubDepartments = [] } = useMasterData("treatment_sub_departments");
   const { data: consultationTypes = [] } = useMasterData("consultation_types");
   const { data: doctors = [] } = useMasterData("doctors");
   const { data: referrers = [] } = useMasterData("referrers");
@@ -423,15 +422,10 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
   });
 
   const selectedSourceCategoryId = form.watch("leadSourceCategoryId");
-  const selectedTreatmentDeptId = form.watch("treatmentDepartmentId");
 
   const filteredSources = selectedSourceCategoryId
     ? leadSources.filter((s: any) => s.categoryId === selectedSourceCategoryId)
     : leadSources;
-
-  const filteredSubDepts = selectedTreatmentDeptId
-    ? treatmentSubDepartments.filter((s: any) => s.treatmentDepartmentId === selectedTreatmentDeptId)
-    : treatmentSubDepartments;
 
   function onSubmit(data: InsertLead) {
     createLead.mutate(data, {
@@ -562,30 +556,10 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
                     value={field.value ? String(field.value) : ""}
                     onValueChange={(v) => {
                       field.onChange(v ? Number(v) : null);
-                      form.setValue("treatmentSubDepartmentId", null as any);
                     }}
                     options={treatmentDepartments.map((d: any) => ({ value: String(d.id), label: d.name }))}
                     placeholder="Select department"
                     data-testid="select-lead-treatment-dept"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="treatmentSubDepartmentId"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Sub-Department</FormLabel>
-                <FormControl>
-                  <SearchableSelect
-                    value={field.value ? String(field.value) : ""}
-                    onValueChange={(v) => field.onChange(v ? Number(v) : null)}
-                    options={filteredSubDepts.map((s: any) => ({ value: String(s.id), label: s.name }))}
-                    placeholder="Select sub-department"
-                    data-testid="select-lead-sub-dept"
                   />
                 </FormControl>
                 <FormMessage />
