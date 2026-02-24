@@ -79,7 +79,7 @@ interface ImportLog {
 interface ExtraField {
   key: string;
   label: string;
-  type: "text" | "number" | "boolean" | "select" | "ref" | "time" | "multiselect" | "date";
+  type: "text" | "number" | "boolean" | "select" | "ref" | "time" | "multiselect" | "multiref" | "date";
   options?: string[];
   refTable?: string;
   autoGenCodeName?: boolean;
@@ -136,7 +136,7 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
   ],
   doctorSpecialityMappings: [
     { key: "doctorId", label: "Doctor", type: "ref", refTable: "doctors" },
-    { key: "treatmentSubDepartmentId", label: "Speciality (Sub-Department)", type: "ref", refTable: "treatmentSubDepartments" },
+    { key: "treatmentSubDepartmentId", label: "Specialities (Sub-Departments)", type: "multiref", refTable: "treatmentSubDepartments" },
     { key: "isPrimary", label: "Is Primary Speciality", type: "boolean" },
   ],
   templates: [
@@ -198,7 +198,7 @@ export default function MasterData() {
   });
 
   const extraFields = selectedTable ? EXTRA_FIELDS[selectedTable] || [] : [];
-  const refTables = Array.from(new Set(extraFields.filter(f => f.type === "ref" && f.refTable).map(f => f.refTable!)));
+  const refTables = Array.from(new Set(extraFields.filter(f => (f.type === "ref" || f.type === "multiref") && f.refTable).map(f => f.refTable!)));
 
   const { data: refDataMap = {} } = useQuery<Record<string, MasterRecord[]>>({
     queryKey: ["/api/masters/ref-data", ...refTables],
@@ -337,7 +337,7 @@ export default function MasterData() {
   function resetForm() {
     const base: Record<string, any> = { code: "", name: "", status: "Active", displayOrder: 0 };
     extraFields.forEach((f) => {
-      base[f.key] = f.type === "number" ? 0 : f.type === "boolean" ? false : f.type === "multiselect" ? [] : "";
+      base[f.key] = f.type === "number" ? 0 : f.type === "boolean" ? false : (f.type === "multiselect" || f.type === "multiref") ? [] : "";
     });
     setFormData(base);
     setEditingRecord(null);
@@ -409,6 +409,8 @@ export default function MasterData() {
       updateMutation.mutate({ id: editingRecord.id, data });
     } else {
       const multiselectField = extraFields.find(f => f.type === "multiselect");
+      const multirefField = extraFields.find(f => f.type === "multiref");
+
       if (multiselectField && Array.isArray(formData[multiselectField.key]) && formData[multiselectField.key].length > 0) {
         const days = formData[multiselectField.key] as string[];
         let completed = 0;
@@ -419,6 +421,20 @@ export default function MasterData() {
               completed++;
               if (completed === days.length) {
                 toast({ title: `${days.length} slot(s) created successfully` });
+              }
+            },
+          });
+        });
+      } else if (multirefField && Array.isArray(formData[multirefField.key]) && formData[multirefField.key].length > 0) {
+        const selectedIds = formData[multirefField.key] as number[];
+        let completed = 0;
+        selectedIds.forEach((refId) => {
+          const record = autoGenerateCodeName({ ...formData, [multirefField.key]: refId });
+          createMutation.mutate(record, {
+            onSuccess: () => {
+              completed++;
+              if (completed === selectedIds.length) {
+                toast({ title: `${selectedIds.length} mapping(s) created successfully` });
               }
             },
           });
@@ -766,7 +782,7 @@ export default function MasterData() {
                             let displayVal: any = record[f.key] ?? "-";
                             if (f.type === "boolean") {
                               displayVal = record[f.key] ? "Yes" : "No";
-                            } else if (f.type === "ref" && f.refTable && record[f.key]) {
+                            } else if ((f.type === "ref" || f.type === "multiref") && f.refTable && record[f.key]) {
                               const refRecords = refDataMap[f.refTable] || [];
                               const refRecord = refRecords.find((r: any) => r.id === record[f.key]);
                               displayVal = refRecord ? refRecord.name : record[f.key];
@@ -984,6 +1000,65 @@ export default function MasterData() {
                           placeholder={`Select ${field.label}`}
                           data-testid={`select-${field.key}`}
                         />
+                      ) : field.type === "multiref" && field.refTable ? (
+                        editingRecord ? (
+                          <SearchableSelect
+                            value={formData[field.key] ? String(formData[field.key]) : ""}
+                            onValueChange={(val) => setFormData({ ...formData, [field.key]: parseInt(val) || 0 })}
+                            options={(refDataMap[field.refTable] || [])
+                              .filter((r: any) => r.status === "Active")
+                              .map((r: any) => ({ value: String(r.id), label: r.name }))}
+                            placeholder={`Select ${field.label}`}
+                            data-testid={`select-${field.key}`}
+                          />
+                        ) : (
+                          <div className="space-y-2 mt-1">
+                            <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto border rounded-md p-2">
+                              {(refDataMap[field.refTable] || [])
+                                .filter((r: any) => r.status === "Active")
+                                .map((r: any) => {
+                                  const selectedIds = Array.isArray(formData[field.key]) ? formData[field.key] : [];
+                                  const isSelected = selectedIds.includes(r.id);
+                                  return (
+                                    <button
+                                      key={r.id}
+                                      type="button"
+                                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                                        isSelected
+                                          ? "bg-primary text-primary-foreground border-primary"
+                                          : "bg-muted text-muted-foreground border-border hover:bg-accent"
+                                      }`}
+                                      onClick={() => {
+                                        const current = Array.isArray(formData[field.key]) ? formData[field.key] : [];
+                                        const updated = isSelected
+                                          ? current.filter((id: number) => id !== r.id)
+                                          : [...current, r.id];
+                                        setFormData({ ...formData, [field.key]: updated });
+                                      }}
+                                      data-testid={`toggle-${field.key}-${r.id}`}
+                                    >
+                                      {r.name}
+                                    </button>
+                                  );
+                                })}
+                            </div>
+                            {Array.isArray(formData[field.key]) && formData[field.key].length > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">
+                                  {formData[field.key].length} selected
+                                </span>
+                                <button
+                                  type="button"
+                                  className="text-xs text-destructive hover:underline"
+                                  onClick={() => setFormData({ ...formData, [field.key]: [] })}
+                                  data-testid={`clear-${field.key}`}
+                                >
+                                  Clear all
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )
                       ) : field.type === "time" ? (
                         <Input
                           type="time"
