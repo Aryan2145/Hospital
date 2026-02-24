@@ -5,7 +5,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, Mail, Calendar, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
+import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, Mail, Calendar, ArrowUpDown, ChevronUp, ChevronDown, X } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -17,9 +17,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { getStatusColor, getPriorityColor } from "@/lib/lead-status";
+import { getStatusColor, getPriorityColor, LEAD_STATUSES } from "@/lib/lead-status";
 import { format, formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+
+const PRIORITIES = ["Urgent", "High", "Medium", "Normal", "Low"] as const;
 
 export default function LeadsWorkspace() {
   const [search, setSearch] = useState("");
@@ -36,7 +38,29 @@ export default function LeadsWorkspace() {
   const { data: leads, isLoading } = useLeads(undefined, debouncedSearch);
   const [open, setOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<string[]>([]);
+  const [filterPriority, setFilterPriority] = useState<string[]>([]);
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
   const [, navigate] = useLocation();
+
+  const activeFilterCount = filterStatus.length + filterPriority.length + (filterDateFrom ? 1 : 0) + (filterDateTo ? 1 : 0);
+
+  const filteredLeads = (leads || []).filter((lead: any) => {
+    if (filterStatus.length > 0 && !filterStatus.includes(lead.status)) return false;
+    if (filterPriority.length > 0 && !filterPriority.includes(lead.priority || "Normal")) return false;
+    if (filterDateFrom && lead.createdAt && new Date(lead.createdAt) < new Date(filterDateFrom)) return false;
+    if (filterDateTo && lead.createdAt && new Date(lead.createdAt) > new Date(filterDateTo + "T23:59:59")) return false;
+    return true;
+  });
+
+  const clearAllFilters = () => {
+    setFilterStatus([]);
+    setFilterPriority([]);
+    setFilterDateFrom("");
+    setFilterDateTo("");
+  };
 
   return (
     <AppLayout className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -60,6 +84,20 @@ export default function LeadsWorkspace() {
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
+              <Button
+                variant={showFilters ? "default" : "outline"}
+                size="icon"
+                className="shrink-0 relative"
+                onClick={() => setShowFilters(!showFilters)}
+                data-testid="button-toggle-filters"
+              >
+                <Filter className="w-4 h-4" />
+                {activeFilterCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold flex items-center justify-center">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </Button>
               <div className="flex items-center border rounded-md overflow-hidden shrink-0">
                 <Button
                   variant={viewMode === "kanban" ? "default" : "ghost"}
@@ -104,14 +142,94 @@ export default function LeadsWorkspace() {
           </div>
         </div>
 
+        {showFilters && (
+          <div className="px-4 md:px-6 py-3 border-b border-border bg-muted/30 z-10" data-testid="filter-panel">
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Status</label>
+                <div className="flex flex-wrap gap-1">
+                  {LEAD_STATUSES.map((s) => {
+                    const active = filterStatus.includes(s);
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        className={cn(
+                          "px-2 py-1 rounded text-[10px] font-medium border transition-colors",
+                          active ? getStatusColor(s) : "bg-background text-muted-foreground border-border hover:bg-accent"
+                        )}
+                        onClick={() => setFilterStatus(active ? filterStatus.filter(x => x !== s) : [...filterStatus, s])}
+                        data-testid={`filter-status-${s.toLowerCase().replace(/\s+/g, "-")}`}
+                      >
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Priority</label>
+                <div className="flex flex-wrap gap-1">
+                  {PRIORITIES.map((p) => {
+                    const active = filterPriority.includes(p);
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        className={cn(
+                          "px-2 py-1 rounded text-[10px] font-medium border transition-colors",
+                          active ? getPriorityColor(p) : "bg-background text-muted-foreground border-border hover:bg-accent"
+                        )}
+                        onClick={() => setFilterPriority(active ? filterPriority.filter(x => x !== p) : [...filterPriority, p])}
+                        data-testid={`filter-priority-${p.toLowerCase()}`}
+                      >
+                        {p}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Created Date</label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    value={filterDateFrom}
+                    onChange={(e) => setFilterDateFrom(e.target.value)}
+                    className="h-8 text-xs w-[130px]"
+                    data-testid="filter-date-from"
+                  />
+                  <span className="text-xs text-muted-foreground">to</span>
+                  <Input
+                    type="date"
+                    value={filterDateTo}
+                    onChange={(e) => setFilterDateTo(e.target.value)}
+                    className="h-8 text-xs w-[130px]"
+                    data-testid="filter-date-to"
+                  />
+                </div>
+              </div>
+
+              {activeFilterCount > 0 && (
+                <Button variant="ghost" size="sm" className="h-8 text-xs text-destructive hover:text-destructive" onClick={clearAllFilters} data-testid="button-clear-filters">
+                  <X className="w-3 h-3 mr-1" />
+                  Clear all ({activeFilterCount})
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 p-3 md:p-6 overflow-hidden z-10">
           {isLoading ? (
             <LoadingSpinner text="Loading leads..." />
           ) : leads ? (
             viewMode === "kanban" ? (
-              <KanbanBoard leads={leads} />
+              <KanbanBoard leads={filteredLeads} />
             ) : (
-              <LeadsListView leads={leads} />
+              <LeadsListView leads={filteredLeads} />
             )
           ) : (
              <div className="flex items-center justify-center h-full text-muted-foreground">
