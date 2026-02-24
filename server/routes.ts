@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -15,6 +15,35 @@ import { stringify } from "csv-stringify/sync";
 import { desc, eq, and, sql, count, gte, lte, isNull } from "drizzle-orm";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+function normalizePhoneNumber(phone: string): string {
+  if (!phone || !phone.trim()) return "";
+  const digits = phone.replace(/[^0-9]/g, "");
+  if (digits.length < 7) return "";
+  if (digits.length === 12 && digits.startsWith("91")) return "+91" + digits.slice(2);
+  if (digits.length === 10) return "+91" + digits;
+  if (phone.startsWith("+")) return phone.replace(/[^+0-9]/g, "");
+  return "+" + digits;
+}
+
+function getPhoneVariants(normalized: string): string[] {
+  const variants: string[] = [];
+  const digits = normalized.replace(/[^0-9]/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) {
+    const local = digits.slice(2);
+    variants.push(local, "+91" + local, "91" + local, "0" + local);
+  } else if (digits.length === 10) {
+    variants.push("+91" + digits, "91" + digits, "0" + digits, digits);
+  }
+  return variants;
+}
+
+function formatCallDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+}
 
 function coerceDateFields(body: Record<string, any>, fields: string[]): Record<string, any> {
   const result = { ...body };
@@ -1924,6 +1953,186 @@ export async function registerRoutes(
       });
 
       res.status(201).json({ status: "created", leadId: newLead.id });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // --- Callyzer Webhook (PUSH — Real-time Call Data) ---
+  app.post("/api/webhook/callyzer/:connectorId", async (req, res) => {
+    try {
+      const connectorId = Number(req.params.connectorId);
+      const webhookSecret = req.headers["x-callyzer-secret"] || req.query.secret;
+
+      const [connector] = await db.select().from(platformConnectors)
+        .where(and(
+          eq(platformConnectors.id, connectorId),
+          eq(platformConnectors.platform, "callyzer"),
+          eq(platformConnectors.status, "connected")
+        ));
+
+      if (!connector) {
+        return res.status(404).json({ message: "Callyzer connector not found or inactive" });
+      }
+
+      const creds = (connector.credentials || {}) as Record<string, any>;
+      if (!creds.webhookSecret || creds.webhookSecret !== webhookSecret) {
+        return res.status(401).json({ message: "Invalid webhook secret" });
+      }
+
+      const tid = connector.tenantId;
+      const payload = req.body;
+
+      const callEntries = Array.isArray(payload) ? payload :
+        (payload.call_logs || payload.calls || payload.data || [payload]);
+
+      const results: any[] = [];
+
+      for (const entry of callEntries) {
+        const clientNumber = normalizePhoneNumber(
+          entry.client_number || entry.clientNumber || entry.phone || entry.mobile || ""
+        );
+        const empNumber = entry.emp_number || entry.employeeNumber || entry.employee_phone || entry.empPhone || "";
+        const callType = entry.call_type || entry.callType || entry.type || "unknown";
+        const duration = parseInt(entry.duration || entry.call_duration || entry.callDuration || "0", 10);
+        const notes = entry.notes || entry.remarks || entry.description || "";
+        const recordingUrl = entry.recording_url || entry.recordingUrl || entry.recording || "";
+        const callTime = entry.call_time || entry.callTime || entry.timestamp || new Date().toISOString();
+
+        const logEntry: any = {
+          tenantId: tid,
+          connectorId: connector.id,
+          rawPayload: entry,
+          clientNumber,
+          employeeNumber: empNumber,
+          callType,
+          callDuration: duration,
+          processingStatus: "processing",
+        };
+
+        let matchedLead = null;
+        if (clientNumber) {
+          matchedLead = await storage.findLeadByPhone(tid, clientNumber);
+          if (!matchedLead) {
+            const altFormats = getPhoneVariants(clientNumber);
+            for (const alt of altFormats) {
+              matchedLead = await storage.findLeadByPhone(tid, alt);
+              if (matchedLead) break;
+            }
+          }
+        }
+
+        let matchedCrmUser = null;
+        if (empNumber) {
+          const allCrmUsers = await storage.getCrmUsers(tid);
+          const normalizedEmp = normalizePhoneNumber(empNumber);
+          matchedCrmUser = allCrmUsers.find(u =>
+            u.isActive && u.phone && normalizePhoneNumber(u.phone) === normalizedEmp
+          );
+        }
+
+        logEntry.matchedLeadId = matchedLead?.id || null;
+        logEntry.matchedCrmUserId = matchedCrmUser?.id || null;
+
+        if (matchedLead) {
+          const callDirection = callType.toLowerCase().includes("incoming") ? "Incoming" :
+            callType.toLowerCase().includes("outgoing") ? "Outgoing" :
+            callType.toLowerCase().includes("missed") ? "Missed" : callType;
+
+          const callStatus = callType.toLowerCase().includes("missed") ? "Missed" :
+            duration > 0 ? "Connected" : "Not Connected";
+
+          const descParts = [
+            `${callDirection} call`,
+            matchedCrmUser ? `by ${matchedCrmUser.name}` : "",
+            duration > 0 ? `(${formatCallDuration(duration)})` : "",
+            callStatus === "Missed" ? "— Missed" : "",
+          ].filter(Boolean).join(" ");
+
+          const activity = await storage.createActivity({
+            tenantId: tid,
+            leadId: matchedLead.id,
+            type: "call",
+            description: descParts,
+            outcome: callStatus,
+            callDirection,
+            callDurationSeconds: duration,
+            callStatus,
+            createdBy: matchedCrmUser?.name || "callyzer-webhook",
+            metadata: {
+              source: "callyzer",
+              recordingUrl,
+              notes,
+              empNumber,
+              callTime,
+              connectorId: connector.id,
+            },
+          });
+
+          logEntry.activityId = activity.id;
+          logEntry.processingStatus = "matched";
+        } else if (clientNumber) {
+          logEntry.processingStatus = "unmatched";
+          logEntry.errorMessage = "No matching lead found for phone number";
+        } else {
+          logEntry.processingStatus = "skipped";
+          logEntry.errorMessage = "No client phone number in payload";
+        }
+
+        const [savedLog] = await db.insert(callyzerWebhookLogs).values(logEntry).returning();
+        results.push({
+          logId: savedLog.id,
+          status: logEntry.processingStatus,
+          leadId: matchedLead?.id || null,
+          crmUserId: matchedCrmUser?.id || null,
+        });
+      }
+
+      await db.update(platformConnectors)
+        .set({ lastSyncAt: new Date(), syncStatus: "synced" })
+        .where(eq(platformConnectors.id, connector.id));
+
+      res.status(200).json({
+        status: "ok",
+        processed: results.length,
+        results,
+      });
+    } catch (err: any) {
+      console.error("Callyzer webhook error:", err);
+      res.status(500).json({ message: "Webhook processing error" });
+    }
+  });
+
+  // --- Callyzer Webhook Logs (for admin view) ---
+  app.get("/api/callyzer-webhook-logs", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const logs = await db.select().from(callyzerWebhookLogs)
+        .where(eq(callyzerWebhookLogs.tenantId, tid))
+        .orderBy(desc(callyzerWebhookLogs.createdAt))
+        .limit(100);
+      res.json(logs);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // --- Generate Callyzer Webhook Secret ---
+  app.post("/api/connectors/:id/generate-webhook-secret", isAuthenticated, async (req: any, res: any) => {
+    try {
+      if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+      const tid = await getDefaultTenantId(req);
+      const c = await storage.getPlatformConnector(Number(req.params.id), tid);
+      if (!c) return res.status(404).json({ message: "Connector not found" });
+      if (c.platform !== "callyzer") return res.status(400).json({ message: "Not a Callyzer connector" });
+
+      const webhookSecret = crypto.randomBytes(24).toString("hex");
+      const creds = (c.credentials || {}) as Record<string, any>;
+      await storage.updatePlatformConnector(c.id, tid, {
+        credentials: { ...creds, webhookSecret },
+      });
+
+      res.json({ webhookSecret });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

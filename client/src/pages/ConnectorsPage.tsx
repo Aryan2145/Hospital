@@ -18,6 +18,7 @@ import {
   Wifi, WifiOff, ArrowUpRight, BarChart3, Eye, MousePointerClick,
   IndianRupee, Target, Loader2, Zap, Globe, TrendingUp,
   Copy, Pencil, Link2, Phone, Mail, MessageSquare, FileSpreadsheet,
+  Key, ExternalLink, Shield, Clock, PhoneCall,
 } from "lucide-react";
 import { SiFacebook, SiGoogle, SiLinkedin, SiX } from "react-icons/si";
 
@@ -242,6 +243,141 @@ const METRIC_LABELS: Record<string, { label: string; icon: any; format: (v: numb
   avgCallDuration: { label: "Avg Duration", icon: BarChart3, format: (v) => `${Math.floor(v / 60)}m ${v % 60}s` },
   totalEmployees: { label: "Employees", icon: Target, format: (v) => v.toLocaleString() },
 };
+
+function CallyzerWebhookPanel({ connector }: { connector: PlatformConnector }) {
+  const { toast } = useToast();
+  const [generatingSecret, setGeneratingSecret] = useState(false);
+  const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+
+  const creds = (connector.credentials || {}) as Record<string, any>;
+  const hasSecret = !!creds.webhookSecret;
+  const webhookUrl = `${window.location.origin}/api/webhook/callyzer/${connector.id}`;
+
+  async function generateSecret() {
+    setGeneratingSecret(true);
+    try {
+      const res = await apiRequest("POST", `/api/connectors/${connector.id}/generate-webhook-secret`);
+      const data = await res.json();
+      setWebhookSecret(data.webhookSecret);
+      setShowSecret(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
+      toast({ title: "Webhook secret generated successfully" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setGeneratingSecret(false);
+    }
+  }
+
+  function copyToClipboard(text: string, label: string) {
+    navigator.clipboard.writeText(text);
+    toast({ title: `${label} copied to clipboard` });
+  }
+
+  return (
+    <div className="space-y-3 p-3 rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20" data-testid="callyzer-webhook-panel">
+      <div className="flex items-center gap-2">
+        <PhoneCall className="h-4 w-4 text-emerald-600" />
+        <span className="font-medium text-sm">Webhook Configuration</span>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Configure this in Callyzer: Connectors → API & Webhook → Webhook Config. Paste the URL and secret below.
+      </p>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs flex items-center gap-1">
+          <ExternalLink className="h-3 w-3" /> Webhook URL
+        </Label>
+        <div className="flex items-center gap-1.5">
+          <Input
+            readOnly
+            value={webhookUrl}
+            className="text-xs font-mono bg-white dark:bg-slate-900 h-8"
+            data-testid="input-callyzer-webhook-url"
+          />
+          <Button
+            size="icon"
+            variant="outline"
+            className="h-8 w-8 shrink-0"
+            onClick={() => copyToClipboard(webhookUrl, "Webhook URL")}
+            data-testid="button-copy-callyzer-webhook-url"
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs flex items-center gap-1">
+          <Shield className="h-3 w-3" /> Webhook Secret
+        </Label>
+        {webhookSecret || hasSecret ? (
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <Input
+                readOnly
+                type={showSecret ? "text" : "password"}
+                value={webhookSecret || (hasSecret ? "••••••••••••••••••••••••" : "")}
+                className="text-xs font-mono bg-white dark:bg-slate-900 h-8"
+                data-testid="input-callyzer-webhook-secret"
+              />
+              {webhookSecret && (
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => copyToClipboard(webhookSecret, "Webhook Secret")}
+                  data-testid="button-copy-callyzer-webhook-secret"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+            {webhookSecret && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <Shield className="h-3 w-3" />
+                Copy this secret now — it won't be shown again. Send it as <code className="px-1 py-0.5 rounded bg-muted text-[10px]">x-callyzer-secret</code> header or <code className="px-1 py-0.5 rounded bg-muted text-[10px]">?secret=</code> query param.
+              </p>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={generateSecret}
+              disabled={generatingSecret}
+              className="w-full text-xs"
+              data-testid="button-regenerate-callyzer-secret"
+            >
+              {generatingSecret ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Key className="h-3 w-3 mr-1" />}
+              Regenerate Secret
+            </Button>
+          </div>
+        ) : (
+          <Button
+            size="sm"
+            onClick={generateSecret}
+            disabled={generatingSecret}
+            className="w-full text-xs"
+            data-testid="button-generate-callyzer-secret"
+          >
+            {generatingSecret ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Key className="h-3 w-3 mr-1" />}
+            Generate Webhook Secret
+          </Button>
+        )}
+      </div>
+
+      <div className="text-[11px] text-muted-foreground space-y-1 pt-1">
+        <p className="font-medium">How it works:</p>
+        <ul className="list-disc list-inside space-y-0.5">
+          <li>Callyzer pushes call data to this URL in real-time</li>
+          <li>Calls are matched to leads by patient phone number</li>
+          <li>Employee is matched by CRM user phone number</li>
+          <li>Matched calls appear as activities on the lead timeline</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
 
 export default function ConnectorsPage() {
   const { toast } = useToast();
@@ -926,7 +1062,7 @@ export default function ConnectorsPage() {
       </div>
 
       <Dialog open={configDialog} onOpenChange={(open) => { if (!open) closeDialog(); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle data-testid="text-config-dialog-title">
               {editingConnector ? "Update" : "Configure"} {selectedPlatform?.name}
@@ -935,7 +1071,7 @@ export default function ConnectorsPage() {
           {selectedPlatform && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">{selectedPlatform.description}</p>
-              {selectedPlatform.credentialFields.map((field) => (
+              {selectedPlatform.credentialFields.filter(f => f.key !== "webhookUrl").map((field) => (
                 <div key={field.key} className="space-y-1.5">
                   <Label>{field.label}</Label>
                   <Input
@@ -947,6 +1083,10 @@ export default function ConnectorsPage() {
                   />
                 </div>
               ))}
+
+              {selectedPlatform.id === "callyzer" && editingConnector && editingConnector.status === "connected" && (
+                <CallyzerWebhookPanel connector={editingConnector} />
+              )}
             </div>
           )}
           <DialogFooter>

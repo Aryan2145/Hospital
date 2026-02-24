@@ -1248,6 +1248,28 @@ export const insertLeadCaptureRuleSchema = createInsertSchema(leadCaptureRules).
 export type InsertLeadCaptureRule = z.infer<typeof insertLeadCaptureRuleSchema>;
 export type LeadCaptureRule = typeof leadCaptureRules.$inferSelect;
 
+// --- Callyzer Webhook Logs ---
+export const callyzerWebhookLogs = pgTable("callyzer_webhook_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  connectorId: integer("connector_id").notNull().references(() => platformConnectors.id),
+  rawPayload: jsonb("raw_payload").notNull(),
+  clientNumber: text("client_number"),
+  employeeNumber: text("employee_number"),
+  callType: text("call_type"),
+  callDuration: integer("call_duration"),
+  matchedLeadId: integer("matched_lead_id").references(() => leads.id),
+  matchedCrmUserId: integer("matched_crm_user_id").references(() => crmUsers.id),
+  activityId: integer("activity_id").references(() => activities.id),
+  processingStatus: text("processing_status").notNull().default("received"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCallyzerWebhookLogSchema = createInsertSchema(callyzerWebhookLogs).omit({ id: true, createdAt: true });
+export type InsertCallyzerWebhookLog = z.infer<typeof insertCallyzerWebhookLogSchema>;
+export type CallyzerWebhookLog = typeof callyzerWebhookLogs.$inferSelect;
+
 // =============================================
 // ZOD SCHEMAS
 // =============================================
