@@ -364,10 +364,10 @@ export default function MasterData() {
     setIsDialogOpen(true);
   }
 
-  const autoCodeNameTables = ["doctorLeaveExceptions", "doctorSpecialityMappings"];
+  const autoCodeNameTables = ["doctorLeaveExceptions", "doctorSpecialityMappings", "opdTimings"];
   const isAutoCodeName = selectedTable ? autoCodeNameTables.includes(selectedTable) : false;
 
-  const hideStatusDisplayOrderTables = ["doctorLeaveExceptions", "doctorSpecialityMappings"];
+  const hideStatusDisplayOrderTables = ["doctorLeaveExceptions", "doctorSpecialityMappings", "opdTimings"];
   const hideStatusDisplayOrder = selectedTable ? hideStatusDisplayOrderTables.includes(selectedTable) : false;
 
   function autoGenerateCodeName(data: Record<string, any>): Record<string, any> {
@@ -389,6 +389,16 @@ export default function MasterData() {
       const specName = spec ? spec.name : `Spec-${data.treatmentSubDepartmentId}`;
       result.code = `DRSPC-${data.doctorId}-${data.treatmentSubDepartmentId}`;
       result.name = `${doctorName} → ${specName}${data.isPrimary ? " (Primary)" : ""}`;
+    } else if (selectedTable === "opdTimings") {
+      const doctorRecords = refDataMap["doctors"] || [];
+      const branchRecords = refDataMap["branches"] || [];
+      const doctor = doctorRecords.find((r: any) => r.id === data.doctorId);
+      const branch = branchRecords.find((r: any) => r.id === data.branchId);
+      const doctorName = doctor ? doctor.name : `Dr-${data.doctorId}`;
+      const branchName = branch ? branch.name : "";
+      const day = data.dayOfWeek || "no-day";
+      result.code = `OPD-${data.doctorId}-${day}-${data.startTime || ""}`;
+      result.name = `${doctorName}${branchName ? ` @ ${branchName}` : ""} — ${day} ${data.startTime || ""}-${data.endTime || ""}`;
     }
     return result;
   }
