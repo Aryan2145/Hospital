@@ -81,9 +81,10 @@ export default function EpisodeDetailPage() {
     "Treatment Planning",
     "Surgery Scheduled",
     "Surgery Done",
+    "In Treatment",
     "Post Care",
     "Follow Up",
-    "Closed Won",
+    "Completed",
   ];
 
   const currentStageIndex = FUNNEL_STAGES.indexOf(episode.status);
@@ -135,13 +136,13 @@ export default function EpisodeDetailPage() {
         <Card className="p-4" data-testid="card-episode-funnel">
           <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
             <Target className="w-4 h-4 text-primary" />
-            Treatment Funnel
+            Treatment Journey
           </h3>
           <div className="flex items-center gap-1 overflow-x-auto pb-2">
             {FUNNEL_STAGES.map((stage, idx) => {
               const isCurrent = stage === episode.status;
               const isPast = idx < currentStageIndex;
-              const isLost = episode.status === "Closed Lost";
+              const isDiscontinued = episode.status === "Discontinued";
               return (
                 <div key={stage} className="flex items-center">
                   <div
@@ -149,8 +150,8 @@ export default function EpisodeDetailPage() {
                       "px-3 py-1.5 rounded text-[11px] font-medium whitespace-nowrap border transition-colors",
                       isCurrent && "bg-primary text-primary-foreground border-primary",
                       isPast && !isCurrent && "bg-green-100 text-green-800 border-green-200",
-                      !isCurrent && !isPast && !isLost && "bg-muted text-muted-foreground border-border",
-                      isLost && "bg-red-50 text-red-400 border-red-200",
+                      !isCurrent && !isPast && !isDiscontinued && "bg-muted text-muted-foreground border-border",
+                      isDiscontinued && "bg-red-50 text-red-400 border-red-200",
                     )}
                     data-testid={`funnel-stage-${stage.toLowerCase().replace(/\s+/g, "-")}`}
                   >

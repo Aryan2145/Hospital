@@ -3048,7 +3048,7 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["startDate", "endDate", "nextActionDate", "slaDeadline"]);
-      const terminalStatuses = ["Closed Won", "Closed Lost", "Cancelled"];
+      const terminalStatuses = ["Completed", "Discontinued"];
       if (body.status && terminalStatuses.includes(body.status) && !body.endDate) {
         body.endDate = new Date();
       }

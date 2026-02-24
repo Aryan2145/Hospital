@@ -42,17 +42,14 @@ interface Episode {
 
 const STATUS_COLORS: Record<string, string> = {
   "Consultation Done": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-  "Open": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
   "Treatment Planning": "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
   "Surgery Scheduled": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
   "Surgery Done": "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300",
-  "In Treatment": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+  "In Treatment": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
   "Post Care": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300",
   "Follow Up": "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
-  "Closed Won": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
-  "Closed": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
-  "Closed Lost": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
-  "Cancelled": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+  "Completed": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  "Discontinued": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
 };
 
 const EPISODE_STATUSES = [
@@ -63,9 +60,8 @@ const EPISODE_STATUSES = [
   "In Treatment",
   "Post Care",
   "Follow Up",
-  "Closed Won",
-  "Closed Lost",
-  "Cancelled",
+  "Completed",
+  "Discontinued",
 ];
 
 export default function TransactionsPage() {
