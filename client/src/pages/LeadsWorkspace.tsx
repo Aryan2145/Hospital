@@ -12,13 +12,23 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertLeadSchema, InsertLead } from "@shared/schema";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 
 export default function LeadsWorkspace() {
   const [search, setSearch] = useState("");
-  const { data: leads, isLoading } = useLeads(undefined, search);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [search]);
+
+  const { data: leads, isLoading } = useLeads(undefined, debouncedSearch);
   const [open, setOpen] = useState(false);
   const [, navigate] = useLocation();
 
@@ -38,7 +48,7 @@ export default function LeadsWorkspace() {
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input 
-                  placeholder="Search patients..." 
+                  placeholder="Search by name, phone, email..." 
                   className="pl-9" 
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
