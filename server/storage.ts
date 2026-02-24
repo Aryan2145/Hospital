@@ -671,12 +671,51 @@ export class DatabaseStorage implements IStorage {
     return this.mapRowToMaster(result.rows[0]);
   }
 
+  private static CODE_PREFIXES: Record<string, string> = {
+    countries: "CTRY", states: "ST", cities: "CTY", areas: "AREA", branchServiceability: "BRSVC",
+    organisations: "ORG", branches: "BR", administrativeDepartments: "ADPT", administrativeSubDepartments: "ASDPT",
+    designations: "DESG", employmentTypes: "EMPT", systemRoles: "ROLE",
+    callingLines: "CLINE", userLineAssignments: "ULA",
+    treatmentDepartments: "TDPT", treatmentSubDepartments: "TSDPT", consultationTypes: "CTYPE",
+    doctors: "DOC", opdTimings: "OPD", doctorLeaveExceptions: "LEAVE", doctorSpecialityMappings: "DRSPC",
+    leadSourceCategories: "LSCAT", leadSources: "LSRC", campaignChannels: "CMPCH",
+    utmSources: "UTMS", utmMediums: "UTMM", utmCampaigns: "UTMC", utmTerms: "UTMT", utmContents: "UTMCN",
+    referrers: "REF", corporateInsurances: "CINS", leadCreationChannels: "LDCH",
+    appointmentTypes: "APTYP", conversionStages: "CVSTG", lostReasons: "LOST", noShowReasons: "NSHW",
+    activityTypes: "ACTYP", nextActionTypes: "NATYP", taskCategories: "TCAT",
+    leadStatuses: "LDST", appointmentStatuses: "APST", referralStatuses: "RFST",
+    callStatuses: "CLST", callDirections: "CLDIR", templates: "TMPL", holidays: "HOL",
+    tags: "TAG", pinCodes: "PIN", slaRules: "SLA", reminderPolicies: "REM", dataRetentionPolicies: "DRP",
+    crmUsers: "USR",
+  };
+
+  private async generateCode(tableName: string, pgTable: string, tenantId: number): Promise<string> {
+    const prefix = DatabaseStorage.CODE_PREFIXES[tableName] || tableName.substring(0, 4).toUpperCase();
+    const result = await pool.query(
+      `SELECT COALESCE(MAX(id), 0)::int as max_id FROM "${pgTable}" WHERE tenant_id = $1`,
+      [tenantId]
+    );
+    const seq = (result.rows[0]?.max_id || 0) + 1;
+    return `${prefix}-${String(seq).padStart(4, "0")}`;
+  }
+
   async createMasterRecord(tableName: string, data: Record<string, any>): Promise<MasterRecord> {
     const pgTable = this.resolveTableName(tableName);
     const now = new Date();
     if (data.name && typeof data.name === "string") data.name = toProperCase(data.name);
     data.created_at = now;
     data.modified_at = now;
+
+    const skipAutoCode = ["doctorLeaveExceptions", "doctorSpecialityMappings", "opdTimings"];
+    if (!skipAutoCode.includes(tableName)) {
+      if (!data.code || data.code.trim() === "") {
+        data.code = await this.generateCode(tableName, pgTable, data.tenantId || data.tenant_id);
+      }
+    }
+
+    if (!data.approvalStatus && !data.approval_status) {
+      data.approval_status = "Pending Approval";
+    }
 
     const snakeData = this.toSnakeCase(data);
 
@@ -731,7 +770,7 @@ export class DatabaseStorage implements IStorage {
     await pool.query(query, params);
   }
 
-  private mapRowToMaster(row: any): MasterRecord {
+  public mapRowToMaster(row: any): MasterRecord {
     return {
       id: row.id,
       tenantId: row.tenant_id,

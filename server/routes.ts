@@ -2367,6 +2367,63 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/masters/:tableName/:id/approve", isAuthenticated, async (req, res) => {
+    const tableName = req.params.tableName as string;
+    const id = Number(req.params.id);
+    if (!MASTER_TABLE_REGISTRY[tableName]) {
+      return res.status(400).json({ message: `Unknown master table: ${tableName}` });
+    }
+    try {
+      const tid = await getDefaultTenantId(req);
+      if (!(await requireAdminRole(req, res, tid))) return;
+      const record = await storage.updateMasterRecord(tableName, id, { approvalStatus: "Approved" }, tid);
+      res.json(record);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/masters/:tableName/:id/reject", isAuthenticated, async (req, res) => {
+    const tableName = req.params.tableName as string;
+    const id = Number(req.params.id);
+    if (!MASTER_TABLE_REGISTRY[tableName]) {
+      return res.status(400).json({ message: `Unknown master table: ${tableName}` });
+    }
+    try {
+      const tid = await getDefaultTenantId(req);
+      if (!(await requireAdminRole(req, res, tid))) return;
+      const record = await storage.updateMasterRecord(tableName, id, { approvalStatus: "Rejected" }, tid);
+      res.json(record);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/masters/pending-approvals", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const allPending: any[] = [];
+      for (const [tableKey, pgTable] of Object.entries(MASTER_TABLE_REGISTRY)) {
+        try {
+          const result = await pool.query(
+            `SELECT * FROM "${pgTable}" WHERE tenant_id = $1 AND approval_status = 'Pending Approval' ORDER BY created_at DESC`,
+            [tid]
+          );
+          result.rows.forEach((row: any) => {
+            allPending.push({
+              ...storage.mapRowToMaster(row),
+              _tableName: tableKey,
+              _tableLabel: tableKey.replace(/([A-Z])/g, " $1").replace(/^./, (s: string) => s.toUpperCase()),
+            });
+          });
+        } catch {}
+      }
+      res.json(allPending);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // =============================================
   // CRM USER MANAGEMENT ROUTES
   // =============================================

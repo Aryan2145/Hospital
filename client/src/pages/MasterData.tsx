@@ -41,6 +41,10 @@ import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
+  Clock,
+  Check,
+  X,
+  ShieldCheck,
 } from "lucide-react";
 
 interface MasterRecord {
@@ -50,6 +54,7 @@ interface MasterRecord {
   name: string;
   status: string;
   displayOrder: number | null;
+  approvalStatus?: string | null;
   [key: string]: any;
 }
 
@@ -276,7 +281,10 @@ export default function MasterData() {
       for (const table of refTables) {
         try {
           const res = await fetch(`/api/masters/${table}`, { credentials: "include" });
-          if (res.ok) result[table] = await res.json();
+          if (res.ok) {
+            const records = await res.json();
+            result[table] = records.filter((r: MasterRecord) => r.approvalStatus === "Approved" || !r.approvalStatus);
+          }
         } catch {}
       }
       return result;
@@ -336,7 +344,8 @@ export default function MasterData() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/masters", selectedTable] });
-      toast({ title: "Record created successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/masters/pending-approvals"] });
+      toast({ title: "Record created — pending approval" });
       setIsDialogOpen(false);
       resetForm();
     },
@@ -371,6 +380,39 @@ export default function MasterData() {
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async ({ tableName, id }: { tableName: string; id: number }) => {
+      await apiRequest("POST", `/api/masters/${tableName}/${id}/approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/masters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/masters/pending-approvals"] });
+      toast({ title: "Record approved" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async ({ tableName, id }: { tableName: string; id: number }) => {
+      await apiRequest("POST", `/api/masters/${tableName}/${id}/reject`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/masters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/masters/pending-approvals"] });
+      toast({ title: "Record rejected" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const { data: pendingApprovals = [] } = useQuery<any[]>({
+    queryKey: ["/api/masters/pending-approvals"],
+    enabled: !selectedCategory,
   });
 
   const importMutation = useMutation({
@@ -564,6 +606,72 @@ export default function MasterData() {
         <main className="flex-1 overflow-auto p-4">
           {!selectedCategory ? (
             <div className="space-y-4">
+              {pendingApprovals.length > 0 && (
+                <Card className="p-4 border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30 overflow-x-auto" data-testid="card-pending-approvals">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-blue-600" />
+                      <h3 className="font-semibold text-blue-800 dark:text-blue-300">
+                        Pending Approvals ({pendingApprovals.length})
+                      </h3>
+                    </div>
+                  </div>
+                  <p className="text-xs text-blue-700 dark:text-blue-400 mb-3">
+                    New master data records awaiting approval before they become available in the system.
+                  </p>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Table</TableHead>
+                        <TableHead className="text-xs">Code</TableHead>
+                        <TableHead className="text-xs">Name</TableHead>
+                        <TableHead className="text-xs">Created</TableHead>
+                        <TableHead className="text-xs text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pendingApprovals.map((item: any) => (
+                        <TableRow key={`${item._tableName}-${item.id}`} data-testid={`row-pending-${item._tableName}-${item.id}`}>
+                          <TableCell className="text-xs">
+                            <Badge variant="secondary" className="text-[10px]">{item._tableLabel}</Badge>
+                          </TableCell>
+                          <TableCell className="text-xs font-mono">{item.code}</TableCell>
+                          <TableCell className="text-xs font-medium">{item.name}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "—"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs"
+                                onClick={() => approveMutation.mutate({ tableName: item._tableName, id: item.id })}
+                                disabled={approveMutation.isPending}
+                                data-testid={`button-approve-pending-${item.id}`}
+                              >
+                                <Check className="h-3 w-3 mr-1" />
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs"
+                                onClick={() => rejectMutation.mutate({ tableName: item._tableName, id: item.id })}
+                                disabled={rejectMutation.isPending}
+                                data-testid={`button-reject-pending-${item.id}`}
+                              >
+                                <X className="h-3 w-3 mr-1" />
+                                Reject
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </Card>
+              )}
               {pendingSuggestions.length > 0 && (
                 <Card className="p-4 border-amber-200 bg-amber-50 overflow-x-auto" data-testid="card-pending-suggestions">
                   <div className="flex items-center justify-between mb-3">
@@ -601,7 +709,7 @@ export default function MasterData() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50"
+                                className="h-7 text-xs"
                                 onClick={() => addToMaster.mutate({ suggestion: s })}
                                 disabled={addToMaster.isPending}
                                 data-testid={`button-approve-suggestion-${s.id}`}
@@ -612,7 +720,7 @@ export default function MasterData() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50"
+                                className="h-7 text-xs"
                                 onClick={() => reviewSuggestion.mutate({ id: s.id, status: "Rejected" })}
                                 disabled={reviewSuggestion.isPending}
                                 data-testid={`button-reject-suggestion-${s.id}`}
@@ -814,11 +922,12 @@ export default function MasterData() {
                       {!isAutoCodeName && <TableHead>Code</TableHead>}
                       {!isAutoCodeName && <TableHead>Name</TableHead>}
                       {!hideStatusDisplayOrder && <TableHead>Status</TableHead>}
+                      <TableHead>Approval</TableHead>
                       {!isAutoCodeName && !hideStatusDisplayOrder && <TableHead>Order</TableHead>}
                       {extraFields.map((f) => (
                         <TableHead key={f.key}>{f.label}</TableHead>
                       ))}
-                      <TableHead className="w-[100px]">Actions</TableHead>
+                      <TableHead className="w-[140px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -836,7 +945,7 @@ export default function MasterData() {
                       </TableRow>
                     ) : (
                       filteredRecords.map((record) => (
-                        <TableRow key={record.id} data-testid={`row-master-${record.id}`}>
+                        <TableRow key={record.id} className={record.approvalStatus === "Pending Approval" ? "bg-amber-50/50 dark:bg-amber-950/10" : record.approvalStatus === "Rejected" ? "bg-red-50/50 dark:bg-red-950/10" : ""} data-testid={`row-master-${record.id}`}>
                           {!isAutoCodeName && <TableCell className="font-mono text-sm">{record.code}</TableCell>}
                           {!isAutoCodeName && <TableCell>{record.name}</TableCell>}
                           {!hideStatusDisplayOrder && (
@@ -846,6 +955,21 @@ export default function MasterData() {
                               </Badge>
                             </TableCell>
                           )}
+                          <TableCell>
+                            {record.approvalStatus === "Pending Approval" ? (
+                              <Badge variant="secondary" className="gap-1 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                                <Clock className="h-3 w-3" /> Pending
+                              </Badge>
+                            ) : record.approvalStatus === "Rejected" ? (
+                              <Badge variant="destructive" className="gap-1">
+                                <XCircle className="h-3 w-3" /> Rejected
+                              </Badge>
+                            ) : (
+                              <Badge variant="default" className="gap-1 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                                <CheckCircle2 className="h-3 w-3" /> Approved
+                              </Badge>
+                            )}
+                          </TableCell>
                           {!isAutoCodeName && !hideStatusDisplayOrder && <TableCell>{record.displayOrder ?? 0}</TableCell>}
                           {extraFields.map((f) => {
                             let displayVal: any = record[f.key] ?? "-";
@@ -868,6 +992,32 @@ export default function MasterData() {
                           })}
                           <TableCell>
                             <div className="flex items-center gap-1">
+                              {record.approvalStatus === "Pending Approval" && selectedTable && (
+                                <>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8"
+                                    onClick={() => approveMutation.mutate({ tableName: selectedTable, id: record.id })}
+                                    disabled={approveMutation.isPending}
+                                    title="Approve"
+                                    data-testid={`button-approve-${record.id}`}
+                                  >
+                                    <Check className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8"
+                                    onClick={() => rejectMutation.mutate({ tableName: selectedTable, id: record.id })}
+                                    disabled={rejectMutation.isPending}
+                                    title="Reject"
+                                    data-testid={`button-reject-${record.id}`}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
                               <Button
                                 size="icon"
                                 variant="ghost"
@@ -911,15 +1061,18 @@ export default function MasterData() {
           <div className="space-y-4">
             {!isAutoCodeName && (
               <>
-                <div>
-                  <label className="text-sm font-medium">Code</label>
-                  <Input
-                    value={formData.code}
-                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                    placeholder="e.g. ORTHO"
-                    data-testid="input-code"
-                  />
-                </div>
+                {editingRecord && (
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Code (auto-generated)</label>
+                    <Input
+                      value={formData.code}
+                      readOnly
+                      disabled
+                      className="bg-muted font-mono text-sm"
+                      data-testid="input-code"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="text-sm font-medium">Name</label>
                   <Input
