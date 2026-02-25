@@ -484,8 +484,8 @@ export default function TeamManagement() {
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Basic Information</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="code">Code *</Label>
-                <Input id="code" value={formData.code} onChange={e => setFormData(p => ({ ...p, code: e.target.value }))} placeholder="AGT004" data-testid="input-user-code" />
+                <Label htmlFor="code">Code {editingUser ? "" : "(auto-generated)"}</Label>
+                <Input id="code" value={editingUser ? formData.code : "(auto-generated)"} readOnly disabled className="bg-muted font-mono text-sm" data-testid="input-user-code" />
               </div>
               <div>
                 <Label htmlFor="name">Full Name *</Label>

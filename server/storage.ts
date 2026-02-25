@@ -672,17 +672,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   private static CODE_PREFIXES: Record<string, string> = {
-    countries: "CTRY", states: "ST", cities: "CTY", areas: "AREA", branchServiceability: "BRSVC",
-    organisations: "ORG", branches: "BR", administrativeDepartments: "ADPT",
-    designations: "DESG", employmentTypes: "EMPT", systemRoles: "ROLE",
+    countries: "COUNTRY", states: "STATE", cities: "CITY", areas: "AREA", branchServiceability: "BRSVC",
+    organisations: "ORG", branches: "BRANCH", administrativeDepartments: "ADEPT",
+    designations: "DESG", employmentTypes: "EMPTYPE", systemRoles: "ROLE",
     callingLines: "CLINE", userLineAssignments: "ULA",
-    treatmentDepartments: "TDPT", consultationTypes: "CTYPE",
+    treatmentDepartments: "TDEPT", consultationTypes: "CTYPE",
     doctors: "DOC", opdTimings: "OPD", doctorLeaveExceptions: "LEAVE",
     leadSourceCategories: "LSCAT", leadSources: "LSRC", campaignChannels: "CMPCH",
     utmSources: "UTMS", utmMediums: "UTMM", utmCampaigns: "UTMC", utmTerms: "UTMT", utmContents: "UTMCN",
     referrers: "REF", corporateInsurances: "CINS", leadCreationChannels: "LDCH",
-    appointmentTypes: "APTYP", conversionStages: "CVSTG", lostReasons: "LOST", noShowReasons: "NSHW",
-    activityTypes: "ACTYP", nextActionTypes: "NATYP", taskCategories: "TCAT",
+    appointmentTypes: "APTYPE", conversionStages: "CVSTG", lostReasons: "LOST", noShowReasons: "NSHW",
+    activityTypes: "ACTYPE", nextActionTypes: "NATYPE", taskCategories: "TCAT",
     leadStatuses: "LDST", appointmentStatuses: "APST", referralStatuses: "RFST",
     callStatuses: "CLST", callDirections: "CLDIR", templates: "TMPL", holidays: "HOL",
     tags: "TAG", pinCodes: "PIN", slaRules: "SLA", reminderPolicies: "REM", dataRetentionPolicies: "DRP",
@@ -692,11 +692,16 @@ export class DatabaseStorage implements IStorage {
   private async generateCode(tableName: string, pgTable: string, tenantId: number): Promise<string> {
     const prefix = DatabaseStorage.CODE_PREFIXES[tableName] || tableName.substring(0, 4).toUpperCase();
     const result = await pool.query(
-      `SELECT COALESCE(MAX(id), 0)::int as max_id FROM "${pgTable}" WHERE tenant_id = $1`,
-      [tenantId]
+      `SELECT code FROM "${pgTable}" WHERE tenant_id = $1 AND code LIKE $2 ORDER BY code DESC LIMIT 1`,
+      [tenantId, `${prefix}_%`]
     );
-    const seq = (result.rows[0]?.max_id || 0) + 1;
-    return `${prefix}-${String(seq).padStart(4, "0")}`;
+    let seq = 1;
+    if (result.rows.length > 0) {
+      const lastCode = result.rows[0].code;
+      const lastNum = parseInt(lastCode.split("_").pop() || "0", 10);
+      if (!isNaN(lastNum)) seq = lastNum + 1;
+    }
+    return `${prefix}_${String(seq).padStart(3, "0")}`;
   }
 
   async createMasterRecord(tableName: string, data: Record<string, any>): Promise<MasterRecord> {
@@ -708,9 +713,7 @@ export class DatabaseStorage implements IStorage {
 
     const skipAutoCode = ["doctorLeaveExceptions", "opdTimings"];
     if (!skipAutoCode.includes(tableName)) {
-      if (!data.code || data.code.trim() === "") {
-        data.code = await this.generateCode(tableName, pgTable, data.tenantId || data.tenant_id);
-      }
+      data.code = await this.generateCode(tableName, pgTable, data.tenantId || data.tenant_id);
     }
 
     if (!data.approvalStatus && !data.approval_status) {

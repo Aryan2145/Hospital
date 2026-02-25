@@ -2602,6 +2602,17 @@ export async function registerRoutes(
       const { hashPassword } = await import("./replit_integrations/auth/replitAuth");
       const passwordHash = await hashPassword(password);
 
+      const lastUser = await pool.query(
+        `SELECT code FROM crm_users WHERE tenant_id = $1 AND code LIKE 'USR_%' ORDER BY code DESC LIMIT 1`,
+        [tid]
+      );
+      let userSeq = 1;
+      if (lastUser.rows.length > 0) {
+        const lastNum = parseInt(lastUser.rows[0].code.split("_").pop() || "0", 10);
+        if (!isNaN(lastNum)) userSeq = lastNum + 1;
+      }
+      body.code = `USR_${String(userSeq).padStart(3, "0")}`;
+
       const parsed = insertCrmUserSchema.parse({ ...body, tenantId: tid, passwordHash });
       const user = await storage.createCrmUser(parsed);
       const { passwordHash: _, ...safeUser } = user as any;
