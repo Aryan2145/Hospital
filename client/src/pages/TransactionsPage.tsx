@@ -290,8 +290,8 @@ export default function TransactionsPage() {
           ) : (
             <div className="space-y-3">
               {filteredEpisodes.map((ep) => {
-                const patient = patientMap[ep.patientId];
-                const patientName = patient?.name || `Patient #${ep.patientId}`;
+                const patient = ep.patientId ? patientMap[ep.patientId] : null;
+                const patientName = patient?.name || (ep.patientId ? `Patient #${ep.patientId}` : "Unlinked Patient");
                 const lead = ep.leadId ? leadMap[ep.leadId] : null;
                 const deptName = ep.treatmentDepartmentId ? treatmentDeptMap[ep.treatmentDepartmentId] : null;
 
