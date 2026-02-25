@@ -213,7 +213,7 @@ export default function TransactionsPage() {
   };
 
   const handleSubmit = () => {
-    if (!formPatientId) {
+    if (!editing && !formPatientId) {
       toast({ title: "Patient is required", variant: "destructive" });
       return;
     }
@@ -223,17 +223,19 @@ export default function TransactionsPage() {
     }
 
     const data: any = {
-      patientId: Number(formPatientId),
       episodeType: formEpisodeType,
       status: formStatus,
     };
+    if (formPatientId) data.patientId = Number(formPatientId);
     if (formTreatmentDeptId && formTreatmentDeptId !== "none") data.treatmentDepartmentId = Number(formTreatmentDeptId);
+    else if (formTreatmentDeptId === "none") data.treatmentDepartmentId = null;
     if (formDoctorId && formDoctorId !== "none") data.doctorId = Number(formDoctorId);
-    if (formDiagnosis) data.diagnosis = formDiagnosis;
-    if (formTreatmentPlan) data.treatmentPlan = formTreatmentPlan;
-    if (formEstimatedCost) data.estimatedCost = Number(formEstimatedCost);
-    if (formActualCost) data.actualCost = Number(formActualCost);
-    if (formNotes) data.notes = formNotes;
+    else if (formDoctorId === "none") data.doctorId = null;
+    data.diagnosis = formDiagnosis || null;
+    data.treatmentPlan = formTreatmentPlan || null;
+    data.estimatedCost = formEstimatedCost ? Number(formEstimatedCost) : null;
+    data.actualCost = formActualCost ? Number(formActualCost) : null;
+    data.notes = formNotes || null;
 
     if (editing) {
       updateMutation.mutate({ id: editing.id, data });
@@ -366,7 +368,7 @@ export default function TransactionsPage() {
                 <SearchableSelect
                   value={formPatientId}
                   onValueChange={setFormPatientId}
-                  disabled={!!editing}
+                  disabled={editing && !!editing.patientId}
                   options={(patientsList || [])
                     .filter((p: any) => p.status === "Active")
                     .map((p: any) => ({
@@ -376,6 +378,12 @@ export default function TransactionsPage() {
                   placeholder="Search patient by name or phone..."
                   data-testid="episode-select-patient"
                 />
+                {editing && !!editing.patientId && (
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Patient cannot be changed once linked to an episode.</p>
+                )}
+                {editing && !editing.patientId && (
+                  <p className="text-[10px] text-orange-600 mt-0.5">This episode has no patient linked. Select a patient to link it.</p>
+                )}
                 {formPatientId && selectedPatientLead && (
                   <div className="mt-1.5 p-2 rounded-md bg-muted/50 border text-xs space-y-0.5">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -385,7 +393,7 @@ export default function TransactionsPage() {
                     </div>
                   </div>
                 )}
-                {formPatientId && !selectedPatientLead && (
+                {formPatientId && !selectedPatientLead && !editing && (
                   <div className="mt-1.5 p-2 rounded-md bg-destructive/5 border border-destructive/10 text-xs text-destructive">
                     No lead record linked to this patient. A lead must be converted to a patient first.
                   </div>
@@ -489,7 +497,7 @@ export default function TransactionsPage() {
               <Button
                 onClick={handleSubmit}
                 className="w-full"
-                disabled={isPending || !formPatientId || (!editing && !selectedPatientLead)}
+                disabled={isPending || (!editing && (!formPatientId || !selectedPatientLead))}
                 data-testid="button-save-episode"
               >
                 {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
