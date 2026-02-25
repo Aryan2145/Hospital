@@ -92,8 +92,8 @@ export function SearchableSelect({
           e.preventDefault();
           setTimeout(() => inputRef.current?.focus(), 50);
         }}
-        onInteractOutside={(e) => {
-          e.preventDefault();
+        onInteractOutside={() => {
+          setOpen(false);
         }}
       >
         <div className="flex flex-col">

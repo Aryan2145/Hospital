@@ -14,14 +14,13 @@ import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import type { CrmUser, MasterRecord } from "@shared/schema";
 import {
-  UserPlus, Search, ChevronDown, ChevronRight, Mail, Phone, Shield, Eye,
+  UserPlus, Search, ChevronDown, ChevronRight, Mail, Phone, Shield, Eye, EyeOff,
   Users, UserCog, Network, List, Pencil, Trash2, KeyRound, Building2, Briefcase
 } from "lucide-react";
 
 type ViewMode = "list" | "tree";
 
 interface UserFormData {
-  code: string;
   name: string;
   email: string;
   phone: string;
@@ -35,18 +34,21 @@ interface UserFormData {
   reportingTo: number | null;
   accessScopeType: string;
   phiAccessLevel: string;
-  joiningDate: string;
   status: string;
+  showPassword: boolean;
+  showConfirmPassword: boolean;
 }
 
 const EMPTY_FORM: UserFormData = {
-  code: "", name: "", email: "", phone: "",
+  name: "", email: "", phone: "",
   password: "", confirmPassword: "",
   systemRoleId: null, branchId: null, departmentId: null,
   designationId: null, employmentTypeId: null,
   reportingTo: null, accessScopeType: "Self", phiAccessLevel: "None",
-  joiningDate: "", status: "Active",
+  status: "Active", showPassword: false, showConfirmPassword: false,
 };
+
+const HIDDEN_ROLE_CODES = ["SYS_ADMIN"];
 
 const ACCESS_SCOPE_OPTIONS = [
   { value: "All", label: "All (Full Access)", description: "Can view all data across all branches" },
@@ -145,6 +147,7 @@ export default function TeamManagement() {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [passwordTarget, setPasswordTarget] = useState<CrmUser | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
   const [formData, setFormData] = useState<UserFormData>({ ...EMPTY_FORM });
@@ -212,23 +215,24 @@ export default function TeamManagement() {
   function openEdit(user: CrmUser) {
     setEditingUser(user);
     setFormData({
-      code: user.code, name: user.name, email: user.email || "", phone: user.phone || "",
+      name: user.name, email: user.email || "", phone: user.phone || "",
+      password: "", confirmPassword: "",
       systemRoleId: user.systemRoleId, branchId: user.branchId, departmentId: user.departmentId,
       designationId: user.designationId, employmentTypeId: (user as any).employmentTypeId || null,
       reportingTo: user.reportingTo, accessScopeType: user.accessScopeType, phiAccessLevel: user.phiAccessLevel,
-      joiningDate: (user as any).joiningDate ? new Date((user as any).joiningDate).toISOString().split("T")[0] : "",
-      status: user.status,
+      status: user.status, showPassword: false, showConfirmPassword: false,
     });
     setDialogOpen(true);
   }
 
   function handleSubmit() {
-    if (!formData.code.trim() || !formData.name.trim()) {
-      toast({ title: "Validation Error", description: "Code and Name are required", variant: "destructive" });
+    if (!formData.name.trim()) {
+      toast({ title: "Validation Error", description: "Full Name is required", variant: "destructive" });
       return;
     }
-    if (!formData.phone.trim()) {
-      toast({ title: "Validation Error", description: "Mobile number is required (used as login username)", variant: "destructive" });
+    const rawPhone = formData.phone.replace(/\s+/g, "").replace(/^\+91/, "");
+    if (!rawPhone || !/^\d{10}$/.test(rawPhone)) {
+      toast({ title: "Validation Error", description: "Enter a valid 10-digit Indian mobile number", variant: "destructive" });
       return;
     }
     if (!editingUser) {
@@ -241,11 +245,11 @@ export default function TeamManagement() {
         return;
       }
     }
-    const { confirmPassword, ...rest } = formData;
+    const { confirmPassword, showPassword, showConfirmPassword, ...rest } = formData;
     const payload: any = {
       ...rest,
+      phone: "+91" + rawPhone,
       isActive: formData.status === "Active",
-      joiningDate: formData.joiningDate || null,
     };
     if (editingUser) {
       delete payload.password;
@@ -482,25 +486,35 @@ export default function TeamManagement() {
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Basic Information</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="code">Code {editingUser ? "" : "(auto-generated)"}</Label>
-                <Input id="code" value={editingUser ? formData.code : "(auto-generated)"} readOnly disabled className="bg-muted font-mono text-sm" data-testid="input-user-code" />
-              </div>
-              <div>
-                <Label htmlFor="name">Full Name *</Label>
-                <Input id="name" value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} placeholder="John Doe" data-testid="input-user-name" />
-              </div>
+            <div>
+              <Label htmlFor="name">Full Name *</Label>
+              <Input id="name" value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} placeholder="John Doe" data-testid="input-user-name" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="phone">Mobile Number (Username) *</Label>
-                <Input id="phone" value={formData.phone} onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))} placeholder="+919800000007" data-testid="input-user-phone" />
-                <p className="text-xs text-muted-foreground mt-1">Used as login username</p>
+                <Label htmlFor="phone">Mobile Number (Login Username) *</Label>
+                <div className="flex">
+                  <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm text-muted-foreground">
+                    +91
+                  </span>
+                  <Input
+                    id="phone"
+                    value={formData.phone.replace(/^\+91/, "")}
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^0-9]/g, "").slice(0, 10);
+                      setFormData(p => ({ ...p, phone: val }));
+                    }}
+                    placeholder="9800000007"
+                    className="rounded-l-none"
+                    maxLength={10}
+                    data-testid="input-user-phone"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">10-digit Indian mobile number</p>
               </div>
               <div>
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} placeholder="john@viroc.in" data-testid="input-user-email" />
+                <Input id="email" type="email" value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} placeholder="john@hospital.in" data-testid="input-user-email" />
               </div>
             </div>
 
@@ -508,11 +522,21 @@ export default function TeamManagement() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label htmlFor="password">Password *</Label>
-                  <Input id="password" type="password" value={formData.password} onChange={e => setFormData(p => ({ ...p, password: e.target.value }))} placeholder="Minimum 6 characters" data-testid="input-user-password" />
+                  <div className="relative">
+                    <Input id="password" type={formData.showPassword ? "text" : "password"} value={formData.password} onChange={e => setFormData(p => ({ ...p, password: e.target.value }))} placeholder="Minimum 6 characters" className="pr-10" data-testid="input-user-password" />
+                    <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setFormData(p => ({ ...p, showPassword: !p.showPassword }))} tabIndex={-1} data-testid="button-toggle-password">
+                      {formData.showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <Label htmlFor="confirm-password">Confirm Password *</Label>
-                  <Input id="confirm-password" type="password" value={formData.confirmPassword} onChange={e => setFormData(p => ({ ...p, confirmPassword: e.target.value }))} placeholder="Re-enter password" data-testid="input-user-confirm-password" />
+                  <div className="relative">
+                    <Input id="confirm-password" type={formData.showConfirmPassword ? "text" : "password"} value={formData.confirmPassword} onChange={e => setFormData(p => ({ ...p, confirmPassword: e.target.value }))} placeholder="Re-enter password" className="pr-10" data-testid="input-user-confirm-password" />
+                    <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setFormData(p => ({ ...p, showConfirmPassword: !p.showConfirmPassword }))} tabIndex={-1} data-testid="button-toggle-confirm-password">
+                      {formData.showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                   {formData.confirmPassword && formData.password !== formData.confirmPassword && (
                     <p className="text-xs text-destructive mt-1">Passwords do not match</p>
                   )}
@@ -525,18 +549,33 @@ export default function TeamManagement() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>System Role</Label>
+                <Label>System Role *</Label>
                 <SearchableSelect
                   value={formData.systemRoleId?.toString() || "none"}
                   onValueChange={v => setFormData(p => ({ ...p, systemRoleId: v === "none" ? null : Number(v) }))}
                   options={[
-                    { value: "none", label: "-- No Role --" },
-                    ...roles.filter((r: any) => r.status === "Active").map((r: any) => ({ value: r.id.toString(), label: r.name }))
+                    { value: "none", label: "-- Select Role --" },
+                    ...roles.filter((r: any) => r.status === "Active" && !HIDDEN_ROLE_CODES.includes(r.code)).map((r: any) => ({ value: r.id.toString(), label: r.name }))
                   ]}
                   placeholder="Select role"
                   data-testid="select-system-role"
                 />
               </div>
+              <div>
+                <Label>Employment Type *</Label>
+                <SearchableSelect
+                  value={formData.employmentTypeId?.toString() || "none"}
+                  onValueChange={v => setFormData(p => ({ ...p, employmentTypeId: v === "none" ? null : Number(v) }))}
+                  options={[
+                    { value: "none", label: "-- Select Type --" },
+                    ...employmentTypes.filter((e: any) => e.status === "Active").map((e: any) => ({ value: e.id.toString(), label: e.name }))
+                  ]}
+                  placeholder="Select employment type"
+                  data-testid="select-employment-type"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Branch</Label>
                 <SearchableSelect
@@ -550,8 +589,6 @@ export default function TeamManagement() {
                   data-testid="select-branch"
                 />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Department</Label>
                 <SearchableSelect
@@ -565,38 +602,19 @@ export default function TeamManagement() {
                   data-testid="select-department"
                 />
               </div>
-              <div>
-                <Label>Designation</Label>
-                <SearchableSelect
-                  value={formData.designationId?.toString() || "none"}
-                  onValueChange={v => setFormData(p => ({ ...p, designationId: v === "none" ? null : Number(v) }))}
-                  options={[
-                    { value: "none", label: "-- No Designation --" },
-                    ...designations.filter((d: any) => d.status === "Active").map((d: any) => ({ value: d.id.toString(), label: d.name }))
-                  ]}
-                  placeholder="Select designation"
-                  data-testid="select-designation"
-                />
-              </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Employment Type</Label>
-                <SearchableSelect
-                  value={formData.employmentTypeId?.toString() || "none"}
-                  onValueChange={v => setFormData(p => ({ ...p, employmentTypeId: v === "none" ? null : Number(v) }))}
-                  options={[
-                    { value: "none", label: "-- No Type --" },
-                    ...employmentTypes.filter((e: any) => e.status === "Active").map((e: any) => ({ value: e.id.toString(), label: e.name }))
-                  ]}
-                  placeholder="Select employment type"
-                  data-testid="select-employment-type"
-                />
-              </div>
-              <div>
-                <Label htmlFor="joining-date">Joining Date</Label>
-                <Input id="joining-date" type="date" value={formData.joiningDate} onChange={e => setFormData(p => ({ ...p, joiningDate: e.target.value }))} data-testid="input-joining-date" />
-              </div>
+            <div>
+              <Label>Designation</Label>
+              <SearchableSelect
+                value={formData.designationId?.toString() || "none"}
+                onValueChange={v => setFormData(p => ({ ...p, designationId: v === "none" ? null : Number(v) }))}
+                options={[
+                  { value: "none", label: "-- No Designation --" },
+                  ...designations.filter((d: any) => d.status === "Active").map((d: any) => ({ value: d.id.toString(), label: d.name }))
+                ]}
+                placeholder="Select designation"
+                data-testid="select-designation"
+              />
             </div>
 
             <div className="border-t pt-3 mt-1">
@@ -609,7 +627,7 @@ export default function TeamManagement() {
                 onValueChange={v => setFormData(p => ({ ...p, reportingTo: v === "none" ? null : Number(v) }))}
                 options={[
                   { value: "none", label: "-- No Manager (Top Level) --" },
-                  ...users.filter(u => u.id !== editingUser?.id).map(u => ({ value: u.id.toString(), label: `${u.name} (${u.code})` }))
+                  ...users.filter(u => u.id !== editingUser?.id).map(u => ({ value: u.id.toString(), label: `${u.name}` }))
                 ]}
                 placeholder="Select manager"
                 data-testid="select-reporting-to"
@@ -668,14 +686,20 @@ export default function TeamManagement() {
             </p>
             <div>
               <Label htmlFor="new-password">New Password</Label>
-              <Input
-                id="new-password"
-                type="password"
-                placeholder="Minimum 6 characters"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                data-testid="input-new-password"
-              />
+              <div className="relative">
+                <Input
+                  id="new-password"
+                  type={showNewPassword ? "text" : "password"}
+                  placeholder="Minimum 6 characters"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="pr-10"
+                  data-testid="input-new-password"
+                />
+                <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowNewPassword(v => !v)} tabIndex={-1} data-testid="button-toggle-new-password">
+                  {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
           </div>
           <DialogFooter>
