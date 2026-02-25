@@ -350,21 +350,29 @@ async function seedDatabase() {
     ]) {
       await db.insert(leadSourceCategories).values({ tenantId: tid, ...lsc, status: "Active", displayOrder: 0 });
     }
-    for (const ls of [
-      { code: "META", name: "Meta (Facebook/Instagram)" },
+    for (const [i, ls] of [
+      { code: "FACEBOOK", name: "Facebook" },
+      { code: "INSTAGRAM", name: "Instagram" },
       { code: "GOOGLE", name: "Google Ads" },
+      { code: "YOUTUBE", name: "YouTube" },
       { code: "WEBSITE", name: "viroc.in Website Form" },
       { code: "WALKIN", name: "Walk-in / Direct Visit" },
       { code: "CAMP", name: "Health Camp" },
       { code: "TELEPHONY", name: "Telephony Inbound (+91 6356300400)" },
       { code: "JUSTDIAL", name: "JustDial" },
       { code: "PRACTO", name: "Practo" },
-      { code: "YOUTUBE", name: "YouTube" },
       { code: "DR_REFERRAL", name: "Doctor Referral" },
       { code: "PATIENT_REF", name: "Patient Referral (Word of Mouth)" },
       { code: "HOME_COUNSEL", name: "Home Counselling Request" },
-    ]) {
-      await db.insert(leadSources).values({ tenantId: tid, ...ls, status: "Active", displayOrder: 0 });
+      { code: "WHATSAPP", name: "WhatsApp" },
+      { code: "PHONE", name: "Phone Inquiry" },
+      { code: "GOOGLE_FORMS", name: "Google Forms" },
+      { code: "CALLYZER", name: "Callyzer" },
+      { code: "EMAIL_CAMP", name: "Email Campaign" },
+      { code: "REFERRAL", name: "Referral (General)" },
+      { code: "OTHER", name: "Other" },
+    ].entries()) {
+      await db.insert(leadSources).values({ tenantId: tid, ...ls, status: "Active", displayOrder: i + 1 });
     }
 
     // ── Campaign Channels ──
@@ -1100,6 +1108,73 @@ export async function registerRoutes(
         return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join('.') });
       }
       throw err;
+    }
+  });
+
+  app.post("/api/leads/bulk-update-source", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const { tag, leadSourceCode } = req.body;
+      if (!tag || !leadSourceCode) return res.status(400).json({ message: "tag and leadSourceCode required" });
+      
+      const [source] = await db.select().from(leadSources).where(and(eq(leadSources.tenantId, tid), eq(leadSources.code, leadSourceCode)));
+      if (!source) return res.status(404).json({ message: `Lead source '${leadSourceCode}' not found` });
+      
+      const result = await db.execute(sql`UPDATE leads SET lead_source_id = ${source.id} WHERE tenant_id = ${tid} AND tags LIKE ${'%' + tag + '%'} AND lead_source_id IS NULL`);
+      
+      res.json({ updated: result.rowCount, leadSourceId: source.id, leadSourceName: source.name });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/lead-sources/sync", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const requiredSources = [
+        { code: "FACEBOOK", name: "Facebook", displayOrder: 1 },
+        { code: "INSTAGRAM", name: "Instagram", displayOrder: 2 },
+        { code: "GOOGLE", name: "Google Ads", displayOrder: 3 },
+        { code: "YOUTUBE", name: "YouTube", displayOrder: 4 },
+        { code: "WEBSITE", name: "viroc.in Website Form", displayOrder: 5 },
+        { code: "WALKIN", name: "Walk-in / Direct Visit", displayOrder: 6 },
+        { code: "CAMP", name: "Health Camp", displayOrder: 7 },
+        { code: "TELEPHONY", name: "Telephony Inbound (+91 6356300400)", displayOrder: 8 },
+        { code: "JUSTDIAL", name: "JustDial", displayOrder: 9 },
+        { code: "PRACTO", name: "Practo", displayOrder: 10 },
+        { code: "DR_REFERRAL", name: "Doctor Referral", displayOrder: 11 },
+        { code: "PATIENT_REF", name: "Patient Referral (Word of Mouth)", displayOrder: 12 },
+        { code: "HOME_COUNSEL", name: "Home Counselling Request", displayOrder: 13 },
+        { code: "WHATSAPP", name: "WhatsApp", displayOrder: 14 },
+        { code: "PHONE", name: "Phone Inquiry", displayOrder: 15 },
+        { code: "GOOGLE_FORMS", name: "Google Forms", displayOrder: 16 },
+        { code: "CALLYZER", name: "Callyzer", displayOrder: 17 },
+        { code: "EMAIL_CAMP", name: "Email Campaign", displayOrder: 18 },
+        { code: "REFERRAL", name: "Referral (General)", displayOrder: 19 },
+        { code: "OTHER", name: "Other", displayOrder: 20 },
+      ];
+      const existing = await db.select().from(leadSources).where(eq(leadSources.tenantId, tid));
+      const existingCodes = new Set(existing.map(s => s.code));
+      
+      const metaEntry = existing.find(s => s.code === "META");
+      if (metaEntry) {
+        await db.update(leadSources).set({ code: "FACEBOOK", name: "Facebook", displayOrder: 1 }).where(eq(leadSources.id, metaEntry.id));
+        existingCodes.delete("META");
+        existingCodes.add("FACEBOOK");
+      }
+      
+      let added = 0;
+      for (const s of requiredSources) {
+        if (!existingCodes.has(s.code)) {
+          await db.insert(leadSources).values({ tenantId: tid, ...s, status: "Active", approvalStatus: "Approved" });
+          added++;
+        }
+      }
+      
+      const final = await db.select().from(leadSources).where(eq(leadSources.tenantId, tid));
+      res.json({ message: `Synced lead sources. Added ${added} new entries.`, total: final.length, sources: final.sort((a: any, b: any) => a.displayOrder - b.displayOrder).map((s: any) => ({ id: s.id, code: s.code, name: s.name })) });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 
