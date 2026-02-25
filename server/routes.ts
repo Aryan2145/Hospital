@@ -2611,7 +2611,8 @@ export async function registerRoutes(
         const lastNum = parseInt(lastUser.rows[0].code.split("_").pop() || "0", 10);
         if (!isNaN(lastNum)) userSeq = lastNum + 1;
       }
-      body.code = `USR_${String(userSeq).padStart(3, "0")}`;
+      const userDigits = Math.max(3, String(userSeq).length);
+      body.code = `USR_${String(userSeq).padStart(userDigits, "0")}`;
 
       const parsed = insertCrmUserSchema.parse({ ...body, tenantId: tid, passwordHash });
       const user = await storage.createCrmUser(parsed);

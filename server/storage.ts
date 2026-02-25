@@ -701,7 +701,9 @@ export class DatabaseStorage implements IStorage {
       const lastNum = parseInt(lastCode.split("_").pop() || "0", 10);
       if (!isNaN(lastNum)) seq = lastNum + 1;
     }
-    return `${prefix}_${String(seq).padStart(3, "0")}`;
+    const minDigits = 3;
+    const digits = Math.max(minDigits, String(seq).length);
+    return `${prefix}_${String(seq).padStart(digits, "0")}`;
   }
 
   async createMasterRecord(tableName: string, data: Record<string, any>): Promise<MasterRecord> {
