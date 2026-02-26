@@ -4369,6 +4369,7 @@ export async function registerRoutes(
   await seedDatabase();
   await ensurePatientsForConvertedLeads();
   await ensureSuperAdmin();
+  await clearStaleConnectorMetrics();
 
   return httpServer;
 }
@@ -4432,5 +4433,14 @@ async function ensureSuperAdmin() {
     console.log("Super Admin user created.");
   } catch (err) {
     console.error("Error ensuring super admin:", err);
+  }
+}
+
+async function clearStaleConnectorMetrics() {
+  try {
+    const result = await db.execute(sql`UPDATE platform_connectors SET metrics_cache = NULL, metrics_cached_at = NULL WHERE metrics_cache IS NOT NULL`);
+    console.log("Cleared stale connector metrics cache");
+  } catch (err) {
+    console.error("Error clearing connector metrics:", err);
   }
 }
