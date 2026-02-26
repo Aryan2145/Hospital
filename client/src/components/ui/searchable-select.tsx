@@ -49,7 +49,7 @@ export function SearchableSelect({
   const selectedOption = options.find((o) => o.value === value);
 
   return (
-    <Popover open={open} onOpenChange={setOpen} modal={true}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -74,16 +74,8 @@ export function SearchableSelect({
         className={cn("p-0", className)}
         style={{ width: "var(--radix-popover-trigger-width)" }}
         align="start"
-        onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <Command
-          filter={(value, search) => {
-            const option = options.find((o) => o.value === value);
-            if (!option) return 0;
-            if (option.label.toLowerCase().includes(search.toLowerCase())) return 1;
-            return 0;
-          }}
-        >
+        <Command>
           <CommandInput
             placeholder={searchPlaceholder}
             data-testid={dataTestId ? `${dataTestId}-search` : undefined}
@@ -94,9 +86,9 @@ export function SearchableSelect({
               {options.map((option) => (
                 <CommandItem
                   key={option.value}
-                  value={option.value}
-                  onSelect={(currentValue) => {
-                    onValueChange(currentValue);
+                  value={option.label}
+                  onSelect={() => {
+                    onValueChange(option.value);
                     setOpen(false);
                   }}
                   data-testid={
