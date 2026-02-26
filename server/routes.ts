@@ -3349,23 +3349,46 @@ export async function registerRoutes(
       const c = await storage.getPlatformConnector(Number(req.params.id), tid);
       if (!c) return res.status(404).json({ message: "Connector not found" });
 
-      await storage.updatePlatformConnector(c.id, tid, {
-        syncStatus: "testing",
-      });
+      await storage.updatePlatformConnector(c.id, tid, { syncStatus: "testing" });
 
-      setTimeout(async () => {
+      if (c.platform === "meta") {
         try {
-          await storage.updatePlatformConnector(c.id, tid, {
-            status: "connected",
-            syncStatus: "synced",
-            lastSyncAt: new Date(),
-          });
-        } catch (e) {
-          console.error("Connector test error:", e);
+          const { testMetaConnection, fetchAccountInsights } = await import("./services/metaAds");
+          const testResult = await testMetaConnection();
+          if (testResult.success) {
+            const insights = await fetchAccountInsights("last_30d");
+            const metricsCache = insights ? {
+              impressions: insights.impressions,
+              clicks: insights.clicks,
+              spend: insights.spend,
+              ctr: insights.ctr,
+              cpc: insights.cpc,
+              conversions: insights.conversions,
+              reach: insights.reach,
+            } : null;
+            await storage.updatePlatformConnector(c.id, tid, {
+              status: "connected",
+              syncStatus: "synced",
+              lastSyncAt: new Date(),
+              ...(metricsCache ? { metricsCache, metricsCachedAt: new Date() } : {}),
+            });
+            res.json({ message: `Connected to Meta Ads (${testResult.accountName})`, accountName: testResult.accountName });
+          } else {
+            await storage.updatePlatformConnector(c.id, tid, { status: "error", syncStatus: null });
+            res.status(400).json({ message: `Meta connection failed: ${testResult.error}` });
+          }
+        } catch (e: any) {
+          await storage.updatePlatformConnector(c.id, tid, { status: "error", syncStatus: null });
+          res.status(400).json({ message: `Meta connection failed: ${e.message}` });
         }
-      }, 2000);
-
-      res.json({ message: "Connection test initiated" });
+      } else {
+        await storage.updatePlatformConnector(c.id, tid, {
+          status: "connected",
+          syncStatus: "synced",
+          lastSyncAt: new Date(),
+        });
+        res.json({ message: "Connection test initiated" });
+      }
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -3381,18 +3404,72 @@ export async function registerRoutes(
 
       await storage.updatePlatformConnector(c.id, tid, { syncStatus: "syncing" });
 
-      setTimeout(async () => {
+      if (c.platform === "meta") {
         try {
+          const { fetchAccountInsights } = await import("./services/metaAds");
+          const insights = await fetchAccountInsights("last_30d");
+          const metricsCache = insights ? {
+            impressions: insights.impressions,
+            clicks: insights.clicks,
+            spend: insights.spend,
+            ctr: insights.ctr,
+            cpc: insights.cpc,
+            conversions: insights.conversions,
+            reach: insights.reach,
+          } : null;
           await storage.updatePlatformConnector(c.id, tid, {
             syncStatus: "synced",
             lastSyncAt: new Date(),
+            ...(metricsCache ? { metricsCache, metricsCachedAt: new Date() } : {}),
           });
-        } catch (e) {
-          console.error("Connector sync error:", e);
+          res.json({ message: "Meta insights synced successfully", metrics: metricsCache });
+        } catch (e: any) {
+          await storage.updatePlatformConnector(c.id, tid, { syncStatus: "error" });
+          res.status(400).json({ message: `Meta sync failed: ${e.message}` });
         }
-      }, 1500);
+      } else {
+        await storage.updatePlatformConnector(c.id, tid, {
+          syncStatus: "synced",
+          lastSyncAt: new Date(),
+        });
+        res.json({ message: "Sync completed" });
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
 
-      res.json({ message: "Sync initiated — metrics will update when real API integrations are configured" });
+  app.get("/api/connectors/meta/insights", isAuthenticated, async (req: any, res: any) => {
+    try {
+      if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+      const datePreset = (req.query.datePreset as string) || "last_30d";
+      const { fetchAccountInsights } = await import("./services/metaAds");
+      const insights = await fetchAccountInsights(datePreset);
+      res.json(insights || {});
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/connectors/meta/campaigns", isAuthenticated, async (req: any, res: any) => {
+    try {
+      if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+      const datePreset = (req.query.datePreset as string) || "last_30d";
+      const { fetchCampaignInsights } = await import("./services/metaAds");
+      const campaigns = await fetchCampaignInsights(datePreset);
+      res.json(campaigns);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/connectors/meta/daily-insights", isAuthenticated, async (req: any, res: any) => {
+    try {
+      if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+      const days = parseInt(req.query.days as string) || 7;
+      const { fetchDailyInsights } = await import("./services/metaAds");
+      const daily = await fetchDailyInsights(days);
+      res.json(daily);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -4438,8 +4515,9 @@ async function ensureSuperAdmin() {
 
 async function clearStaleConnectorMetrics() {
   try {
-    const result = await db.execute(sql`UPDATE platform_connectors SET metrics_cache = NULL, metrics_cached_at = NULL WHERE metrics_cache IS NOT NULL`);
-    console.log("Cleared stale connector metrics cache");
+    const cutoff = new Date("2026-02-26T12:00:00Z");
+    const result = await db.execute(sql`UPDATE platform_connectors SET metrics_cache = NULL, metrics_cached_at = NULL WHERE metrics_cached_at IS NOT NULL AND metrics_cached_at < ${cutoff}`);
+    console.log("Cleared stale connector metrics cache (pre-integration)");
   } catch (err) {
     console.error("Error clearing connector metrics:", err);
   }

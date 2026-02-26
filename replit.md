@@ -36,9 +36,22 @@ The platform is built with a modern web stack:
 - **Tenant Suspension:** When tenant is suspended (payment overdue), CRM users see "Service Temporarily Suspended" screen. SYS_ADMIN can still access admin panel.
 - **Tenant fields added:** `subscriptionStatus`, `onboardedAt`, `contactPerson`, `contactEmail`, `contactPhone`
 
+### Meta Ads Integration (Feb 2026)
+- **Real Meta Graph API v21.0** integration in `server/services/metaAds.ts`
+- Uses environment secrets: `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_APP_ID`
+- **Endpoints:**
+  - `POST /api/connectors/:id/test` — Tests Meta connection and fetches 30-day insights
+  - `POST /api/connectors/:id/sync` — Syncs latest 30-day metrics from Meta API
+  - `GET /api/connectors/meta/insights?datePreset=last_30d` — Account-level insights
+  - `GET /api/connectors/meta/campaigns?datePreset=last_30d` — Per-campaign breakdowns
+  - `GET /api/connectors/meta/daily-insights?days=7` — Daily time-series data
+- **Metrics pulled:** impressions, clicks, spend, CTR, CPC, reach, conversions (lead actions)
+- Metrics cached in `platform_connectors.metrics_cache` for connector card display
+
 ## External Dependencies
 - **Replit Auth:** For user authentication leveraging OpenID Connect.
 - **Google Sheets API:** Integration for bulk lead import.
 - **WhatsApp Business API:** For automated communication such as appointment confirmations.
-- **Meta/Google/Callyzer/Google Forms:** Platform connectors for lead capture and import via webhooks and APIs.
+- **Meta Graph API v21.0:** Real-time Facebook & Instagram ad campaign insights (impressions, clicks, spend, CTR, CPC, conversions).
+- **Callyzer:** Webhook-based call tracking integration for real-time call log capture.
 - **SMTP Services:** For sending transactional emails like password resets and notifications.

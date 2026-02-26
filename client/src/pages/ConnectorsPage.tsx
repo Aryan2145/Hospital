@@ -231,17 +231,18 @@ const PLATFORM_TEMPLATES: PlatformTemplate[] = [
 const METRIC_LABELS: Record<string, { label: string; icon: any; format: (v: number) => string }> = {
   impressions: { label: "Impressions", icon: Eye, format: (v) => v.toLocaleString() },
   clicks: { label: "Clicks", icon: MousePointerClick, format: (v) => v.toLocaleString() },
-  spend: { label: "Spend", icon: IndianRupee, format: (v) => `₹${v.toLocaleString("en-IN")}` },
+  spend: { label: "Spend", icon: IndianRupee, format: (v) => `₹${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
   ctr: { label: "CTR", icon: TrendingUp, format: (v) => `${v.toFixed(2)}%` },
   conversions: { label: "Conversions", icon: Target, format: (v) => v.toLocaleString() },
   cpc: { label: "CPC", icon: IndianRupee, format: (v) => `₹${v.toFixed(2)}` },
-  totalCalls: { label: "Total Calls", icon: Phone, format: (v) => v.toLocaleString() },
-  incomingCalls: { label: "Incoming", icon: Phone, format: (v) => v.toLocaleString() },
-  outgoingCalls: { label: "Outgoing", icon: Phone, format: (v) => v.toLocaleString() },
-  missedCalls: { label: "Missed", icon: Phone, format: (v) => v.toLocaleString() },
-  connectedCalls: { label: "Connected", icon: CheckCircle2, format: (v) => v.toLocaleString() },
-  avgCallDuration: { label: "Avg Duration", icon: BarChart3, format: (v) => `${Math.floor(v / 60)}m ${v % 60}s` },
-  totalEmployees: { label: "Employees", icon: Target, format: (v) => v.toLocaleString() },
+  reach: { label: "Reach", icon: Eye, format: (v) => v.toLocaleString() },
+  totalCalls: { label: "Total Calls", icon: Phone, format: (v) => Math.round(v).toLocaleString() },
+  incomingCalls: { label: "Incoming", icon: Phone, format: (v) => Math.round(v).toLocaleString() },
+  outgoingCalls: { label: "Outgoing", icon: Phone, format: (v) => Math.round(v).toLocaleString() },
+  missedCalls: { label: "Missed", icon: Phone, format: (v) => Math.round(v).toLocaleString() },
+  connectedCalls: { label: "Connected", icon: CheckCircle2, format: (v) => Math.round(v).toLocaleString() },
+  avgCallDuration: { label: "Avg Duration", icon: BarChart3, format: (v) => `${Math.floor(v / 60)}m ${Math.round(v % 60)}s` },
+  totalEmployees: { label: "Employees", icon: Target, format: (v) => Math.round(v).toLocaleString() },
 };
 
 function CallyzerWebhookPanel({ connector }: { connector: PlatformConnector }) {
