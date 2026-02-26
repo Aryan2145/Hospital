@@ -1,4 +1,5 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
+  const [position, setPosition] = React.useState({ top: 0, left: 0, width: 0 });
   const inputRef = React.useRef<HTMLInputElement>(null);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -45,12 +47,26 @@ export function SearchableSelect({
     return options.filter((o) => o.label.toLowerCase().includes(term));
   }, [options, search]);
 
+  const updatePosition = React.useCallback(() => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPosition({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      });
+    }
+  }, []);
+
+  const handleOpen = React.useCallback(() => {
+    updatePosition();
+    setOpen(true);
+  }, [updatePosition]);
+
   React.useEffect(() => {
     if (open) {
       requestAnimationFrame(() => {
-        setTimeout(() => {
-          inputRef.current?.focus();
-        }, 50);
+        setTimeout(() => inputRef.current?.focus(), 30);
       });
     } else {
       setSearch("");
@@ -68,40 +84,31 @@ export function SearchableSelect({
         setOpen(false);
       }
     }
+    function handleScroll() {
+      updatePosition();
+    }
     document.addEventListener("mousedown", handleClickOutside, true);
-    return () => document.removeEventListener("mousedown", handleClickOutside, true);
-  }, [open]);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside, true);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [open, updatePosition]);
 
-  return (
-    <div className="relative">
-      <Button
-        ref={triggerRef}
-        variant="outline"
-        role="combobox"
-        type="button"
-        aria-expanded={open}
-        disabled={disabled}
-        className={cn(
-          "w-full justify-between font-normal h-9",
-          !selectedOption && "text-muted-foreground",
-          triggerClassName
-        )}
-        onClick={() => setOpen(!open)}
-        data-testid={dataTestId}
-      >
-        <span className="truncate">
-          {selectedOption ? selectedOption.label : placeholder}
-        </span>
-        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-      </Button>
-      {open && (
+  const dropdownContent = open
+    ? createPortal(
         <div
           ref={contentRef}
           className={cn(
-            "absolute left-0 w-full mt-1 rounded-md border bg-popover text-popover-foreground shadow-md",
+            "fixed rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95",
             className
           )}
-          style={{ zIndex: 99999 }}
+          style={{
+            zIndex: 99999,
+            top: position.top,
+            left: position.left,
+            width: position.width,
+          }}
         >
           <div className="flex flex-col">
             <div className="flex items-center border-b px-3">
@@ -134,7 +141,9 @@ export function SearchableSelect({
                       "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground",
                       value === option.value && "bg-accent text-accent-foreground"
                     )}
-                    onClick={() => {
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       onValueChange(option.value);
                       setOpen(false);
                       setSearch("");
@@ -157,8 +166,42 @@ export function SearchableSelect({
               )}
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <>
+      <Button
+        ref={triggerRef}
+        variant="outline"
+        role="combobox"
+        type="button"
+        aria-expanded={open}
+        disabled={disabled}
+        className={cn(
+          "w-full justify-between font-normal h-9",
+          !selectedOption && "text-muted-foreground",
+          triggerClassName
+        )}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (open) {
+            setOpen(false);
+          } else {
+            handleOpen();
+          }
+        }}
+        data-testid={dataTestId}
+      >
+        <span className="truncate">
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+      </Button>
+      {dropdownContent}
+    </>
   );
 }
