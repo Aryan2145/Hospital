@@ -3355,21 +3355,10 @@ export async function registerRoutes(
 
       setTimeout(async () => {
         try {
-          const sampleMetrics: Record<string, any> = {
-            meta: { impressions: 45230, clicks: 1820, spend: 2340, ctr: 4.02, conversions: 156, cpc: 1.29 },
-            google: { impressions: 62100, clicks: 2450, spend: 3120, ctr: 3.95, conversions: 198, cpc: 1.27 },
-            linkedin: { impressions: 18500, clicks: 620, spend: 1850, ctr: 3.35, conversions: 42, cpc: 2.98 },
-            twitter: { impressions: 28700, clicks: 980, spend: 1200, ctr: 3.41, conversions: 67, cpc: 1.22 },
-            bing: { impressions: 15200, clicks: 510, spend: 890, ctr: 3.36, conversions: 34, cpc: 1.75 },
-            callyzer: { totalCalls: 1247, incomingCalls: 583, outgoingCalls: 664, missedCalls: 89, connectedCalls: 1158, avgCallDuration: 185, totalEmployees: 12 },
-          };
-
           await storage.updatePlatformConnector(c.id, tid, {
             status: "connected",
             syncStatus: "synced",
             lastSyncAt: new Date(),
-            metricsCache: sampleMetrics[c.platform] || sampleMetrics.meta,
-            metricsCachedAt: new Date(),
           });
         } catch (e) {
           console.error("Connector test error:", e);
@@ -3392,35 +3381,18 @@ export async function registerRoutes(
 
       await storage.updatePlatformConnector(c.id, tid, { syncStatus: "syncing" });
 
-      const baseMetrics: Record<string, any> = {
-        meta: { impressions: 45230, clicks: 1820, spend: 2340, ctr: 4.02, conversions: 156, cpc: 1.29 },
-        google: { impressions: 62100, clicks: 2450, spend: 3120, ctr: 3.95, conversions: 198, cpc: 1.27 },
-        linkedin: { impressions: 18500, clicks: 620, spend: 1850, ctr: 3.35, conversions: 42, cpc: 2.98 },
-        twitter: { impressions: 28700, clicks: 980, spend: 1200, ctr: 3.41, conversions: 67, cpc: 1.22 },
-        bing: { impressions: 15200, clicks: 510, spend: 890, ctr: 3.36, conversions: 34, cpc: 1.75 },
-        callyzer: { totalCalls: 1247, incomingCalls: 583, outgoingCalls: 664, missedCalls: 89, connectedCalls: 1158, avgCallDuration: 185, totalEmployees: 12 },
-      };
-
-      const base = baseMetrics[c.platform] || baseMetrics.meta;
-      const jitter = () => 0.9 + Math.random() * 0.2;
-      const refreshed = Object.fromEntries(
-        Object.entries(base).map(([k, v]) => [k, typeof v === "number" ? Math.round((v as number) * jitter() * 100) / 100 : v])
-      );
-
       setTimeout(async () => {
         try {
           await storage.updatePlatformConnector(c.id, tid, {
             syncStatus: "synced",
             lastSyncAt: new Date(),
-            metricsCache: refreshed,
-            metricsCachedAt: new Date(),
           });
         } catch (e) {
           console.error("Connector sync error:", e);
         }
       }, 1500);
 
-      res.json({ message: "Sync initiated" });
+      res.json({ message: "Sync initiated — metrics will update when real API integrations are configured" });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
