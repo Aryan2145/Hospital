@@ -713,6 +713,12 @@ export class DatabaseStorage implements IStorage {
     data.created_at = now;
     data.modified_at = now;
 
+    const noCodeNameTables = ["opdTimings"];
+    if (noCodeNameTables.includes(tableName)) {
+      delete data.code;
+      delete data.name;
+    }
+
     const skipAutoCode = ["doctorLeaveExceptions", "opdTimings"];
     if (!skipAutoCode.includes(tableName)) {
       data.code = await this.generateCode(tableName, pgTable, data.tenantId || data.tenant_id);
