@@ -730,6 +730,10 @@ export class DatabaseStorage implements IStorage {
 
     const snakeData = this.toSnakeCase(data);
 
+    for (const [k, v] of Object.entries(snakeData)) {
+      if (v === "" || v === undefined) snakeData[k] = null;
+    }
+
     const keys = Object.keys(snakeData);
     const values = Object.values(snakeData);
     const placeholders = keys.map((_, i) => `$${i + 1}`).join(", ");
