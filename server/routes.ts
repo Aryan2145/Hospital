@@ -2018,7 +2018,6 @@ export async function registerRoutes(
   app.post("/api/webhook/callyzer/:connectorId", async (req, res) => {
     try {
       const connectorId = Number(req.params.connectorId);
-      const webhookSecret = req.headers["x-callyzer-secret"] || req.query.secret;
 
       const [connector] = await db.select().from(platformConnectors)
         .where(and(
@@ -2032,33 +2031,75 @@ export async function registerRoutes(
       }
 
       const creds = (connector.credentials || {}) as Record<string, any>;
-      if (!creds.webhookSecret || creds.webhookSecret !== webhookSecret) {
+      const incomingSecret = (
+        req.headers["x-callyzer-secret"] ||
+        req.headers["x-webhook-secret"] ||
+        req.headers["x-api-key"] ||
+        req.headers["authorization"]?.toString().replace(/^Bearer\s+/i, "") ||
+        req.query.secret ||
+        req.query.key ||
+        req.query.token
+      ) as string | undefined;
+
+      const validSecrets = [creds.webhookSecret, creds.apiKey].filter(Boolean);
+      if (validSecrets.length > 0 && (!incomingSecret || !validSecrets.includes(incomingSecret))) {
+        console.log(`Callyzer webhook auth failed for connector ${connectorId}. Expected one of [${validSecrets.map(s => s?.substring(0, 8) + '...').join(', ')}], got: ${incomingSecret ? incomingSecret.substring(0, 8) + '...' : 'none'}. Headers: ${Object.keys(req.headers).filter(h => h.startsWith('x-')).join(', ')}`);
         return res.status(401).json({ message: "Invalid webhook secret" });
       }
 
       const tid = connector.tenantId;
       const payload = req.body;
 
-      const callEntries = Array.isArray(payload) ? payload :
-        (payload.call_logs || payload.calls || payload.data || [payload]);
+      const flatCallEntries: Array<{ call: any; empNumber: string; empName: string }> = [];
 
+      const rawEntries = Array.isArray(payload) ? payload : [payload];
+
+      for (const entry of rawEntries) {
+        if (entry.call_logs && Array.isArray(entry.call_logs)) {
+          const empNumber = entry.emp_number || entry.empNumber || entry.emp_phone || "";
+          const empName = entry.emp_name || entry.empName || "";
+          for (const call of entry.call_logs) {
+            flatCallEntries.push({ call, empNumber, empName });
+          }
+        } else if (entry.calls && Array.isArray(entry.calls)) {
+          const empNumber = entry.emp_number || entry.empNumber || entry.emp_phone || "";
+          const empName = entry.emp_name || entry.empName || "";
+          for (const call of entry.calls) {
+            flatCallEntries.push({ call, empNumber, empName });
+          }
+        } else {
+          flatCallEntries.push({
+            call: entry,
+            empNumber: entry.emp_number || entry.employeeNumber || entry.employee_phone || "",
+            empName: entry.emp_name || "",
+          });
+        }
+      }
+
+      const allCrmUsers = await storage.getCrmUsers(tid);
       const results: any[] = [];
 
-      for (const entry of callEntries) {
-        const clientNumber = normalizePhoneNumber(
-          entry.client_number || entry.clientNumber || entry.phone || entry.mobile || ""
-        );
-        const empNumber = entry.emp_number || entry.employeeNumber || entry.employee_phone || entry.empPhone || "";
-        const callType = entry.call_type || entry.callType || entry.type || "unknown";
-        const duration = parseInt(entry.duration || entry.call_duration || entry.callDuration || "0", 10);
-        const notes = entry.notes || entry.remarks || entry.description || "";
-        const recordingUrl = entry.recording_url || entry.recordingUrl || entry.recording || "";
-        const callTime = entry.call_time || entry.callTime || entry.timestamp || new Date().toISOString();
+      for (const { call, empNumber, empName } of flatCallEntries) {
+        const rawClientNumber = call.client_number || call.clientNumber || call.phone || call.mobile || "";
+        const clientCountryCode = call.client_country_code || call.clientCountryCode || "91";
+        let clientNumber = normalizePhoneNumber(rawClientNumber);
+        if (clientNumber && !clientNumber.startsWith("+")) {
+          clientNumber = `+${clientCountryCode}${clientNumber.replace(/^0+/, "")}`;
+        }
+
+        const callType = call.call_type || call.callType || call.type || "unknown";
+        const duration = parseInt(call.duration || call.call_duration || call.callDuration || "0", 10);
+        const notes = call.note || call.notes || call.remarks || call.description || "";
+        const recordingUrl = call.call_recording_url || call.recording_url || call.recordingUrl || call.recording || "";
+        const callDate = call.call_date || "";
+        const callTime = call.call_time || call.callTime || call.timestamp || "";
+        const callTimestamp = callDate && callTime ? `${callDate}T${callTime}` : new Date().toISOString();
+        const callyzerCallId = call.id || null;
 
         const logEntry: any = {
           tenantId: tid,
           connectorId: connector.id,
-          rawPayload: entry,
+          rawPayload: { ...call, _empNumber: empNumber, _empName: empName },
           clientNumber,
           employeeNumber: empNumber,
           callType,
@@ -2080,7 +2121,6 @@ export async function registerRoutes(
 
         let matchedCrmUser = null;
         if (empNumber) {
-          const allCrmUsers = await storage.getCrmUsers(tid);
           const normalizedEmp = normalizePhoneNumber(empNumber);
           matchedCrmUser = allCrmUsers.find(u =>
             u.isActive && u.phone && normalizePhoneNumber(u.phone) === normalizedEmp
@@ -2100,7 +2140,7 @@ export async function registerRoutes(
 
           const descParts = [
             `${callDirection} call`,
-            matchedCrmUser ? `by ${matchedCrmUser.name}` : "",
+            matchedCrmUser ? `by ${matchedCrmUser.name}` : (empName ? `by ${empName}` : ""),
             duration > 0 ? `(${formatCallDuration(duration)})` : "",
             callStatus === "Missed" ? "— Missed" : "",
           ].filter(Boolean).join(" ");
@@ -2114,13 +2154,16 @@ export async function registerRoutes(
             callDirection,
             callDurationSeconds: duration,
             callStatus,
-            createdBy: matchedCrmUser?.name || "callyzer-webhook",
+            createdBy: matchedCrmUser?.name || empName || "callyzer-webhook",
             metadata: {
               source: "callyzer",
+              callyzerCallId,
               recordingUrl,
               notes,
               empNumber,
-              callTime,
+              empName,
+              clientName: call.client_name || "",
+              callTimestamp,
               connectorId: connector.id,
             },
           });
@@ -2129,7 +2172,7 @@ export async function registerRoutes(
           logEntry.processingStatus = "matched";
         } else if (clientNumber) {
           logEntry.processingStatus = "unmatched";
-          logEntry.errorMessage = "No matching lead found for phone number";
+          logEntry.errorMessage = `No matching lead found for ${clientNumber}`;
         } else {
           logEntry.processingStatus = "skipped";
           logEntry.errorMessage = "No client phone number in payload";

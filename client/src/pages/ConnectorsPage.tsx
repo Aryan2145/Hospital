@@ -253,7 +253,11 @@ function CallyzerWebhookPanel({ connector }: { connector: PlatformConnector }) {
 
   const creds = (connector.credentials || {}) as Record<string, any>;
   const hasSecret = !!creds.webhookSecret;
-  const webhookUrl = `${window.location.origin}/api/webhook/callyzer/${connector.id}`;
+  const baseWebhookUrl = `${window.location.origin}/api/webhook/callyzer/${connector.id}`;
+  const currentSecret = webhookSecret || creds.webhookSecret;
+  const webhookUrl = currentSecret
+    ? `${baseWebhookUrl}?secret=${encodeURIComponent(currentSecret)}`
+    : baseWebhookUrl;
 
   async function generateSecret() {
     setGeneratingSecret(true);
@@ -262,6 +266,7 @@ function CallyzerWebhookPanel({ connector }: { connector: PlatformConnector }) {
       const data = await res.json();
       setWebhookSecret(data.webhookSecret);
       setShowSecret(true);
+      creds.webhookSecret = data.webhookSecret;
       queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
       toast({ title: "Webhook secret generated successfully" });
     } catch (err: any) {
@@ -283,7 +288,7 @@ function CallyzerWebhookPanel({ connector }: { connector: PlatformConnector }) {
         <span className="font-medium text-sm">Webhook Configuration</span>
       </div>
       <p className="text-xs text-muted-foreground">
-        Configure this in Callyzer: Connectors → API & Webhook → Webhook Config. Paste the URL and secret below.
+        Configure this in Callyzer: Connectors → API & Webhook → Webhook Config. Copy the full URL below (it includes the secret) and paste it in Callyzer.
       </p>
 
       <div className="space-y-1.5">
@@ -338,7 +343,7 @@ function CallyzerWebhookPanel({ connector }: { connector: PlatformConnector }) {
             {webhookSecret && (
               <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
                 <Shield className="h-3 w-3" />
-                Copy this secret now — it won't be shown again. Send it as <code className="px-1 py-0.5 rounded bg-muted text-[10px]">x-callyzer-secret</code> header or <code className="px-1 py-0.5 rounded bg-muted text-[10px]">?secret=</code> query param.
+                New secret generated. Copy the Webhook URL above (it includes the secret as a query parameter) and update it in Callyzer's Webhook Config.
               </p>
             )}
             <Button
