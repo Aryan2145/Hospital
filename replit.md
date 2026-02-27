@@ -48,6 +48,21 @@ The platform is built with a modern web stack:
 - **Metrics pulled:** impressions, clicks, spend, CTR, CPC, reach, conversions (lead actions)
 - Metrics cached in `platform_connectors.metrics_cache` for connector card display
 
+### Callyzer Integration (Feb 2026)
+- **Webhook endpoint:** `POST /api/webhook/callyzer/:connectorId` — receives call data from Callyzer
+- **Auth:** Supports secret via query param (`?secret=`), headers (`x-callyzer-secret`, `x-webhook-secret`, `x-api-key`, `Authorization: Bearer`), or API key
+- **Payload parsing:** Handles Callyzer's nested format: `[{ emp_name, emp_number, call_logs: [{call1}, {call2}] }]`
+- **`callyzer_employees` table:** Auto-populated from webhook data, stores telecalling staff with:
+  - Employee details (name, number, code, country code, tags)
+  - Call stats (total, incoming, outgoing, missed, duration)
+  - `mappedCrmUserId` — links to CRM user for proper activity attribution
+- **Endpoints:**
+  - `GET /api/callyzer-employees` — List all Callyzer employees with mapped CRM user info
+  - `PATCH /api/callyzer-employees/:id` — Map to CRM user or toggle active/inactive
+  - `GET /api/callyzer-webhook-logs` — Call logs with filters
+- **UI:** CallyzerReportsPage has 3 tabs: Call Logs, Employee Performance, Telecalling Team
+- **Telecalling Team tab:** View employees auto-detected from Callyzer, map to CRM users, toggle active/inactive
+
 ## External Dependencies
 - **Replit Auth:** For user authentication leveraging OpenID Connect.
 - **Google Sheets API:** Integration for bulk lead import.

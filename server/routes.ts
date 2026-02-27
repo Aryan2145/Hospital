@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -2077,6 +2077,54 @@ export async function registerRoutes(
       }
 
       const allCrmUsers = await storage.getCrmUsers(tid);
+
+      const empCache = new Map<string, any>();
+      const uniqueEmployees = new Map<string, { empNumber: string; empName: string; empCode: string; empCountryCode: string; empTags: any }>();
+      for (const entry of rawEntries) {
+        if (entry.emp_number) {
+          uniqueEmployees.set(entry.emp_number, {
+            empNumber: entry.emp_number,
+            empName: entry.emp_name || "",
+            empCode: entry.emp_code || "",
+            empCountryCode: entry.emp_country_code || "91",
+            empTags: entry.emp_tags || null,
+          });
+        }
+      }
+
+      for (const [empNum, emp] of uniqueEmployees) {
+        const [existing] = await db.select().from(callyzerEmployees)
+          .where(and(
+            eq(callyzerEmployees.tenantId, tid),
+            eq(callyzerEmployees.connectorId, connector.id),
+            eq(callyzerEmployees.empNumber, empNum)
+          )).limit(1);
+
+        if (existing) {
+          await db.update(callyzerEmployees)
+            .set({
+              empName: emp.empName || existing.empName,
+              empCode: emp.empCode || existing.empCode,
+              empCountryCode: emp.empCountryCode,
+              empTags: emp.empTags || existing.empTags,
+              modifiedAt: new Date(),
+            })
+            .where(eq(callyzerEmployees.id, existing.id));
+          empCache.set(empNum, existing);
+        } else {
+          const [newEmp] = await db.insert(callyzerEmployees).values({
+            tenantId: tid,
+            connectorId: connector.id,
+            empCode: emp.empCode || null,
+            empName: emp.empName || "Unknown",
+            empNumber: empNum,
+            empCountryCode: emp.empCountryCode,
+            empTags: emp.empTags,
+          }).returning();
+          empCache.set(empNum, newEmp);
+        }
+      }
+
       const results: any[] = [];
 
       for (const { call, empNumber, empName } of flatCallEntries) {
@@ -2095,6 +2143,18 @@ export async function registerRoutes(
         const callTime = call.call_time || call.callTime || call.timestamp || "";
         const callTimestamp = callDate && callTime ? `${callDate}T${callTime}` : new Date().toISOString();
         const callyzerCallId = call.id || null;
+
+        if (callyzerCallId) {
+          const [existingLog] = await db.select({ id: callyzerWebhookLogs.id }).from(callyzerWebhookLogs)
+            .where(and(
+              eq(callyzerWebhookLogs.tenantId, tid),
+              sql`${callyzerWebhookLogs.rawPayload}->>'id' = ${callyzerCallId}`
+            )).limit(1);
+          if (existingLog) {
+            results.push({ logId: existingLog.id, status: "duplicate", leadId: null, crmUserId: null });
+            continue;
+          }
+        }
 
         const logEntry: any = {
           tenantId: tid,
@@ -2120,7 +2180,12 @@ export async function registerRoutes(
         }
 
         let matchedCrmUser = null;
-        if (empNumber) {
+        const callyzerEmp = empNumber ? empCache.get(empNumber) : null;
+
+        if (callyzerEmp?.mappedCrmUserId) {
+          matchedCrmUser = allCrmUsers.find(u => u.id === callyzerEmp.mappedCrmUserId);
+        }
+        if (!matchedCrmUser && empNumber) {
           const normalizedEmp = normalizePhoneNumber(empNumber);
           matchedCrmUser = allCrmUsers.find(u =>
             u.isActive && u.phone && normalizePhoneNumber(u.phone) === normalizedEmp
@@ -2129,6 +2194,21 @@ export async function registerRoutes(
 
         logEntry.matchedLeadId = matchedLead?.id || null;
         logEntry.matchedCrmUserId = matchedCrmUser?.id || null;
+        logEntry.matchedCallyzerEmployeeId = callyzerEmp?.id || null;
+
+        if (callyzerEmp) {
+          const callDir = callType.toLowerCase();
+          const incr = {
+            totalCalls: sql`${callyzerEmployees.totalCalls} + 1`,
+            totalDurationSeconds: sql`${callyzerEmployees.totalDurationSeconds} + ${duration}`,
+            lastCallAt: new Date(),
+            modifiedAt: new Date(),
+          } as any;
+          if (callDir.includes("incoming")) incr.totalIncoming = sql`${callyzerEmployees.totalIncoming} + 1`;
+          else if (callDir.includes("outgoing")) incr.totalOutgoing = sql`${callyzerEmployees.totalOutgoing} + 1`;
+          if (callDir.includes("missed")) incr.totalMissed = sql`${callyzerEmployees.totalMissed} + 1`;
+          await db.update(callyzerEmployees).set(incr).where(eq(callyzerEmployees.id, callyzerEmp.id));
+        }
 
         if (matchedLead) {
           const callDirection = callType.toLowerCase().includes("incoming") ? "Incoming" :
@@ -2265,6 +2345,71 @@ export async function registerRoutes(
         summary: { totalCalls, incomingCalls, outgoingCalls, missedCalls, matchedCalls, unmatchedCalls, totalDuration, avgDuration },
         employeeStats: Object.values(employeeStats).sort((a, b) => b.total - a.total),
       });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // --- Callyzer Employees CRUD ---
+  app.get("/api/callyzer-employees", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const connectorIdParam = req.query.connectorId ? Number(req.query.connectorId) : undefined;
+      const conditions = [eq(callyzerEmployees.tenantId, tid)];
+      if (connectorIdParam) conditions.push(eq(callyzerEmployees.connectorId, connectorIdParam));
+      const employees = await db.select().from(callyzerEmployees)
+        .where(and(...conditions))
+        .orderBy(desc(callyzerEmployees.totalCalls));
+
+      const allCrmUsers = await storage.getCrmUsers(tid);
+      const crmUserMap: Record<number, { id: number; name: string; phone: string | null }> = {};
+      allCrmUsers.forEach(u => { crmUserMap[u.id] = { id: u.id, name: u.name, phone: u.phone }; });
+
+      const enriched = employees.map(e => ({
+        ...e,
+        mappedCrmUser: e.mappedCrmUserId ? (crmUserMap[e.mappedCrmUserId] || null) : null,
+      }));
+
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/callyzer-employees/:id", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      if (!(await requireAdminRole(req, res, tid))) return;
+      const empId = Number(req.params.id);
+
+      const patchSchema = z.object({
+        mappedCrmUserId: z.number().nullable().optional(),
+        isActive: z.boolean().optional(),
+      });
+      const parsed = patchSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
+      const { mappedCrmUserId, isActive } = parsed.data;
+
+      const [existing] = await db.select().from(callyzerEmployees)
+        .where(and(eq(callyzerEmployees.id, empId), eq(callyzerEmployees.tenantId, tid)));
+
+      if (!existing) return res.status(404).json({ message: "Callyzer employee not found" });
+
+      if (mappedCrmUserId) {
+        const crmUser = await storage.getCrmUser(mappedCrmUserId, tid);
+        if (!crmUser) return res.status(400).json({ message: "CRM user not found" });
+      }
+
+      const updates: any = { modifiedAt: new Date() };
+      if (mappedCrmUserId !== undefined) updates.mappedCrmUserId = mappedCrmUserId;
+      if (isActive !== undefined) updates.isActive = isActive;
+
+      const [updated] = await db.update(callyzerEmployees)
+        .set(updates)
+        .where(eq(callyzerEmployees.id, empId))
+        .returning();
+
+      res.json(updated);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

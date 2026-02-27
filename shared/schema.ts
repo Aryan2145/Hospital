@@ -1203,6 +1203,32 @@ export const insertLeadCaptureRuleSchema = createInsertSchema(leadCaptureRules).
 export type InsertLeadCaptureRule = z.infer<typeof insertLeadCaptureRuleSchema>;
 export type LeadCaptureRule = typeof leadCaptureRules.$inferSelect;
 
+// --- Callyzer Employees ---
+export const callyzerEmployees = pgTable("callyzer_employees", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  connectorId: integer("connector_id").notNull().references(() => platformConnectors.id),
+  empCode: text("emp_code"),
+  empName: text("emp_name").notNull(),
+  empNumber: text("emp_number").notNull(),
+  empCountryCode: text("emp_country_code").default("91"),
+  empTags: jsonb("emp_tags"),
+  mappedCrmUserId: integer("mapped_crm_user_id").references(() => crmUsers.id),
+  totalCalls: integer("total_calls").default(0),
+  totalIncoming: integer("total_incoming").default(0),
+  totalOutgoing: integer("total_outgoing").default(0),
+  totalMissed: integer("total_missed").default(0),
+  totalDurationSeconds: integer("total_duration_seconds").default(0),
+  lastCallAt: timestamp("last_call_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+});
+
+export const insertCallyzerEmployeeSchema = createInsertSchema(callyzerEmployees).omit({ id: true, createdAt: true, modifiedAt: true });
+export type InsertCallyzerEmployee = z.infer<typeof insertCallyzerEmployeeSchema>;
+export type CallyzerEmployee = typeof callyzerEmployees.$inferSelect;
+
 // --- Callyzer Webhook Logs ---
 export const callyzerWebhookLogs = pgTable("callyzer_webhook_logs", {
   id: serial("id").primaryKey(),
@@ -1215,6 +1241,7 @@ export const callyzerWebhookLogs = pgTable("callyzer_webhook_logs", {
   callDuration: integer("call_duration"),
   matchedLeadId: integer("matched_lead_id").references(() => leads.id),
   matchedCrmUserId: integer("matched_crm_user_id").references(() => crmUsers.id),
+  matchedCallyzerEmployeeId: integer("matched_callyzer_employee_id").references(() => callyzerEmployees.id),
   activityId: integer("activity_id").references(() => activities.id),
   processingStatus: text("processing_status").notNull().default("received"),
   errorMessage: text("error_message"),
@@ -1464,4 +1491,5 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   slaRules: "sla_rules",
   reminderPolicies: "reminder_policies",
   dataRetentionPolicies: "data_retention_policies",
+  callyzerEmployees: "callyzer_employees",
 };

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,10 +12,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed,
   Clock, UserCheck, UserX, Filter, Download, Search,
-  BarChart3, Users
+  BarChart3, Users, Headphones, Link2, Unlink, ToggleLeft, ToggleRight
 } from "lucide-react";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Link } from "wouter";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 const VIROC_BLUE = "#0f4c81";
 
@@ -284,6 +286,7 @@ export default function CallyzerReportsPage() {
               <TabsList data-testid="tabs-list">
                 <TabsTrigger value="logs" data-testid="tab-call-logs"><Phone className="w-4 h-4 mr-1" />Call Logs</TabsTrigger>
                 <TabsTrigger value="employees" data-testid="tab-employee-stats"><Users className="w-4 h-4 mr-1" />Employee Performance</TabsTrigger>
+                <TabsTrigger value="team" data-testid="tab-telecalling-team"><Headphones className="w-4 h-4 mr-1" />Telecalling Team</TabsTrigger>
               </TabsList>
 
               <TabsContent value="logs" className="mt-4">
@@ -397,10 +400,204 @@ export default function CallyzerReportsPage() {
                   </CardContent>
                 </Card>
               </TabsContent>
+
+              <TabsContent value="team" className="mt-4">
+                <TelecallingTeamTab />
+              </TabsContent>
             </Tabs>
           </>
         )}
       </div>
     </AppLayout>
+  );
+}
+
+function TelecallingTeamTab() {
+  const { toast } = useToast();
+
+  const { data: employees = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/callyzer-employees"],
+  });
+
+  const { data: crmUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/crm-users/active"],
+  });
+
+  const mapMutation = useMutation({
+    mutationFn: async ({ id, mappedCrmUserId }: { id: number; mappedCrmUserId: number | null }) => {
+      await apiRequest("PATCH", `/api/callyzer-employees/${id}`, { mappedCrmUserId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/callyzer-employees"] });
+      toast({ title: "Employee mapping updated" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      await apiRequest("PATCH", `/api/callyzer-employees/${id}`, { isActive });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/callyzer-employees"] });
+      toast({ title: "Employee status updated" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  const activeCount = employees.filter(e => e.isActive).length;
+  const mappedCount = employees.filter(e => e.mappedCrmUserId).length;
+  const totalCallsAll = employees.reduce((s, e) => s + (e.totalCalls || 0), 0);
+  const totalDurAll = employees.reduce((s, e) => s + (e.totalDurationSeconds || 0), 0);
+
+  return (
+    <div className="space-y-4" data-testid="telecalling-team-tab">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="border-l-4 border-l-blue-500">
+          <CardContent className="p-3">
+            <div className="text-xs text-muted-foreground mb-1">Total Employees</div>
+            <p className="text-xl font-bold" data-testid="text-total-employees">{employees.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-emerald-500">
+          <CardContent className="p-3">
+            <div className="text-xs text-muted-foreground mb-1">Active</div>
+            <p className="text-xl font-bold" data-testid="text-active-employees">{activeCount}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-purple-500">
+          <CardContent className="p-3">
+            <div className="text-xs text-muted-foreground mb-1">Mapped to CRM Users</div>
+            <p className="text-xl font-bold" data-testid="text-mapped-employees">{mappedCount} / {employees.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-orange-500">
+          <CardContent className="p-3">
+            <div className="text-xs text-muted-foreground mb-1">Total Calls (All Time)</div>
+            <p className="text-xl font-bold" data-testid="text-team-total-calls">{totalCallsAll.toLocaleString()}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Headphones className="w-5 h-5" />
+            Telecalling Employees from Callyzer
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Employees are auto-detected from Callyzer webhook data. Map them to CRM users to link call activities to the right team members.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          {employees.length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground" data-testid="empty-team">
+              <Headphones className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No telecalling employees found</p>
+              <p className="text-sm mt-1">Employees will appear here automatically once Callyzer starts sending call data.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Employee Name</TableHead>
+                    <TableHead>Phone Number</TableHead>
+                    <TableHead>Emp Code</TableHead>
+                    <TableHead className="text-center">Total Calls</TableHead>
+                    <TableHead className="text-center">Incoming</TableHead>
+                    <TableHead className="text-center">Outgoing</TableHead>
+                    <TableHead className="text-center">Missed</TableHead>
+                    <TableHead className="text-center">Total Duration</TableHead>
+                    <TableHead>Last Call</TableHead>
+                    <TableHead>Mapped CRM User</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {employees.map((emp: any) => (
+                    <TableRow key={emp.id} className={!emp.isActive ? "opacity-50" : ""} data-testid={`row-callyzer-emp-${emp.id}`}>
+                      <TableCell className="font-medium" data-testid={`text-emp-name-${emp.id}`}>
+                        {emp.empName || "Unknown"}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm" data-testid={`text-emp-number-${emp.id}`}>
+                        +{emp.empCountryCode || "91"} {emp.empNumber}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {emp.empCode || "—"}
+                      </TableCell>
+                      <TableCell className="text-center font-semibold">{emp.totalCalls || 0}</TableCell>
+                      <TableCell className="text-center text-sky-600">{emp.totalIncoming || 0}</TableCell>
+                      <TableCell className="text-center text-green-600">{emp.totalOutgoing || 0}</TableCell>
+                      <TableCell className="text-center text-red-600">{emp.totalMissed || 0}</TableCell>
+                      <TableCell className="text-center">{formatDuration(emp.totalDurationSeconds || 0)}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">
+                        {emp.lastCallAt ? format(new Date(emp.lastCallAt), "dd MMM yyyy HH:mm") : "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={emp.mappedCrmUserId ? String(emp.mappedCrmUserId) : "none"}
+                          onValueChange={(val) => {
+                            mapMutation.mutate({
+                              id: emp.id,
+                              mappedCrmUserId: val === "none" ? null : Number(val),
+                            });
+                          }}
+                        >
+                          <SelectTrigger className="w-[180px] h-8 text-xs" data-testid={`select-map-crm-user-${emp.id}`}>
+                            <SelectValue placeholder="Map to CRM User" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">
+                              <span className="flex items-center gap-1 text-muted-foreground">
+                                <Unlink className="w-3 h-3" /> Not Mapped
+                              </span>
+                            </SelectItem>
+                            {crmUsers.map((u: any) => (
+                              <SelectItem key={u.id} value={String(u.id)}>
+                                <span className="flex items-center gap-1">
+                                  <Link2 className="w-3 h-3" /> {u.name}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={`h-7 px-2 ${emp.isActive ? "text-emerald-600" : "text-gray-400"}`}
+                          onClick={() => toggleMutation.mutate({ id: emp.id, isActive: !emp.isActive })}
+                          data-testid={`button-toggle-emp-${emp.id}`}
+                        >
+                          {emp.isActive ? (
+                            <><ToggleRight className="w-5 h-5 mr-1" /> Active</>
+                          ) : (
+                            <><ToggleLeft className="w-5 h-5 mr-1" /> Inactive</>
+                          )}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
