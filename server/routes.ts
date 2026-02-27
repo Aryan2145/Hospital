@@ -3587,6 +3587,13 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const { tenantId: _, ...safeBody } = req.body;
       const parsed = insertPlatformConnectorSchema.partial().parse(safeBody);
+      if (parsed.credentials) {
+        const existing = await storage.getPlatformConnector(Number(req.params.id), tid);
+        if (existing) {
+          const existingCreds = (existing.credentials as Record<string, any>) || {};
+          parsed.credentials = { ...existingCreds, ...parsed.credentials };
+        }
+      }
       const c = await storage.updatePlatformConnector(Number(req.params.id), tid, parsed);
       res.json(c);
     } catch (err: any) {
