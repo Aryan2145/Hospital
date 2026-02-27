@@ -63,6 +63,7 @@ export default function CallyzerReportsPage() {
       outgoingCalls: number;
       missedCalls: number;
       matchedCalls: number;
+      autoCreatedCalls: number;
       unmatchedCalls: number;
       totalDuration: number;
       avgDuration: number;
@@ -86,7 +87,7 @@ export default function CallyzerReportsPage() {
   });
 
   const logs = data?.logs || [];
-  const summary = data?.summary || { totalCalls: 0, incomingCalls: 0, outgoingCalls: 0, missedCalls: 0, matchedCalls: 0, unmatchedCalls: 0, totalDuration: 0, avgDuration: 0 };
+  const summary = data?.summary || { totalCalls: 0, incomingCalls: 0, outgoingCalls: 0, missedCalls: 0, matchedCalls: 0, autoCreatedCalls: 0, unmatchedCalls: 0, totalDuration: 0, avgDuration: 0 };
   const employeeStats = data?.employeeStats || [];
 
   const filteredLogs = searchTerm
@@ -109,7 +110,9 @@ export default function CallyzerReportsPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "matched": return <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100" data-testid="badge-status-matched"><UserCheck className="w-3 h-3 mr-1" />Matched</Badge>;
+      case "auto_created": return <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100" data-testid="badge-status-auto-created"><Users className="w-3 h-3 mr-1" />Lead Created</Badge>;
       case "unmatched": return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100" data-testid="badge-status-unmatched"><UserX className="w-3 h-3 mr-1" />Unmatched</Badge>;
+      case "duplicate": return <Badge className="bg-gray-100 text-gray-600 hover:bg-gray-100" data-testid="badge-status-duplicate">Duplicate</Badge>;
       case "skipped": return <Badge variant="secondary" data-testid="badge-status-skipped">Skipped</Badge>;
       case "processing": return <Badge variant="outline" data-testid="badge-status-processing">Processing</Badge>;
       default: return <Badge variant="outline" data-testid="badge-status-default">{status}</Badge>;
@@ -183,6 +186,7 @@ export default function CallyzerReportsPage() {
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="matched">Matched</SelectItem>
+                <SelectItem value="auto_created">Lead Created</SelectItem>
                 <SelectItem value="unmatched">Unmatched</SelectItem>
                 <SelectItem value="skipped">Skipped</SelectItem>
               </SelectContent>
@@ -253,13 +257,13 @@ export default function CallyzerReportsPage() {
                   <p className="text-xl font-bold" data-testid="text-matched-calls">{summary.matchedCalls}</p>
                 </CardContent>
               </Card>
-              <Card className="border-l-4 border-l-amber-500">
+              <Card className="border-l-4 border-l-blue-400">
                 <CardContent className="p-3">
                   <div className="flex items-center gap-2 mb-1">
-                    <UserX className="w-4 h-4 text-amber-500" />
-                    <span className="text-xs text-muted-foreground">Unmatched</span>
+                    <Users className="w-4 h-4 text-blue-400" />
+                    <span className="text-xs text-muted-foreground">Leads Created</span>
                   </div>
-                  <p className="text-xl font-bold" data-testid="text-unmatched-calls">{summary.unmatchedCalls}</p>
+                  <p className="text-xl font-bold" data-testid="text-auto-created-calls">{summary.autoCreatedCalls}</p>
                 </CardContent>
               </Card>
               <Card className="border-l-4 border-l-purple-500">

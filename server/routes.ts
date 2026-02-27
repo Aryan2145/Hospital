@@ -2251,8 +2251,82 @@ export async function registerRoutes(
           logEntry.activityId = activity.id;
           logEntry.processingStatus = "matched";
         } else if (clientNumber) {
-          logEntry.processingStatus = "unmatched";
-          logEntry.errorMessage = `No matching lead found for ${clientNumber}`;
+          const clientName = call.client_name && call.client_name !== "Unknown"
+            ? call.client_name
+            : `Caller ${rawClientNumber}`;
+
+          let callyzerLeadSourceId = null;
+          let [callyzerSource] = await db.select().from(leadSources)
+            .where(and(
+              eq(leadSources.tenantId, tid),
+              sql`LOWER(${leadSources.name}) = 'callyzer'`
+            )).limit(1);
+          if (!callyzerSource) {
+            const maxOrder = await db.select({ max: sql<number>`COALESCE(MAX(display_order), 0)` }).from(leadSources).where(eq(leadSources.tenantId, tid));
+            [callyzerSource] = await db.insert(leadSources).values({
+              tenantId: tid,
+              code: "CALLYZER",
+              name: "Callyzer",
+              status: "Active",
+              approvalStatus: "Approved",
+              displayOrder: (maxOrder[0]?.max || 0) + 1,
+            }).returning();
+          }
+          callyzerLeadSourceId = callyzerSource.id;
+
+          const newLead = await storage.createLead({
+            tenantId: tid,
+            name: clientName,
+            phoneE164: clientNumber,
+            status: "Raw Lead Captured",
+            leadSourceId: callyzerLeadSourceId,
+            assignedCrmUserId: matchedCrmUser?.id || null,
+            tags: "Callyzer",
+            notes: notes || null,
+          });
+
+          matchedLead = newLead;
+          logEntry.matchedLeadId = newLead.id;
+
+          const callDirection = callType.toLowerCase().includes("incoming") ? "Incoming" :
+            callType.toLowerCase().includes("outgoing") ? "Outgoing" :
+            callType.toLowerCase().includes("missed") ? "Missed" : callType;
+          const callStatus = callType.toLowerCase().includes("missed") ? "Missed" :
+            duration > 0 ? "Connected" : "Not Connected";
+
+          const descParts = [
+            `${callDirection} call`,
+            matchedCrmUser ? `by ${matchedCrmUser.name}` : (empName ? `by ${empName}` : ""),
+            duration > 0 ? `(${formatCallDuration(duration)})` : "",
+            callStatus === "Missed" ? "— Missed" : "",
+          ].filter(Boolean).join(" ");
+
+          const activity = await storage.createActivity({
+            tenantId: tid,
+            leadId: newLead.id,
+            type: "call",
+            description: descParts,
+            outcome: callStatus,
+            callDirection,
+            callDurationSeconds: duration,
+            callStatus,
+            createdBy: matchedCrmUser?.name || empName || "callyzer-webhook",
+            metadata: {
+              source: "callyzer",
+              callyzerCallId,
+              recordingUrl,
+              notes,
+              empNumber,
+              empName,
+              clientName: call.client_name || "",
+              callTimestamp,
+              connectorId: connector.id,
+              autoCreated: true,
+            },
+          });
+
+          logEntry.activityId = activity.id;
+          logEntry.processingStatus = "auto_created";
         } else {
           logEntry.processingStatus = "skipped";
           logEntry.errorMessage = "No client phone number in payload";
@@ -2322,6 +2396,7 @@ export async function registerRoutes(
       const outgoingCalls = logs.filter(l => l.callType?.toLowerCase().includes("outgoing")).length;
       const missedCalls = logs.filter(l => l.callType?.toLowerCase().includes("missed")).length;
       const matchedCalls = logs.filter(l => l.processingStatus === "matched").length;
+      const autoCreatedCalls = logs.filter(l => l.processingStatus === "auto_created").length;
       const unmatchedCalls = logs.filter(l => l.processingStatus === "unmatched").length;
       const totalDuration = logs.reduce((sum, l) => sum + (l.callDuration || 0), 0);
       const avgDuration = totalCalls > 0 ? Math.round(totalDuration / totalCalls) : 0;
@@ -2342,7 +2417,7 @@ export async function registerRoutes(
 
       res.json({
         logs: enrichedLogs,
-        summary: { totalCalls, incomingCalls, outgoingCalls, missedCalls, matchedCalls, unmatchedCalls, totalDuration, avgDuration },
+        summary: { totalCalls, incomingCalls, outgoingCalls, missedCalls, matchedCalls, autoCreatedCalls, unmatchedCalls, totalDuration, avgDuration },
         employeeStats: Object.values(employeeStats).sort((a, b) => b.total - a.total),
       });
     } catch (err: any) {

@@ -56,11 +56,20 @@ The platform is built with a modern web stack:
   - Employee details (name, number, code, country code, tags)
   - Call stats (total, incoming, outgoing, missed, duration)
   - `mappedCrmUserId` — links to CRM user for proper activity attribution
+- **Auto-Lead Creation:** When a call arrives from a number not in the leads table, a new lead is automatically created with:
+  - Name from Callyzer's `client_name` field (or "Caller {number}" if unknown)
+  - Lead Source: "Callyzer" (auto-created if not present in master data)
+  - Tag: "Callyzer"
+  - Status: "Raw Lead Captured"
+  - Assigned to the matched CRM user (if employee is mapped)
+- **Dedup:** Calls are deduplicated by Callyzer's unique call `id` field; duplicate calls skip processing
 - **Endpoints:**
   - `GET /api/callyzer-employees` — List all Callyzer employees with mapped CRM user info
   - `PATCH /api/callyzer-employees/:id` — Map to CRM user or toggle active/inactive
   - `GET /api/callyzer-webhook-logs` — Call logs with filters
 - **UI:** CallyzerReportsPage has 3 tabs: Call Logs, Employee Performance, Telecalling Team
+  - New status badges: "Lead Created" (blue), "Duplicate" (gray)
+  - New summary card: "Leads Created" count
 - **Telecalling Team tab:** View employees auto-detected from Callyzer, map to CRM users, toggle active/inactive
 
 ## External Dependencies
