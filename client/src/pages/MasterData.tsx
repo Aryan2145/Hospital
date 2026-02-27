@@ -1029,13 +1029,13 @@ export default function MasterData() {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle data-testid="text-dialog-title">
               {editingRecord ? "Edit" : "Add"} {selectedTableLabel}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto flex-1 pr-1">
             {!isAutoCodeName && (
               <>
                 {editingRecord && (
