@@ -2706,10 +2706,7 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["leaveDate", "leaveEndDate", "holidayDate", "startDate", "endDate"]);
-      const crmUser = req.session?.crmUserId ? (await storage.getCrmUsers(tid)).find((u: any) => u.id === req.session.crmUserId) : null;
-      const isAdmin = crmUser && (crmUser.role === "SYS_ADMIN" || crmUser.role === "ADMIN");
-      const approvalStatus = isAdmin ? "Approved" : "Pending";
-      const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid, approvalStatus });
+      const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid, approvalStatus: "Pending" });
       res.status(201).json(record);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
