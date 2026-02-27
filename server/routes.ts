@@ -804,15 +804,11 @@ export async function registerRoutes(
             [tid]
           );
           for (const row of result.rows) {
+            const mapped = storage.mapRowToMaster(row);
             pendingItems.push({
-              id: row.id,
+              ...mapped,
               tableName: tbl,
-              code: row.code,
-              name: row.name,
-              status: row.status,
-              approvalStatus: row.approval_status,
-              createdAt: row.created_at,
-              createdBy: row.created_by,
+              _allFields: row,
             });
           }
         } catch (_) { /* skip tables without approval_status */ }
