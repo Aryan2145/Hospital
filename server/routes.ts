@@ -2706,7 +2706,10 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["leaveDate", "leaveEndDate", "holidayDate", "startDate", "endDate"]);
-      const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid });
+      const crmUser = req.session?.crmUserId ? (await storage.getCrmUsers(tid)).find((u: any) => u.id === req.session.crmUserId) : null;
+      const isAdmin = crmUser && (crmUser.role === "SYS_ADMIN" || crmUser.role === "ADMIN");
+      const approvalStatus = isAdmin ? "Approved" : "Pending";
+      const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid, approvalStatus });
       res.status(201).json(record);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -2783,7 +2786,7 @@ export async function registerRoutes(
       for (const [tableKey, pgTable] of Object.entries(MASTER_TABLE_REGISTRY)) {
         try {
           const result = await pool.query(
-            `SELECT * FROM "${pgTable}" WHERE tenant_id = $1 AND approval_status = 'Pending Approval' ORDER BY created_at DESC`,
+            `SELECT * FROM "${pgTable}" WHERE tenant_id = $1 AND approval_status = 'Pending' ORDER BY created_at DESC`,
             [tid]
           );
           result.rows.forEach((row: any) => {

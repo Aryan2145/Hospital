@@ -331,7 +331,7 @@ export default function MasterData() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/masters", selectedTable] });
       queryClient.invalidateQueries({ queryKey: ["/api/masters/pending-approvals"] });
-      toast({ title: "Record created — pending approval" });
+      toast({ title: "Record created successfully" });
       setIsDialogOpen(false);
       resetForm();
     },
