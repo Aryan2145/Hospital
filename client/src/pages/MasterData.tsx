@@ -552,8 +552,8 @@ export default function MasterData() {
 
   const filteredRecords = records.filter(
     (r) =>
-      r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.code.toLowerCase().includes(searchTerm.toLowerCase())
+      (r.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (r.code || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const selectedCategoryData = MASTER_CATEGORIES.find((c) => c.category === selectedCategory);
