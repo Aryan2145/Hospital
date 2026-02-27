@@ -922,7 +922,7 @@ export default function MasterData() {
                       </TableRow>
                     ) : (
                       filteredRecords.map((record) => (
-                        <TableRow key={record.id} className={record.approvalStatus === "Pending Approval" ? "bg-amber-50/50 dark:bg-amber-950/10" : record.approvalStatus === "Rejected" ? "bg-red-50/50 dark:bg-red-950/10" : ""} data-testid={`row-master-${record.id}`}>
+                        <TableRow key={record.id} className={record.approvalStatus === "Pending" ? "bg-amber-50/50 dark:bg-amber-950/10" : record.approvalStatus === "Rejected" ? "bg-red-50/50 dark:bg-red-950/10" : ""} data-testid={`row-master-${record.id}`}>
                           {!isAutoCodeName && <TableCell className="font-mono text-sm">{record.code}</TableCell>}
                           {!isAutoCodeName && <TableCell>{record.name}</TableCell>}
                           {!hideStatusDisplayOrder && (
@@ -933,7 +933,7 @@ export default function MasterData() {
                             </TableCell>
                           )}
                           <TableCell>
-                            {record.approvalStatus === "Pending Approval" ? (
+                            {record.approvalStatus === "Pending" ? (
                               <Badge variant="secondary" className="gap-1 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
                                 <Clock className="h-3 w-3" /> Pending
                               </Badge>
@@ -969,7 +969,7 @@ export default function MasterData() {
                           })}
                           <TableCell>
                             <div className="flex items-center gap-1">
-                              {record.approvalStatus === "Pending Approval" && selectedTable && (
+                              {record.approvalStatus === "Pending" && selectedTable && (
                                 <>
                                   <Button
                                     size="icon"

@@ -719,7 +719,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (!data.approvalStatus && !data.approval_status) {
-      data.approval_status = "Pending Approval";
+      data.approval_status = "Pending";
     }
 
     const snakeData = this.toSnakeCase(data);

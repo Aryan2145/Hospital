@@ -4724,6 +4724,7 @@ export async function registerRoutes(
   await ensurePatientsForConvertedLeads();
   await ensureSuperAdmin();
   await clearStaleConnectorMetrics();
+  await fixPendingApprovalStatus();
 
   return httpServer;
 }
@@ -4787,6 +4788,20 @@ async function ensureSuperAdmin() {
     console.log("Super Admin user created.");
   } catch (err) {
     console.error("Error ensuring super admin:", err);
+  }
+}
+
+async function fixPendingApprovalStatus() {
+  try {
+    const tables = Object.values(MASTER_TABLE_REGISTRY);
+    for (const tbl of tables) {
+      try {
+        await pool.query(`UPDATE "${tbl}" SET approval_status = 'Pending' WHERE approval_status = 'Pending Approval'`);
+      } catch (_) {}
+    }
+    console.log("Fixed 'Pending Approval' -> 'Pending' in master tables");
+  } catch (err) {
+    console.error("Error fixing approval status:", err);
   }
 }
 
