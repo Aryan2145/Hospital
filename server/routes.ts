@@ -2251,82 +2251,86 @@ export async function registerRoutes(
           logEntry.activityId = activity.id;
           logEntry.processingStatus = "matched";
         } else if (clientNumber) {
-          const clientName = call.client_name && call.client_name !== "Unknown"
-            ? call.client_name
-            : `Caller ${rawClientNumber}`;
+          const hasRealName = call.client_name && call.client_name.trim() !== "" && call.client_name.trim().toLowerCase() !== "unknown";
 
-          let callyzerLeadSourceId = null;
-          let [callyzerSource] = await db.select().from(leadSources)
-            .where(and(
-              eq(leadSources.tenantId, tid),
-              sql`LOWER(${leadSources.name}) = 'callyzer'`
-            )).limit(1);
-          if (!callyzerSource) {
-            const maxOrder = await db.select({ max: sql<number>`COALESCE(MAX(display_order), 0)` }).from(leadSources).where(eq(leadSources.tenantId, tid));
-            [callyzerSource] = await db.insert(leadSources).values({
+          if (hasRealName) {
+            const clientName = call.client_name.trim();
+
+            let callyzerLeadSourceId = null;
+            let [callyzerSource] = await db.select().from(leadSources)
+              .where(and(
+                eq(leadSources.tenantId, tid),
+                sql`LOWER(${leadSources.name}) = 'callyzer'`
+              )).limit(1);
+            if (!callyzerSource) {
+              const maxOrder = await db.select({ max: sql<number>`COALESCE(MAX(display_order), 0)` }).from(leadSources).where(eq(leadSources.tenantId, tid));
+              [callyzerSource] = await db.insert(leadSources).values({
+                tenantId: tid,
+                code: "CALLYZER",
+                name: "Callyzer",
+                status: "Active",
+                approvalStatus: "Approved",
+                displayOrder: (maxOrder[0]?.max || 0) + 1,
+              }).returning();
+            }
+            callyzerLeadSourceId = callyzerSource.id;
+
+            const newLead = await storage.createLead({
               tenantId: tid,
-              code: "CALLYZER",
-              name: "Callyzer",
-              status: "Active",
-              approvalStatus: "Approved",
-              displayOrder: (maxOrder[0]?.max || 0) + 1,
-            }).returning();
+              name: clientName,
+              phoneE164: clientNumber,
+              status: "Raw Lead Captured",
+              leadSourceId: callyzerLeadSourceId,
+              assignedCrmUserId: matchedCrmUser?.id || null,
+              tags: "Callyzer",
+              notes: notes || null,
+            });
+
+            matchedLead = newLead;
+            logEntry.matchedLeadId = newLead.id;
+
+            const callDirection = callType.toLowerCase().includes("incoming") ? "Incoming" :
+              callType.toLowerCase().includes("outgoing") ? "Outgoing" :
+              callType.toLowerCase().includes("missed") ? "Missed" : callType;
+            const callStatus = callType.toLowerCase().includes("missed") ? "Missed" :
+              duration > 0 ? "Connected" : "Not Connected";
+
+            const descParts = [
+              `${callDirection} call`,
+              matchedCrmUser ? `by ${matchedCrmUser.name}` : (empName ? `by ${empName}` : ""),
+              duration > 0 ? `(${formatCallDuration(duration)})` : "",
+              callStatus === "Missed" ? "— Missed" : "",
+            ].filter(Boolean).join(" ");
+
+            const activity = await storage.createActivity({
+              tenantId: tid,
+              leadId: newLead.id,
+              type: "call",
+              description: descParts,
+              outcome: callStatus,
+              callDirection,
+              callDurationSeconds: duration,
+              callStatus,
+              createdBy: matchedCrmUser?.name || empName || "callyzer-webhook",
+              metadata: {
+                source: "callyzer",
+                callyzerCallId,
+                recordingUrl,
+                notes,
+                empNumber,
+                empName,
+                clientName: call.client_name || "",
+                callTimestamp,
+                connectorId: connector.id,
+                autoCreated: true,
+              },
+            });
+
+            logEntry.activityId = activity.id;
+            logEntry.processingStatus = "auto_created";
+          } else {
+            logEntry.processingStatus = "unmatched";
           }
-          callyzerLeadSourceId = callyzerSource.id;
-
-          const newLead = await storage.createLead({
-            tenantId: tid,
-            name: clientName,
-            phoneE164: clientNumber,
-            status: "Raw Lead Captured",
-            leadSourceId: callyzerLeadSourceId,
-            assignedCrmUserId: matchedCrmUser?.id || null,
-            tags: "Callyzer",
-            notes: notes || null,
-          });
-
-          matchedLead = newLead;
-          logEntry.matchedLeadId = newLead.id;
-
-          const callDirection = callType.toLowerCase().includes("incoming") ? "Incoming" :
-            callType.toLowerCase().includes("outgoing") ? "Outgoing" :
-            callType.toLowerCase().includes("missed") ? "Missed" : callType;
-          const callStatus = callType.toLowerCase().includes("missed") ? "Missed" :
-            duration > 0 ? "Connected" : "Not Connected";
-
-          const descParts = [
-            `${callDirection} call`,
-            matchedCrmUser ? `by ${matchedCrmUser.name}` : (empName ? `by ${empName}` : ""),
-            duration > 0 ? `(${formatCallDuration(duration)})` : "",
-            callStatus === "Missed" ? "— Missed" : "",
-          ].filter(Boolean).join(" ");
-
-          const activity = await storage.createActivity({
-            tenantId: tid,
-            leadId: newLead.id,
-            type: "call",
-            description: descParts,
-            outcome: callStatus,
-            callDirection,
-            callDurationSeconds: duration,
-            callStatus,
-            createdBy: matchedCrmUser?.name || empName || "callyzer-webhook",
-            metadata: {
-              source: "callyzer",
-              callyzerCallId,
-              recordingUrl,
-              notes,
-              empNumber,
-              empName,
-              clientName: call.client_name || "",
-              callTimestamp,
-              connectorId: connector.id,
-              autoCreated: true,
-            },
-          });
-
-          logEntry.activityId = activity.id;
-          logEntry.processingStatus = "auto_created";
         } else {
           logEntry.processingStatus = "skipped";
           logEntry.errorMessage = "No client phone number in payload";
