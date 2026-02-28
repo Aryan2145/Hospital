@@ -4462,7 +4462,7 @@ export async function registerRoutes(
       const transporter = nodemailer.default.createTransport({
         host: smtpHost,
         port: smtpPort,
-        secure: smtpSecure ? smtpPort === 465 : false,
+        secure: smtpPort === 465,
         auth: { user: smtpUser, pass: smtpPass },
       });
 

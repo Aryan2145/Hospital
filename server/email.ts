@@ -11,10 +11,11 @@ export interface TenantSmtpConfig {
 }
 
 function createTransporterFromConfig(config: TenantSmtpConfig) {
+  const secure = config.smtpPort === 465;
   return nodemailer.createTransport({
     host: config.smtpHost,
     port: config.smtpPort,
-    secure: config.smtpSecure ?? config.smtpPort === 465,
+    secure,
     auth: { user: config.smtpUser, pass: config.smtpPass },
   });
 }
