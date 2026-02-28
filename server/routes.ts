@@ -4441,13 +4441,48 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const allSettings = await storage.getTenantSettings(tid);
-      const smtpHost = allSettings.find(s => s.settingKey === "smtp_host")?.settingValue;
-      const smtpPort = allSettings.find(s => s.settingKey === "smtp_port")?.settingValue;
-      const smtpUser = allSettings.find(s => s.settingKey === "smtp_user")?.settingValue;
-      if (!smtpHost || !smtpPort || !smtpUser) {
-        return res.status(400).json({ message: "SMTP settings incomplete. Please save settings first." });
+      const getSetting = (key: string) => allSettings.find(s => s.settingKey === key)?.settingValue || "";
+      const smtpHost = getSetting("smtp_host");
+      const smtpUser = getSetting("smtp_user");
+      const smtpPass = getSetting("smtp_pass");
+      if (!smtpHost || !smtpUser || !smtpPass) {
+        return res.status(400).json({ message: "SMTP settings incomplete. Please save host, username, and password first." });
       }
-      res.json({ success: true, message: "SMTP configuration looks valid. Test email would be sent to configured admin email." });
+
+      const smtpPort = parseInt(getSetting("smtp_port") || "587");
+      const smtpSecure = getSetting("smtp_secure") !== "false";
+      const fromEmail = getSetting("smtp_from_email") || smtpUser;
+      const fromName = getSetting("smtp_from_name") || "Hospital CRM";
+
+      const nodemailer = await import("nodemailer");
+      const transporter = nodemailer.default.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpSecure ? smtpPort === 465 : false,
+        auth: { user: smtpUser, pass: smtpPass },
+      });
+
+      await transporter.verify();
+
+      const crmUserId = req.session?.crmUserId;
+      const allCrmUsers = await storage.getCrmUsers(tid);
+      const currentUser = allCrmUsers.find((u: any) => u.id === crmUserId);
+      const testRecipient = currentUser?.email || smtpUser;
+
+      await transporter.sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
+        to: testRecipient,
+        subject: "SMTP Test - Email Settings Verified",
+        html: `
+          <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 24px; background: #fff;">
+            <h2 style="color: #0f4c81; margin: 0 0 16px 0; font-size: 20px;">SMTP Test Successful</h2>
+            <p style="font-size: 15px; color: #333;">Your SMTP configuration is working correctly. Emails from this tenant will be sent using these settings.</p>
+            <p style="font-size: 13px; color: #888; margin-top: 20px;">Host: ${smtpHost}:${smtpPort} | From: ${fromEmail}</p>
+          </div>
+        `,
+      });
+
+      res.json({ success: true, message: `Test email sent successfully to ${testRecipient}. Please check your inbox.` });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
