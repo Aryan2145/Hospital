@@ -185,6 +185,9 @@ export async function setupAuth(app: Express) {
             smtpFromName: getSetting("smtp_from_name") || hospitalName,
             smtpSecure: getSetting("smtp_secure") !== "false",
           };
+          console.log(`[forgot-password] Using tenant SMTP: host=${smtpHost}, port=${tenantSmtp.smtpPort}, user=${smtpUser}, passLen=${smtpPass.length}, from=${tenantSmtp.smtpFromEmail}`);
+        } else {
+          console.log(`[forgot-password] Tenant SMTP incomplete: host=${smtpHost || 'EMPTY'}, user=${smtpUser || 'EMPTY'}, pass=${smtpPass ? 'SET' : 'EMPTY'}. Falling back to global SMTP.`);
         }
       }
 
