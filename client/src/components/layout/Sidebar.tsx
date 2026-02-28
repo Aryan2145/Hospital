@@ -54,7 +54,6 @@ const sections: { label: string; items: NavItem[] }[] = [
   {
     label: "Configurations",
     items: [
-      { icon: UserCog, label: "Team", href: "/team", page: "team" },
       { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
       { icon: Paintbrush, label: "Branding", href: "/branding", page: "branding" },
     ],
