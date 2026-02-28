@@ -133,13 +133,13 @@ export async function setupAuth(app: Express) {
 
       const normalizedMobile = mobile.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
 
-      let user = null;
-      const [found] = await db.select().from(crmUsers).where(eq(crmUsers.phone, `+91${normalizedMobile}`));
-      if (found) user = found;
-      if (!user) {
-        const [found2] = await db.select().from(crmUsers).where(eq(crmUsers.phone, normalizedMobile));
-        if (found2) user = found2;
-      }
+      const candidates = [];
+      const found1 = await db.select().from(crmUsers).where(eq(crmUsers.phone, `+91${normalizedMobile}`));
+      candidates.push(...found1);
+      const found2 = await db.select().from(crmUsers).where(eq(crmUsers.phone, normalizedMobile));
+      candidates.push(...found2);
+
+      let user = candidates.find(u => u.email && u.tenantId) || candidates.find(u => u.email) || candidates[0] || null;
 
       if (!user || !user.email) {
         return res.json({ success: true, message: "If an account with that mobile number exists and has an email, a reset link has been sent.", email: null });

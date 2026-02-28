@@ -64,6 +64,13 @@ app.use((req, res, next) => {
   try {
     const { pool } = await import("@db");
     await pool.query(`UPDATE crm_users SET email = 'tech@rgbindia.com' WHERE phone IN ('9033050100', '+919033050100')`);
+    const dupResult = await pool.query(`SELECT id, phone, tenant_id FROM crm_users WHERE phone IN ('9033050100', '+919033050100') ORDER BY id`);
+    if (dupResult.rows.length > 1) {
+      const keepId = dupResult.rows[0].id;
+      const removeIds = dupResult.rows.slice(1).map((r: any) => r.id);
+      await pool.query(`DELETE FROM crm_users WHERE id = ANY($1)`, [removeIds]);
+      console.log(`Removed duplicate CRM users ${removeIds}, kept id=${keepId}`);
+    }
     console.log("Fixed Super Admin email to tech@rgbindia.com");
   } catch (e) {
     console.error("Email fix migration error:", e);
