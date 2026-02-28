@@ -195,7 +195,8 @@ export async function setupAuth(app: Express) {
         await db.update(crmUsers)
           .set({ resetToken: null, resetTokenExpiry: null })
           .where(eq(crmUsers.id, user.id));
-        return res.status(500).json({ message: "Unable to send reset email. Please check SMTP configuration or contact your administrator." });
+        const detail = emailErr.message || "Unknown error";
+        return res.status(500).json({ message: `Unable to send reset email: ${detail}` });
       }
 
       res.json({ success: true, message: "If an account with that mobile number exists and has an email, a reset link has been sent." });
