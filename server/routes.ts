@@ -4424,12 +4424,16 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const body = req.body as Record<string, string | null>;
+      const savedKeys: string[] = [];
       for (const key of EMAIL_SETTING_KEYS) {
         if (key in body) {
           if (key === "smtp_pass" && body[key] === "••••••••") continue;
-          await storage.setTenantSetting(tid, key, body[key] ?? null);
+          const val = body[key] ?? null;
+          await storage.setTenantSetting(tid, key, val);
+          savedKeys.push(`${key}=${key === "smtp_pass" ? "***" : val}`);
         }
       }
+      console.log(`[email-settings] Saved for tenant ${tid}:`, savedKeys.join(", "));
       res.json({ success: true, message: "Email settings saved" });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
