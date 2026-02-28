@@ -11,6 +11,7 @@ export default function ForgotPassword() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [sentEmail, setSentEmail] = useState("");
 
   const { data: tenant } = useQuery<any>({
     queryKey: ["/api/tenants/current"],
@@ -43,6 +44,7 @@ export default function ForgotPassword() {
       }
 
       setSent(true);
+      if (data.email) setSentEmail(data.email);
     } catch (err) {
       setError("Connection error. Please try again.");
     } finally {
@@ -89,7 +91,10 @@ export default function ForgotPassword() {
               </div>
               <h2 className="text-2xl font-bold text-gray-900" data-testid="text-reset-sent">Check Your Email</h2>
               <p className="text-gray-500">
-                If an account with that mobile number exists and has a registered email, we've sent a password reset link. Please check your inbox.
+                {sentEmail
+                  ? <>We have sent a Password Reset Link to <strong className="text-gray-700">{sentEmail}</strong>.</>
+                  : "If an account with that mobile number exists and has a registered email, we've sent a password reset link."
+                }
               </p>
               <p className="text-sm text-gray-400">The link will expire in 1 hour.</p>
               <Link href="/">

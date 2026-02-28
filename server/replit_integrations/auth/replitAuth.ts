@@ -142,7 +142,7 @@ export async function setupAuth(app: Express) {
       }
 
       if (!user || !user.email) {
-        return res.json({ success: true, message: "If an account with that mobile number exists and has an email, a reset link has been sent." });
+        return res.json({ success: true, message: "If an account with that mobile number exists and has an email, a reset link has been sent.", email: null });
       }
 
       const token = crypto.randomBytes(32).toString("hex");
@@ -202,7 +202,8 @@ export async function setupAuth(app: Express) {
         return res.status(500).json({ message: `Unable to send reset email: ${detail}` });
       }
 
-      res.json({ success: true, message: "If an account with that mobile number exists and has an email, a reset link has been sent." });
+      const maskedEmail = user.email.replace(/^(.{2})(.*)(@.*)$/, (_, start, middle, domain) => start + middle.replace(/./g, "*") + domain);
+      res.json({ success: true, message: "Password reset link has been sent.", email: maskedEmail });
     } catch (error) {
       console.error("Forgot password error:", error);
       res.status(500).json({ message: "Failed to process request. Please try again." });
