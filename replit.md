@@ -72,6 +72,14 @@ The platform is built with a modern web stack:
   - New summary card: "Leads Created" count
 - **Telecalling Team tab:** View employees auto-detected from Callyzer, map to CRM users, toggle active/inactive
 
+### Per-Tenant SMTP & Password Reset (Feb 2026)
+- **Per-tenant SMTP configuration** stored in `tenant_settings` table (keys: `smtp_host`, `smtp_port`, `smtp_user`, `smtp_pass`, `smtp_from_email`, `smtp_from_name`, `smtp_secure`)
+- **Email Settings page** (`/email-settings`) accessible to ADMIN+ roles (was SYS_ADMIN only)
+- **Forgot Password flow:** User enters mobile → system finds user → looks up tenant SMTP settings → sends branded reset email from tenant's configured SMTP → user clicks link → resets password
+- **Fallback:** If tenant has no SMTP configured, falls back to global `SMTP_*` environment variables
+- **Dynamic branding:** Forgot Password and Reset Password pages show the tenant's name/logo instead of hardcoded values
+- **Email template:** Uses tenant's hospital name in subject, header, and footer
+
 ## External Dependencies
 - **Replit Auth:** For user authentication leveraging OpenID Connect.
 - **Google Sheets API:** Integration for bulk lead import.

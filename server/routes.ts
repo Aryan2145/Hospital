@@ -4395,12 +4395,26 @@ export async function registerRoutes(
   });
 
   // =============================================
-  // EMAIL SETTINGS ROUTES (SYS_ADMIN only)
+  // EMAIL SETTINGS ROUTES (ADMIN+ access)
   // =============================================
   const EMAIL_SETTING_KEYS = ["smtp_host", "smtp_port", "smtp_user", "smtp_pass", "smtp_from_email", "smtp_from_name", "smtp_secure"];
 
+  async function requireAdminOrAbove(req: any, res: any): Promise<boolean> {
+    const session = req.session as any;
+    const crmUserId = session?.crmUserId;
+    if (!crmUserId) { res.status(403).json({ message: "Forbidden" }); return false; }
+    const sessionTid = session?.tenantId || tid;
+    const allCrmUsers = await storage.getCrmUsers(sessionTid);
+    const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
+    if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.role)) {
+      res.status(403).json({ message: "Forbidden: Admin access required" });
+      return false;
+    }
+    return true;
+  }
+
   app.get("/api/email-settings", isAuthenticated, async (req: any, res: any) => {
-    if (!(await requireSysAdmin(req, res))) return;
+    if (!(await requireAdminOrAbove(req, res))) return;
     try {
       const tid = await getDefaultTenantId(req);
       const allSettings = await storage.getTenantSettings(tid);
@@ -4420,7 +4434,7 @@ export async function registerRoutes(
   });
 
   app.put("/api/email-settings", isAuthenticated, async (req: any, res: any) => {
-    if (!(await requireSysAdmin(req, res))) return;
+    if (!(await requireAdminOrAbove(req, res))) return;
     try {
       const tid = await getDefaultTenantId(req);
       const body = req.body as Record<string, string | null>;
@@ -4437,7 +4451,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/email-settings/test", isAuthenticated, async (req: any, res: any) => {
-    if (!(await requireSysAdmin(req, res))) return;
+    if (!(await requireAdminOrAbove(req, res))) return;
     try {
       const tid = await getDefaultTenantId(req);
       const allSettings = await storage.getTenantSettings(tid);

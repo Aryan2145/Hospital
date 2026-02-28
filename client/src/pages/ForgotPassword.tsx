@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +11,12 @@ export default function ForgotPassword() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sent, setSent] = useState(false);
+
+  const { data: tenant } = useQuery<any>({
+    queryKey: ["/api/tenants/current"],
+  });
+
+  const hospitalName = tenant?.displayName || tenant?.name || "Hospital CRM";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,10 +59,14 @@ export default function ForgotPassword() {
         </div>
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-12">
-            <div className="bg-white/10 p-2 rounded-xl backdrop-blur-sm">
-              <Activity className="w-8 h-8 text-white" />
-            </div>
-            <span className="text-2xl font-bold tracking-tight">VIROC CRM</span>
+            {tenant?.logoUrl ? (
+              <img src={tenant.logoUrl} alt={hospitalName} className="h-10 w-auto rounded-lg" />
+            ) : (
+              <div className="bg-white/10 p-2 rounded-xl backdrop-blur-sm">
+                <Activity className="w-8 h-8 text-white" />
+              </div>
+            )}
+            <span className="text-2xl font-bold tracking-tight">{hospitalName}</span>
           </div>
           <div className="space-y-6 max-w-lg">
             <h1 className="text-4xl font-bold leading-tight">Password Recovery</h1>
@@ -65,7 +76,7 @@ export default function ForgotPassword() {
           </div>
         </div>
         <div className="relative z-10 mt-auto pt-12">
-          <p className="text-xs text-blue-200">&copy; 2024 Viroc Hospital. All rights reserved.</p>
+          <p className="text-xs text-blue-200">&copy; {new Date().getFullYear()} {hospitalName}. All rights reserved.</p>
         </div>
       </div>
 

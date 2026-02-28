@@ -4,9 +4,9 @@ import connectPg from "connect-pg-simple";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { db } from "../../db";
-import { crmUsers } from "@shared/schema";
+import { crmUsers, tenants, tenantSettings } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
-import { sendPasswordResetEmail } from "../../email";
+import { sendPasswordResetEmail, TenantSmtpConfig } from "../../email";
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
@@ -155,8 +155,41 @@ export async function setupAuth(app: Express) {
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const resetLink = `${baseUrl}/reset-password?token=${token}`;
 
+      let tenantSmtp: TenantSmtpConfig | null = null;
+      let hospitalName = "Hospital CRM";
+
+      if (user.tenantId) {
+        const [tenant] = await db.select().from(tenants).where(eq(tenants.id, user.tenantId));
+        if (tenant) {
+          hospitalName = tenant.displayName || tenant.name;
+        }
+
+        const settings = await db.select({
+          settingKey: tenantSettings.settingKey,
+          settingValue: tenantSettings.settingValue,
+        }).from(tenantSettings).where(eq(tenantSettings.tenantId, user.tenantId));
+
+        const getSetting = (key: string) => settings.find(s => s.settingKey === key)?.settingValue || "";
+
+        const smtpHost = getSetting("smtp_host");
+        const smtpUser = getSetting("smtp_user");
+        const smtpPass = getSetting("smtp_pass");
+
+        if (smtpHost && smtpUser && smtpPass) {
+          tenantSmtp = {
+            smtpHost,
+            smtpPort: parseInt(getSetting("smtp_port") || "587"),
+            smtpUser,
+            smtpPass,
+            smtpFromEmail: getSetting("smtp_from_email") || smtpUser,
+            smtpFromName: getSetting("smtp_from_name") || hospitalName,
+            smtpSecure: getSetting("smtp_secure") !== "false",
+          };
+        }
+      }
+
       try {
-        await sendPasswordResetEmail(user.email, user.name, resetLink);
+        await sendPasswordResetEmail(user.email, user.name, resetLink, tenantSmtp, hospitalName);
       } catch (emailErr: any) {
         console.error("Email send error:", emailErr);
         await db.update(crmUsers)
