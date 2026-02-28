@@ -140,6 +140,7 @@ export async function setupAuth(app: Express) {
       candidates.push(...found2);
 
       let user = candidates.find(u => u.email && u.tenantId) || candidates.find(u => u.email) || candidates[0] || null;
+      console.log(`[forgot-password] Found ${candidates.length} users for mobile ${normalizedMobile}, selected userId=${user?.id}, tenantId=${user?.tenantId}, email=${user?.email}`);
 
       if (!user || !user.email) {
         return res.json({ success: true, message: "If an account with that mobile number exists and has an email, a reset link has been sent.", email: null });
