@@ -61,23 +61,6 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  try {
-    const pg = await import("pg");
-    const fixPool = new pg.default.Pool({ connectionString: process.env.DATABASE_URL });
-    await fixPool.query(`UPDATE crm_users SET email = 'tech@rgbindia.com' WHERE phone IN ('9033050100', '+919033050100')`);
-    const dupResult = await fixPool.query(`SELECT id, phone, tenant_id FROM crm_users WHERE phone IN ('9033050100', '+919033050100') ORDER BY id`);
-    if (dupResult.rows.length > 1) {
-      const keepId = dupResult.rows[0].id;
-      const removeIds = dupResult.rows.slice(1).map((r: any) => r.id);
-      await fixPool.query(`DELETE FROM crm_users WHERE id = ANY($1)`, [removeIds]);
-      console.log(`Removed duplicate CRM users ${removeIds}, kept id=${keepId}`);
-    }
-    console.log("Fixed Super Admin email to tech@rgbindia.com");
-    await fixPool.end();
-  } catch (e) {
-    console.error("Email fix migration error:", e);
-  }
-
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
