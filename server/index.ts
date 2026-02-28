@@ -61,6 +61,14 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  try {
+    const { pool } = await import("@db");
+    await pool.query(`UPDATE crm_users SET email = 'tech@rgbindia.com' WHERE phone IN ('9033050100', '+919033050100')`);
+    console.log("Fixed Super Admin email to tech@rgbindia.com");
+  } catch (e) {
+    console.error("Email fix migration error:", e);
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
