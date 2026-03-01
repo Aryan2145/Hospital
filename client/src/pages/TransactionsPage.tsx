@@ -27,6 +27,9 @@ interface Episode {
   doctorId: number | null;
   branchId: number | null;
   episodeType: string | null;
+  visitType: string | null;
+  parentEpisodeId: number | null;
+  visitNumber: number | null;
   status: string;
   startDate: string | null;
   endDate: string | null;
@@ -73,6 +76,8 @@ export default function TransactionsPage() {
   const [formDoctorId, setFormDoctorId] = useState("");
   const [formTreatmentDeptId, setFormTreatmentDeptId] = useState("");
   const [formEpisodeType, setFormEpisodeType] = useState("OPD");
+  const [formVisitType, setFormVisitType] = useState("New");
+  const [formParentEpisodeId, setFormParentEpisodeId] = useState("");
   const [formStatus, setFormStatus] = useState("Consultation Done");
   const [formDiagnosis, setFormDiagnosis] = useState("");
   const [formTreatmentPlan, setFormTreatmentPlan] = useState("");
@@ -100,6 +105,16 @@ export default function TransactionsPage() {
 
   const { data: treatmentDepts } = useQuery<any[]>({
     queryKey: ["/api/masters/treatmentDepartments"],
+  });
+
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const { data: checkedInToday = [] } = useQuery<any[]>({
+    queryKey: ["/api/appointments/checked-in-today"],
+    queryFn: async () => {
+      const res = await fetch("/api/appointments/checked-in-today", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
   });
 
   const leadMap = useMemo(() => {
@@ -183,6 +198,8 @@ export default function TransactionsPage() {
     setFormDoctorId("");
     setFormTreatmentDeptId("");
     setFormEpisodeType("OPD");
+    setFormVisitType("New");
+    setFormParentEpisodeId("");
     setFormStatus("Consultation Done");
     setFormDiagnosis("");
     setFormTreatmentPlan("");
@@ -198,6 +215,8 @@ export default function TransactionsPage() {
     setFormDoctorId(ep.doctorId ? String(ep.doctorId) : "");
     setFormTreatmentDeptId(ep.treatmentDepartmentId ? String(ep.treatmentDepartmentId) : "");
     setFormEpisodeType(ep.episodeType || "OPD");
+    setFormVisitType(ep.visitType || "New");
+    setFormParentEpisodeId(ep.parentEpisodeId ? String(ep.parentEpisodeId) : "");
     setFormStatus(ep.status);
     setFormDiagnosis(ep.diagnosis || "");
     setFormTreatmentPlan(ep.treatmentPlan || "");
@@ -224,8 +243,12 @@ export default function TransactionsPage() {
 
     const data: any = {
       episodeType: formEpisodeType,
+      visitType: formVisitType,
       status: formStatus,
     };
+    if (formVisitType === "Follow Up" && formParentEpisodeId) {
+      data.parentEpisodeId = Number(formParentEpisodeId);
+    }
     if (formPatientId) data.patientId = Number(formPatientId);
     if (formTreatmentDeptId && formTreatmentDeptId !== "none") data.treatmentDepartmentId = Number(formTreatmentDeptId);
     else if (formTreatmentDeptId === "none") data.treatmentDepartmentId = null;
@@ -309,6 +332,9 @@ export default function TransactionsPage() {
                             {ep.status}
                           </Badge>
                           <Badge variant="outline" data-testid={`badge-episode-type-${ep.id}`}>{ep.episodeType || "OPD"}</Badge>
+                          <Badge variant="outline" className={ep.visitType === "Follow Up" ? "bg-amber-50 text-amber-700 border-amber-200 text-[10px]" : "bg-blue-50 text-blue-700 border-blue-200 text-[10px]"} data-testid={`badge-visit-type-${ep.id}`}>
+                            {ep.visitType || "New"}{ep.visitNumber && ep.visitNumber > 1 ? ` #${ep.visitNumber}` : ""}
+                          </Badge>
                           {deptName && <Badge variant="secondary" className="text-[10px]" data-testid={`badge-episode-dept-${ep.id}`}>{deptName}</Badge>}
                         </div>
                         <div className="flex items-center gap-4 text-sm flex-wrap">
@@ -369,12 +395,23 @@ export default function TransactionsPage() {
                   value={formPatientId}
                   onValueChange={setFormPatientId}
                   disabled={editing && !!editing.patientId}
-                  options={(patientsList || [])
-                    .filter((p: any) => p.status === "Active")
-                    .map((p: any) => ({
-                      value: String(p.id),
-                      label: `${p.firstName || ""} ${p.lastName || ""}`.trim() + (p.primaryPhone ? ` (${p.primaryPhone})` : ""),
-                    }))}
+                  options={(() => {
+                    const checkedInPatientIds = new Set(checkedInToday.filter((a: any) => a.patient_id).map((a: any) => a.patient_id));
+                    const activePatients = (patientsList || []).filter((p: any) => p.status === "Active");
+                    const checkedInOptions = activePatients
+                      .filter((p: any) => checkedInPatientIds.has(p.id))
+                      .map((p: any) => ({
+                        value: String(p.id),
+                        label: `✓ ${`${p.firstName || ""} ${p.lastName || ""}`.trim()} (Checked In)` + (p.primaryPhone ? ` — ${p.primaryPhone}` : ""),
+                      }));
+                    const otherOptions = activePatients
+                      .filter((p: any) => !checkedInPatientIds.has(p.id))
+                      .map((p: any) => ({
+                        value: String(p.id),
+                        label: `${p.firstName || ""} ${p.lastName || ""}`.trim() + (p.primaryPhone ? ` (${p.primaryPhone})` : ""),
+                      }));
+                    return [...checkedInOptions, ...otherOptions];
+                  })()}
                   placeholder="Search patient by name or phone..."
                   data-testid="episode-select-patient"
                 />
@@ -439,7 +476,7 @@ export default function TransactionsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <Label className="text-xs font-medium text-muted-foreground">Type</Label>
                   <SearchableSelect
@@ -457,6 +494,22 @@ export default function TransactionsPage() {
                   />
                 </div>
                 <div>
+                  <Label className="text-xs font-medium text-muted-foreground">Visit</Label>
+                  <SearchableSelect
+                    value={formVisitType}
+                    onValueChange={(v) => {
+                      setFormVisitType(v);
+                      if (v === "New") setFormParentEpisodeId("");
+                    }}
+                    options={[
+                      { value: "New", label: "New" },
+                      { value: "Follow Up", label: "Follow Up" },
+                    ]}
+                    placeholder="Select visit type"
+                    data-testid="episode-select-visit-type"
+                  />
+                </div>
+                <div>
                   <Label className="text-xs font-medium text-muted-foreground">Status</Label>
                   <SearchableSelect
                     value={formStatus}
@@ -467,6 +520,21 @@ export default function TransactionsPage() {
                   />
                 </div>
               </div>
+
+              {formVisitType === "Follow Up" && formPatientId && (
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground">Parent Episode (Follow-up of)</Label>
+                  <SearchableSelect
+                    value={formParentEpisodeId}
+                    onValueChange={setFormParentEpisodeId}
+                    options={(episodes || [])
+                      .filter((ep) => ep.patientId === Number(formPatientId))
+                      .map((ep) => ({ value: String(ep.id), label: `${ep.episodeName} (${ep.status})` }))}
+                    placeholder="Select parent episode"
+                    data-testid="episode-select-parent"
+                  />
+                </div>
+              )}
 
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Diagnosis</Label>

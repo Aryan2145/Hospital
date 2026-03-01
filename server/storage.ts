@@ -346,6 +346,8 @@ export class DatabaseStorage implements IStorage {
         a.token_number AS "tokenNumber", a.status, a.reschedule_count AS "rescheduleCount",
         a.cancel_reason AS "cancelReason", a.consultation_notes AS "consultationNotes",
         a.notes, a.created_at AS "createdAt",
+        a.checked_in_at AS "checkedInAt", a.checked_in_by AS "checkedInBy",
+        a.service_location AS "serviceLocation",
         d.name AS "doctorName",
         l.name AS "leadName", l.phone_e164 AS "leadPhone",
         p.first_name AS "patientFirstName", p.last_name AS "patientLastName", p.primary_phone AS "patientPhone",

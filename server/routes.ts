@@ -3446,6 +3446,114 @@ export async function registerRoutes(
   });
 
   // =============================================
+  // FRONT OFFICE — CHECK-IN
+  // =============================================
+  app.post("/api/appointments/:id/check-in", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const userId = String((req as any).session?.crmUserId || "system");
+      const apptId = Number(req.params.id);
+
+      const appt = await storage.getAppointment(apptId, tid);
+      if (!appt) return res.status(404).json({ message: "Appointment not found" });
+      if (appt.status === "Checked In") return res.status(400).json({ message: "Already checked in" });
+      if (appt.status === "Done" || appt.status === "Cancelled") return res.status(400).json({ message: `Cannot check in — appointment is ${appt.status}` });
+
+      let patientId = appt.patientId;
+
+      if (!patientId && appt.leadId) {
+        const lead = await storage.getLead(appt.leadId);
+        if (lead) {
+          if (lead.patientId) {
+            patientId = lead.patientId;
+          } else {
+            const nameParts = lead.name.trim().split(/\s+/);
+            const firstName = nameParts[0] || "Patient";
+            const lastName = nameParts.slice(1).join(" ") || "";
+
+            const existingPatients = await pool.query(
+              `SELECT id FROM patients WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1`, [tid]
+            );
+            const nextNum = (existingPatients.rows[0]?.id || 0) + 1;
+            const uhid = `PAT_${String(nextNum).padStart(4, "0")}`;
+
+            const newPatient = await storage.createPatient({
+              tenantId: tid,
+              uhid,
+              firstName,
+              lastName: lastName || null,
+              primaryPhone: lead.phoneE164,
+              email: lead.email || null,
+              status: "Active",
+              createdBy: userId,
+            } as any);
+            patientId = newPatient.id;
+
+            await storage.updateLead(lead.id, { patientId });
+          }
+        }
+      }
+
+      const updated = await storage.updateAppointment(apptId, tid, {
+        status: "Checked In",
+        patientId,
+        checkedInAt: new Date(),
+        checkedInBy: userId,
+        checkedInByCrmUserId: (req as any).session?.crmUserId || null,
+      } as any);
+
+      if (appt.leadId) {
+        await storage.createActivity({
+          leadId: appt.leadId, tenantId: tid, createdBy: userId,
+          type: "status_change",
+          description: `Patient checked in for appointment with Dr. ${appt.doctorId}`,
+        });
+      }
+
+      res.json({ ...updated, patientId });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/appointments/checked-in-today", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const doctorId = req.query.doctorId ? Number(req.query.doctorId) : null;
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      let query = `
+        SELECT a.*, p.first_name, p.last_name, p.primary_phone, p.uhid,
+               l.name as lead_name
+        FROM appointments a
+        LEFT JOIN patients p ON a.patient_id = p.id
+        LEFT JOIN leads l ON a.lead_id = l.id
+        WHERE a.tenant_id = $1
+          AND a.status = 'Checked In'
+          AND a.appointment_date >= $2
+          AND a.appointment_date < $3
+      `;
+      const params: any[] = [tid, today, tomorrow];
+
+      if (doctorId) {
+        query += ` AND a.doctor_id = $${params.length + 1}`;
+        params.push(doctorId);
+      }
+
+      query += ` ORDER BY a.checked_in_at ASC`;
+
+      const result = await pool.query(query, params);
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =============================================
   // CAMPAIGN ROUTES
   // =============================================
   app.get("/api/campaigns", isAuthenticated, async (req, res) => {
@@ -3816,10 +3924,22 @@ export async function registerRoutes(
         ? `${patientName}_${treatmentDeptName}_${existingCount + 1}`
         : `${patientName}_${treatmentDeptName}`;
 
+      let visitNumber = 1;
+      if (body.visitType === "Follow Up" && body.parentEpisodeId) {
+        const vnResult = await pool.query(
+          `SELECT COUNT(*) + 2 AS next_num FROM episodes WHERE parent_episode_id = $1 AND tenant_id = $2`,
+          [body.parentEpisodeId, tid]
+        );
+        visitNumber = Number(vnResult.rows[0]?.next_num) || 2;
+      }
+
       const parsed = insertEpisodeSchema.parse({
         ...body,
         tenantId: tid,
         episodeName,
+        visitType: body.visitType || "New",
+        parentEpisodeId: body.parentEpisodeId || null,
+        visitNumber,
         startDate: body.startDate || new Date(),
         assignedCrmUserId: body.assignedCrmUserId || lead.assignedCrmUserId,
         branchId: body.branchId || lead.branchId,
