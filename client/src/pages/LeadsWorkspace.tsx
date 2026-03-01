@@ -245,6 +245,8 @@ function LeadsListView({ leads }: { leads: any[] }) {
   const [sortField, setSortField] = useState<string>("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [, navigate] = useLocation();
+  const { data: leadSources = [] } = useMasterData("leadSources");
+  const sourceMap = Object.fromEntries(leadSources.map((s: any) => [s.id, s.name]));
 
   const toggleSort = (field: string) => {
     if (sortField === field) {
@@ -291,6 +293,7 @@ function LeadsListView({ leads }: { leads: any[] }) {
           <TableRow className="bg-muted/30">
             <SortHeader field="name">Name</SortHeader>
             <TableHead>Contact</TableHead>
+            <TableHead>Source</TableHead>
             <SortHeader field="status">Status</SortHeader>
             <SortHeader field="priority">Priority</SortHeader>
             <TableHead>Next Action</TableHead>
@@ -300,7 +303,7 @@ function LeadsListView({ leads }: { leads: any[] }) {
         <TableBody>
           {sorted.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+              <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
                 No leads found.
               </TableCell>
             </TableRow>
@@ -333,6 +336,11 @@ function LeadsListView({ leads }: { leads: any[] }) {
                       </span>
                     )}
                   </div>
+                </TableCell>
+                <TableCell>
+                  <span className="text-xs text-muted-foreground" data-testid={`text-lead-source-${lead.id}`}>
+                    {lead.leadSourceId ? sourceMap[lead.leadSourceId] || "—" : "—"}
+                  </span>
                 </TableCell>
                 <TableCell>
                   <Badge className={cn("text-[10px] whitespace-nowrap", getStatusColor(lead.status))} data-testid={`badge-status-${lead.id}`}>

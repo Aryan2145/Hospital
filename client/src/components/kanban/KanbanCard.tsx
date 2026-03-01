@@ -2,8 +2,9 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Lead } from "@shared/schema";
 import { format } from "date-fns";
-import { Clock, Phone, User as UserIcon, Flame, Sun, Snowflake } from "lucide-react";
+import { Clock, Phone, User as UserIcon, Flame, Sun, Snowflake, Globe } from "lucide-react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { getStatusColor, getPriorityColor, getLeadTemperature, getTemperatureColor } from "@/lib/lead-status";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,15 @@ interface KanbanCardProps {
 
 export function KanbanCard({ lead }: KanbanCardProps) {
   const [, setLocation] = useLocation();
+  const { data: leadSources = [] } = useQuery<any[]>({
+    queryKey: ["/api/masters/leadSources"],
+    queryFn: async () => {
+      const res = await fetch("/api/masters/leadSources", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const sourceName = lead.leadSourceId ? leadSources.find((s: any) => s.id === lead.leadSourceId)?.name : null;
 
   const {
     attributes,
@@ -74,6 +84,13 @@ export function KanbanCard({ lead }: KanbanCardProps) {
             <Clock className="w-3 h-3 text-accent" />
             <span>{lead.createdAt ? format(new Date(lead.createdAt), "MMM d, h:mm a") : "Just now"}</span>
           </div>
+
+          {sourceName && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid={`text-lead-source-${lead.id}`}>
+              <Globe className="w-3 h-3" />
+              <span>{sourceName}</span>
+            </div>
+          )}
         </div>
 
         <div className="mt-3 flex items-center justify-between gap-1 flex-wrap">
