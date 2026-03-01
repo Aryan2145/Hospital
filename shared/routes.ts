@@ -229,6 +229,7 @@ export const MASTER_CATEGORIES = [
       { key: "designations", label: "Designation" },
       { key: "employmentTypes", label: "Employment Type" },
       { key: "systemRoles", label: "System Role" },
+      { key: "crmUsers", label: "CRM User" },
       { key: "callingLines", label: "Calling Line" },
       { key: "userLineAssignments", label: "User Line Assignment" },
     ]

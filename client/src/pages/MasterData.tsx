@@ -121,6 +121,18 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "callingLineId", label: "Calling Line", type: "ref", refTable: "callingLines" },
     { key: "isPrimary", label: "Is Primary Line", type: "boolean" },
   ],
+  crmUsers: [
+    { key: "email", label: "Email", type: "text" },
+    { key: "phone", label: "Phone", type: "text" },
+    { key: "branchId", label: "Branch", type: "ref", refTable: "branches" },
+    { key: "departmentId", label: "Department", type: "ref", refTable: "administrativeDepartments" },
+    { key: "designationId", label: "Designation", type: "ref", refTable: "designations" },
+    { key: "employmentTypeId", label: "Employment Type", type: "ref", refTable: "employmentTypes" },
+    { key: "systemRoleId", label: "System Role", type: "ref", refTable: "systemRoles" },
+    { key: "accessScopeType", label: "Access Scope", type: "select", options: ["All", "Branch", "Department", "Self"] },
+    { key: "phiAccessLevel", label: "PHI Access Level", type: "select", options: ["Full", "Masked", "None"] },
+    { key: "isActive", label: "Is Active", type: "boolean" },
+  ],
   // CATEGORY 4: DOCTORS MASTERS
   doctors: [
     { key: "specialization", label: "Specialization", type: "text" },
