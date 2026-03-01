@@ -262,6 +262,17 @@ export function useNextActionTypes() {
   });
 }
 
+export function useLeadStatuses() {
+  return useQuery<any[]>({
+    queryKey: ["/api/masters/leadStatuses"],
+    queryFn: async () => {
+      const res = await fetch("/api/masters/leadStatuses", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch lead statuses");
+      return res.json();
+    },
+  });
+}
+
 export function useCreateAppointment() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -1,7 +1,7 @@
 import { useRoute, useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers, useDoctors, useDoctorAvailability, useCreateAppointment, useNextActionTypes, useEpisodes } from "@/hooks/use-leads";
+import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers, useDoctors, useDoctorAvailability, useCreateAppointment, useNextActionTypes, useEpisodes, useLeadStatuses } from "@/hooks/use-leads";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { getStatusColor, getPriorityColor, getValidTransitions, isValidTransition, LEAD_STATUSES, getLeadTemperature, getTemperatureColor } from "@/lib/lead-status";
+import { getStatusColor, getPriorityColor, getLeadTemperature, getTemperatureColor } from "@/lib/lead-status";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -131,13 +131,13 @@ export default function LeadDetailPage() {
 function LeadHeader({ lead, onBack }: { lead: any; onBack: () => void }) {
   const updateLead = useUpdateLead();
   const { toast } = useToast();
-  const validTransitions = getValidTransitions(lead.status);
+  const { data: masterLeadStatuses } = useLeadStatuses();
+  const allStatuses = (masterLeadStatuses || [])
+    .filter((s: any) => s.status === "Active")
+    .map((s: any) => s.name);
+  const validTransitions = allStatuses.filter((s: string) => s !== lead.status);
 
   const handleStatusChange = (newStatus: string) => {
-    if (!isValidTransition(lead.status, newStatus)) {
-      toast({ title: "Invalid transition", description: `Cannot move from "${lead.status}" to "${newStatus}"`, variant: "destructive" });
-      return;
-    }
     updateLead.mutate({ id: lead.id, status: newStatus });
   };
 
@@ -586,8 +586,12 @@ function QuickActions({ lead }: { lead: any }) {
   const { data: crmUsers } = useActiveCrmUsers();
   const { data: doctorsList } = useDoctors();
   const { data: nextActionTypes } = useNextActionTypes();
+  const { data: masterLeadStatuses } = useLeadStatuses();
   const { toast } = useToast();
-  const validTransitions = getValidTransitions(lead.status);
+  const allStatuses = (masterLeadStatuses || [])
+    .filter((s: any) => s.status === "Active")
+    .map((s: any) => s.name);
+  const validTransitions = allStatuses.filter((s: string) => s !== lead.status);
   const [callDialogOpen, setCallDialogOpen] = useState(false);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
@@ -622,11 +626,6 @@ function QuickActions({ lead }: { lead: any }) {
   const effectiveNextActionTypeId = callNextActionTypeId && callNextActionTypeId !== "__none__" ? Number(callNextActionTypeId) : null;
 
   const handleLogCall = async () => {
-    if (effectiveStatusChange && !isValidTransition(lead.status, effectiveStatusChange)) {
-      toast({ title: "Invalid status transition", description: `Cannot move from "${lead.status}" to "${effectiveStatusChange}"`, variant: "destructive" });
-      return;
-    }
-
     const finalOutcome = callOutcome === "__other__" ? callOutcomeOther.trim() : callOutcome;
     if (callOutcome === "__other__" && !callOutcomeOther.trim()) {
       toast({ title: "Please enter the outcome", variant: "destructive" });
