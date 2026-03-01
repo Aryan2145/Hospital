@@ -1462,7 +1462,6 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   designations: "designations",
   employmentTypes: "employment_types",
   systemRoles: "system_roles",
-  crmUsers: "crm_users",
   callingLines: "calling_lines",
   userLineAssignments: "user_line_assignments",
   treatmentDepartments: "treatment_departments",
