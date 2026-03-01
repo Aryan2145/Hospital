@@ -628,14 +628,20 @@ export default function MasterApproval() {
     return found ? found.name : `#${id}`;
   };
 
-  const getDisplayValue = (item: any, key: string): string => {
+  const resolveDisplayValue = (item: any, key: string, fallback: string): string => {
     const value = item[key];
     const extras = EXTRA_FIELDS[item.tableName] || [];
     const extraField = extras.find((f) => f.key === key);
     if (extraField?.type === "ref" && extraField.refTable) {
       return getRefName(extraField.refTable, value);
     }
-    return formatFieldValue(value);
+    if (extraField?.type === "boolean") {
+      return value ? "Yes" : "No";
+    }
+    if (extraField?.type === "select" || extraField?.type === "multiselect") {
+      return value ? String(value) : "—";
+    }
+    return fallback;
   };
 
   const isBusy = approveMutation.isPending || rejectMutation.isPending || updateMutation.isPending || saveAndApproveMutation.isPending;
@@ -782,18 +788,21 @@ export default function MasterApproval() {
                         {fields.map((f, idx) => (
                           <div key={idx} className="flex flex-col" data-testid={`field-${f.label.toLowerCase().replace(/\s+/g, "-")}`}>
                             <span className="text-[11px] text-muted-foreground font-medium uppercase tracking-wide">{f.label}</span>
-                            <span className="text-sm text-foreground">
-                              {(() => {
-                                const extras = EXTRA_FIELDS[item.tableName] || [];
-                                const ef = extras.find((e) => e.key === f.key);
-                                if (ef?.type === "ref" && ef.refTable) {
-                                  return getRefName(ef.refTable, item[f.key]);
-                                }
-                                return f.value;
-                              })()}
-                            </span>
+                            <span className="text-sm text-foreground">{resolveDisplayValue(item, f.key, f.value)}</span>
                           </div>
                         ))}
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-border/50 flex justify-end">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-blue-700 border-blue-300 hover:bg-blue-50"
+                          onClick={() => startEditing(item)}
+                          data-testid={`button-edit-details-${item.tableName}-${item.id}`}
+                        >
+                          <Pencil className="w-4 h-4 mr-1" />
+                          Edit & Correct
+                        </Button>
                       </div>
                     </div>
                   )}
