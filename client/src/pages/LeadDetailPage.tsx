@@ -603,7 +603,7 @@ function QuickActions({ lead }: { lead: any }) {
   const [callNextActionTypeId, setCallNextActionTypeId] = useState("");
   const [callNextActionDate, setCallNextActionDate] = useState("");
   const [callNextActionNotes, setCallNextActionNotes] = useState("");
-  const [callStatusChange, setCallStatusChange] = useState("");
+  const [callStatusChange, setCallStatusChange] = useState(lead.status || "");
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDueDate, setTaskDueDate] = useState("");
   const [taskPriority, setTaskPriority] = useState("Normal");
@@ -622,7 +622,7 @@ function QuickActions({ lead }: { lead: any }) {
     apptDate || null
   );
 
-  const effectiveStatusChange = callStatusChange && callStatusChange !== "__none__" ? callStatusChange : null;
+  const effectiveStatusChange = callStatusChange && callStatusChange !== "__none__" && callStatusChange !== lead.status ? callStatusChange : null;
   const effectiveNextActionTypeId = callNextActionTypeId && callNextActionTypeId !== "__none__" ? Number(callNextActionTypeId) : null;
 
   const handleLogCall = async () => {
@@ -790,17 +790,14 @@ function QuickActions({ lead }: { lead: any }) {
                 />
               </div>
 
-              {validTransitions.length > 0 && (
+              {allStatuses.length > 0 && (
                 <div className="border-t border-border pt-3">
                   <label className="text-xs font-medium text-muted-foreground">Change Status (optional)</label>
                   <SearchableSelect
                     value={callStatusChange}
                     onValueChange={setCallStatusChange}
-                    options={[
-                      { value: "__none__", label: "Keep current status" },
-                      ...validTransitions.map((s) => ({ value: s, label: s })),
-                    ]}
-                    placeholder="Keep current status"
+                    options={allStatuses.map((s: string) => ({ value: s, label: s }))}
+                    placeholder="Select status"
                     data-testid="select-call-status-change"
                   />
                 </div>
