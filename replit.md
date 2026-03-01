@@ -80,16 +80,16 @@ The platform is built with a modern web stack:
 - **Dynamic branding:** Forgot Password and Reset Password pages show the tenant's name/logo instead of hardcoded values
 - **Email template:** Uses tenant's hospital name in subject, header, and footer
 
-### Front Office Module (Mar 2026)
-- **Front Office page** (`/front-office`) for appointment check-in management
-- **Check-in flow:** Front office marks patient arrival → auto-creates Patient record from Lead data → links lead to patient
+### Check-In & Front Office (Mar 2026)
+- **Check-in integrated into Appointments page** (`/appointments`) — no separate Front Office page
+- **Appointment actions:** Check In, Mark Done, Reschedule, No Show, Cancel
+- **Check-in flow:** Front office clicks "Check In" → auto-creates Patient record from Lead data if not already linked → appointment status becomes "Checked In"
 - **Lead→Patient transition:** Happens automatically on check-in. System creates Patient with UHID (PAT_XXXX format), firstName/lastName from lead name, phone, email
+- **Status cards:** Total, Waiting (Scheduled), Checked In, Done, No Show, Cancelled — 6 summary cards with filter
 - **Endpoints:**
   - `POST /api/appointments/:id/check-in` — Marks "Checked In", auto-creates patient, sets `checkedInAt`/`checkedInBy`
-  - `POST /api/appointments/:id/no-show` — Marks "No Show" (pre-existing)
   - `GET /api/appointments/checked-in-today?doctorId=X` — Today's checked-in patients for a doctor
 - **Schema additions:** `appointments` table: `checkedInAt`, `checkedInBy`, `checkedInByCrmUserId`
-- **UI:** Summary cards (Total, Waiting, Checked In, Done, No Show), doctor/date filter, auto-refresh every 30s
 - **Episode visit tracking:** `episodes` table: `visitType` (New/Follow Up), `parentEpisodeId`, `visitNumber`
 - **Episode creation:** Patient dropdown shows checked-in patients first (marked with ✓), follow-up episodes link to parent episode with auto-incremented visit number
 

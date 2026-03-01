@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 const STATUS_COLORS: Record<string, string> = {
   "Scheduled": "bg-blue-100 text-blue-700",
   "Rescheduled": "bg-amber-100 text-amber-700",
+  "Checked In": "bg-teal-100 text-teal-700",
   "Consultation Done": "bg-green-100 text-green-700",
   "Completed": "bg-green-100 text-green-700",
   "Cancelled": "bg-red-100 text-red-700",
@@ -277,6 +278,24 @@ function DoctorScheduleView() {
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleSlot, setRescheduleSlot] = useState("");
 
+  const [checkInPending, setCheckInPending] = useState(false);
+
+  const handleCheckIn = async (apptId: number) => {
+    setCheckInPending(true);
+    try {
+      await apiRequest("POST", `/api/appointments/${apptId}/check-in`);
+      toast({ title: "Patient checked in successfully" });
+      setActionDialog(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/patients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+    } catch (err: any) {
+      toast({ title: "Check-in failed", description: err.message, variant: "destructive" });
+    } finally {
+      setCheckInPending(false);
+    }
+  };
+
   const handleAction = (actionType: string) => {
     if (!actionDialog) return;
     const appt = actionDialog.appt;
@@ -302,10 +321,11 @@ function DoctorScheduleView() {
   };
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: 0, scheduled: 0, done: 0, noshow: 0, cancelled: 0 };
+    const counts: Record<string, number> = { all: 0, scheduled: 0, checkedin: 0, done: 0, noshow: 0, cancelled: 0 };
     appointments?.forEach((a: any) => {
       counts.all++;
       if (a.status === "Scheduled" || a.status === "Rescheduled") counts.scheduled++;
+      else if (a.status === "Checked In") counts.checkedin++;
       else if (a.status === "Consultation Done" || a.status === "Completed") counts.done++;
       else if (a.status === "No Show") counts.noshow++;
       else if (a.status === "Cancelled") counts.cancelled++;
@@ -316,6 +336,7 @@ function DoctorScheduleView() {
   const filteredAppointments = useMemo(() => {
     let filtered = appointments || [];
     if (statusFilter === "scheduled") filtered = filtered.filter((a: any) => a.status === "Scheduled" || a.status === "Rescheduled");
+    else if (statusFilter === "checkedin") filtered = filtered.filter((a: any) => a.status === "Checked In");
     else if (statusFilter === "done") filtered = filtered.filter((a: any) => a.status === "Consultation Done" || a.status === "Completed");
     else if (statusFilter === "noshow") filtered = filtered.filter((a: any) => a.status === "No Show");
     else if (statusFilter === "cancelled") filtered = filtered.filter((a: any) => a.status === "Cancelled");
@@ -336,14 +357,15 @@ function DoctorScheduleView() {
 
   const doctorGroups = useMemo(() => {
     if (!isAllDoctors) return null;
-    const groups: Record<string, { doctorName: string; doctorId: string; appointments: any[]; scheduled: number; done: number }> = {};
+    const groups: Record<string, { doctorName: string; doctorId: string; appointments: any[]; scheduled: number; checkedin: number; done: number }> = {};
     filteredAppointments.forEach((appt: any) => {
       const dId = String(appt.doctorId);
       if (!groups[dId]) {
-        groups[dId] = { doctorName: appt.doctorName || `Doctor #${dId}`, doctorId: dId, appointments: [], scheduled: 0, done: 0 };
+        groups[dId] = { doctorName: appt.doctorName || `Doctor #${dId}`, doctorId: dId, appointments: [], scheduled: 0, checkedin: 0, done: 0 };
       }
       groups[dId].appointments.push(appt);
       if (appt.status === "Scheduled" || appt.status === "Rescheduled") groups[dId].scheduled++;
+      if (appt.status === "Checked In") groups[dId].checkedin++;
       if (appt.status === "Consultation Done" || appt.status === "Completed") groups[dId].done++;
     });
     return Object.values(groups).sort((a, b) => a.doctorName.localeCompare(b.doctorName));
@@ -361,6 +383,7 @@ function DoctorScheduleView() {
   const STATUS_FILTERS = [
     { key: "all", label: "All", color: "bg-gray-100 text-gray-700 hover:bg-gray-200", activeColor: "bg-[#0f4c81] text-white" },
     { key: "scheduled", label: "Upcoming", color: "bg-blue-50 text-blue-700 hover:bg-blue-100", activeColor: "bg-blue-600 text-white" },
+    { key: "checkedin", label: "Checked In", color: "bg-teal-50 text-teal-700 hover:bg-teal-100", activeColor: "bg-teal-600 text-white" },
     { key: "done", label: "Done", color: "bg-green-50 text-green-700 hover:bg-green-100", activeColor: "bg-green-600 text-white" },
     { key: "noshow", label: "No Show", color: "bg-orange-50 text-orange-700 hover:bg-orange-100", activeColor: "bg-orange-600 text-white" },
     { key: "cancelled", label: "Cancelled", color: "bg-red-50 text-red-700 hover:bg-red-100", activeColor: "bg-red-600 text-white" },
@@ -369,7 +392,8 @@ function DoctorScheduleView() {
   const renderAppointmentRow = (appt: any, idx: number, showDoctor: boolean) => {
     const name = appt.patientName || appt.leadName || "—";
     const phone = appt.patientPhone || appt.leadPhone || "—";
-    const isActive = appt.status === "Scheduled" || appt.status === "Rescheduled";
+    const isScheduled = appt.status === "Scheduled" || appt.status === "Rescheduled";
+    const isCheckedIn = appt.status === "Checked In";
     return (
       <tr key={appt.id} className={cn("border-b hover:bg-muted/30 transition-colors", idx % 2 === 0 ? "bg-white" : "bg-muted/10")} data-testid={`row-appointment-${appt.id}`}>
         <td className="py-1.5 px-2 text-muted-foreground text-xs w-10">
@@ -423,8 +447,11 @@ function DoctorScheduleView() {
           </div>
         </td>
         <td className="py-1.5 px-2 text-right">
-          {isActive && (
+          {isScheduled && (
             <div className="flex gap-0.5 justify-end">
+              <Button size="sm" variant="outline" className="text-[10px] h-6 px-1.5 text-teal-700 border-teal-200 hover:bg-teal-50" onClick={() => setActionDialog({ type: "check-in", appt })} data-testid={`button-checkin-${appt.id}`}>
+                <UserPlus className="w-3 h-3 mr-0.5" />Check In
+              </Button>
               <Button size="sm" variant="outline" className="text-[10px] h-6 px-1.5" onClick={() => setActionDialog({ type: "consultation-done", appt })} data-testid={`button-consult-done-${appt.id}`}>
                 <CheckCircle2 className="w-3 h-3 mr-0.5" />Done
               </Button>
@@ -436,6 +463,16 @@ function DoctorScheduleView() {
               </Button>
               <Button size="sm" variant="outline" className="text-[10px] h-6 px-1.5 text-destructive" onClick={() => setActionDialog({ type: "cancel", appt })} data-testid={`button-cancel-${appt.id}`}>
                 <XCircle className="w-3 h-3" />
+              </Button>
+            </div>
+          )}
+          {isCheckedIn && (
+            <div className="flex gap-0.5 justify-end">
+              <Button size="sm" variant="outline" className="text-[10px] h-6 px-1.5" onClick={() => setActionDialog({ type: "consultation-done", appt })} data-testid={`button-consult-done-${appt.id}`}>
+                <CheckCircle2 className="w-3 h-3 mr-0.5" />Done
+              </Button>
+              <Button size="sm" variant="outline" className="text-[10px] h-6 px-1.5" onClick={() => setActionDialog({ type: "no-show", appt })} data-testid={`button-noshow-${appt.id}`}>
+                <AlertTriangle className="w-3 h-3 mr-0.5" />No Show
               </Button>
             </div>
           )}
@@ -491,16 +528,21 @@ function DoctorScheduleView() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
         <Card className={cn("p-2.5 cursor-pointer transition-all border-2", statusFilter === "all" ? "border-[#0f4c81] bg-[#0f4c81]/5" : "border-transparent hover:border-gray-200")} onClick={() => setStatusFilter("all")} data-testid="stat-card-all">
           <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Total</div>
           <div className="text-2xl font-bold text-[#0f4c81]">{statusCounts.all}</div>
           <div className="text-[10px] text-muted-foreground">{selectedDate ? format(new Date(selectedDate + "T12:00:00"), "MMM d") : "All"}</div>
         </Card>
         <Card className={cn("p-2.5 cursor-pointer transition-all border-2", statusFilter === "scheduled" ? "border-blue-500 bg-blue-50" : "border-transparent hover:border-blue-100")} onClick={() => setStatusFilter("scheduled")} data-testid="stat-card-scheduled">
-          <div className="text-[10px] font-medium text-blue-600 uppercase tracking-wider">Upcoming</div>
+          <div className="text-[10px] font-medium text-blue-600 uppercase tracking-wider">Waiting</div>
           <div className="text-2xl font-bold text-blue-700">{statusCounts.scheduled}</div>
-          <div className="text-[10px] text-muted-foreground">Scheduled + Rescheduled</div>
+          <div className="text-[10px] text-muted-foreground">Scheduled</div>
+        </Card>
+        <Card className={cn("p-2.5 cursor-pointer transition-all border-2", statusFilter === "checkedin" ? "border-teal-500 bg-teal-50" : "border-transparent hover:border-teal-100")} onClick={() => setStatusFilter("checkedin")} data-testid="stat-card-checkedin">
+          <div className="text-[10px] font-medium text-teal-600 uppercase tracking-wider">Checked In</div>
+          <div className="text-2xl font-bold text-teal-700">{statusCounts.checkedin}</div>
+          <div className="text-[10px] text-muted-foreground">Arrived</div>
         </Card>
         <Card className={cn("p-2.5 cursor-pointer transition-all border-2", statusFilter === "done" ? "border-green-500 bg-green-50" : "border-transparent hover:border-green-100")} onClick={() => setStatusFilter("done")} data-testid="stat-card-done">
           <div className="text-[10px] font-medium text-green-600 uppercase tracking-wider">Done</div>
@@ -575,7 +617,8 @@ function DoctorScheduleView() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-xs">{group.appointments.length} appts</Badge>
-                    <Badge className="bg-blue-100 text-blue-700 text-xs">{group.scheduled} upcoming</Badge>
+                    <Badge className="bg-blue-100 text-blue-700 text-xs">{group.scheduled} waiting</Badge>
+                    {group.checkedin > 0 && <Badge className="bg-teal-100 text-teal-700 text-xs">{group.checkedin} checked in</Badge>}
                     <Badge className="bg-green-100 text-green-700 text-xs">{group.done} done</Badge>
                   </div>
                 </button>
@@ -681,6 +724,41 @@ function DoctorScheduleView() {
             <p className="text-sm text-muted-foreground">Are you sure you want to mark this appointment as No Show?</p>
             <Button onClick={() => handleAction("no-show")} className="w-full" disabled={appointmentAction.isPending} data-testid="button-confirm-noshow">
               <AlertTriangle className="w-4 h-4 mr-2" />Confirm No Show
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={actionDialog?.type === "check-in"} onOpenChange={(open) => !open && setActionDialog(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Check In Patient</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            {actionDialog?.appt && (
+              <div className="p-3 bg-muted/50 rounded-lg space-y-1.5">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <User className="w-4 h-4 text-primary" />
+                  {actionDialog.appt.patientName || actionDialog.appt.leadName || "Unknown"}
+                </div>
+                <div className="text-xs text-muted-foreground flex items-center gap-2">
+                  <Clock className="w-3 h-3" />
+                  {actionDialog.appt.startTime || "—"} with {actionDialog.appt.doctorName || "Doctor"}
+                </div>
+                {!actionDialog.appt.patientId && actionDialog.appt.leadId && (
+                  <div className="text-xs text-teal-700 bg-teal-50 rounded px-2 py-1 mt-1">
+                    <UserPlus className="w-3 h-3 inline mr-1" />
+                    A patient record will be automatically created from the lead data on check-in.
+                  </div>
+                )}
+              </div>
+            )}
+            <Button
+              onClick={() => actionDialog?.appt && handleCheckIn(actionDialog.appt.id)}
+              className="w-full bg-teal-600 hover:bg-teal-700"
+              disabled={checkInPending}
+              data-testid="button-confirm-checkin"
+            >
+              {checkInPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UserPlus className="w-4 h-4 mr-2" />}
+              Confirm Check In
             </Button>
           </div>
         </DialogContent>

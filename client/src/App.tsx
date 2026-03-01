@@ -17,7 +17,6 @@ import LeadDetailPage from "@/pages/LeadDetailPage";
 import MasterData from "@/pages/MasterData";
 import TeamManagement from "@/pages/TeamManagement";
 import AppointmentsPage from "@/pages/AppointmentsPage";
-import FrontOfficePage from "@/pages/FrontOfficePage";
 import CampaignsPage from "@/pages/CampaignsPage";
 import TransactionsPage from "@/pages/TransactionsPage";
 import ConnectorsPage from "@/pages/ConnectorsPage";
@@ -107,12 +106,6 @@ function Router() {
       <Route path="/appointments">
         {isAuthenticated ? (
           <RoleGate page="appointments"><AppointmentsPage /></RoleGate>
-        ) : <Landing />}
-      </Route>
-
-      <Route path="/front-office">
-        {isAuthenticated ? (
-          <RoleGate page="appointments"><FrontOfficePage /></RoleGate>
         ) : <Landing />}
       </Route>
 
