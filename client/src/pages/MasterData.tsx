@@ -173,14 +173,12 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
 
   // CATEGORY 6: CONSULTATION MASTERS
   conversionStages: [
-    { key: "sequence", label: "Sequence Order", type: "number" },
     { key: "isTerminal", label: "Is Terminal", type: "boolean" },
     { key: "isBusinessAchieved", label: "Is Business Achieved", type: "boolean" },
   ],
 
   // CATEGORY 7: ACTIVITY & WORKFLOW MASTERS
   leadStatuses: [
-    { key: "sequence", label: "Sequence Order", type: "number" },
     { key: "isTerminal", label: "Is Terminal", type: "boolean" },
     { key: "isBusinessAchieved", label: "Is Business Achieved", type: "boolean" },
     { key: "requiresNextTask", label: "Requires Next Task", type: "boolean" },
