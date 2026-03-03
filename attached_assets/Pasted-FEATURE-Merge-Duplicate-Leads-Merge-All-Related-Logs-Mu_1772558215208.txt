@@ -1,0 +1,203 @@
+FEATURE: Merge Duplicate Leads + Merge All Related Logs (Multi-Tenant Hospital CRM)
+
+Context:
+In Leads Workspace, duplicates exist with same mobile number (e.g., 9909619660 shows 2 leads). We need a user-friendly way to MERGE duplicates and ensure ALL related records (activities, tasks, episodes, appointments, notes, attachments, call logs, WhatsApp logs etc.) are re-linked to the merged lead.
+
+Global Rules:
+- Multi-tenant: all operations scoped to tenant_id.
+- No hard deletes: duplicates should be archived/merged state.
+- Everything must be audit logged (who merged, when, what fields changed, which records moved).
+- Mobile must be normalized and used for duplicate detection.
+
+=====================================================
+1) DATA MODEL CHANGES
+=====================================================
+
+A) Lead Table
+- Add fields:
+  - mobile_normalized (string, indexed)
+  - merged_into_lead_id (nullable FK to leads.id)
+  - merge_status (enum: ACTIVE, MERGED)
+  - merged_at (datetime)
+  - merged_by (user_id)
+
+B) Merge Audit Table (new)
+Create table: lead_merge_audits
+Fields:
+- id
+- tenant_id
+- primary_lead_id
+- merged_lead_ids (json array)
+- merge_strategy (string: "KEEP_PRIMARY", "FIELD_LEVEL", etc.)
+- field_decisions (json) -> for each field, which source lead chosen
+- moved_record_counts (json) -> counts by table (activities/tasks/episodes/etc.)
+- merged_by
+- merged_at
+- notes (text optional)
+
+C) Uniqueness / Prevention
+- Ensure mobile_normalized is computed on create/update.
+- Add DB constraint/logic to prevent new duplicates for ACTIVE leads:
+  - if partial unique index supported:
+      UNIQUE (tenant_id, mobile_normalized) WHERE merge_status='ACTIVE'
+  - else enforce in API validation before insert/update.
+
+=====================================================
+2) DUPLICATE DETECTION LOGIC
+=====================================================
+
+- Define duplicate group as:
+  leads where tenant_id same AND mobile_normalized same AND merge_status='ACTIVE'
+
+- Provide API endpoint:
+  GET /leads/duplicates?mobile=9909619660
+  OR
+  GET /leads/duplicates (returns grouped list: mobile_normalized -> lead_ids)
+
+Return:
+- group key: mobile_normalized
+- list of lead summaries: id, name, created_at, status, assigned_to, stage, last_activity_at, source, campaign, etc.
+
+=====================================================
+3) UI CHANGES
+=====================================================
+
+A) Leads Workspace / Search Result
+If search mobile shows multiple leads with same mobile_normalized:
+- show banner: "Duplicate leads found for this number"
+- show button: [Merge Duplicates]
+
+B) New page/modal: "Merge Leads"
+- Step 1: Select Primary Lead (the lead to keep)
+  - recommend default: lead with latest activity OR most complete data OR highest funnel stage
+- Step 2: Show duplicates to be merged (checkbox list)
+- Step 3: Field merge preview
+  For each key field show:
+    - Primary value
+    - Duplicate value(s)
+    - Choose which to keep (radio)
+  Fields to include (example):
+    - Name
+    - Email
+    - Lead Source / Campaign
+    - Assigned To
+    - Address
+    - Notes / Description
+    - UTM / Platform info
+    - Stage/Status (apply rules below)
+- Step 4: Confirm
+  - Must type confirmation: "MERGE"
+  - Optional notes: reason for merge
+
+C) Post-merge behavior
+- Primary lead remains visible and contains merged data.
+- Merged leads should:
+  - disappear from Kanban by default
+  - be accessible via "Merged Records" filter (optional)
+  - when opened directly: show read-only page that says:
+    "This lead has been merged into Lead #XXXX" with a button [Go to Primary Lead]
+
+=====================================================
+4) MERGE RULES (IMPORTANT)
+=====================================================
+
+A) Primary lead = the single surviving ACTIVE lead
+All others become MERGED.
+
+B) Field rules (default suggestion):
+- If primary field is empty and duplicate has value -> copy to primary
+- If both have value and different -> show in UI to choose
+- For status/stage:
+  - keep the one that is furthest in funnel (e.g., Appt Booked > Qualified > Contacted > New)
+  - or ask user to choose in UI
+
+C) Assignment rule:
+- default keep primary assigned_to unless user chooses otherwise
+
+D) Notes rule:
+- combine notes (append) with timestamps and original lead id tags
+  e.g. "[From Lead #3743 on 2026-03-03] ..."
+
+=====================================================
+5) MERGE ALL RELATED DATA (LOGS / TRANSACTIONS)
+=====================================================
+
+Identify all tables that reference lead_id (examples; adapt to actual schema):
+- lead_activities / activity_log
+- activity_tasks / followups / next_actions
+- appointments
+- consultation_episodes
+- call logs (Callyzer)
+- messages / WhatsApp logs
+- attachments / media
+- billing/quotations (if tied to lead)
+- audit logs
+- tags / lead_labels
+- campaign attribution / UTM tracking records
+
+For each table:
+- Update foreign key references:
+  UPDATE <table> SET lead_id = <primary_lead_id>
+  WHERE tenant_id = X AND lead_id IN (<merged_lead_ids>)
+
+IMPORTANT:
+- If any table has unique constraints that could conflict after reassignment (e.g., same appointment id not possible but lead_id changes ok), handle gracefully.
+- For duplicates of same child-record type (e.g., identical tasks), do NOT delete automatically. Keep all; user can clean later.
+
+Also merge "lead timeline":
+- Primary lead should show a unified timeline, including events that originally belonged to merged leads.
+- In timeline UI show a small label:
+  "From merged lead #XXXX" for traceability.
+
+=====================================================
+6) SAFETY + TRANSACTIONAL INTEGRITY
+=====================================================
+
+- Merge must run inside a DB transaction:
+  1) Lock involved lead rows (FOR UPDATE)
+  2) Validate still duplicates (no one merged simultaneously)
+  3) Apply field updates to primary
+  4) Reassign all related records
+  5) Mark merged leads: merge_status='MERGED', merged_into_lead_id=primary, merged_by, merged_at
+  6) Insert lead_merge_audits record with counts
+  7) Commit
+
+- Access control:
+  Only roles: Super Admin / Admin / Front Office Manager (configure)
+  Keep it configurable via Master: lead_merge_roles
+
+=====================================================
+7) API ENDPOINTS
+=====================================================
+
+1) GET /leads/duplicates
+2) GET /leads/:id/merge-preview?with=[ids]
+   -> returns field comparison + child record counts
+3) POST /leads/merge
+Body:
+{
+  tenant_id,
+  primary_lead_id,
+  merged_lead_ids: [],
+  field_decisions: { fieldName: sourceLeadId },
+  notes
+}
+
+Response:
+{
+  success: true,
+  primary_lead_id,
+  moved_record_counts: {...}
+}
+
+=====================================================
+8) TEST CASES (MUST PASS)
+=====================================================
+
+- Merge 2 leads with same mobile -> only 1 ACTIVE remains.
+- All appointments/episodes/tasks/call logs move to primary lead.
+- Primary lead timeline shows all historical logs.
+- Opening merged lead redirects/shows merged message.
+- New lead creation with same mobile_normalized is blocked if an ACTIVE exists.
+
+Deliver the above with clean UI and minimal steps (one modal is fine).

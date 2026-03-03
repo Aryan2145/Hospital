@@ -5,7 +5,8 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, Calendar, ArrowUpDown, ChevronUp, ChevronDown, X, Clock, Users, Flame, Moon, AlertCircle, Headphones, Building2, Stethoscope, Shield } from "lucide-react";
+import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, Calendar, ArrowUpDown, ChevronUp, ChevronDown, X, Clock, Users, Flame, Moon, AlertCircle, Headphones, Building2, Stethoscope, Shield, GitMerge } from "lucide-react";
+import { MergeLeadsModal } from "@/components/leads/MergeLeadsModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -53,6 +54,24 @@ export default function LeadsWorkspace() {
 
   const { data: leads, isLoading } = useLeads(undefined, debouncedSearch);
   const [open, setOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeDuplicates, setMergeDuplicates] = useState<any[]>([]);
+  const [mergeMobile, setMergeMobile] = useState("");
+
+  const { data: duplicateGroups } = useQuery<{ groups: any[] }>({
+    queryKey: ["/api/leads/duplicates"],
+  });
+
+  const { data: mergeRoles } = useQuery<{ allowedRoles: string[] }>({
+    queryKey: ["/api/leads/merge-roles"],
+  });
+  const canMerge = crmUser?.roleCode != null && (mergeRoles?.allowedRoles || []).includes(crmUser.roleCode);
+
+  const handleOpenMerge = useCallback((group: any) => {
+    setMergeDuplicates(group.leads || []);
+    setMergeMobile(group.mobileNormalized || "");
+    setMergeOpen(true);
+  }, []);
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [showFilters, setShowFilters] = useState(false);
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
@@ -250,6 +269,41 @@ export default function LeadsWorkspace() {
           </div>
         )}
 
+        {canMerge && duplicateGroups?.groups && duplicateGroups.groups.length > 0 && (
+          <div className="mx-3 md:mx-6 mt-3 z-10" data-testid="duplicate-groups-banner">
+            <Alert className="border-amber-200 bg-amber-50">
+              <GitMerge className="h-4 w-4 text-amber-600" />
+              <AlertTitle className="text-amber-800">
+                {duplicateGroups.groups.length} duplicate group{duplicateGroups.groups.length > 1 ? "s" : ""} found
+              </AlertTitle>
+              <AlertDescription>
+                <div className="mt-2 space-y-2">
+                  {duplicateGroups.groups.slice(0, 5).map((group: any) => (
+                    <div key={group.mobileNormalized} className="flex items-center justify-between bg-white rounded-md p-2 border border-amber-100">
+                      <div className="text-sm">
+                        <span className="font-medium text-amber-900">{group.mobileNormalized}</span>
+                        <span className="text-muted-foreground ml-2">({group.count} leads: {group.leads.map((l: any) => l.name).join(", ")})</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-amber-300 text-amber-700 hover:bg-amber-100"
+                        onClick={() => handleOpenMerge(group)}
+                        data-testid={`button-merge-group-${group.mobileNormalized}`}
+                      >
+                        <GitMerge className="h-3 w-3 mr-1" /> Merge
+                      </Button>
+                    </div>
+                  ))}
+                  {duplicateGroups.groups.length > 5 && (
+                    <p className="text-xs text-amber-600">...and {duplicateGroups.groups.length - 5} more groups</p>
+                  )}
+                </div>
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
+
         <div className="flex-1 p-3 md:p-6 overflow-hidden z-10">
           {isLoading ? (
             <LoadingSpinner text="Loading leads..." />
@@ -265,6 +319,13 @@ export default function LeadsWorkspace() {
              </div>
           )}
         </div>
+
+        <MergeLeadsModal
+          open={mergeOpen}
+          onOpenChange={setMergeOpen}
+          duplicateLeads={mergeDuplicates}
+          mobileNumber={mergeMobile}
+        />
     </AppLayout>
   );
 }

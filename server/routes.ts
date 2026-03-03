@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -1564,6 +1564,379 @@ export async function registerRoutes(
     }
     return cleaned;
   }
+
+  // =============================================
+  // LEAD MERGE — DUPLICATE DETECTION & MERGE
+  // =============================================
+
+  const DEFAULT_MERGE_ROLES = ["SYS_ADMIN", "ADMIN", "MANAGER"];
+
+  async function getMergeAllowedRoles(tenantId: number): Promise<string[]> {
+    const configured = await db
+      .select({ roleCode: leadMergeRoles.roleCode })
+      .from(leadMergeRoles)
+      .where(and(eq(leadMergeRoles.tenantId, tenantId), eq(leadMergeRoles.isActive, true)));
+    return configured.length > 0 ? configured.map(r => r.roleCode) : DEFAULT_MERGE_ROLES;
+  }
+
+  const LEAD_STATUS_FUNNEL_ORDER: Record<string, number> = {
+    "Raw Lead Captured": 1,
+    "Contacted": 2,
+    "Qualified": 3,
+    "Nurture": 4,
+    "Appointment Booked": 5,
+    "Checked In": 6,
+    "Consultation Done": 7,
+    "Episode Created": 8,
+    "Estimate Shared": 9,
+    "Negotiation": 10,
+    "Closed Won": 11,
+    "Closed Lost": 0,
+    "Unqualified": 0,
+  };
+
+  app.get("/api/leads/duplicates", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const mobile = req.query.mobile as string | undefined;
+
+      let query: string;
+      let params: any[];
+
+      if (mobile) {
+        const normalized = normalizePhone(mobile);
+        query = `
+          SELECT l.id, l.name, l.phone_e164, l.mobile_normalized, l.email, l.status,
+            l.created_at, l.last_activity_at, l.lead_temperature, l.lead_source_id,
+            l.assigned_crm_user_id, l.notes, l.tags, l.campaign_id,
+            cu.employee_name as assigned_to_name,
+            ls.name as source_name
+          FROM leads l
+          LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
+          LEFT JOIN lead_sources ls ON l.lead_source_id = ls.id
+          WHERE l.tenant_id = $1 AND l.mobile_normalized = $2 AND l.merge_status = 'ACTIVE'
+          ORDER BY l.last_activity_at DESC NULLS LAST, l.created_at DESC
+        `;
+        params = [tid, normalized];
+      } else {
+        query = `
+          SELECT l.mobile_normalized, json_agg(json_build_object(
+            'id', l.id, 'name', l.name, 'phone', l.phone_e164, 'email', l.email,
+            'status', l.status, 'createdAt', l.created_at, 'lastActivityAt', l.last_activity_at,
+            'temperature', l.lead_temperature
+          ) ORDER BY l.created_at DESC) as leads, count(*) as lead_count
+          FROM leads l
+          WHERE l.tenant_id = $1 AND l.merge_status = 'ACTIVE' AND l.mobile_normalized IS NOT NULL
+          GROUP BY l.mobile_normalized
+          HAVING count(*) > 1
+          ORDER BY count(*) DESC
+          LIMIT 100
+        `;
+        params = [tid];
+      }
+
+      const result = await pool.query(query, params);
+
+      if (mobile) {
+        res.json({ leads: result.rows, count: result.rows.length });
+      } else {
+        res.json({
+          groups: result.rows.map((r: any) => ({
+            mobileNormalized: r.mobile_normalized,
+            leads: r.leads,
+            count: Number(r.lead_count),
+          })),
+        });
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/leads/:id/merge-preview", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const primaryId = Number(req.params.id);
+      const withIds = (req.query.with as string || "").split(",").map(Number).filter(Boolean);
+
+      if (withIds.length === 0) {
+        return res.status(400).json({ message: "Provide ?with=id1,id2 for merge preview" });
+      }
+
+      const allIds = [primaryId, ...withIds];
+      const leadsResult = await pool.query(
+        `SELECT l.*, cu.employee_name as assigned_to_name, ls.name as source_name
+         FROM leads l
+         LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
+         LEFT JOIN lead_sources ls ON l.lead_source_id = ls.id
+         WHERE l.id = ANY($1) AND l.tenant_id = $2 AND l.merge_status = 'ACTIVE'`,
+        [allIds, tid]
+      );
+
+      if (leadsResult.rows.length < 2) {
+        return res.status(400).json({ message: "At least 2 active leads required for merge" });
+      }
+
+      const recordCounts: Record<number, Record<string, number>> = {};
+      for (const lid of allIds) {
+        const counts: Record<string, number> = {};
+        const tables = [
+          { name: "activities", col: "lead_id" },
+          { name: "tasks", col: "lead_id" },
+          { name: "episodes", col: "lead_id" },
+          { name: "appointments", col: "lead_id" },
+          { name: "temperature_logs", col: "lead_id" },
+          { name: "callyzer_webhook_logs", col: "matched_lead_id" },
+        ];
+        for (const t of tables) {
+          const r = await pool.query(
+            `SELECT count(*) as cnt FROM ${t.name} WHERE ${t.col} = $1 AND tenant_id = $2`,
+            [lid, tid]
+          );
+          counts[t.name] = Number(r.rows[0].cnt);
+        }
+        const hlr = await pool.query(
+          `SELECT count(*) as cnt FROM handover_logs WHERE entity_type = 'Lead' AND entity_id = $1 AND tenant_id = $2`,
+          [lid, tid]
+        );
+        counts["handover_logs"] = Number(hlr.rows[0].cnt);
+        recordCounts[lid] = counts;
+      }
+
+      const mergeFields = [
+        "name", "email", "status", "notes", "tags", "address", "pinCode",
+        "leadSourceId", "campaignId", "assignedCrmUserId", "doctorId",
+        "treatmentDepartmentId", "utmSource", "utmMedium", "utmCampaign",
+        "gender", "dateOfBirth", "bloodGroup", "insuranceProvider", "insurancePolicyNumber",
+      ];
+
+      const fieldComparison: Record<string, Record<number, any>> = {};
+      for (const field of mergeFields) {
+        const snakeField = field.replace(/[A-Z]/g, (m) => "_" + m.toLowerCase());
+        const values: Record<number, any> = {};
+        for (const row of leadsResult.rows) {
+          values[row.id] = row[snakeField] ?? null;
+        }
+        const hasConflict = new Set(Object.values(values).filter(v => v != null)).size > 1;
+        if (hasConflict || Object.values(values).some(v => v != null)) {
+          fieldComparison[field] = values;
+        }
+      }
+
+      res.json({
+        leads: leadsResult.rows,
+        fieldComparison,
+        recordCounts,
+        recommendation: {
+          primaryLeadId: leadsResult.rows.reduce((best: any, row: any) => {
+            const bestOrder = LEAD_STATUS_FUNNEL_ORDER[best.status] || 0;
+            const rowOrder = LEAD_STATUS_FUNNEL_ORDER[row.status] || 0;
+            if (rowOrder > bestOrder) return row;
+            if (rowOrder === bestOrder && row.last_activity_at > best.last_activity_at) return row;
+            return best;
+          }).id,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/leads/merge", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = req.session?.crmUser;
+      const allowedRoles = await getMergeAllowedRoles(tid);
+      if (!crmUser || !allowedRoles.includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "You don't have permission to merge leads." });
+      }
+
+      const { primaryLeadId, mergedLeadIds, fieldDecisions, notes: mergeNotes } = req.body;
+
+      if (!primaryLeadId || !Array.isArray(mergedLeadIds) || mergedLeadIds.length === 0) {
+        return res.status(400).json({ message: "Primary lead and at least one lead to merge are required." });
+      }
+
+      if (mergedLeadIds.includes(primaryLeadId)) {
+        return res.status(400).json({ message: "Primary lead cannot be in merged list." });
+      }
+
+      const userName = crmUser.employeeName || req.user?.email || "System";
+      const allIds = [primaryLeadId, ...mergedLeadIds];
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+
+        const lockResult = await client.query(
+          `SELECT id, merge_status, name, notes, phone_e164, mobile_normalized, status
+           FROM leads
+           WHERE id = ANY($1) AND tenant_id = $2
+           FOR UPDATE`,
+          [allIds, tid]
+        );
+
+        const lockedLeads = lockResult.rows;
+        const primaryLead = lockedLeads.find((l: any) => l.id === primaryLeadId);
+        if (!primaryLead) {
+          await client.query("ROLLBACK");
+          return res.status(404).json({ message: "Primary lead not found." });
+        }
+
+        const activeMerged = lockedLeads.filter(
+          (l: any) => mergedLeadIds.includes(l.id) && l.merge_status === "ACTIVE"
+        );
+        if (activeMerged.length === 0) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ message: "No active leads to merge." });
+        }
+
+        if (primaryLead.merge_status !== "ACTIVE") {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ message: "Primary lead is already merged." });
+        }
+
+        const fieldUpdates: Record<string, any> = {};
+        if (fieldDecisions && typeof fieldDecisions === "object") {
+          for (const [field, sourceLeadId] of Object.entries(fieldDecisions)) {
+            if (Number(sourceLeadId) !== primaryLeadId) {
+              const sourceRow = lockedLeads.find((l: any) => l.id === Number(sourceLeadId));
+              if (sourceRow) {
+                const snakeField = field.replace(/[A-Z]/g, (m: string) => "_" + m.toLowerCase());
+                fieldUpdates[snakeField] = sourceRow[snakeField];
+              }
+            }
+          }
+        }
+
+        for (const merged of activeMerged) {
+          if (!primaryLead.notes && merged.notes) {
+            fieldUpdates.notes = merged.notes;
+          } else if (primaryLead.notes && merged.notes && merged.notes !== primaryLead.notes) {
+            fieldUpdates.notes = (fieldUpdates.notes || primaryLead.notes) +
+              `\n\n[From merged lead #${merged.id} on ${new Date().toISOString().split("T")[0]}]\n${merged.notes}`;
+          }
+        }
+
+        const bestStatus = activeMerged.reduce((best: string, l: any) => {
+          const bestOrder = LEAD_STATUS_FUNNEL_ORDER[best] || 0;
+          const lOrder = LEAD_STATUS_FUNNEL_ORDER[l.status] || 0;
+          return lOrder > bestOrder ? l.status : best;
+        }, primaryLead.status);
+        if (bestStatus !== primaryLead.status && !fieldUpdates.status) {
+          fieldUpdates.status = bestStatus;
+        }
+
+        if (Object.keys(fieldUpdates).length > 0) {
+          const setClauses = Object.keys(fieldUpdates)
+            .map((k, i) => `${k} = $${i + 3}`)
+            .join(", ");
+          await client.query(
+            `UPDATE leads SET ${setClauses}, updated_at = NOW() WHERE id = $1 AND tenant_id = $2`,
+            [primaryLeadId, tid, ...Object.values(fieldUpdates)]
+          );
+        }
+
+        const movedRecordCounts: Record<string, number> = {};
+        const mergedIds = activeMerged.map((l: any) => l.id);
+
+        const directFkTables = [
+          { name: "activities", col: "lead_id" },
+          { name: "tasks", col: "lead_id" },
+          { name: "episodes", col: "lead_id" },
+          { name: "appointments", col: "lead_id" },
+          { name: "temperature_logs", col: "lead_id" },
+          { name: "callyzer_webhook_logs", col: "matched_lead_id" },
+        ];
+
+        for (const t of directFkTables) {
+          const r = await client.query(
+            `UPDATE ${t.name} SET ${t.col} = $1 WHERE ${t.col} = ANY($2) AND tenant_id = $3`,
+            [primaryLeadId, mergedIds, tid]
+          );
+          movedRecordCounts[t.name] = r.rowCount || 0;
+        }
+
+        const hlr = await client.query(
+          `UPDATE handover_logs SET entity_id = $1 WHERE entity_type = 'Lead' AND entity_id = ANY($2) AND tenant_id = $3`,
+          [primaryLeadId, mergedIds, tid]
+        );
+        movedRecordCounts["handover_logs"] = hlr.rowCount || 0;
+
+        const alr = await client.query(
+          `UPDATE audit_logs SET entity_id = $1 WHERE entity_type = 'lead' AND entity_id = ANY($2) AND tenant_id = $3`,
+          [primaryLeadId, mergedIds, tid]
+        );
+        movedRecordCounts["audit_logs"] = alr.rowCount || 0;
+
+        await client.query(
+          `UPDATE leads SET merge_status = 'MERGED', merged_into_lead_id = $1,
+           merged_at = NOW(), merged_by = $2, updated_at = NOW()
+           WHERE id = ANY($3) AND tenant_id = $4`,
+          [primaryLeadId, userName, mergedIds, tid]
+        );
+
+        await client.query(
+          `INSERT INTO lead_merge_audits (tenant_id, primary_lead_id, merged_lead_ids, merge_strategy,
+           field_decisions, moved_record_counts, merged_by, merged_by_crm_user_id, notes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            tid, primaryLeadId, JSON.stringify(mergedIds), "KEEP_PRIMARY",
+            JSON.stringify(fieldDecisions || {}), JSON.stringify(movedRecordCounts),
+            userName, crmUser.id, mergeNotes || null,
+          ]
+        );
+
+        await client.query(
+          `INSERT INTO audit_logs (tenant_id, entity_type, entity_id, action, old_values, new_values,
+           changed_fields, performed_by, performed_by_crm_user_id)
+           VALUES ($1, 'lead', $2, 'lead_merge', $3, $4, $5, $6, $7)`,
+          [
+            tid, primaryLeadId,
+            JSON.stringify({ mergedLeadIds: mergedIds }),
+            JSON.stringify({ movedRecordCounts, fieldUpdates: Object.keys(fieldUpdates) }),
+            "merge_status,merged_lead_ids",
+            userName, crmUser.id,
+          ]
+        );
+
+        for (const mid of mergedIds) {
+          await client.query(
+            `INSERT INTO activities (tenant_id, lead_id, type, description, created_by)
+             VALUES ($1, $2, 'note', $3, $4)`,
+            [tid, primaryLeadId, `Lead #${mid} was merged into this lead.`, userName]
+          );
+        }
+
+        await client.query("COMMIT");
+
+        const updatedLead = await storage.getLead(primaryLeadId);
+        res.json({
+          success: true,
+          primaryLeadId,
+          movedRecordCounts,
+          lead: updatedLead,
+        });
+      } catch (txErr) {
+        await client.query("ROLLBACK");
+        throw txErr;
+      } finally {
+        client.release();
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/leads/merge-roles", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const allowedRoles = await getMergeAllowedRoles(tid);
+      res.json({ allowedRoles });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
 
   app.post("/api/leads/import", isAuthenticated, upload.single("file"), async (req, res) => {
     if (!req.file) {

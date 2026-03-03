@@ -125,7 +125,9 @@ export class DatabaseStorage implements IStorage {
 
   // --- Leads ---
   async getLeads(tenantId: number): Promise<Lead[]> {
-    return await db.select().from(leads).where(eq(leads.tenantId, tenantId));
+    return await db.select().from(leads).where(
+      and(eq(leads.tenantId, tenantId), sql`${leads.mergeStatus} = 'ACTIVE' OR ${leads.mergeStatus} IS NULL`)
+    );
   }
 
   async getLead(id: number): Promise<Lead | undefined> {

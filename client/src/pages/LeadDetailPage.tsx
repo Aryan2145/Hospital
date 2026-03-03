@@ -15,6 +15,7 @@ import { getStatusColor, getPriorityColor, getLeadTemperature, getTemperatureCol
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import {
   ArrowLeft,
   Phone,
@@ -28,6 +29,7 @@ import {
   CheckSquare,
   Send,
   AlertTriangle,
+  GitMerge,
   CheckCircle2,
   User,
   Building,
@@ -114,6 +116,42 @@ export default function LeadDetailPage() {
               Back to Leads
             </Button>
           </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (lead.mergeStatus === "MERGED") {
+    return (
+      <AppLayout className="flex-1 flex flex-col h-full overflow-hidden">
+        <div className="p-6">
+          <Alert className="border-amber-200 bg-amber-50" data-testid="merged-lead-banner">
+            <GitMerge className="h-5 w-5 text-amber-600" />
+            <AlertTitle className="text-amber-800 text-lg">This Lead Has Been Merged</AlertTitle>
+            <AlertDescription className="mt-2">
+              <p className="text-amber-700 mb-3">
+                Lead #{lead.id} ({lead.name}) was merged into another lead on{" "}
+                {lead.mergedAt ? format(new Date(lead.mergedAt), "MMM d, yyyy 'at' h:mm a") : "—"}.
+                All activities, tasks, episodes, and appointments have been moved to the primary lead.
+              </p>
+              <div className="flex gap-2">
+                {lead.mergedIntoLeadId && (
+                  <Button
+                    variant="default"
+                    onClick={() => setLocation(`/leads/${lead.mergedIntoLeadId}`)}
+                    data-testid="button-go-to-primary-lead"
+                  >
+                    <ArrowRight className="w-4 h-4 mr-2" />
+                    Go to Primary Lead #{lead.mergedIntoLeadId}
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => setLocation("/leads")} data-testid="button-back-to-leads-merged">
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Back to Leads
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
         </div>
       </AppLayout>
     );

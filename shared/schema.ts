@@ -1032,8 +1032,36 @@ export const leads = pgTable("leads", {
   primaryOwnerUserId: integer("primary_owner_user_id").references(() => crmUsers.id),
   ownerTeam: text("owner_team"),
   lastHandoverAt: timestamp("last_handover_at"),
+  mergedIntoLeadId: integer("merged_into_lead_id"),
+  mergeStatus: text("merge_status").default("ACTIVE"),
+  mergedAt: timestamp("merged_at"),
+  mergedBy: varchar("merged_by"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// --- Lead Merge Audits ---
+export const leadMergeAudits = pgTable("lead_merge_audits", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  primaryLeadId: integer("primary_lead_id").notNull().references(() => leads.id),
+  mergedLeadIds: jsonb("merged_lead_ids").notNull(),
+  mergeStrategy: text("merge_strategy").notNull().default("KEEP_PRIMARY"),
+  fieldDecisions: jsonb("field_decisions"),
+  movedRecordCounts: jsonb("moved_record_counts"),
+  mergedBy: varchar("merged_by").notNull(),
+  mergedByCrmUserId: integer("merged_by_crm_user_id").references(() => crmUsers.id),
+  notes: text("notes"),
+  mergedAt: timestamp("merged_at").defaultNow(),
+});
+
+// --- Lead Merge Roles Config ---
+export const leadMergeRoles = pgTable("lead_merge_roles", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  roleCode: text("role_code").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // --- Enhanced Activities ---
