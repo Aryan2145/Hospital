@@ -3192,15 +3192,46 @@ export async function registerRoutes(
       const dateStr = new Date(parsed.appointmentDate).toISOString().split("T")[0];
 
       if (parsed.startTime) {
-        const existingAppts = await storage.getAppointmentsForDoctorOnDate(parsed.doctorId, tid, dateStr);
-        const conflict = existingAppts.find((a: any) => a.startTime === parsed.startTime && a.id !== undefined);
         const timings = await storage.getDoctorOpdTimings(parsed.doctorId, tid);
         const dayOfWeek = new Date(dateStr + "T12:00:00").toLocaleDateString("en-US", { weekday: "long" });
-        const slotTiming = timings.find((t: any) => t.dayOfWeek === dayOfWeek && t.startTime === parsed.startTime);
-        const maxP = slotTiming?.maxPatients || 20;
-        const bookedCount = existingAppts.filter((a: any) => a.startTime === parsed.startTime).length;
-        if (bookedCount >= maxP) {
-          return res.status(409).json({ message: `Slot ${parsed.startTime} is fully booked (${bookedCount}/${maxP})` });
+        const dayTimings = timings.filter((t: any) => t.dayOfWeek === dayOfWeek && t.status === "Active");
+
+        const leaves = await storage.getDoctorLeaveExceptions(parsed.doctorId, tid, dateStr);
+        if (leaves.length > 0) {
+          return res.status(400).json({ message: "Doctor is on leave on this date" });
+        }
+
+        const timeToMinutes = (t: string) => {
+          const [h, m] = t.split(":").map(Number);
+          return h * 60 + (m || 0);
+        };
+        const apptMinutes = timeToMinutes(parsed.startTime);
+
+        const matchingSlot = dayTimings.find((t: any) => {
+          const slotStart = timeToMinutes(t.startTime);
+          const slotEnd = timeToMinutes(t.endTime);
+          return apptMinutes >= slotStart && apptMinutes < slotEnd;
+        });
+
+        if (!matchingSlot) {
+          const availableSlots = dayTimings.map((t: any) => `${t.startTime}-${t.endTime}`).join(", ");
+          return res.status(400).json({
+            message: availableSlots
+              ? `Time ${parsed.startTime} is outside the doctor's available slots. Available: ${availableSlots}`
+              : `Doctor has no OPD slots on ${dayOfWeek}`
+          });
+        }
+
+        const existingAppts = await storage.getAppointmentsForDoctorOnDate(parsed.doctorId, tid, dateStr);
+        const bookedInSlot = existingAppts.filter((a: any) => {
+          const aMin = timeToMinutes(a.startTime || "00:00");
+          const slotStart = timeToMinutes(matchingSlot.startTime);
+          const slotEnd = timeToMinutes(matchingSlot.endTime);
+          return aMin >= slotStart && aMin < slotEnd;
+        }).length;
+        const maxP = matchingSlot.maxPatients || 20;
+        if (bookedInSlot >= maxP) {
+          return res.status(409).json({ message: `Slot ${matchingSlot.startTime}-${matchingSlot.endTime} is fully booked (${bookedInSlot}/${maxP})` });
         }
       }
 
@@ -3380,14 +3411,47 @@ export async function registerRoutes(
       const dateStr = new Date(appointmentDate).toISOString().split("T")[0];
 
       if (startTime) {
-        const existingAppts = await storage.getAppointmentsForDoctorOnDate(appt.doctorId, tid, dateStr);
         const timings = await storage.getDoctorOpdTimings(appt.doctorId, tid);
         const dayOfWeek = new Date(dateStr + "T12:00:00").toLocaleDateString("en-US", { weekday: "long" });
-        const slotTiming = timings.find((t: any) => t.dayOfWeek === dayOfWeek && t.startTime === startTime);
-        const maxP = slotTiming?.maxPatients || 20;
-        const bookedCount = existingAppts.filter((a: any) => a.startTime === startTime && a.id !== apptId).length;
-        if (bookedCount >= maxP) {
-          return res.status(409).json({ message: `Slot ${startTime} is fully booked` });
+        const dayTimings = timings.filter((t: any) => t.dayOfWeek === dayOfWeek && t.status === "Active");
+
+        const leaves = await storage.getDoctorLeaveExceptions(appt.doctorId, tid, dateStr);
+        if (leaves.length > 0) {
+          return res.status(400).json({ message: "Doctor is on leave on this date" });
+        }
+
+        const timeToMinutes = (t: string) => {
+          const [h, m] = t.split(":").map(Number);
+          return h * 60 + (m || 0);
+        };
+        const apptMinutes = timeToMinutes(startTime);
+
+        const matchingSlot = dayTimings.find((t: any) => {
+          const slotStart = timeToMinutes(t.startTime);
+          const slotEnd = timeToMinutes(t.endTime);
+          return apptMinutes >= slotStart && apptMinutes < slotEnd;
+        });
+
+        if (!matchingSlot) {
+          const availableSlots = dayTimings.map((t: any) => `${t.startTime}-${t.endTime}`).join(", ");
+          return res.status(400).json({
+            message: availableSlots
+              ? `Time ${startTime} is outside the doctor's available slots. Available: ${availableSlots}`
+              : `Doctor has no OPD slots on ${dayOfWeek}`
+          });
+        }
+
+        const existingAppts = await storage.getAppointmentsForDoctorOnDate(appt.doctorId, tid, dateStr);
+        const bookedInSlot = existingAppts.filter((a: any) => {
+          if (a.id === apptId) return false;
+          const aMin = timeToMinutes(a.startTime || "00:00");
+          const slotStart = timeToMinutes(matchingSlot.startTime);
+          const slotEnd = timeToMinutes(matchingSlot.endTime);
+          return aMin >= slotStart && aMin < slotEnd;
+        }).length;
+        const maxP = matchingSlot.maxPatients || 20;
+        if (bookedInSlot >= maxP) {
+          return res.status(409).json({ message: `Slot ${matchingSlot.startTime}-${matchingSlot.endTime} is fully booked` });
         }
       }
 

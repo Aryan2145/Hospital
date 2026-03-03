@@ -715,13 +715,13 @@ export class DatabaseStorage implements IStorage {
     data.created_at = now;
     data.modified_at = now;
 
-    const noCodeNameTables = ["opdTimings"];
+    const noCodeNameTables = ["opdTimings", "userLineAssignments"];
     if (noCodeNameTables.includes(tableName)) {
       delete data.code;
       delete data.name;
     }
 
-    const skipAutoCode = ["doctorLeaveExceptions", "opdTimings"];
+    const skipAutoCode = ["doctorLeaveExceptions", "opdTimings", "userLineAssignments"];
     if (!skipAutoCode.includes(tableName)) {
       data.code = await this.generateCode(tableName, pgTable, data.tenantId || data.tenant_id);
     }
@@ -757,8 +757,17 @@ export class DatabaseStorage implements IStorage {
     delete snakeData.id;
     delete snakeData.created_at;
 
-    const keys = Object.keys(snakeData);
-    const values = Object.values(snakeData);
+    const colResult = await pool.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
+      [pgTable]
+    );
+    const validColumns = new Set(colResult.rows.map((r: any) => r.column_name));
+
+    const filteredEntries = Object.entries(snakeData).filter(([k]) => validColumns.has(k));
+    if (filteredEntries.length === 0) throw new Error("No valid fields to update");
+
+    const keys = filteredEntries.map(([k]) => k);
+    const values = filteredEntries.map(([, v]) => v);
     const setClause = keys.map((k, i) => `"${k}" = $${i + 1}`).join(", ");
 
     let whereClause = `id = $${keys.length + 1}`;
