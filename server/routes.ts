@@ -16,6 +16,53 @@ import { desc, eq, and, sql, count, gte, lte, isNull, inArray } from "drizzle-or
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
+function humanizeError(err: any): string {
+  const msg = err?.message || String(err);
+
+  if (msg.includes("column") && msg.includes("does not exist")) {
+    const col = msg.match(/column "([^"]+)"/)?.[1] || "field";
+    return `The field "${col}" is not available for this record type. Please check the form and try again.`;
+  }
+  if (msg.includes("duplicate key") || msg.includes("unique constraint")) {
+    const val = msg.match(/Key \(([^)]+)\)=\(([^)]+)\)/);
+    if (val) return `A record with this ${val[1].replace(/_/g, " ")} already exists (${val[2]}). Please use a different value.`;
+    return "A record with these details already exists. Please check for duplicates.";
+  }
+  if (msg.includes("violates not-null constraint")) {
+    const col = msg.match(/column "([^"]+)"/)?.[1]?.replace(/_/g, " ") || "field";
+    return `The "${col}" field is required and cannot be empty.`;
+  }
+  if (msg.includes("violates foreign key constraint")) {
+    return "This record references another item that doesn't exist. Please check your selections and try again.";
+  }
+  if (msg.includes("violates check constraint")) {
+    return "One of the values entered is not valid. Please review the form and try again.";
+  }
+  if (msg.includes("invalid input syntax")) {
+    const type = msg.match(/for type (\w+)/)?.[1] || "value";
+    return `Invalid format entered. Please check that all fields have the correct ${type} format.`;
+  }
+  if (msg.includes("relation") && msg.includes("does not exist")) {
+    return "Something went wrong while saving. Please try again or contact support.";
+  }
+  if (msg.includes("No valid fields to update")) {
+    return "No changes were detected. Please modify at least one field before saving.";
+  }
+  if (msg.includes("Record not found")) {
+    return "The record you're trying to update was not found. It may have been deleted.";
+  }
+  if (msg.includes("connect ECONNREFUSED") || msg.includes("ENOTFOUND")) {
+    return "Unable to connect to an external service. Please try again later.";
+  }
+  if (msg.includes("timeout") || msg.includes("ETIMEDOUT")) {
+    return "The request took too long. Please try again.";
+  }
+  if (/^(error:|ERROR:)/i.test(msg) || msg.includes("syntax error") || msg.includes("at position")) {
+    return "Something went wrong while processing your request. Please try again or contact support.";
+  }
+  return msg;
+}
+
 function normalizePhoneNumber(phone: string): string {
   if (!phone || !phone.trim()) return "";
   const digits = phone.replace(/[^0-9]/g, "");
@@ -735,7 +782,7 @@ export async function registerRoutes(
       const allTenantsList = await db.select().from(tenants).orderBy(tenants.id);
       res.json(allTenantsList);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -783,7 +830,7 @@ export async function registerRoutes(
       if (err.message?.includes("duplicate key")) {
         return res.status(400).json({ message: "A hospital with this subdomain already exists" });
       }
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -816,7 +863,7 @@ export async function registerRoutes(
 
       res.json(pendingItems);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -834,7 +881,7 @@ export async function registerRoutes(
       );
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -852,7 +899,7 @@ export async function registerRoutes(
       );
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -879,7 +926,7 @@ export async function registerRoutes(
       });
       res.status(201).json(record);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -1045,7 +1092,7 @@ export async function registerRoutes(
         .limit(50);
       res.json(logs);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -1120,7 +1167,7 @@ export async function registerRoutes(
       
       res.json({ updated: result.rowCount, leadSourceId: source.id, leadSourceName: source.name });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -1170,7 +1217,7 @@ export async function registerRoutes(
       const final = await db.select().from(leadSources).where(eq(leadSources.tenantId, tid));
       res.json({ message: `Synced lead sources. Added ${added} new entries.`, total: final.length, sources: final.sort((a: any, b: any) => a.displayOrder - b.displayOrder).map((s: any) => ({ id: s.id, code: s.code, name: s.name })) });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -1321,7 +1368,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid action. Use 'accept' or 'reject'" });
       }
     } catch (err: any) {
-      return res.status(500).json({ message: err.message });
+      return res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -1369,7 +1416,7 @@ export async function registerRoutes(
 
       return res.json(updated);
     } catch (err: any) {
-      return res.status(500).json({ message: err.message });
+      return res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -1440,7 +1487,7 @@ export async function registerRoutes(
 
       return res.status(201).json({ lead: newLead, deduped: false, assignedTo: assignedUser?.name });
     } catch (err: any) {
-      return res.status(500).json({ message: err.message });
+      return res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -1611,7 +1658,7 @@ export async function registerRoutes(
         errors: errors.slice(0, 50),
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -1669,7 +1716,7 @@ export async function registerRoutes(
 
       res.json({ headers, sheetTitle, sheets, spreadsheetId, selectedSheet: targetSheet });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -1688,7 +1735,7 @@ export async function registerRoutes(
       const rows = data.values || [];
       res.json({ rows, totalPreview: rows.length });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -1849,7 +1896,7 @@ export async function registerRoutes(
         errors: errors.slice(0, 50),
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -1868,7 +1915,7 @@ export async function registerRoutes(
         .orderBy(desc(leadCaptureRules.createdAt));
       res.json(rules);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -1883,7 +1930,7 @@ export async function registerRoutes(
       const [rule] = await db.insert(leadCaptureRules).values(parsed.data).returning();
       res.status(201).json(rule);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -1898,7 +1945,7 @@ export async function registerRoutes(
       if (!rule) return res.status(404).json({ message: "Rule not found" });
       res.json(rule);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -1910,7 +1957,7 @@ export async function registerRoutes(
         .where(and(eq(leadCaptureRules.id, id), eq(leadCaptureRules.tenantId, tid)));
       res.status(204).send();
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -2006,7 +2053,7 @@ export async function registerRoutes(
 
       res.status(201).json({ status: "created", leadId: newLead.id });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2421,7 +2468,7 @@ export async function registerRoutes(
         employeeStats: Object.values(employeeStats).sort((a, b) => b.total - a.total),
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2447,7 +2494,7 @@ export async function registerRoutes(
 
       res.json(enriched);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2486,7 +2533,7 @@ export async function registerRoutes(
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2507,7 +2554,7 @@ export async function registerRoutes(
 
       res.json({ webhookSecret });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2540,7 +2587,7 @@ export async function registerRoutes(
       const records = await storage.getMasterRecords(tableName, tid);
       res.json(records);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -2563,7 +2610,7 @@ export async function registerRoutes(
       res.setHeader("Content-Disposition", `attachment; filename="${tableName}_export.csv"`);
       res.send(csvData);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2593,7 +2640,7 @@ export async function registerRoutes(
         .limit(20);
       res.json(logs);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2705,7 +2752,7 @@ export async function registerRoutes(
       const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid, approvalStatus: "Pending" });
       res.status(201).json(record);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -2721,7 +2768,7 @@ export async function registerRoutes(
       const record = await storage.updateMasterRecord(tableName, Number(id), body, tid);
       res.json(record);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -2736,7 +2783,7 @@ export async function registerRoutes(
       await storage.deleteMasterRecord(tableName, Number(id), tid);
       res.status(204).send();
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -2752,7 +2799,7 @@ export async function registerRoutes(
       const record = await storage.updateMasterRecord(tableName, id, { approvalStatus: "Approved" }, tid);
       res.json(record);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -2768,7 +2815,7 @@ export async function registerRoutes(
       const record = await storage.updateMasterRecord(tableName, id, { approvalStatus: "Rejected" }, tid);
       res.json(record);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -2793,7 +2840,7 @@ export async function registerRoutes(
       }
       res.json(allPending);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2806,7 +2853,7 @@ export async function registerRoutes(
       const users = await storage.getCrmUsers(tid);
       res.json(users.filter(u => u.code !== "SUPERADMIN"));
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2817,7 +2864,7 @@ export async function registerRoutes(
       if (!user) return res.status(404).json({ message: "User not found" });
       res.json(user);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2882,7 +2929,7 @@ export async function registerRoutes(
       const { passwordHash: _, ...safeUser } = user as any;
       res.status(201).json(safeUser);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -2895,7 +2942,7 @@ export async function registerRoutes(
       const user = await storage.updateCrmUser(Number(req.params.id), tid, parsed);
       res.json(user);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -2913,7 +2960,7 @@ export async function registerRoutes(
       await storage.deleteCrmUser(userId, tid);
       res.status(204).send();
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2923,7 +2970,7 @@ export async function registerRoutes(
       const directReports = await storage.getCrmUserDirectReports(Number(req.params.id), tid);
       res.json(directReports);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2936,7 +2983,7 @@ export async function registerRoutes(
       const result = await storage.getPatients(tid);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2947,7 +2994,7 @@ export async function registerRoutes(
       if (!patient) return res.status(404).json({ message: "Patient not found" });
       res.json(patient);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2959,7 +3006,7 @@ export async function registerRoutes(
       const patient = await storage.createPatient(parsed);
       res.status(201).json(patient);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -2971,7 +3018,7 @@ export async function registerRoutes(
       const patient = await storage.updatePatient(Number(req.params.id), tid, parsed);
       res.json(patient);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -2981,7 +3028,7 @@ export async function registerRoutes(
       const result = await storage.getContactsForPatient(Number(req.params.id), tid);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -2992,7 +3039,7 @@ export async function registerRoutes(
       const contact = await storage.createContact(parsed);
       res.status(201).json(contact);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -3003,7 +3050,7 @@ export async function registerRoutes(
       const contact = await storage.updateContact(Number(req.params.id), tid, parsed);
       res.json(contact);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -3013,7 +3060,7 @@ export async function registerRoutes(
       await storage.deleteContact(Number(req.params.id), tid);
       res.status(204).send();
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3024,7 +3071,7 @@ export async function registerRoutes(
       const link = await storage.linkPatientContact(parsed);
       res.status(201).json(link);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -3034,7 +3081,7 @@ export async function registerRoutes(
       await storage.unlinkPatientContact(Number(req.params.patientId), Number(req.params.contactId), tid);
       res.status(204).send();
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3047,7 +3094,7 @@ export async function registerRoutes(
       const result = await storage.getDoctors(tid);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3088,7 +3135,7 @@ export async function registerRoutes(
 
       res.json({ available: true, dayOfWeek, slots });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3119,7 +3166,7 @@ export async function registerRoutes(
         .orderBy(doctorLeaveExceptions.leaveDate);
       res.json(results);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3140,7 +3187,7 @@ export async function registerRoutes(
       const result = await storage.getAppointments(tid, filters);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3158,7 +3205,7 @@ export async function registerRoutes(
       const result = await storage.getAppointmentsEnriched(tid, filters);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3169,7 +3216,7 @@ export async function registerRoutes(
       if (!appt) return res.status(404).json({ message: "Appointment not found" });
       res.json(appt);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3301,7 +3348,7 @@ export async function registerRoutes(
 
       res.status(201).json(appt);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -3312,7 +3359,7 @@ export async function registerRoutes(
       const appt = await storage.updateAppointment(Number(req.params.id), tid, parsed);
       res.json(appt);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -3363,7 +3410,7 @@ export async function registerRoutes(
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3392,7 +3439,7 @@ export async function registerRoutes(
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3476,7 +3523,7 @@ export async function registerRoutes(
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3505,7 +3552,7 @@ export async function registerRoutes(
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3576,7 +3623,7 @@ export async function registerRoutes(
 
       res.json({ ...updated, patientId });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3613,7 +3660,7 @@ export async function registerRoutes(
       const result = await pool.query(query, params);
       res.json(result.rows);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3626,7 +3673,7 @@ export async function registerRoutes(
       const result = await storage.getCampaigns(tid);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3644,7 +3691,7 @@ export async function registerRoutes(
       }, 0);
       res.json({ nextAdNumber: `Ad${maxNum + 1}` });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3655,7 +3702,7 @@ export async function registerRoutes(
       if (!c) return res.status(404).json({ message: "Campaign not found" });
       res.json(c);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3667,7 +3714,7 @@ export async function registerRoutes(
       const c = await storage.createCampaign(parsed);
       res.status(201).json(c);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -3679,7 +3726,7 @@ export async function registerRoutes(
       const c = await storage.updateCampaign(Number(req.params.id), tid, parsed);
       res.json(c);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -3725,7 +3772,7 @@ export async function registerRoutes(
       const connectors = await storage.getPlatformConnectors(tid);
       res.json(connectors);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3737,7 +3784,7 @@ export async function registerRoutes(
       if (!c) return res.status(404).json({ message: "Connector not found" });
       res.json(c);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3749,7 +3796,7 @@ export async function registerRoutes(
       const c = await storage.createPlatformConnector(parsed);
       res.json(c);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -3769,7 +3816,7 @@ export async function registerRoutes(
       const c = await storage.updatePlatformConnector(Number(req.params.id), tid, parsed);
       res.json(c);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -3780,7 +3827,7 @@ export async function registerRoutes(
       await storage.deletePlatformConnector(Number(req.params.id), tid);
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3821,7 +3868,7 @@ export async function registerRoutes(
           }
         } catch (e: any) {
           await storage.updatePlatformConnector(c.id, tid, { status: "error", syncStatus: null });
-          res.status(400).json({ message: `Meta connection failed: ${e.message}` });
+          res.status(400).json({ message: "Unable to connect to Meta Ads. Please check your credentials and try again." });
         }
       } else {
         await storage.updatePlatformConnector(c.id, tid, {
@@ -3832,7 +3879,7 @@ export async function registerRoutes(
         res.json({ message: "Connection test initiated" });
       }
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3867,7 +3914,7 @@ export async function registerRoutes(
           res.json({ message: "Meta insights synced successfully", metrics: metricsCache });
         } catch (e: any) {
           await storage.updatePlatformConnector(c.id, tid, { syncStatus: "error" });
-          res.status(400).json({ message: `Meta sync failed: ${e.message}` });
+          res.status(400).json({ message: "Unable to sync data from Meta Ads. Please check your connection and try again." });
         }
       } else {
         await storage.updatePlatformConnector(c.id, tid, {
@@ -3877,7 +3924,7 @@ export async function registerRoutes(
         res.json({ message: "Sync completed" });
       }
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3889,7 +3936,7 @@ export async function registerRoutes(
       const insights = await fetchAccountInsights(datePreset);
       res.json(insights || {});
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3901,7 +3948,7 @@ export async function registerRoutes(
       const campaigns = await fetchCampaignInsights(datePreset);
       res.json(campaigns);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3913,7 +3960,7 @@ export async function registerRoutes(
       const daily = await fetchDailyInsights(days);
       res.json(daily);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3927,7 +3974,7 @@ export async function registerRoutes(
       const result = await storage.getEpisodes(tid, leadId);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -3938,7 +3985,7 @@ export async function registerRoutes(
       if (!ep) return res.status(404).json({ message: "Episode not found" });
       res.json(ep);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4027,7 +4074,7 @@ export async function registerRoutes(
 
       res.status(201).json(ep);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -4064,7 +4111,7 @@ export async function registerRoutes(
 
       res.json(ep);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -4079,7 +4126,7 @@ export async function registerRoutes(
       const result = await storage.getAuditLogs(tid, entityType, entityId);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4090,7 +4137,7 @@ export async function registerRoutes(
       const log = await storage.createAuditLog(parsed);
       res.status(201).json(log);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -4116,7 +4163,7 @@ export async function registerRoutes(
       const results = await query.orderBy(desc(customFieldSuggestions.createdAt));
       res.json(results);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4142,7 +4189,7 @@ export async function registerRoutes(
       const [result] = await db.insert(customFieldSuggestions).values(parsed).returning();
       res.status(201).json(result);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -4173,7 +4220,7 @@ export async function registerRoutes(
         .returning();
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -4247,7 +4294,7 @@ export async function registerRoutes(
         leadsByAssignment: assignmentCounts,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4267,7 +4314,7 @@ export async function registerRoutes(
       });
       res.json(enriched);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4297,7 +4344,7 @@ export async function registerRoutes(
         },
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4461,7 +4508,7 @@ export async function registerRoutes(
 
       res.json({ message: "Sample data created", created });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4488,7 +4535,7 @@ export async function registerRoutes(
 
       res.json({ message: `Cleared ${type} data` });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4513,7 +4560,7 @@ export async function registerRoutes(
       }
       res.json(waSettings);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4535,7 +4582,7 @@ export async function registerRoutes(
       }
       res.json({ success: true, message: "WhatsApp settings saved" });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4553,7 +4600,7 @@ export async function registerRoutes(
         res.status(400).json({ message: result.message });
       }
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4574,7 +4621,7 @@ export async function registerRoutes(
         res.status(400).json({ message: `Failed to send: ${result.error}` });
       }
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4599,7 +4646,7 @@ export async function registerRoutes(
       }
       res.json(emailSettings);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4620,7 +4667,7 @@ export async function registerRoutes(
       console.log(`[email-settings] Saved for tenant ${tid}:`, savedKeys.join(", "));
       res.json({ success: true, message: "Email settings saved" });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4672,7 +4719,7 @@ export async function registerRoutes(
 
       res.json({ success: true, message: `Test email sent successfully to ${testRecipient}. Please check your inbox.` });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4745,7 +4792,7 @@ export async function registerRoutes(
         tenantStats,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4755,7 +4802,7 @@ export async function registerRoutes(
       const plans = await db.select().from(subscriptionPlans).orderBy(subscriptionPlans.price);
       res.json(plans);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4765,7 +4812,7 @@ export async function registerRoutes(
       const [plan] = await db.insert(subscriptionPlans).values(parsed).returning();
       res.status(201).json(plan);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -4775,7 +4822,7 @@ export async function registerRoutes(
       const [updated] = await db.update(subscriptionPlans).set({ ...req.body, modifiedAt: new Date() }).where(eq(subscriptionPlans.id, id)).returning();
       res.json(updated);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -4793,7 +4840,7 @@ export async function registerRoutes(
       }));
       res.json(enriched);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4805,7 +4852,7 @@ export async function registerRoutes(
       await db.update(tenants).set({ subscriptionStatus: "Active" }).where(eq(tenants.id, parsed.tenantId));
       res.status(201).json(sub);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -4822,7 +4869,7 @@ export async function registerRoutes(
       }
       res.json(updated);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -4838,7 +4885,7 @@ export async function registerRoutes(
       }
       res.json({ message: "Tenant suspended" });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4852,7 +4899,7 @@ export async function registerRoutes(
       }
       res.json({ message: "Tenant activated" });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4869,7 +4916,7 @@ export async function registerRoutes(
       const [updated] = await db.update(tenants).set(updateData).where(eq(tenants.id, id)).returning();
       res.json(updated);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -4890,7 +4937,7 @@ export async function registerRoutes(
       }));
       res.json(enriched);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -4901,7 +4948,7 @@ export async function registerRoutes(
       const [payment] = await db.insert(subscriptionPayments).values(parsed).returning();
       res.status(201).json(payment);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -4931,7 +4978,7 @@ export async function registerRoutes(
         leadCount: leadCount.count,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
