@@ -42,6 +42,11 @@ import {
   Sun,
   Snowflake,
   MessageCircle,
+  Thermometer,
+  Users,
+  CalendarClock,
+  Ban,
+  RefreshCw,
 } from "lucide-react";
 
 const ACTIVITY_ICONS: Record<string, typeof Phone> = {
@@ -57,6 +62,7 @@ const ACTIVITY_ICONS: Record<string, typeof Phone> = {
   assignment: UserPlus,
   handover_accepted: CheckCircle2,
   handover_rejected: X,
+  temperature_change: Thermometer,
 };
 
 const ACTIVITY_COLORS: Record<string, string> = {
@@ -72,6 +78,7 @@ const ACTIVITY_COLORS: Record<string, string> = {
   assignment: "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400",
   handover_accepted: "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400",
   handover_rejected: "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400",
+  temperature_change: "bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400",
 };
 
 export default function LeadDetailPage() {
@@ -121,6 +128,7 @@ export default function LeadDetailPage() {
           <NextActionPanel lead={lead} />
           <TasksPanel leadId={lead.id} />
           <QuickActions lead={lead} />
+          <TemperatureHistory leadId={lead.id} />
           <HandoverHistory leadId={lead.id} />
         </div>
       </div>
@@ -171,16 +179,45 @@ function LeadHeader({ lead, onBack }: { lead: any; onBack: () => void }) {
         )}
 
         {(() => {
-          const temp = getLeadTemperature(lead);
+          const dbTemp = lead.leadTemperature as string | null;
+          const temp = dbTemp || getLeadTemperature(lead);
           if (!temp) return null;
-          const TempIcon = temp === "Hot" ? Flame : temp === "Warm" ? Sun : Snowflake;
+          const TempIcon = temp === "Hot" || temp === "Very Hot" ? Flame : temp === "Warm" || temp === "Warm+" || temp === "Warm++" ? Sun : temp === "Dormant" ? Ban : Snowflake;
           return (
-            <Badge className={cn("text-xs", getTemperatureColor(temp))} data-testid="badge-temperature">
+            <Badge className={cn("text-xs", getTemperatureColor(temp === "Very Hot" || temp === "Warm+" || temp === "Warm++" ? (temp === "Very Hot" ? "Hot" : "Warm") : temp === "Dormant" ? "Cold" : temp as any))} data-testid="badge-temperature">
               <TempIcon className="w-3 h-3 mr-0.5" />
               {temp}
             </Badge>
           );
         })()}
+
+        {lead.ownerTeam && (
+          <Badge variant="outline" className="text-xs gap-1" data-testid="badge-owner-team">
+            <Users className="w-3 h-3" />
+            {lead.ownerTeam}
+          </Badge>
+        )}
+
+        {lead.leadAgeingDays != null && lead.leadAgeingDays > 0 && (
+          <Badge variant="outline" className="text-xs gap-1" data-testid="badge-ageing-days">
+            <CalendarClock className="w-3 h-3" />
+            {lead.leadAgeingDays}d old
+          </Badge>
+        )}
+
+        {lead.noShowCount != null && lead.noShowCount > 0 && (
+          <Badge variant="outline" className={cn("text-xs gap-1", lead.noShowCount >= 2 ? "bg-red-50 text-red-700 border-red-200" : "")} data-testid="badge-no-show-count">
+            <Ban className="w-3 h-3" />
+            {lead.noShowCount} No-Show{lead.noShowCount > 1 ? "s" : ""}
+          </Badge>
+        )}
+
+        {lead.rescheduleCount != null && lead.rescheduleCount > 0 && (
+          <Badge variant="outline" className={cn("text-xs gap-1", lead.rescheduleCount >= 2 ? "bg-amber-50 text-amber-700 border-amber-200" : "")} data-testid="badge-reschedule-count">
+            <RefreshCw className="w-3 h-3" />
+            {lead.rescheduleCount} Reschedule{lead.rescheduleCount > 1 ? "s" : ""}
+          </Badge>
+        )}
 
         {lead.leadScore !== null && lead.leadScore !== undefined && lead.leadScore > 0 && (
           <Badge variant="outline" className="text-xs gap-1" data-testid="badge-score">
@@ -407,6 +444,17 @@ function ActivityTimeline({ leadId }: { leadId: number }) {
                         <Badge className={cn("text-[10px]", getStatusColor(activity.oldStatus))}>{activity.oldStatus}</Badge>
                         <ArrowRightLeft className="w-3 h-3 text-muted-foreground" />
                         <Badge className={cn("text-[10px]", getStatusColor(activity.newStatus))}>{activity.newStatus}</Badge>
+                      </div>
+                    )}
+                    {activity.type === "temperature_change" && activity.metadata && (
+                      <div className="flex items-center gap-2 mt-1 text-xs">
+                        {(activity.metadata as any).previousTemperature && (
+                          <>
+                            <Badge variant="outline" className="text-[10px]">{(activity.metadata as any).previousTemperature}</Badge>
+                            <ArrowRight className="w-3 h-3 text-muted-foreground" />
+                          </>
+                        )}
+                        <Badge variant="outline" className="text-[10px]">{(activity.metadata as any).newTemperature}</Badge>
                       </div>
                     )}
                     {activity.callDurationSeconds && (
@@ -1203,6 +1251,74 @@ function EpisodesSection({ lead }: { lead: any }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function TemperatureHistory({ leadId }: { leadId: number }) {
+  const { data: tempLogs, isLoading } = useQuery({
+    queryKey: ['/api/temperature-logs', leadId],
+    queryFn: async () => {
+      const res = await fetch(`/api/temperature-logs?leadId=${leadId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  if (isLoading || !tempLogs?.length) return null;
+
+  const getTempIcon = (temp: string) => {
+    if (temp === "Hot" || temp === "Very Hot") return Flame;
+    if (temp === "Warm" || temp === "Warm+" || temp === "Warm++") return Sun;
+    if (temp === "Dormant") return Ban;
+    return Snowflake;
+  };
+
+  return (
+    <div className="p-4 border-b border-border">
+      <h3 className="font-semibold text-sm text-foreground flex items-center gap-2 mb-3">
+        <Thermometer className="w-4 h-4 text-primary" />
+        Temperature History ({tempLogs.length})
+      </h3>
+      <div className="space-y-2">
+        {tempLogs.slice(0, 10).map((log: any) => {
+          const NewIcon = getTempIcon(log.newTemperature || "Cold");
+          return (
+            <Card key={log.id} className="p-2" data-testid={`temp-log-${log.id}`}>
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <div className="flex items-center gap-1">
+                  {log.previousTemperature && (
+                    <>
+                      <Badge variant="outline" className={cn("text-[10px]", getTemperatureColor(
+                        (log.previousTemperature === "Very Hot" || log.previousTemperature === "Warm+" || log.previousTemperature === "Warm++")
+                          ? (log.previousTemperature === "Very Hot" ? "Hot" : "Warm")
+                          : log.previousTemperature === "Dormant" ? "Cold" : log.previousTemperature
+                      ))}>
+                        {log.previousTemperature}
+                      </Badge>
+                      <ArrowRight className="w-3 h-3 text-muted-foreground" />
+                    </>
+                  )}
+                  <Badge className={cn("text-[10px]", getTemperatureColor(
+                    (log.newTemperature === "Very Hot" || log.newTemperature === "Warm+" || log.newTemperature === "Warm++")
+                      ? (log.newTemperature === "Very Hot" ? "Hot" : "Warm")
+                      : log.newTemperature === "Dormant" ? "Cold" : log.newTemperature
+                  ))}>
+                    <NewIcon className="w-2.5 h-2.5 mr-0.5" />
+                    {log.newTemperature}
+                  </Badge>
+                </div>
+                <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
+                  {log.createdAt && format(new Date(log.createdAt), "MMM d, h:mm a")}
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {log.triggerEvent?.replace(/_/g, " ")}
+              </p>
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -1020,6 +1020,17 @@ export const leads = pgTable("leads", {
   emergencyContactName: text("emergency_contact_name"),
   emergencyContactPhone: text("emergency_contact_phone"),
   uhid: text("uhid"),
+  leadTemperature: text("lead_temperature").default("Cold"),
+  leadAgeingDays: integer("lead_ageing_days").default(0),
+  firstResponseTimeMinutes: integer("first_response_time_minutes"),
+  appointmentConversionFlag: boolean("appointment_conversion_flag").default(false),
+  noShowCount: integer("no_show_count").default(0),
+  rescheduleCount: integer("reschedule_count").default(0),
+  lastActivityAt: timestamp("last_activity_at"),
+  temperatureLastUpdatedAt: timestamp("temperature_last_updated_at"),
+  primaryOwnerUserId: integer("primary_owner_user_id").references(() => crmUsers.id),
+  ownerTeam: text("owner_team"),
+  lastHandoverAt: timestamp("last_handover_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1142,6 +1153,34 @@ export const episodes = pgTable("episodes", {
   actualCost: integer("actual_cost"),
   insuranceClaimed: boolean("insurance_claimed").default(false),
   notes: text("notes"),
+  estimateShared: boolean("estimate_shared").default(false),
+  estimateSharedAt: timestamp("estimate_shared_at"),
+  negotiationStatus: text("negotiation_status").default("None"),
+  discountApplied: boolean("discount_applied").default(false),
+  discountType: text("discount_type"),
+  discountValue: integer("discount_value"),
+  discountApprovedBy: varchar("discount_approved_by"),
+  discountApprovedAt: timestamp("discount_approved_at"),
+  finalEstimatedAmount: integer("final_estimated_amount"),
+  advanceReceivedAmount: integer("advance_received_amount"),
+  paymentMode: text("payment_mode"),
+  paymentNotes: text("payment_notes"),
+  insuranceApplicable: boolean("insurance_applicable").default(false),
+  insurerId: integer("insurer_id"),
+  tpaId: integer("tpa_id"),
+  policyTypeId: integer("policy_type_id"),
+  preauthStatusId: integer("preauth_status_id"),
+  preauthSubmittedAt: timestamp("preauth_submitted_at"),
+  preauthApprovedAmount: integer("preauth_approved_amount"),
+  rejectionReasonId: integer("rejection_reason_id"),
+  familyDiscussionDone: boolean("family_discussion_done").default(false),
+  secondOpinionTaken: boolean("second_opinion_taken").default(false),
+  decisionStatus: text("decision_status").default("Pending"),
+  decisionNotes: text("decision_notes"),
+  revenueProbability: integer("revenue_probability"),
+  expectedRevenueAmount: integer("expected_revenue_amount"),
+  lostAtStage: text("lost_at_stage"),
+  lostValue: integer("lost_value"),
   createdAt: timestamp("created_at").defaultNow(),
   createdBy: varchar("created_by"),
   modifiedAt: timestamp("modified_at").defaultNow(),
@@ -1263,6 +1302,137 @@ export type InsertCallyzerWebhookLog = z.infer<typeof insertCallyzerWebhookLogSc
 export type CallyzerWebhookLog = typeof callyzerWebhookLogs.$inferSelect;
 
 // =============================================
+// EPISODE INTELLIGENCE V2 — NEW TABLES
+// =============================================
+
+// --- Handover Logs ---
+export const handoverLogs = pgTable("handover_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  entityType: text("entity_type").notNull(),
+  entityId: integer("entity_id").notNull(),
+  fromUserId: integer("from_user_id").references(() => crmUsers.id),
+  toUserId: integer("to_user_id").references(() => crmUsers.id),
+  fromTeam: text("from_team"),
+  toTeam: text("to_team"),
+  triggerEvent: text("trigger_event").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// --- Reschedule History ---
+export const rescheduleHistory = pgTable("reschedule_history", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  appointmentId: integer("appointment_id").notNull().references(() => appointments.id),
+  oldDate: timestamp("old_date"),
+  newDate: timestamp("new_date"),
+  oldStartTime: text("old_start_time"),
+  newStartTime: text("new_start_time"),
+  reason: text("reason"),
+  rescheduledBy: varchar("rescheduled_by"),
+  daysBetween: integer("days_between"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// --- Temperature Change Logs ---
+export const temperatureLogs = pgTable("temperature_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  leadId: integer("lead_id").notNull().references(() => leads.id),
+  previousTemperature: text("previous_temperature"),
+  newTemperature: text("new_temperature").notNull(),
+  triggerEvent: text("trigger_event").notNull(),
+  referenceId: integer("reference_id"),
+  referenceType: text("reference_type"),
+  changedBy: varchar("changed_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// --- Insurance Master Tables ---
+export const insurers = pgTable("insurers", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  approvalStatus: text("approval_status").default("Approved"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const tpas = pgTable("tpas", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  approvalStatus: text("approval_status").default("Approved"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const policyTypes = pgTable("policy_types", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  approvalStatus: text("approval_status").default("Approved"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const preauthStatuses = pgTable("preauth_statuses", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  approvalStatus: text("approval_status").default("Approved"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const rejectionReasons = pgTable("rejection_reasons", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  approvalStatus: text("approval_status").default("Approved"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+// --- Revenue Probability Configuration ---
+export const revenueProbabilityConfig = pgTable("revenue_probability_config", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  stageName: text("stage_name").notNull(),
+  probability: integer("probability").notNull(),
+  displayOrder: integer("display_order").default(0),
+  status: text("status").notNull().default("Active"),
+  createdAt: timestamp("created_at").defaultNow(),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+});
+
+// =============================================
 // ZOD SCHEMAS
 // =============================================
 export const insertTenantSchema = createInsertSchema(tenants).omit({ id: true, createdAt: true });
@@ -1276,6 +1446,10 @@ export const insertCampaignSchema = createInsertSchema(campaigns).omit({ id: tru
 export const insertAppointmentSchema = createInsertSchema(appointments).omit({ id: true, createdAt: true, modifiedAt: true });
 export const insertEpisodeSchema = createInsertSchema(episodes).omit({ id: true, createdAt: true, modifiedAt: true });
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
+export const insertHandoverLogSchema = createInsertSchema(handoverLogs).omit({ id: true, createdAt: true });
+export const insertRescheduleHistorySchema = createInsertSchema(rescheduleHistory).omit({ id: true, createdAt: true });
+export const insertTemperatureLogSchema = createInsertSchema(temperatureLogs).omit({ id: true, createdAt: true });
+export const insertRevenueProbabilityConfigSchema = createInsertSchema(revenueProbabilityConfig).omit({ id: true, createdAt: true, modifiedAt: true });
 
 // =============================================
 // SUBSCRIPTION & BILLING (System Admin)
@@ -1433,6 +1607,14 @@ export type Episode = typeof episodes.$inferSelect;
 export type InsertEpisode = z.infer<typeof insertEpisodeSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type HandoverLog = typeof handoverLogs.$inferSelect;
+export type InsertHandoverLog = z.infer<typeof insertHandoverLogSchema>;
+export type RescheduleHistoryRecord = typeof rescheduleHistory.$inferSelect;
+export type InsertRescheduleHistory = z.infer<typeof insertRescheduleHistorySchema>;
+export type TemperatureLog = typeof temperatureLogs.$inferSelect;
+export type InsertTemperatureLog = z.infer<typeof insertTemperatureLogSchema>;
+export type RevenueProbabilityConfigRecord = typeof revenueProbabilityConfig.$inferSelect;
+export type InsertRevenueProbabilityConfig = z.infer<typeof insertRevenueProbabilityConfigSchema>;
 
 // Generic master record type
 export interface MasterRecord {
@@ -1502,4 +1684,9 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   reminderPolicies: "reminder_policies",
   dataRetentionPolicies: "data_retention_policies",
   callyzerEmployees: "callyzer_employees",
+  insurers: "insurers",
+  tpas: "tpas",
+  policyTypes: "policy_types",
+  preauthStatuses: "preauth_statuses",
+  rejectionReasons: "rejection_reasons",
 };

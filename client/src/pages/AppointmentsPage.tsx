@@ -15,7 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, addWeeks, subWeeks, isSameMonth, isSameDay, isToday } from "date-fns";
 import { useState, useMemo } from "react";
-import { Calendar, Clock, User, Hash, CheckCircle2, XCircle, RotateCcw, AlertTriangle, Stethoscope, Plus, Loader2, ChevronLeft, ChevronRight, Building, ListOrdered, CalendarDays, UserPlus, Phone, Search, ChevronDown, ChevronUp, Users, Filter } from "lucide-react";
+import { Calendar, Clock, User, Hash, CheckCircle2, XCircle, RotateCcw, AlertTriangle, Stethoscope, Plus, Loader2, ChevronLeft, ChevronRight, Building, ListOrdered, CalendarDays, UserPlus, Phone, Search, ChevronDown, ChevronUp, Users, Filter, FileText, LinkIcon, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -279,9 +279,47 @@ function DoctorScheduleView() {
   const [rescheduleSlot, setRescheduleSlot] = useState("");
 
   const [checkInPending, setCheckInPending] = useState(false);
+  const [episodePrompt, setEpisodePrompt] = useState<{ appt: any } | null>(null);
+  const [episodeSearchQuery, setEpisodeSearchQuery] = useState("");
+  const [episodeCreateMode, setEpisodeCreateMode] = useState(false);
+  const [newEpisodeNotes, setNewEpisodeNotes] = useState("");
+  const [newEpisodeTreatmentDeptId, setNewEpisodeTreatmentDeptId] = useState("");
+  const [isCreatingEpisode, setIsCreatingEpisode] = useState(false);
+  const [isLinkingEpisode, setIsLinkingEpisode] = useState(false);
+
+  const episodePromptPatientId = episodePrompt?.appt?.patientId || null;
+  const episodePromptLeadId = episodePrompt?.appt?.leadId || null;
+  const { data: patientEpisodes, isLoading: episodesLoading } = useQuery<any[]>({
+    queryKey: ["/api/episodes", { patientId: episodePromptPatientId, leadId: episodePromptLeadId }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (episodePromptLeadId) params.set("leadId", String(episodePromptLeadId));
+      const res = await fetch(`/api/episodes?${params.toString()}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!episodePrompt,
+  });
+
+  const { data: treatmentDeptsList } = useQuery<any[]>({
+    queryKey: ["/api/masters/treatmentDepartments"],
+    enabled: !!episodePrompt,
+  });
+
+  const filteredPatientEpisodes = useMemo(() => {
+    if (!patientEpisodes) return [];
+    if (!episodeSearchQuery.trim()) return patientEpisodes;
+    const q = episodeSearchQuery.toLowerCase();
+    return patientEpisodes.filter((ep: any) =>
+      (ep.episodeName || "").toLowerCase().includes(q) ||
+      (ep.status || "").toLowerCase().includes(q) ||
+      (ep.diagnosis || "").toLowerCase().includes(q)
+    );
+  }, [patientEpisodes, episodeSearchQuery]);
 
   const handleCheckIn = async (apptId: number) => {
     setCheckInPending(true);
+    const appt = actionDialog?.appt;
     try {
       await apiRequest("POST", `/api/appointments/${apptId}/check-in`);
       toast({ title: "Patient checked in successfully" });
@@ -289,10 +327,64 @@ function DoctorScheduleView() {
       queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
       queryClient.invalidateQueries({ queryKey: ["/api/patients"] });
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      if (appt && !appt.episodeId) {
+        setEpisodePrompt({ appt: { ...appt, id: apptId } });
+        setEpisodeSearchQuery("");
+        setEpisodeCreateMode(false);
+        setNewEpisodeNotes("");
+        setNewEpisodeTreatmentDeptId("");
+      }
     } catch (err: any) {
       toast({ title: "Check-in failed", description: err.message, variant: "destructive" });
     } finally {
       setCheckInPending(false);
+    }
+  };
+
+  const handleLinkEpisode = async (episodeId: number) => {
+    if (!episodePrompt) return;
+    setIsLinkingEpisode(true);
+    try {
+      await apiRequest("PATCH", `/api/appointments/${episodePrompt.appt.id}`, {
+        episodeId,
+      });
+      toast({ title: "Appointment linked to episode" });
+      setEpisodePrompt(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
+    } catch (err: any) {
+      toast({ title: "Failed to link episode", description: err.message, variant: "destructive" });
+    } finally {
+      setIsLinkingEpisode(false);
+    }
+  };
+
+  const handleCreateAndLinkEpisode = async () => {
+    if (!episodePrompt) return;
+    const appt = episodePrompt.appt;
+    setIsCreatingEpisode(true);
+    try {
+      const body: any = {
+        leadId: appt.leadId ? Number(appt.leadId) : undefined,
+        patientId: appt.patientId ? Number(appt.patientId) : undefined,
+        doctorId: appt.doctorId ? Number(appt.doctorId) : undefined,
+        branchId: appt.branchId ? Number(appt.branchId) : undefined,
+        status: "Consultation Done",
+        notes: newEpisodeNotes || undefined,
+      };
+      if (newEpisodeTreatmentDeptId) body.treatmentDepartmentId = Number(newEpisodeTreatmentDeptId);
+      const res = await apiRequest("POST", "/api/episodes", body);
+      const newEpisode = await res.json();
+      await apiRequest("PATCH", `/api/appointments/${appt.id}`, {
+        episodeId: newEpisode.id,
+      });
+      toast({ title: "Episode created and linked to appointment" });
+      setEpisodePrompt(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/episodes"] });
+    } catch (err: any) {
+      toast({ title: "Failed to create episode", description: err.message, variant: "destructive" });
+    } finally {
+      setIsCreatingEpisode(false);
     }
   };
 
@@ -760,6 +852,178 @@ function DoctorScheduleView() {
               {checkInPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UserPlus className="w-4 h-4 mr-2" />}
               Confirm Check In
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!episodePrompt} onOpenChange={(open) => { if (!open) setEpisodePrompt(null); }}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              Find or Create Episode
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {episodePrompt && (
+              <div className="p-3 bg-muted/50 rounded-lg space-y-1.5">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <User className="w-4 h-4 text-primary" />
+                  {episodePrompt.appt.patientName || episodePrompt.appt.leadName || "Patient"}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Checked in successfully. Link this appointment to an existing episode or create a new one.
+                </p>
+              </div>
+            )}
+
+            {!episodeCreateMode && (
+              <>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={episodeSearchQuery}
+                    onChange={(e) => setEpisodeSearchQuery(e.target.value)}
+                    placeholder="Search existing episodes..."
+                    className="pl-8"
+                    data-testid="input-episode-search"
+                  />
+                </div>
+
+                {episodesLoading ? (
+                  <div className="py-4 text-center text-sm text-muted-foreground">Loading episodes...</div>
+                ) : filteredPatientEpisodes.length > 0 ? (
+                  <div className="space-y-2 max-h-[240px] overflow-y-auto">
+                    {filteredPatientEpisodes.map((ep: any) => (
+                      <Card
+                        key={ep.id}
+                        className="p-3 hover-elevate cursor-pointer"
+                        data-testid={`episode-option-${ep.id}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{ep.episodeName}</div>
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                              <Badge className={cn("text-[10px]", 
+                                ep.status === "Completed" ? "bg-green-100 text-green-700" :
+                                ep.status === "Consultation Done" ? "bg-blue-100 text-blue-700" :
+                                "bg-amber-100 text-amber-700"
+                              )}>
+                                {ep.status}
+                              </Badge>
+                              {ep.diagnosis && (
+                                <span className="text-[10px] text-muted-foreground truncate max-w-[150px]">{ep.diagnosis}</span>
+                              )}
+                              {ep.startDate && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  {format(new Date(ep.startDate), "MMM d, yyyy")}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs shrink-0"
+                            disabled={isLinkingEpisode}
+                            onClick={() => handleLinkEpisode(ep.id)}
+                            data-testid={`button-link-episode-${ep.id}`}
+                          >
+                            {isLinkingEpisode ? <Loader2 className="w-3 h-3 animate-spin" /> : <LinkIcon className="w-3 h-3 mr-1" />}
+                            Link
+                          </Button>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-4 text-center text-sm text-muted-foreground">
+                    {episodeSearchQuery ? "No matching episodes found." : "No existing episodes found for this patient."}
+                  </div>
+                )}
+
+                <div className="border-t pt-3">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setEpisodeCreateMode(true)}
+                    data-testid="button-create-new-episode"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create New Episode
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {episodeCreateMode && (
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground">Treatment Department</Label>
+                  <SearchableSelect
+                    value={newEpisodeTreatmentDeptId}
+                    onValueChange={setNewEpisodeTreatmentDeptId}
+                    options={[
+                      { value: "", label: "General" },
+                      ...(treatmentDeptsList?.filter((d: any) => d.status === "Active").map((d: any) => ({
+                        value: String(d.id),
+                        label: d.name,
+                      })) || []),
+                    ]}
+                    placeholder="Select department"
+                    data-testid="select-episode-treatment-dept"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground">Notes (optional)</Label>
+                  <Textarea
+                    value={newEpisodeNotes}
+                    onChange={(e) => setNewEpisodeNotes(e.target.value)}
+                    placeholder="Episode notes..."
+                    rows={2}
+                    data-testid="input-episode-notes"
+                  />
+                </div>
+
+                {patientEpisodes && patientEpisodes.length > 0 && (
+                  <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>This patient already has {patientEpisodes.length} episode{patientEpisodes.length > 1 ? "s" : ""}. Make sure this is not a duplicate before creating a new one.</span>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setEpisodeCreateMode(false)}
+                    data-testid="button-back-to-search"
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    onClick={handleCreateAndLinkEpisode}
+                    disabled={isCreatingEpisode}
+                    data-testid="button-confirm-create-episode"
+                  >
+                    {isCreatingEpisode ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+                    Create & Link Episode
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {!episodeCreateMode && (
+              <Button
+                variant="ghost"
+                className="w-full text-xs text-muted-foreground"
+                onClick={() => setEpisodePrompt(null)}
+                data-testid="button-skip-episode"
+              >
+                Skip — I'll do this later
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

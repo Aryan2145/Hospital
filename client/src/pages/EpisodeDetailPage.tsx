@@ -6,11 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { getStatusColor, getValidEpisodeTransitions, getPriorityColor } from "@/lib/lead-status";
 import { format, formatDistanceToNow } from "date-fns";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useState } from "react";
 import {
   ArrowLeft,
   Target,
@@ -21,11 +27,14 @@ import {
   Clock,
   CheckCircle2,
   CircleDot,
-  Circle,
   XCircle,
   ArrowRightCircle,
   PlusCircle,
   User,
+  Shield,
+  Users,
+  TrendingUp,
+  Plus,
 } from "lucide-react";
 
 interface AuditLogEntry {
@@ -40,12 +49,22 @@ interface AuditLogEntry {
   createdAt: string;
 }
 
+function getRevenueProbabilityColor(probability: number | null | undefined): string {
+  if (!probability) return "bg-muted text-muted-foreground";
+  if (probability >= 80) return "bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300";
+  if (probability >= 60) return "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300";
+  if (probability >= 40) return "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300";
+  if (probability >= 20) return "bg-orange-100 dark:bg-orange-950/50 text-orange-800 dark:text-orange-300";
+  return "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300";
+}
+
 export default function EpisodeDetailPage() {
   const [, params] = useRoute("/episodes/:id");
   const [, setLocation] = useLocation();
   const episodeId = Number(params?.id);
   const updateEpisode = useUpdateEpisode();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: episode, isLoading } = useQuery({
     queryKey: ["/api/episodes", episodeId],
@@ -65,6 +84,31 @@ export default function EpisodeDetailPage() {
       if (!res.ok) return [];
       return res.json();
     },
+    enabled: !!episodeId,
+  });
+
+  const { data: insurers = [] } = useQuery<any[]>({
+    queryKey: ["/api/masters/insurers"],
+    enabled: !!episodeId,
+  });
+
+  const { data: tpas = [] } = useQuery<any[]>({
+    queryKey: ["/api/masters/tpas"],
+    enabled: !!episodeId,
+  });
+
+  const { data: policyTypes = [] } = useQuery<any[]>({
+    queryKey: ["/api/masters/policyTypes"],
+    enabled: !!episodeId,
+  });
+
+  const { data: preauthStatuses = [] } = useQuery<any[]>({
+    queryKey: ["/api/masters/preauthStatuses"],
+    enabled: !!episodeId,
+  });
+
+  const { data: rejectionReasons = [] } = useQuery<any[]>({
+    queryKey: ["/api/masters/rejectionReasons"],
     enabled: !!episodeId,
   });
 
@@ -100,7 +144,23 @@ export default function EpisodeDetailPage() {
     updateEpisode.mutate(
       { id: episode.id, status: newStatus },
       {
-        onSuccess: () => toast({ title: "Status updated" }),
+        onSuccess: () => {
+          toast({ title: "Status updated" });
+          queryClient.invalidateQueries({ queryKey: ["/api/episodes", episodeId] });
+        },
+        onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+      }
+    );
+  };
+
+  const handleFieldUpdate = (fields: Record<string, any>) => {
+    updateEpisode.mutate(
+      { id: episode.id, ...fields },
+      {
+        onSuccess: () => {
+          toast({ title: "Episode updated" });
+          queryClient.invalidateQueries({ queryKey: ["/api/episodes", episodeId] });
+        },
         onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
       }
     );
@@ -118,8 +178,10 @@ export default function EpisodeDetailPage() {
   ];
 
   const currentStageIndex = FUNNEL_STAGES.indexOf(episode.status);
-
   const journeyEvents = buildJourneyTimeline(episode, auditLogs);
+
+  const activeItems = (items: any[]) =>
+    (items || []).filter((i: any) => i.status === "Active" && i.approvalStatus === "Approved");
 
   return (
     <AppLayout className="flex-1 flex flex-col h-full overflow-hidden">
@@ -147,6 +209,17 @@ export default function EpisodeDetailPage() {
           )}
           {episode.episodeType && (
             <Badge variant="outline" className="text-xs" data-testid="badge-episode-type">{episode.episodeType}</Badge>
+          )}
+          {episode.revenueProbability != null && (
+            <Badge className={cn("text-xs", getRevenueProbabilityColor(episode.revenueProbability))} data-testid="badge-revenue-probability">
+              <TrendingUp className="w-3 h-3 mr-1" />
+              {episode.revenueProbability}% Revenue Probability
+            </Badge>
+          )}
+          {episode.expectedRevenueAmount != null && episode.expectedRevenueAmount > 0 && (
+            <Badge variant="outline" className="text-xs" data-testid="badge-expected-revenue">
+              Expected: ₹{episode.expectedRevenueAmount.toLocaleString()}
+            </Badge>
           )}
 
           <div className="ml-auto flex items-center gap-2">
@@ -197,6 +270,87 @@ export default function EpisodeDetailPage() {
             })}
           </div>
         </Card>
+
+        <Tabs defaultValue="clinical" className="w-full" data-testid="episode-tabs">
+          <TabsList className="w-full justify-start gap-1 flex-wrap" data-testid="episode-tabs-list">
+            <TabsTrigger value="clinical" data-testid="tab-clinical">
+              <Stethoscope className="w-3.5 h-3.5 mr-1.5" />
+              Clinical Status
+            </TabsTrigger>
+            <TabsTrigger value="financial" data-testid="tab-financial">
+              <IndianRupee className="w-3.5 h-3.5 mr-1.5" />
+              Financial Status
+            </TabsTrigger>
+            <TabsTrigger value="insurance" data-testid="tab-insurance">
+              <Shield className="w-3.5 h-3.5 mr-1.5" />
+              Insurance Status
+            </TabsTrigger>
+            <TabsTrigger value="family" data-testid="tab-family">
+              <Users className="w-3.5 h-3.5 mr-1.5" />
+              Family Status
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="clinical" className="mt-4 space-y-4" data-testid="tab-content-clinical">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card className="p-4" data-testid="card-episode-details">
+                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" />
+                  Episode Details
+                </h3>
+                <div className="space-y-3">
+                  <InfoRow label="Episode Name" value={episode.episodeName} />
+                  <InfoRow label="Type" value={episode.episodeType} />
+                  <InfoRow label="Status" value={episode.status} />
+                  <InfoRow label="Priority" value={episode.priority} />
+                  <InfoRow label="Start Date" value={episode.startDate ? format(new Date(episode.startDate), "MMM d, yyyy") : null} />
+                  <InfoRow label="End Date" value={episode.endDate ? format(new Date(episode.endDate), "MMM d, yyyy") : null} />
+                  <InfoRow label="Lead ID" value={episode.leadId ? `#${episode.leadId}` : null} link={episode.leadId ? `/leads/${episode.leadId}` : undefined} />
+                </div>
+              </Card>
+
+              <Card className="p-4" data-testid="card-episode-clinical">
+                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <Stethoscope className="w-4 h-4 text-primary" />
+                  Clinical Information
+                </h3>
+                <div className="space-y-3">
+                  <InfoRow label="Diagnosis" value={episode.diagnosis} />
+                  <InfoRow label="Treatment Plan" value={episode.treatmentPlan} />
+                  <InfoRow label="Notes" value={episode.notes} />
+                </div>
+              </Card>
+            </div>
+
+            {episode.lostNotes && (
+              <Card className="p-4 border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/30" data-testid="card-episode-lost">
+                <h3 className="text-sm font-semibold text-red-800 dark:text-red-300 mb-2">Discontinued Details</h3>
+                <p className="text-xs text-red-700 dark:text-red-400">{episode.lostNotes}</p>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="financial" className="mt-4" data-testid="tab-content-financial">
+            <FinancialTab episode={episode} onUpdate={handleFieldUpdate} isPending={updateEpisode.isPending} />
+          </TabsContent>
+
+          <TabsContent value="insurance" className="mt-4" data-testid="tab-content-insurance">
+            <InsuranceTab
+              episode={episode}
+              onUpdate={handleFieldUpdate}
+              isPending={updateEpisode.isPending}
+              insurers={activeItems(insurers)}
+              tpas={activeItems(tpas)}
+              policyTypes={activeItems(policyTypes)}
+              preauthStatuses={activeItems(preauthStatuses)}
+              rejectionReasons={activeItems(rejectionReasons)}
+            />
+          </TabsContent>
+
+          <TabsContent value="family" className="mt-4" data-testid="tab-content-family">
+            <FamilyTab episode={episode} onUpdate={handleFieldUpdate} isPending={updateEpisode.isPending} />
+          </TabsContent>
+        </Tabs>
 
         <Card className="p-4" data-testid="card-episode-journey-timeline">
           <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
@@ -282,57 +436,434 @@ export default function EpisodeDetailPage() {
             </div>
           )}
         </Card>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card className="p-4" data-testid="card-episode-details">
-            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-primary" />
-              Episode Details
-            </h3>
-            <div className="space-y-3">
-              <InfoRow label="Episode Name" value={episode.episodeName} />
-              <InfoRow label="Type" value={episode.episodeType} />
-              <InfoRow label="Status" value={episode.status} />
-              <InfoRow label="Priority" value={episode.priority} />
-              <InfoRow label="Start Date" value={episode.startDate ? format(new Date(episode.startDate), "MMM d, yyyy") : null} />
-              <InfoRow label="End Date" value={episode.endDate ? format(new Date(episode.endDate), "MMM d, yyyy") : null} />
-              <InfoRow label="Lead ID" value={episode.leadId ? `#${episode.leadId}` : null} link={episode.leadId ? `/leads/${episode.leadId}` : undefined} />
-            </div>
-          </Card>
-
-          <Card className="p-4" data-testid="card-episode-clinical">
-            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-              <Stethoscope className="w-4 h-4 text-primary" />
-              Clinical Information
-            </h3>
-            <div className="space-y-3">
-              <InfoRow label="Diagnosis" value={episode.diagnosis} />
-              <InfoRow label="Treatment Plan" value={episode.treatmentPlan} />
-              <InfoRow label="Notes" value={episode.notes} />
-            </div>
-          </Card>
-
-          <Card className="p-4" data-testid="card-episode-financial">
-            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-              <IndianRupee className="w-4 h-4 text-primary" />
-              Financial Details
-            </h3>
-            <div className="space-y-3">
-              <InfoRow label="Estimated Cost" value={episode.estimatedCost ? `₹${episode.estimatedCost.toLocaleString()}` : null} />
-              <InfoRow label="Actual Cost" value={episode.actualCost ? `₹${episode.actualCost.toLocaleString()}` : null} />
-              <InfoRow label="Insurance Claimed" value={episode.insuranceClaimed ? "Yes" : "No"} />
-            </div>
-          </Card>
-
-          {episode.lostNotes && (
-            <Card className="p-4 border-red-200 bg-red-50/50" data-testid="card-episode-lost">
-              <h3 className="text-sm font-semibold text-red-800 mb-2">Discontinued Details</h3>
-              <p className="text-xs text-red-700">{episode.lostNotes}</p>
-            </Card>
-          )}
-        </div>
       </div>
     </AppLayout>
+  );
+}
+
+function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate: (fields: Record<string, any>) => void; isPending: boolean }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <Card className="p-4" data-testid="card-financial-costs">
+        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+          <IndianRupee className="w-4 h-4 text-primary" />
+          Cost & Estimates
+        </h3>
+        <div className="space-y-3">
+          <InfoRow label="Estimated Cost" value={episode.estimatedCost ? `₹${episode.estimatedCost.toLocaleString()}` : null} />
+          <InfoRow label="Final Estimated" value={episode.finalEstimatedAmount ? `₹${episode.finalEstimatedAmount.toLocaleString()}` : null} />
+          <InfoRow label="Actual Cost" value={episode.actualCost ? `₹${episode.actualCost.toLocaleString()}` : null} />
+
+          <div className="flex items-center justify-between pt-2">
+            <Label className="text-xs text-muted-foreground">Estimate Shared</Label>
+            <Switch
+              checked={!!episode.estimateShared}
+              onCheckedChange={(checked) => onUpdate({ estimateShared: checked })}
+              disabled={isPending}
+              data-testid="switch-estimate-shared"
+            />
+          </div>
+          {episode.estimateSharedAt && (
+            <InfoRow label="Shared At" value={format(new Date(episode.estimateSharedAt), "MMM d, yyyy h:mm a")} />
+          )}
+        </div>
+      </Card>
+
+      <Card className="p-4" data-testid="card-financial-negotiation">
+        <h3 className="text-sm font-semibold text-foreground mb-3">Negotiation & Discount</h3>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Negotiation Status</Label>
+            <SearchableSelect
+              value={episode.negotiationStatus || "None"}
+              onValueChange={(val) => onUpdate({ negotiationStatus: val })}
+              options={[
+                { value: "None", label: "None" },
+                { value: "In Progress", label: "In Progress" },
+                { value: "Accepted", label: "Accepted" },
+                { value: "Rejected", label: "Rejected" },
+              ]}
+              placeholder="Select status"
+              triggerClassName="text-xs"
+              data-testid="select-negotiation-status"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-muted-foreground">Discount Applied</Label>
+            <Switch
+              checked={!!episode.discountApplied}
+              onCheckedChange={(checked) => onUpdate({ discountApplied: checked })}
+              disabled={isPending}
+              data-testid="switch-discount-applied"
+            />
+          </div>
+          {episode.discountApplied && (
+            <>
+              <InfoRow label="Discount Type" value={episode.discountType} />
+              <InfoRow label="Discount Value" value={episode.discountValue != null ? `₹${episode.discountValue.toLocaleString()}` : null} />
+              <InfoRow label="Approved By" value={episode.discountApprovedBy} />
+              {episode.discountApprovedAt && (
+                <InfoRow label="Approved At" value={format(new Date(episode.discountApprovedAt), "MMM d, yyyy")} />
+              )}
+            </>
+          )}
+        </div>
+      </Card>
+
+      <Card className="p-4" data-testid="card-financial-payment">
+        <h3 className="text-sm font-semibold text-foreground mb-3">Payment Details</h3>
+        <div className="space-y-3">
+          <InfoRow label="Advance Received" value={episode.advanceReceivedAmount ? `₹${episode.advanceReceivedAmount.toLocaleString()}` : null} />
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Payment Mode</Label>
+            <SearchableSelect
+              value={episode.paymentMode || ""}
+              onValueChange={(val) => onUpdate({ paymentMode: val })}
+              options={[
+                { value: "Cash", label: "Cash" },
+                { value: "Card", label: "Card" },
+                { value: "UPI", label: "UPI" },
+                { value: "Net Banking", label: "Net Banking" },
+                { value: "Insurance", label: "Insurance" },
+                { value: "Mixed", label: "Mixed" },
+              ]}
+              placeholder="Select payment mode"
+              triggerClassName="text-xs"
+              data-testid="select-payment-mode"
+            />
+          </div>
+          <InfoRow label="Payment Notes" value={episode.paymentNotes} />
+          <InfoRow label="Insurance Claimed" value={episode.insuranceClaimed ? "Yes" : "No"} />
+        </div>
+      </Card>
+
+      <Card className="p-4" data-testid="card-financial-revenue">
+        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-primary" />
+          Revenue Projection
+        </h3>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground w-32 shrink-0">Probability</span>
+            <div className="flex items-center gap-2 flex-1">
+              {episode.revenueProbability != null ? (
+                <>
+                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className={cn("h-full rounded-full transition-all", episode.revenueProbability >= 70 ? "bg-green-500" : episode.revenueProbability >= 40 ? "bg-amber-500" : "bg-red-500")}
+                      style={{ width: `${episode.revenueProbability}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-medium text-foreground">{episode.revenueProbability}%</span>
+                </>
+              ) : (
+                <span className="text-xs text-muted-foreground">Not calculated</span>
+              )}
+            </div>
+          </div>
+          <InfoRow label="Expected Revenue" value={episode.expectedRevenueAmount ? `₹${episode.expectedRevenueAmount.toLocaleString()}` : null} />
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function InsuranceTab({
+  episode,
+  onUpdate,
+  isPending,
+  insurers,
+  tpas,
+  policyTypes,
+  preauthStatuses,
+  rejectionReasons,
+}: {
+  episode: any;
+  onUpdate: (fields: Record<string, any>) => void;
+  isPending: boolean;
+  insurers: any[];
+  tpas: any[];
+  policyTypes: any[];
+  preauthStatuses: any[];
+  rejectionReasons: any[];
+}) {
+  const { toast } = useToast();
+
+  const requestNewMaster = useMutation({
+    mutationFn: async ({ tableName, name }: { tableName: string; name: string }) => {
+      const res = await apiRequest("POST", `/api/masters/${tableName}`, {
+        code: name.toUpperCase().replace(/\s+/g, "_").substring(0, 20),
+        name,
+        status: "Active",
+        approvalStatus: "Pending",
+      });
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      toast({ title: "Request submitted", description: `"${variables.name}" has been submitted for approval.` });
+    },
+    onError: (err) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const buildOptionsWithRequestNew = (items: any[], tableName: string, labelPrefix: string) => {
+    const options = items.map((item: any) => ({
+      value: String(item.id),
+      label: item.name,
+    }));
+    return options;
+  };
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <Card className="p-4 md:col-span-2" data-testid="card-insurance-applicable">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Shield className="w-4 h-4 text-primary" />
+              Insurance Applicable
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Toggle to enable insurance details for this episode</p>
+          </div>
+          <Switch
+            checked={!!episode.insuranceApplicable}
+            onCheckedChange={(checked) => onUpdate({ insuranceApplicable: checked })}
+            disabled={isPending}
+            data-testid="switch-insurance-applicable"
+          />
+        </div>
+      </Card>
+
+      {episode.insuranceApplicable && (
+        <>
+          <Card className="p-4" data-testid="card-insurance-details">
+            <h3 className="text-sm font-semibold text-foreground mb-3">Insurance Provider</h3>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs text-muted-foreground">Insurer</Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => {
+                      const name = window.prompt("Enter new insurer name:");
+                      if (name) requestNewMaster.mutate({ tableName: "insurers", name });
+                    }}
+                    data-testid="button-request-new-insurer"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Request New
+                  </Button>
+                </div>
+                <SearchableSelect
+                  value={episode.insurerId ? String(episode.insurerId) : ""}
+                  onValueChange={(val) => onUpdate({ insurerId: val ? Number(val) : null })}
+                  options={buildOptionsWithRequestNew(insurers, "insurers", "Insurer")}
+                  placeholder="Select insurer"
+                  triggerClassName="text-xs"
+                  data-testid="select-insurer"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs text-muted-foreground">TPA</Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => {
+                      const name = window.prompt("Enter new TPA name:");
+                      if (name) requestNewMaster.mutate({ tableName: "tpas", name });
+                    }}
+                    data-testid="button-request-new-tpa"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Request New
+                  </Button>
+                </div>
+                <SearchableSelect
+                  value={episode.tpaId ? String(episode.tpaId) : ""}
+                  onValueChange={(val) => onUpdate({ tpaId: val ? Number(val) : null })}
+                  options={buildOptionsWithRequestNew(tpas, "tpas", "TPA")}
+                  placeholder="Select TPA"
+                  triggerClassName="text-xs"
+                  data-testid="select-tpa"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs text-muted-foreground">Policy Type</Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => {
+                      const name = window.prompt("Enter new policy type name:");
+                      if (name) requestNewMaster.mutate({ tableName: "policyTypes", name });
+                    }}
+                    data-testid="button-request-new-policy-type"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Request New
+                  </Button>
+                </div>
+                <SearchableSelect
+                  value={episode.policyTypeId ? String(episode.policyTypeId) : ""}
+                  onValueChange={(val) => onUpdate({ policyTypeId: val ? Number(val) : null })}
+                  options={buildOptionsWithRequestNew(policyTypes, "policyTypes", "Policy Type")}
+                  placeholder="Select policy type"
+                  triggerClassName="text-xs"
+                  data-testid="select-policy-type"
+                />
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-4" data-testid="card-insurance-preauth">
+            <h3 className="text-sm font-semibold text-foreground mb-3">Pre-Authorization</h3>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs text-muted-foreground">Pre-Auth Status</Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => {
+                      const name = window.prompt("Enter new pre-auth status name:");
+                      if (name) requestNewMaster.mutate({ tableName: "preauthStatuses", name });
+                    }}
+                    data-testid="button-request-new-preauth-status"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Request New
+                  </Button>
+                </div>
+                <SearchableSelect
+                  value={episode.preauthStatusId ? String(episode.preauthStatusId) : ""}
+                  onValueChange={(val) => onUpdate({ preauthStatusId: val ? Number(val) : null })}
+                  options={buildOptionsWithRequestNew(preauthStatuses, "preauthStatuses", "Pre-Auth Status")}
+                  placeholder="Select pre-auth status"
+                  triggerClassName="text-xs"
+                  data-testid="select-preauth-status"
+                />
+              </div>
+
+              {episode.preauthSubmittedAt && (
+                <InfoRow label="Submitted At" value={format(new Date(episode.preauthSubmittedAt), "MMM d, yyyy h:mm a")} />
+              )}
+
+              <InfoRow label="Approved Amount" value={episode.preauthApprovedAmount ? `₹${episode.preauthApprovedAmount.toLocaleString()}` : null} />
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs text-muted-foreground">Rejection Reason</Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => {
+                      const name = window.prompt("Enter new rejection reason:");
+                      if (name) requestNewMaster.mutate({ tableName: "rejectionReasons", name });
+                    }}
+                    data-testid="button-request-new-rejection-reason"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Request New
+                  </Button>
+                </div>
+                <SearchableSelect
+                  value={episode.rejectionReasonId ? String(episode.rejectionReasonId) : ""}
+                  onValueChange={(val) => onUpdate({ rejectionReasonId: val ? Number(val) : null })}
+                  options={buildOptionsWithRequestNew(rejectionReasons, "rejectionReasons", "Rejection Reason")}
+                  placeholder="Select rejection reason"
+                  triggerClassName="text-xs"
+                  data-testid="select-rejection-reason"
+                />
+              </div>
+            </div>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+function FamilyTab({ episode, onUpdate, isPending }: { episode: any; onUpdate: (fields: Record<string, any>) => void; isPending: boolean }) {
+  return (
+    <Card className="p-4" data-testid="card-family-status">
+      <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+        <Users className="w-4 h-4 text-primary" />
+        Family & Decision Status
+      </h3>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-xs font-medium text-foreground">Family Discussion Done</Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Has the family been consulted about the treatment plan?</p>
+          </div>
+          <Switch
+            checked={!!episode.familyDiscussionDone}
+            onCheckedChange={(checked) => onUpdate({ familyDiscussionDone: checked })}
+            disabled={isPending}
+            data-testid="switch-family-discussion"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-xs font-medium text-foreground">Second Opinion Taken</Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Has the patient sought a second medical opinion?</p>
+          </div>
+          <Switch
+            checked={!!episode.secondOpinionTaken}
+            onCheckedChange={(checked) => onUpdate({ secondOpinionTaken: checked })}
+            disabled={isPending}
+            data-testid="switch-second-opinion"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Decision Status</Label>
+          <SearchableSelect
+            value={episode.decisionStatus || "Pending"}
+            onValueChange={(val) => onUpdate({ decisionStatus: val })}
+            options={[
+              { value: "Pending", label: "Pending" },
+              { value: "Approved by Family", label: "Approved by Family" },
+              { value: "Rejected by Family", label: "Rejected by Family" },
+              { value: "Seeking Second Opinion", label: "Seeking Second Opinion" },
+              { value: "Decided to Proceed", label: "Decided to Proceed" },
+              { value: "Decided Not to Proceed", label: "Decided Not to Proceed" },
+            ]}
+            placeholder="Select decision status"
+            triggerClassName="text-xs"
+            data-testid="select-decision-status"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Decision Notes</Label>
+          <Textarea
+            value={episode.decisionNotes || ""}
+            onChange={(e) => {}}
+            onBlur={(e) => {
+              if (e.target.value !== (episode.decisionNotes || "")) {
+                onUpdate({ decisionNotes: e.target.value });
+              }
+            }}
+            placeholder="Notes about family decision..."
+            className="text-xs min-h-[80px] resize-none"
+            data-testid="textarea-decision-notes"
+          />
+        </div>
+      </div>
+    </Card>
   );
 }
 

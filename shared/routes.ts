@@ -303,4 +303,14 @@ export const MASTER_CATEGORIES = [
       { key: "dataRetentionPolicies", label: "Data Retention Policy" },
     ]
   },
+  {
+    category: "Insurance",
+    tables: [
+      { key: "insurers", label: "Insurer" },
+      { key: "tpas", label: "TPA (Third Party Administrator)" },
+      { key: "policyTypes", label: "Policy Type" },
+      { key: "preauthStatuses", label: "Pre-Auth Status" },
+      { key: "rejectionReasons", label: "Rejection Reason" },
+    ]
+  },
 ];

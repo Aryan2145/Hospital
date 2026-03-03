@@ -38,6 +38,7 @@ import AdminPlans from "@/pages/admin/AdminPlans";
 import AdminSubscriptions from "@/pages/admin/AdminSubscriptions";
 import AdminPayments from "@/pages/admin/AdminPayments";
 import CallyzerReportsPage from "@/pages/CallyzerReportsPage";
+import IntelligenceConfigPage from "@/pages/IntelligenceConfigPage";
 
 function TenantSuspended() {
   return (
@@ -190,6 +191,12 @@ function Router() {
       <Route path="/branding">
         {isAuthenticated ? (
           <RoleGate page="branding"><BrandingSettings /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/intelligence-config">
+        {isAuthenticated ? (
+          <RoleGate page="connectors"><IntelligenceConfigPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

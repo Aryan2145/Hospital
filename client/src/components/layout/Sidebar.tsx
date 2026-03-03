@@ -17,6 +17,7 @@ import {
   Settings2,
   CalendarOff,
   Phone,
+  Brain,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -56,6 +57,7 @@ const sections: { label: string; items: NavItem[] }[] = [
     items: [
       { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
       { icon: Paintbrush, label: "Branding", href: "/branding", page: "branding" },
+      { icon: Brain, label: "Intelligence Config", href: "/intelligence-config", page: "connectors" },
     ],
   },
 ];

@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -13,6 +13,9 @@ import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { desc, eq, and, sql, count, gte, lte, isNull, inArray } from "drizzle-orm";
+import { computeAndUpdateTemperature, checkDormantLeads } from "./services/temperatureEngine";
+import { processAutoHandover } from "./services/handoverEngine";
+import { computeRevenueProbability, seedDefaultProbabilityConfig } from "./services/revenueProbability";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -3504,13 +3507,31 @@ export async function registerRoutes(
 
       const newToken = await storage.getNextTokenNumber(appt.doctorId, tid, dateStr);
 
+      const newRescheduleCount = (appt.rescheduleCount || 0) + 1;
+
       const updated = await storage.updateAppointment(apptId, tid, {
         appointmentDate: new Date(appointmentDate),
         startTime: startTime || appt.startTime,
         endTime: endTime || appt.endTime,
         tokenNumber: newToken,
-        rescheduleCount: (appt.rescheduleCount || 0) + 1,
+        rescheduleCount: newRescheduleCount,
         status: "Rescheduled",
+      });
+
+      const oldDate = appt.appointmentDate ? new Date(appt.appointmentDate) : null;
+      const newDateObj = new Date(appointmentDate);
+      const daysBetween = oldDate ? Math.round(Math.abs(newDateObj.getTime() - oldDate.getTime()) / (1000 * 60 * 60 * 24)) : null;
+
+      await db.insert(rescheduleHistory).values({
+        tenantId: tid,
+        appointmentId: apptId,
+        oldDate: oldDate,
+        newDate: newDateObj,
+        oldStartTime: appt.startTime || null,
+        newStartTime: startTime || appt.startTime || null,
+        reason: req.body.reason || null,
+        rescheduledBy: userId,
+        daysBetween,
       });
 
       if (appt.leadId) {
@@ -3519,6 +3540,17 @@ export async function registerRoutes(
           type: "appointment",
           description: `Appointment rescheduled to ${dateStr} - Token #${newToken}`,
         });
+
+        await db.update(leads).set({
+          rescheduleCount: sql`COALESCE(reschedule_count, 0) + 1`,
+          lastActivityAt: new Date(),
+        }).where(and(eq(leads.id, appt.leadId), eq(leads.tenantId, tid)));
+
+        if (newRescheduleCount >= 2) {
+          try {
+            await computeAndUpdateTemperature(appt.leadId, tid, "Reschedule 2+", userId, apptId, "Appointment");
+          } catch {}
+        }
       }
 
       res.json(updated);
@@ -3548,6 +3580,57 @@ export async function registerRoutes(
           type: "status_change",
           description: `Patient did not show for appointment`,
         });
+
+        const newNoShowCount = (await pool.query(
+          `UPDATE leads SET no_show_count = COALESCE(no_show_count, 0) + 1, last_activity_at = NOW()
+           WHERE id = $1 AND tenant_id = $2 RETURNING no_show_count`,
+          [appt.leadId, tid]
+        )).rows[0]?.no_show_count || 1;
+
+        try {
+          await computeAndUpdateTemperature(appt.leadId, tid, "No Show", userId, apptId, "Appointment");
+        } catch {}
+
+        try {
+          await storage.createTask({
+            tenantId: tid,
+            leadId: appt.leadId,
+            title: `Follow up after No Show - Appointment #${apptId}`,
+            description: `Patient did not show for their appointment. Please follow up to reschedule.`,
+            priority: newNoShowCount >= 2 ? "High" : "Normal",
+            dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            assignedTo: appt.bookedBy || userId,
+            assignedCrmUserId: appt.bookedByCrmUserId || (req as any).session?.crmUserId || null,
+            status: "Pending",
+            createdBy: userId,
+          } as any);
+        } catch {}
+
+        if (newNoShowCount >= 2) {
+          try {
+            const supervisorResult = await pool.query(
+              `SELECT cu.id, cu.employee_name FROM crm_users cu
+               JOIN system_roles sr ON cu.system_role_id = sr.id
+               WHERE cu.tenant_id = $1 AND sr.code IN ('MANAGER', 'ADMIN') AND cu.status = 'Active'
+               AND cu.branch_id = $2
+               LIMIT 1`,
+              [tid, appt.branchId || null]
+            );
+            if (supervisorResult.rows[0]) {
+              await storage.createTask({
+                tenantId: tid,
+                leadId: appt.leadId,
+                title: `ESCALATION: Multiple No Shows (${newNoShowCount}) - Appointment #${apptId}`,
+                description: `Patient has missed ${newNoShowCount} appointments. High risk drop-off. Immediate attention required.`,
+                priority: "Urgent",
+                dueDate: new Date(Date.now() + 4 * 60 * 60 * 1000),
+                assignedCrmUserId: supervisorResult.rows[0].id,
+                status: "Pending",
+                createdBy: "system",
+              } as any);
+            }
+          } catch {}
+        }
       }
 
       res.json(updated);
@@ -3619,9 +3702,29 @@ export async function registerRoutes(
           type: "status_change",
           description: `Patient checked in for appointment with Dr. ${appt.doctorId}`,
         });
+
+        try {
+          await processAutoHandover("Lead", appt.leadId, "Checked In", tid, userId, {
+            branchId: appt.branchId,
+            doctorId: appt.doctorId,
+            appointmentId: apptId,
+          });
+        } catch {}
       }
 
-      res.json({ ...updated, patientId });
+      let existingEpisodes: any[] = [];
+      if (patientId) {
+        const epResult = await pool.query(
+          `SELECT id, episode_name, status, doctor_id, treatment_department_id, created_at
+           FROM episodes WHERE tenant_id = $1 AND patient_id = $2
+           AND status NOT IN ('Completed', 'Discontinued')
+           ORDER BY created_at DESC LIMIT 10`,
+          [tid, patientId]
+        );
+        existingEpisodes = epResult.rows;
+      }
+
+      res.json({ ...updated, patientId, existingEpisodes, needsEpisodeAction: true });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -4083,13 +4186,39 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const episodeId = Number(req.params.id);
       const oldEpisode = await storage.getEpisode(episodeId, tid);
-      const body = coerceDateFields(req.body, ["startDate", "endDate", "nextActionDate", "slaDeadline"]);
+      const body = coerceDateFields(req.body, ["startDate", "endDate", "nextActionDate", "slaDeadline", "estimateSharedAt", "discountApprovedAt", "preauthSubmittedAt"]);
       const terminalStatuses = ["Completed", "Discontinued"];
       if (body.status && terminalStatuses.includes(body.status) && !body.endDate) {
         body.endDate = new Date();
       }
+
+      if (body.status === "Discontinued" || body.status === "Lost") {
+        if (!body.lostReasonId && !oldEpisode?.lostReasonId) {
+          return res.status(400).json({ message: "A lost reason is required when discontinuing an episode" });
+        }
+        body.lostAtStage = oldEpisode?.status || null;
+        body.lostValue = oldEpisode?.finalEstimatedAmount || oldEpisode?.estimatedCost || null;
+      }
+
+      if (body.estimateShared === true && !oldEpisode?.estimateShared) {
+        body.estimateSharedAt = new Date();
+      }
+
+      if (body.discountApplied && body.discountType && body.discountValue != null) {
+        const baseAmount = body.estimatedCost || oldEpisode?.estimatedCost || 0;
+        if (body.discountType === "Percentage") {
+          body.finalEstimatedAmount = Math.round(baseAmount * (1 - (body.discountValue / 100)));
+        } else {
+          body.finalEstimatedAmount = Math.max(0, baseAmount - body.discountValue);
+        }
+      } else if (body.estimatedCost && !body.discountApplied) {
+        body.finalEstimatedAmount = body.estimatedCost;
+      }
+
       const parsed = insertEpisodeSchema.partial().parse(body);
       const ep = await storage.updateEpisode(episodeId, tid, parsed);
+
+      const userId = String((req as any).session?.crmUserId || "system");
 
       if (oldEpisode && body.status && body.status !== oldEpisode.status) {
         const changedFields: string[] = ["status"];
@@ -4107,11 +4236,231 @@ export async function registerRoutes(
           changedFields: changedFields.join(","),
           performedBy: userName,
         });
+
+        if (oldEpisode.leadId) {
+          const tempEvent = body.status === "Discontinued" ? "No Show"
+            : body.estimateShared ? "Estimate Shared"
+            : body.status;
+          if (["Estimate Shared", "Consultation Done"].includes(tempEvent)) {
+            try {
+              await computeAndUpdateTemperature(oldEpisode.leadId, tid, tempEvent, userId, episodeId, "Episode");
+            } catch {}
+          }
+
+          if (["Estimate Shared", "Checked In", "Consultation Done"].includes(body.status)) {
+            try {
+              await processAutoHandover("Lead", oldEpisode.leadId, body.status, tid, userId, {
+                branchId: oldEpisode.branchId,
+                doctorId: oldEpisode.doctorId,
+              });
+            } catch {}
+          }
+        }
       }
+
+      if (body.insuranceApplicable && oldEpisode?.leadId) {
+        try {
+          await computeAndUpdateTemperature(oldEpisode.leadId, tid, "Insurance Approved", userId, episodeId, "Episode");
+          await processAutoHandover("Lead", oldEpisode.leadId, "Insurance Applicable", tid, userId, {
+            branchId: oldEpisode.branchId,
+          });
+        } catch {}
+      }
+
+      if (body.advanceReceivedAmount && body.advanceReceivedAmount > 0 && oldEpisode?.leadId) {
+        try {
+          await computeAndUpdateTemperature(oldEpisode.leadId, tid, "Advance Received", userId, episodeId, "Episode");
+        } catch {}
+      }
+
+      try {
+        await computeRevenueProbability(episodeId, tid);
+      } catch {}
 
       res.json(ep);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // EPISODE INTELLIGENCE V2 — NEW ENDPOINTS
+  // =============================================
+
+  app.get("/api/handover-logs", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const entityType = req.query.entityType as string | undefined;
+      const entityId = req.query.entityId ? Number(req.query.entityId) : undefined;
+
+      let query = `SELECT hl.*, 
+        fu.employee_name as from_user_name, tu.employee_name as to_user_name
+        FROM handover_logs hl
+        LEFT JOIN crm_users fu ON hl.from_user_id = fu.id
+        LEFT JOIN crm_users tu ON hl.to_user_id = tu.id
+        WHERE hl.tenant_id = $1`;
+      const params: any[] = [tid];
+
+      if (entityType) {
+        params.push(entityType);
+        query += ` AND hl.entity_type = $${params.length}`;
+      }
+      if (entityId) {
+        params.push(entityId);
+        query += ` AND hl.entity_id = $${params.length}`;
+      }
+      query += ` ORDER BY hl.created_at DESC LIMIT 100`;
+
+      const result = await pool.query(query, params);
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/temperature-logs", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const leadId = req.query.leadId ? Number(req.query.leadId) : undefined;
+
+      let query = `SELECT * FROM temperature_logs WHERE tenant_id = $1`;
+      const params: any[] = [tid];
+
+      if (leadId) {
+        params.push(leadId);
+        query += ` AND lead_id = $${params.length}`;
+      }
+      query += ` ORDER BY created_at DESC LIMIT 100`;
+
+      const result = await pool.query(query, params);
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/reschedule-history", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const appointmentId = req.query.appointmentId ? Number(req.query.appointmentId) : undefined;
+
+      let query = `SELECT * FROM reschedule_history WHERE tenant_id = $1`;
+      const params: any[] = [tid];
+
+      if (appointmentId) {
+        params.push(appointmentId);
+        query += ` AND appointment_id = $${params.length}`;
+      }
+      query += ` ORDER BY created_at DESC LIMIT 100`;
+
+      const result = await pool.query(query, params);
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/revenue-probability-config", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      await seedDefaultProbabilityConfig(tid);
+      const configs = await db.select().from(revenueProbabilityConfig).where(
+        eq(revenueProbabilityConfig.tenantId, tid)
+      );
+      res.json(configs);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.patch("/api/revenue-probability-config/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const configId = Number(req.params.id);
+      const { probability, status } = req.body;
+
+      await db.update(revenueProbabilityConfig).set({
+        probability: probability != null ? probability : undefined,
+        status: status || undefined,
+        modifiedAt: new Date(),
+      }).where(and(
+        eq(revenueProbabilityConfig.id, configId),
+        eq(revenueProbabilityConfig.tenantId, tid)
+      ));
+
+      const [updated] = await db.select().from(revenueProbabilityConfig).where(
+        eq(revenueProbabilityConfig.id, configId)
+      );
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/intelligence/stats", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+
+      const [tempStats] = (await pool.query(
+        `SELECT 
+          COUNT(*) FILTER (WHERE lead_temperature = 'Very Hot') as very_hot,
+          COUNT(*) FILTER (WHERE lead_temperature = 'Hot') as hot,
+          COUNT(*) FILTER (WHERE lead_temperature = 'Warm++') as warm_plus_plus,
+          COUNT(*) FILTER (WHERE lead_temperature = 'Warm+') as warm_plus,
+          COUNT(*) FILTER (WHERE lead_temperature = 'Warm') as warm,
+          COUNT(*) FILTER (WHERE lead_temperature = 'Cold') as cold,
+          COUNT(*) FILTER (WHERE lead_temperature = 'Dormant') as dormant,
+          AVG(no_show_count) FILTER (WHERE no_show_count > 0) as avg_no_show,
+          AVG(reschedule_count) FILTER (WHERE reschedule_count > 0) as avg_reschedule,
+          COUNT(*) FILTER (WHERE appointment_conversion_flag = true) as converted_leads,
+          COUNT(*) as total_leads
+        FROM leads WHERE tenant_id = $1 AND status NOT IN ('Closed Won', 'Closed Lost', 'Unqualified')`,
+        [tid]
+      )).rows;
+
+      const [episodeStats] = (await pool.query(
+        `SELECT 
+          COUNT(*) as total_episodes,
+          SUM(expected_revenue_amount) FILTER (WHERE status NOT IN ('Completed', 'Discontinued')) as revenue_forecast,
+          AVG(revenue_probability) FILTER (WHERE revenue_probability IS NOT NULL) as avg_probability,
+          COUNT(*) FILTER (WHERE status = 'Consultation Done') as consultation_done,
+          COUNT(*) FILTER (WHERE status IN ('Surgery Scheduled', 'Surgery Done')) as surgery_count,
+          COUNT(*) FILTER (WHERE insurance_applicable = true) as insurance_cases,
+          COUNT(*) FILTER (WHERE insurance_applicable = true AND preauth_status_id IS NOT NULL) as insurance_approved,
+          COUNT(*) FILTER (WHERE status = 'Discontinued') as lost_count
+        FROM episodes WHERE tenant_id = $1`,
+        [tid]
+      )).rows;
+
+      const noShowByDoctor = (await pool.query(
+        `SELECT d.name as doctor_name, COUNT(*) as no_show_count,
+          COUNT(*) FILTER (WHERE a.status = 'No Show')::float / NULLIF(COUNT(*), 0) * 100 as no_show_rate
+        FROM appointments a
+        JOIN doctors d ON a.doctor_id = d.id
+        WHERE a.tenant_id = $1
+        GROUP BY d.id, d.name
+        HAVING COUNT(*) FILTER (WHERE a.status = 'No Show') > 0
+        ORDER BY no_show_rate DESC LIMIT 10`,
+        [tid]
+      )).rows;
+
+      const dropOffByStage = (await pool.query(
+        `SELECT lost_at_stage as stage, COUNT(*) as count,
+          SUM(lost_value) as total_lost_value
+        FROM episodes
+        WHERE tenant_id = $1 AND status = 'Discontinued' AND lost_at_stage IS NOT NULL
+        GROUP BY lost_at_stage ORDER BY count DESC`,
+        [tid]
+      )).rows;
+
+      res.json({
+        temperatureBreakdown: tempStats,
+        episodeStats,
+        noShowByDoctor,
+        dropOffByStage,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 

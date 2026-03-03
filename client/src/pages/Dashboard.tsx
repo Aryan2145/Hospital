@@ -11,7 +11,8 @@ import {
   Users, CalendarCheck, Target,
   ArrowUpRight, ArrowDownRight, Activity, Stethoscope, UserCheck,
   IndianRupee, BarChart3, PieChart as PieChartIcon,
-  AlertTriangle, Phone, Clock, CheckCircle2, Flame, Snowflake, ChevronRight
+  AlertTriangle, Phone, Clock, CheckCircle2, Flame, Snowflake, ChevronRight,
+  Brain, Thermometer, TrendingDown, Ban, ShieldCheck
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
@@ -159,6 +160,15 @@ export default function Dashboard() {
     },
   });
 
+  const { data: intelligenceStats } = useQuery({
+    queryKey: ['/api/intelligence/stats'],
+    queryFn: async () => {
+      const res = await fetch('/api/intelligence/stats', { credentials: 'include' });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
   if (isLoading) return <LoadingSpinner />;
 
   const totalLeads = leads?.length || 0;
@@ -297,6 +307,10 @@ export default function Dashboard() {
           )}
 
           {/* Campaign Analytics Section */}
+          {intelligenceStats && (
+            <IntelligenceOverview stats={intelligenceStats} navigate={navigate} />
+          )}
+
           <Tabs value={campaignTab} onValueChange={setCampaignTab}>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-lg font-semibold text-foreground">Campaign Analytics</h3>
@@ -730,6 +744,203 @@ function CampaignTable({ campaigns, color }: { campaigns: typeof campaignData.fa
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function IntelligenceOverview({ stats, navigate }: { stats: any; navigate: (path: string) => void }) {
+  const temp = stats.temperatureBreakdown || {};
+  const ep = stats.episodeStats || {};
+  const noShowDoctors = stats.noShowByDoctor || [];
+  const dropOff = stats.dropOffByStage || [];
+
+  const totalActive = Number(temp.total_leads) || 0;
+  const convertedLeads = Number(temp.converted_leads) || 0;
+  const consultationConvRate = totalActive > 0 ? ((convertedLeads / totalActive) * 100).toFixed(1) : "0";
+
+  const totalEpisodes = Number(ep.total_episodes) || 0;
+  const surgeryCount = Number(ep.surgery_count) || 0;
+  const consultToSurgeryRate = totalEpisodes > 0 ? ((surgeryCount / totalEpisodes) * 100).toFixed(1) : "0";
+
+  const insuranceCases = Number(ep.insurance_cases) || 0;
+  const insuranceApproved = Number(ep.insurance_approved) || 0;
+  const insuranceApprovalRate = insuranceCases > 0 ? ((insuranceApproved / insuranceCases) * 100).toFixed(1) : "0";
+
+  const revenueForecast = Number(ep.revenue_forecast) || 0;
+  const avgProbability = Number(ep.avg_probability) || 0;
+  const lostCount = Number(ep.lost_count) || 0;
+
+  const temperatureData = [
+    { name: "Very Hot", count: Number(temp.very_hot) || 0, color: "#dc2626" },
+    { name: "Hot", count: Number(temp.hot) || 0, color: "#ea580c" },
+    { name: "Warm++", count: Number(temp.warm_plus_plus) || 0, color: "#f97316" },
+    { name: "Warm+", count: Number(temp.warm_plus) || 0, color: "#fb923c" },
+    { name: "Warm", count: Number(temp.warm) || 0, color: "#fbbf24" },
+    { name: "Cold", count: Number(temp.cold) || 0, color: "#94a3b8" },
+    { name: "Dormant", count: Number(temp.dormant) || 0, color: "#475569" },
+  ];
+
+  const totalTempLeads = temperatureData.reduce((s, d) => s + d.count, 0);
+
+  const dropOffColors: Record<string, string> = {
+    "Consultation Done": "#3b82f6",
+    "Treatment Planning": "#8b5cf6",
+    "Estimate Shared": "#f97316",
+    "Surgery Scheduled": "#ef4444",
+    "Insurance Applicable": "#06b6d4",
+    "In Treatment": "#10b981",
+  };
+
+  return (
+    <div className="space-y-4" data-testid="section-intelligence-overview">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+          <Brain className="h-5 w-5 text-primary" />
+          Intelligence Overview
+        </h3>
+        <Button variant="outline" size="sm" onClick={() => navigate("/intelligence-config")} data-testid="button-intelligence-config">
+          Configure
+        </Button>
+      </div>
+
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+        <Card data-testid="card-intel-lead-conversion">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Lead→Consultation</span>
+              <Target className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="text-xl font-bold text-foreground mt-1">{consultationConvRate}%</div>
+            <p className="text-xs text-muted-foreground mt-1">{convertedLeads} of {totalActive} leads</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-intel-surgery-rate">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Consultation→Surgery</span>
+              <Stethoscope className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="text-xl font-bold text-foreground mt-1">{consultToSurgeryRate}%</div>
+            <p className="text-xs text-muted-foreground mt-1">{surgeryCount} of {totalEpisodes} episodes</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-intel-insurance">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Insurance Approval</span>
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="text-xl font-bold text-foreground mt-1">{insuranceApprovalRate}%</div>
+            <p className="text-xs text-muted-foreground mt-1">{insuranceApproved} of {insuranceCases} cases</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-intel-revenue-forecast">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Revenue Forecast</span>
+              <IndianRupee className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="text-xl font-bold text-foreground mt-1">Rs.{formatINR(revenueForecast)}</div>
+            <p className="text-xs text-muted-foreground mt-1">Avg probability {avgProbability.toFixed(0)}%</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-intel-drop-off">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Drop-Off Rate</span>
+              <TrendingDown className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="text-xl font-bold text-foreground mt-1">{lostCount}</div>
+            <p className="text-xs text-muted-foreground mt-1">Episodes discontinued</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card data-testid="card-temperature-breakdown">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Thermometer className="h-4 w-4 text-muted-foreground" />
+              Lead Temperature
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {temperatureData.map((t) => {
+                const pct = totalTempLeads > 0 ? (t.count / totalTempLeads) * 100 : 0;
+                return (
+                  <div key={t.name} className="flex items-center gap-2" data-testid={`temp-bar-${t.name.toLowerCase().replace(/[+ ]/g, "")}`}>
+                    <div className="w-16 text-xs text-muted-foreground shrink-0 text-right">{t.name}</div>
+                    <div className="flex-1 h-5 bg-muted/30 rounded overflow-hidden relative">
+                      <div
+                        className="h-full rounded transition-all duration-500"
+                        style={{ width: `${Math.max(pct, 1)}%`, backgroundColor: t.color }}
+                      />
+                    </div>
+                    <span className="text-xs font-medium w-8 text-right">{t.count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-noshow-doctors">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Ban className="h-4 w-4 text-muted-foreground" />
+              No-Show Rate by Doctor
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {noShowDoctors.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">No no-show data yet</p>
+            ) : (
+              <div className="space-y-2">
+                {noShowDoctors.slice(0, 5).map((doc: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between gap-2 p-2 rounded bg-muted/30" data-testid={`noshow-doctor-${i}`}>
+                    <span className="text-sm font-medium truncate flex-1">{doc.doctor_name}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant="secondary" className="text-xs">{doc.no_show_count} no-shows</Badge>
+                      <Badge variant={Number(doc.no_show_rate) > 15 ? "destructive" : "outline"} className="text-xs">
+                        {Number(doc.no_show_rate).toFixed(1)}%
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-drop-off-stages">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <TrendingDown className="h-4 w-4 text-muted-foreground" />
+              Drop-Off by Stage
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {dropOff.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">No drop-off data yet</p>
+            ) : (
+              <div className="space-y-2">
+                {dropOff.slice(0, 5).map((stage: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between gap-2 p-2 rounded bg-muted/30" data-testid={`dropoff-stage-${i}`}>
+                    <span className="text-sm font-medium truncate flex-1">{stage.stage}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant="secondary" className="text-xs">{stage.count} lost</Badge>
+                      {stage.total_lost_value > 0 && (
+                        <Badge variant="outline" className="text-xs">Rs.{formatINR(Number(stage.total_lost_value))}</Badge>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }
 
