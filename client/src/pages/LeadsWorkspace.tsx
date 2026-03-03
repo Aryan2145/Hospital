@@ -85,9 +85,9 @@ export default function LeadsWorkspace() {
   const filteredLeads = useMemo(() => {
     return (leads || []).filter((lead: any) => {
       if (quickFilter === "my-leads" && crmUser && lead.assignedCrmUserId !== crmUser.id) return false;
-      if (quickFilter === "hot" && !["Hot", "Very Hot"].includes(lead.leadTemperature || "")) return false;
-      if (quickFilter === "dormant" && lead.leadTemperature !== "Dormant") return false;
-      if (quickFilter === "overdue" && (!lead.nextActionDate || new Date(lead.nextActionDate) >= new Date())) return false;
+      if (quickFilter === "hot" && !["Blazing", "Scorching", "Very Hot", "Hot"].includes(lead.leadTemperature || "")) return false;
+      if (quickFilter === "dormant" && !["Cold", "Freezing", "Icy"].includes(lead.leadTemperature || "")) return false;
+      if (quickFilter === "overdue" && lead.slaBreached !== true) return false;
       if (quickFilter === "telecalling" && lead.ownerTeam !== "Telecalling") return false;
       if (quickFilter === "front-office" && lead.ownerTeam !== "Front Office") return false;
       if (quickFilter === "doctor" && lead.ownerTeam !== "Doctor") return false;

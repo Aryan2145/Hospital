@@ -16,6 +16,7 @@ import { format, formatDistanceToNow, isPast } from "date-fns";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { JourneySnapshot, TreatmentJourneyTimeline, UnifiedJourneyTimeline } from "@/components/leads/JourneyView";
 import {
   ArrowLeft,
   Phone,
@@ -164,9 +165,10 @@ export default function LeadDetailPage() {
       {lead.handoverStatus === "Pending" && <HandoverBanner lead={lead} />}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden lg:border-r border-border">
+          <JourneySnapshot leadId={lead.id} />
           <DemographicsSection lead={lead} />
-          <EpisodesSection lead={lead} />
-          <ActivityTimeline leadId={lead.id} />
+          <TreatmentJourneyTimeline leadId={lead.id} />
+          <UnifiedJourneyTimeline leadId={lead.id} />
         </div>
         <div className="w-full lg:w-80 flex flex-col overflow-y-auto bg-muted/20 border-t lg:border-t-0">
           <NextActionPanel lead={lead} />

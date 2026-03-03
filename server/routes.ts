@@ -1099,12 +1099,6 @@ export async function registerRoutes(
     }
   });
 
-  app.get(api.leads.get.path, isAuthenticated, async (req, res) => {
-    const lead = await storage.getLead(Number(req.params.id));
-    if (!lead) return res.status(404).json({ message: "Lead not found" });
-    res.json(lead);
-  });
-
   app.get("/api/leads/check-duplicate", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId(req);
@@ -1116,11 +1110,13 @@ export async function registerRoutes(
       const closedStatuses = ["Closed Won", "Closed Lost", "Unqualified"];
       const result = await pool.query(
         `SELECT l.id, l.name, l.status, l.phone_e164, l.created_at,
-          cu.employee_name as assigned_to_name
+          cu.name as assigned_to_name
         FROM leads l
         LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
         WHERE l.tenant_id = $1 AND l.mobile_normalized = $2
+          AND (l.merge_status IS NULL OR l.merge_status = 'ACTIVE')
           AND l.status NOT IN (${closedStatuses.map((_, i) => `$${i + 3}`).join(",")})
+          AND l.status NOT LIKE '%Closed%'
         ORDER BY l.created_at DESC LIMIT 1`,
         [tid, normalized, ...closedStatuses]
       );
@@ -1144,6 +1140,12 @@ export async function registerRoutes(
     }
   });
 
+  app.get(api.leads.get.path, isAuthenticated, async (req, res) => {
+    const lead = await storage.getLead(Number(req.params.id));
+    if (!lead) return res.status(404).json({ message: "Lead not found" });
+    res.json(lead);
+  });
+
   app.post(api.leads.create.path, isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
@@ -1154,8 +1156,14 @@ export async function registerRoutes(
       const closedStatuses = ["Closed Won", "Closed Lost", "Unqualified"];
       if (input.phoneE164) {
         const dupResult = await pool.query(
-          `SELECT id, name, status FROM leads WHERE tenant_id = $1 AND mobile_normalized = $2
-           AND status NOT IN (${closedStatuses.map((_, i) => `$${i + 3}`).join(",")}) LIMIT 1`,
+          `SELECT l.id, l.name, l.status, l.created_at, cu.name as assigned_to_name
+           FROM leads l
+           LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
+           WHERE l.tenant_id = $1 AND l.mobile_normalized = $2
+           AND (l.merge_status IS NULL OR l.merge_status = 'ACTIVE')
+           AND l.status NOT IN (${closedStatuses.map((_, i) => `$${i + 3}`).join(",")})
+           AND l.status NOT LIKE '%Closed%'
+           LIMIT 1`,
           [tid, (input as any).mobileNormalized, ...closedStatuses]
         );
         if (dupResult.rows.length > 0) {
@@ -1163,6 +1171,13 @@ export async function registerRoutes(
           return res.status(409).json({
             message: `A lead with this mobile number already exists: ${dup.name} (${dup.status})`,
             existingLeadId: dup.id,
+            existingLead: {
+              id: dup.id,
+              name: dup.name,
+              status: dup.status,
+              assignedTo: dup.assigned_to_name || "Unassigned",
+              createdAt: dup.created_at,
+            },
           });
         }
       }
@@ -1183,6 +1198,34 @@ export async function registerRoutes(
       const leadId = Number(req.params.id);
       if (input.phoneE164) {
         (input as any).mobileNormalized = normalizePhone(input.phoneE164);
+        const tid = await getDefaultTenantId(req);
+        const closedStatuses = ["Closed Won", "Closed Lost", "Unqualified"];
+        const dupResult = await pool.query(
+          `SELECT l.id, l.name, l.status, l.created_at, cu.name as assigned_to_name
+           FROM leads l
+           LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
+           WHERE l.tenant_id = $1 AND l.mobile_normalized = $2
+           AND l.id != $3
+           AND (l.merge_status IS NULL OR l.merge_status = 'ACTIVE')
+           AND l.status NOT IN (${closedStatuses.map((_, i) => `$${i + 4}`).join(",")})
+           AND l.status NOT LIKE '%Closed%'
+           LIMIT 1`,
+          [tid, (input as any).mobileNormalized, leadId, ...closedStatuses]
+        );
+        if (dupResult.rows.length > 0) {
+          const dup = dupResult.rows[0];
+          return res.status(409).json({
+            message: `A lead with this mobile number already exists: ${dup.name} (${dup.status})`,
+            existingLeadId: dup.id,
+            existingLead: {
+              id: dup.id,
+              name: dup.name,
+              status: dup.status,
+              assignedTo: dup.assigned_to_name || "Unassigned",
+              createdAt: dup.created_at,
+            },
+          });
+        }
       }
 
       let lead = await storage.updateLead(leadId, input);
@@ -1594,6 +1637,219 @@ export async function registerRoutes(
     "Closed Lost": 0,
     "Unqualified": 0,
   };
+
+  // =============================================
+  // LEAD JOURNEY AGGREGATION ENDPOINT
+  // =============================================
+  app.get("/api/leads/:id/journey", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const leadId = Number(req.params.id);
+      const limit = Math.min(Number(req.query.limit) || 100, 500);
+      const offset = Number(req.query.offset) || 0;
+
+      const lead = await storage.getLead(leadId);
+      if (!lead || lead.tenantId !== tid) {
+        return res.status(404).json({ message: "Lead not found" });
+      }
+
+      const [episodesResult, activitiesResult, appointmentsResult, episodeAuditResult, tasksResult] = await Promise.all([
+        pool.query(`
+          SELECT e.id, e.episode_name, e.status, e.start_date, e.end_date, e.created_at, e.updated_at,
+            e.estimated_cost, e.final_estimated_amount, e.revenue_probability, e.expected_revenue_amount,
+            e.insurance_applicable, e.lost_at_stage, e.lost_notes, e.episode_type, e.priority,
+            d.name as doctor_name, td.name as department_name
+          FROM episodes e
+          LEFT JOIN crm_users d ON e.doctor_id = d.id
+          LEFT JOIN treatment_departments td ON e.treatment_department_id = td.id
+          WHERE e.lead_id = $1 AND e.tenant_id = $2
+          ORDER BY e.created_at DESC
+        `, [leadId, tid]),
+
+        pool.query(`
+          SELECT a.id, a.type, a.description, a.created_at,
+            a.old_status, a.new_status, a.outcome, a.metadata,
+            a.call_direction, a.call_duration, a.call_type,
+            COALESCE(cu.name, a.created_by) as created_by_name
+          FROM activities a
+          LEFT JOIN crm_users cu ON a.created_by = cu.id::text AND cu.tenant_id = $2
+          WHERE a.lead_id = $1 AND a.tenant_id = $2
+          ORDER BY a.created_at DESC
+          LIMIT $3 OFFSET $4
+        `, [leadId, tid, limit, offset]),
+
+        pool.query(`
+          SELECT ap.id, ap.appointment_date, ap.appointment_time, ap.status, ap.check_in_time,
+            ap.notes, ap.created_at, ap.appointment_type,
+            d.name as doctor_name, b.name as branch_name
+          FROM appointments ap
+          LEFT JOIN crm_users d ON ap.doctor_id = d.id
+          LEFT JOIN branches b ON ap.branch_id = b.id
+          WHERE ap.lead_id = $1 AND ap.tenant_id = $2
+          ORDER BY ap.created_at DESC
+          LIMIT $3
+        `, [leadId, tid, limit]),
+
+        pool.query(`
+          SELECT al.id, al.entity_type, al.entity_id, al.action, al.old_values, al.new_values,
+            al.changed_fields, al.performed_by, al.created_at
+          FROM audit_logs al
+          WHERE al.entity_type = 'episode' AND al.tenant_id = $1
+            AND al.entity_id IN (SELECT id FROM episodes WHERE lead_id = $2 AND tenant_id = $1)
+          ORDER BY al.created_at DESC
+          LIMIT $3
+        `, [tid, leadId, limit]),
+
+        pool.query(`
+          SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date,
+            t.completed_at, t.created_at, t.notes,
+            cu.name as assigned_to_name,
+            tc.name as category_name
+          FROM tasks t
+          LEFT JOIN crm_users cu ON t.assigned_crm_user_id = cu.id
+          LEFT JOIN task_categories tc ON t.task_category_id = tc.id
+          WHERE t.lead_id = $1 AND t.tenant_id = $2
+          ORDER BY t.created_at DESC
+          LIMIT $3
+        `, [leadId, tid, limit]),
+      ]);
+
+      const episodes = episodesResult.rows;
+      const latestEpisode = episodes[0] || null;
+
+      const unifiedEvents: any[] = [];
+
+      for (const a of activitiesResult.rows) {
+        unifiedEvents.push({
+          id: `act-${a.id}`,
+          source: "Lead",
+          type: a.type,
+          description: a.description,
+          timestamp: a.created_at,
+          performedBy: a.created_by_name,
+          oldStatus: a.old_status,
+          newStatus: a.new_status,
+          outcome: a.outcome,
+          metadata: a.metadata,
+          callDirection: a.call_direction,
+          callDuration: a.call_duration,
+          callType: a.call_type,
+        });
+      }
+
+      for (const ap of appointmentsResult.rows) {
+        unifiedEvents.push({
+          id: `apt-${ap.id}`,
+          source: "Appointment",
+          type: "appointment",
+          description: `${ap.appointment_type || "Appointment"} with ${ap.doctor_name || "doctor"} at ${ap.branch_name || "clinic"}`,
+          timestamp: ap.created_at,
+          appointmentDate: ap.appointment_date,
+          appointmentTime: ap.appointment_time,
+          appointmentStatus: ap.status,
+          checkInTime: ap.check_in_time,
+          doctorName: ap.doctor_name,
+          branchName: ap.branch_name,
+          notes: ap.notes,
+        });
+      }
+
+      for (const al of episodeAuditResult.rows) {
+        const ep = episodes.find((e: any) => e.id === al.entity_id);
+        const oldVals = typeof al.old_values === "string" ? JSON.parse(al.old_values) : al.old_values;
+        const newVals = typeof al.new_values === "string" ? JSON.parse(al.new_values) : al.new_values;
+        unifiedEvents.push({
+          id: `epl-${al.id}`,
+          source: "Episode",
+          type: al.action,
+          description: al.action === "status_change"
+            ? `${ep?.episode_name || "Episode"}: ${oldVals?.status || "?"} → ${newVals?.status || "?"}`
+            : `${ep?.episode_name || "Episode"}: ${al.action.replace(/_/g, " ")}`,
+          timestamp: al.created_at,
+          performedBy: al.performed_by,
+          episodeId: al.entity_id,
+          episodeName: ep?.episode_name,
+          oldStatus: oldVals?.status,
+          newStatus: newVals?.status,
+          action: al.action,
+          changedFields: al.changed_fields,
+        });
+      }
+
+      for (const t of tasksResult.rows) {
+        const isPostCare = (t.category_name || "").toLowerCase().includes("post care")
+          || (t.title || "").toLowerCase().includes("physio")
+          || (t.title || "").toLowerCase().includes("dressing")
+          || (t.title || "").toLowerCase().includes("home visit")
+          || (t.title || "").toLowerCase().includes("stitch removal");
+        unifiedEvents.push({
+          id: `tsk-${t.id}`,
+          source: isPostCare ? "Post Care" : "Task",
+          type: "task",
+          description: t.title,
+          timestamp: t.created_at,
+          taskStatus: t.status,
+          taskPriority: t.priority,
+          dueDate: t.due_date,
+          completedAt: t.completed_at,
+          assignedToName: t.assigned_to_name,
+          categoryName: t.category_name,
+          notes: t.notes,
+        });
+      }
+
+      unifiedEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      let quickStatus = "Active";
+      if (latestEpisode) {
+        if (latestEpisode.status === "Completed") quickStatus = "Completed";
+        else if (latestEpisode.status === "Discontinued") quickStatus = "Discontinued";
+      } else {
+        if (lead.status === "Closed Won") quickStatus = "Completed";
+        else if (lead.status === "Closed Lost") quickStatus = "Discontinued";
+      }
+
+      res.json({
+        leadSummary: {
+          id: lead.id,
+          name: lead.name,
+          status: lead.status,
+          leadTemperature: lead.leadTemperature,
+          ownerTeam: lead.ownerTeam,
+          quickStatus,
+          episodeCount: episodes.length,
+          latestEpisodeStage: latestEpisode?.status || null,
+          latestEpisodeRevenueProbability: latestEpisode?.revenue_probability || null,
+          latestEpisodeExpectedRevenue: latestEpisode?.expected_revenue_amount || null,
+        },
+        episodes: episodes.map((e: any) => ({
+          id: e.id,
+          episodeName: e.episode_name,
+          status: e.status,
+          startDate: e.start_date,
+          endDate: e.end_date,
+          createdAt: e.created_at,
+          updatedAt: e.updated_at,
+          estimatedCost: e.estimated_cost,
+          finalEstimatedAmount: e.final_estimated_amount,
+          revenueProbability: e.revenue_probability,
+          expectedRevenueAmount: e.expected_revenue_amount,
+          insuranceApplicable: e.insurance_applicable,
+          lostAtStage: e.lost_at_stage,
+          lostNotes: e.lost_notes,
+          episodeType: e.episode_type,
+          priority: e.priority,
+          doctorName: e.doctor_name,
+          departmentName: e.department_name,
+        })),
+        unifiedTimeline: unifiedEvents.slice(0, limit),
+        totalEvents: unifiedEvents.length,
+        hasMore: unifiedEvents.length > limit,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
 
   app.get("/api/leads/duplicates", isAuthenticated, async (req: any, res) => {
     try {

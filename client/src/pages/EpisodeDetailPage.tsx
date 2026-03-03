@@ -127,7 +127,7 @@ export default function EpisodeDetailPage() {
   };
 
   const handleConfirmSave = () => {
-    if (!editReason.trim()) return;
+    if (editReason.trim().length < 10) return;
     clinicalNotesMutation.mutate({
       diagnosis: editDiagnosis,
       treatmentPlan: editTreatmentPlan,
@@ -589,12 +589,16 @@ export default function EpisodeDetailPage() {
           </DialogHeader>
           <div className="space-y-2">
             <Label className="text-sm">Reason (required)</Label>
-            <Input
+            <Textarea
               value={editReason}
               onChange={(e) => setEditReason(e.target.value)}
-              placeholder="Enter reason for editing clinical notes..."
+              placeholder="Enter reason for editing clinical notes (min 10 characters)..."
+              className="text-xs min-h-[60px] resize-none"
               data-testid="input-edit-reason"
             />
+            {editReason.trim().length > 0 && editReason.trim().length < 10 && (
+              <p className="text-xs text-destructive" data-testid="text-reason-error">Reason must be at least 10 characters</p>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -607,7 +611,7 @@ export default function EpisodeDetailPage() {
             </Button>
             <Button
               onClick={handleConfirmSave}
-              disabled={!editReason.trim() || clinicalNotesMutation.isPending}
+              disabled={editReason.trim().length < 10 || clinicalNotesMutation.isPending}
               data-testid="button-confirm-save"
             >
               {clinicalNotesMutation.isPending ? "Saving..." : "Confirm Save"}
@@ -722,12 +726,16 @@ function NegotiationDiscountCard({ episode }: { episode: any }) {
       toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const isRevoked = episode.discountStatus === "Revoked";
+
   const statusBadgeClass =
     isApproved
       ? "bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300"
       : isPending_
         ? "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300"
-        : "bg-muted text-muted-foreground";
+        : isRevoked
+          ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300"
+          : "bg-muted text-muted-foreground";
 
   const fieldsReadOnly = isApproved;
 
