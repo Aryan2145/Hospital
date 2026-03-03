@@ -1,125 +1,43 @@
 # myProSys Hospital CRM Platform
 
 ## Overview
-myProSys Hospital CRM is a multi-tenant platform designed to manage the patient (Lead) and treatment journey (Episode) lifecycle for hospitals. It functions as a white-labeled solution, allowing each hospital to customize branding elements like logos, favicons, display names, and color schemes. The platform includes features such as SLA tracking, telephony integration support, role-based access control, and a master data approval workflow. Its core purpose is to streamline the Lead→Episode→Conversion process, enhancing efficiency in patient management and treatment opportunities.
+myProSys Hospital CRM is a multi-tenant, white-labeled platform designed to streamline the patient (Lead) and treatment journey (Episode) lifecycle for hospitals. It manages the entire Lead→Episode→Conversion process, offering features like SLA tracking, telephony integration, role-based access control, and a master data approval workflow. The platform aims to enhance efficiency in patient management and treatment opportunities, with each hospital able to customize branding elements.
 
 ## User Preferences
 I prefer iterative development with a focus on clear, modular code. I appreciate detailed explanations for complex architectural decisions. Before making any major structural changes or adding new external dependencies, please ask for my approval. I expect the agent to prioritize security and data privacy, especially concerning patient health information (PHI). Do not make changes to files related to deployment configurations or sensitive API keys without explicit instruction.
 
 ## System Architecture
 The platform is built with a modern web stack:
-- **Frontend:** React with Vite, styled using Tailwind CSS and shadcn/ui for a clean, medical-professional UI/UX. The design emphasizes a light background with Viroc Blue (#0f4c81) as primary and Orange (#ff8c00) as accent colors.
+- **Frontend:** React with Vite, styled using Tailwind CSS and shadcn/ui. The UI/UX emphasizes a clean, medical-professional aesthetic with a light background, Viroc Blue (#0f4c81) as primary, and Orange (#ff8c00) as accent colors.
 - **Backend:** Express.js and Node.js.
 - **Database:** PostgreSQL, accessed via Drizzle ORM.
 - **Authentication:** Replit Auth (OpenID Connect).
-- **Multi-Tenancy:** Implemented with `tenantId` in all core tables to ensure strict data isolation per hospital.
+- **Multi-Tenancy:** Implemented with `tenantId` in all core tables for strict data isolation.
 
 **Key Features & Design Patterns:**
-- **Lead and Episode Management:** The system distinguishes between a 'Lead' (patient, managing pre-consultation funnel statuses) and an 'Episode' (treatment opportunity, managing post-consultation funnel statuses).
-- **Master Data Management:** Over 50 master data tables across 9 categories, featuring an approval workflow for new entries and bulk import/export capabilities.
-- **Role-Based Access Control (RBAC):** A 4-tier role hierarchy (SYS_ADMIN, ADMIN, MANAGER, AGENT/COUNSELLOR) with granular access scoping (All/Branch/Department/Self) and PHI access levels (Full/Masked/None).
+- **Lead and Episode Management:** Differentiates 'Lead' (pre-consultation funnel) from 'Episode' (post-consultation treatment opportunity).
+- **Master Data Management:** Over 50 master data tables with an approval workflow for new entries and bulk import/export.
+- **Role-Based Access Control (RBAC):** 4-tier hierarchy (SYS_ADMIN, ADMIN, MANAGER, AGENT/COUNSELLOR) with granular access scoping and PHI access levels (Full/Masked/None).
 - **Kanban Workspace:** Drag-and-drop interface for managing lead statuses.
-- **Responsive Design:** Fully responsive across desktop, tablet, and mobile, with adaptive layouts and navigation.
-- **API Structure:** Follows a RESTful approach, with generic CRUD endpoints for master data and specific endpoints for core entities like Leads, Episodes, Patients, and CRM Users.
-- **Branding:** Dynamic per-tenant branding configuration for logo, favicon, display name, and color scheme.
-
-### System Admin Panel (Feb 2026)
-- **Separate admin panel** at `/admin/*` routes, completely invisible to CRM users
-- **Dark sidebar** (slate-900) with orange accent, distinct from CRM's blue theme
-- **AdminLayout** component with its own navigation, "Back to CRM" link
-- **Only SYS_ADMIN** users can access; a discreet "Admin Panel" button appears in CRM sidebar footer
-- **Pages:** Platform Overview (dashboard stats), Hospital Management, Subscription Plans, Subscriptions, Payment Records
-- **Subscription & Billing:** Manual payment tracking (MVP), Razorpay/PayU integration planned for later
-  - `subscription_plans` table: Plan name, code, billing cycle, price, feature limits (users, leads, branches)
-  - `tenant_subscriptions` table: Tenant-plan assignment with start/end dates, grace period, auto-renewal, suspension
-  - `subscription_payments` table: Manual payment recording with method, transaction ref, invoice number, period
-- **Tenant Suspension:** When tenant is suspended (payment overdue), CRM users see "Service Temporarily Suspended" screen. SYS_ADMIN can still access admin panel.
-- **Tenant fields added:** `subscriptionStatus`, `onboardedAt`, `contactPerson`, `contactEmail`, `contactPhone`
-
-### Meta Ads Integration (Feb 2026)
-- **Real Meta Graph API v21.0** integration in `server/services/metaAds.ts`
-- Uses environment secrets: `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_APP_ID`
-- **Endpoints:**
-  - `POST /api/connectors/:id/test` — Tests Meta connection and fetches 30-day insights
-  - `POST /api/connectors/:id/sync` — Syncs latest 30-day metrics from Meta API
-  - `GET /api/connectors/meta/insights?datePreset=last_30d` — Account-level insights
-  - `GET /api/connectors/meta/campaigns?datePreset=last_30d` — Per-campaign breakdowns
-  - `GET /api/connectors/meta/daily-insights?days=7` — Daily time-series data
-- **Metrics pulled:** impressions, clicks, spend, CTR, CPC, reach, conversions (lead actions)
-- Metrics cached in `platform_connectors.metrics_cache` for connector card display
-
-### Callyzer Integration (Feb 2026)
-- **Webhook endpoint:** `POST /api/webhook/callyzer/:connectorId` — receives call data from Callyzer
-- **Auth:** Supports secret via query param (`?secret=`), headers (`x-callyzer-secret`, `x-webhook-secret`, `x-api-key`, `Authorization: Bearer`), or API key
-- **Payload parsing:** Handles Callyzer's nested format: `[{ emp_name, emp_number, call_logs: [{call1}, {call2}] }]`
-- **`callyzer_employees` table:** Auto-populated from webhook data, stores telecalling staff with:
-  - Employee details (name, number, code, country code, tags)
-  - Call stats (total, incoming, outgoing, missed, duration)
-  - `mappedCrmUserId` — links to CRM user for proper activity attribution
-- **Auto-Lead Creation:** When a call arrives from a number not in the leads table, a new lead is automatically created with:
-  - Name from Callyzer's `client_name` field (or "Caller {number}" if unknown)
-  - Lead Source: "Callyzer" (auto-created if not present in master data)
-  - Tag: "Callyzer"
-  - Status: "Raw Lead Captured"
-  - Assigned to the matched CRM user (if employee is mapped)
-- **Dedup:** Calls are deduplicated by Callyzer's unique call `id` field; duplicate calls skip processing
-- **Endpoints:**
-  - `GET /api/callyzer-employees` — List all Callyzer employees with mapped CRM user info
-  - `PATCH /api/callyzer-employees/:id` — Map to CRM user or toggle active/inactive
-  - `GET /api/callyzer-webhook-logs` — Call logs with filters
-- **UI:** CallyzerReportsPage has 3 tabs: Call Logs, Employee Performance, Telecalling Team
-  - New status badges: "Lead Created" (blue), "Duplicate" (gray)
-  - New summary card: "Leads Created" count
-- **Telecalling Team tab:** View employees auto-detected from Callyzer, map to CRM users, toggle active/inactive
-
-### Per-Tenant SMTP & Password Reset (Feb 2026)
-- **Per-tenant SMTP configuration** stored in `tenant_settings` table (keys: `smtp_host`, `smtp_port`, `smtp_user`, `smtp_pass`, `smtp_from_email`, `smtp_from_name`, `smtp_secure`)
-- **Email Settings page** (`/email-settings`) accessible to ADMIN+ roles (was SYS_ADMIN only)
-- **Forgot Password flow:** User enters mobile → system finds user → looks up tenant SMTP settings → sends branded reset email from tenant's configured SMTP → user clicks link → resets password
-- **Fallback:** If tenant has no SMTP configured, falls back to global `SMTP_*` environment variables
-- **Dynamic branding:** Forgot Password and Reset Password pages show the tenant's name/logo instead of hardcoded values
-- **Email template:** Uses tenant's hospital name in subject, header, and footer
-
-### Check-In & Front Office (Mar 2026)
-- **Check-in integrated into Appointments page** (`/appointments`) — no separate Front Office page
-- **Appointment actions:** Check In, Mark Done, Reschedule, No Show, Cancel
-- **Check-in flow:** Front office clicks "Check In" → auto-creates Patient record from Lead data if not already linked → appointment status becomes "Checked In"
-- **Lead→Patient transition:** Happens automatically on check-in. System creates Patient with UHID (PAT_XXXX format), firstName/lastName from lead name, phone, email
-- **Status cards:** Total, Waiting (Scheduled), Checked In, Done, No Show, Cancelled — 6 summary cards with filter
-- **Endpoints:**
-  - `POST /api/appointments/:id/check-in` — Marks "Checked In", auto-creates patient, sets `checkedInAt`/`checkedInBy`
-  - `GET /api/appointments/checked-in-today?doctorId=X` — Today's checked-in patients for a doctor
-- **Schema additions:** `appointments` table: `checkedInAt`, `checkedInBy`, `checkedInByCrmUserId`
-- **Episode visit tracking:** `episodes` table: `visitType` (New/Follow Up), `parentEpisodeId`, `visitNumber`
-- **Episode creation:** Patient dropdown shows checked-in patients first (marked with ✓), follow-up episodes link to parent episode with auto-incremented visit number
-
-### Episode Intelligence Layer V2 (Mar 2026)
-- **Temperature Engine** (`server/services/temperatureEngine.ts`): 7-level lead temperature tracking (Cold→Warm→Warm+→Warm++→Hot→Very Hot|Dormant), auto-computed on trigger events (appointment booked, consultation done, estimate shared, insurance approved, advance received, no-show, reschedule), logged to `temperature_logs` table
-- **Auto-Handover Engine** (`server/services/handoverEngine.ts`): Stage-based team assignment (Appointment Booked→Front Office, Checked In→Doctor, Estimate Shared→Financial, Insurance→Insurance Desk, Surgery→OT/IP Desk), logged to `handover_logs` table
-- **Revenue Probability** (`server/services/revenueProbability.ts`): Configurable stage→% mapping with DB-stored config (`revenue_probability_config` table), auto-computed on episode status changes
-- **Schema additions:**
-  - `leads` table: `leadTemperature`, `leadAgeingDays`, `firstResponseTimeMinutes`, `appointmentConversionFlag`, `noShowCount`, `rescheduleCount`, `lastActivityAt`, `temperatureLastUpdatedAt`, `primaryOwnerUserId`, `ownerTeam`, `lastHandoverAt`
-  - `episodes` table: ~28 new fields across Financial (estimateShared, negotiationStatus, discount fields, advance, payment), Insurance (insurerId, tpaId, policyTypeId, preauthStatusId, preauthApprovedAmount, rejectionReasonId), Family (familyDiscussionDone, secondOpinionTaken, decisionStatus), Revenue (revenueProbability, expectedRevenueAmount), Drop-off (lostAtStage, lostValue)
-  - New tables: `handover_logs`, `reschedule_history`, `temperature_logs`, `revenue_probability_config`
-  - 5 new insurance master tables: `insurers`, `tpas`, `policyTypes`, `preauthStatuses`, `rejectionReasons` (registered in MASTER_TABLE_REGISTRY under "Insurance" category)
-- **Endpoints:**
-  - `GET /api/handover-logs?entityType=&entityId=` — Handover history
-  - `GET /api/temperature-logs?leadId=` — Temperature change log
-  - `GET /api/reschedule-history?appointmentId=` — Reschedule history
-  - `GET /api/revenue-probability-config` — Stage→probability mapping
-  - `PATCH /api/revenue-probability-config/:id` — Update probability
-  - `GET /api/intelligence/stats` — Dashboard intelligence stats (temperature breakdown, episode stats, no-show by doctor, drop-off by stage)
-- **Frontend:**
-  - `EpisodeDetailPage.tsx`: Tabbed layout (Clinical Status, Financial Status, Insurance Status, Family Status) with revenue probability badge
-  - `LeadDetailPage.tsx`: Temperature badge (color-coded), owner team, ageing days, no-show/reschedule count badges, temperature history timeline
-  - `AppointmentsPage.tsx`: Post check-in "Find or Create Episode" dialog with search/create functionality
-  - `IntelligenceConfigPage.tsx` (`/intelligence-config`): Temperature rules viewer, revenue probability editor, escalation rules
-  - `Dashboard.tsx`: Intelligence Overview section with 5 KPI cards (Lead→Consultation %, Consultation→Surgery %, Insurance Approval %, Revenue Forecast, Drop-Off Rate), temperature breakdown chart, no-show rate by doctor, drop-off by stage
+- **Responsive Design:** Fully responsive across all device types.
+- **API Structure:** RESTful approach with generic CRUD endpoints for master data and specific endpoints for core entities.
+- **Branding:** Dynamic per-tenant branding for logos, favicons, display names, and color schemes.
+- **System Admin Panel:** Separate `/admin/*` routes for SYS_ADMINs with distinct dark theme, managing hospitals, subscription plans, payments, and tenant suspension.
+- **Check-In & Front Office:** Integrated into the Appointments page, allowing check-in, patient record creation from lead data, and tracking appointment statuses.
+- **Episode Intelligence Layer:**
+    - **Temperature Engine:** 7-level lead temperature tracking, auto-computed on trigger events.
+    - **Auto-Handover Engine:** Stage-based team assignment.
+    - **Revenue Probability:** Configurable stage-to-probability mapping for episode revenue forecasting.
+- **Lead List View Redesign:** Enhanced layout with new columns (Name, Stage, Temperature, Owner, Ageing, Next Action, Source) and a quick filter bar.
+- **Duplicate Lead Validation:** Server-side and frontend validation based on normalized mobile numbers, preventing duplicate lead creation.
+- **Episode Clinical Notes with Audit:** Allows editing clinical notes for specific roles with mandatory reason and audit logging.
+- **Negotiation Discount Approval Workflow:** Manages discount submission, approval, and revocation for episodes, with audit logging and role-based access.
+- **Per-Tenant SMTP & Password Reset:** Configurable SMTP settings per tenant for sending branded emails, including password resets, with fallback to global settings.
 
 ## External Dependencies
 - **Replit Auth:** For user authentication leveraging OpenID Connect.
-- **Google Sheets API:** Integration for bulk lead import.
-- **WhatsApp Business API:** For automated communication such as appointment confirmations.
-- **Meta Graph API v21.0:** Real-time Facebook & Instagram ad campaign insights (impressions, clicks, spend, CTR, CPC, conversions).
-- **Callyzer:** Webhook-based call tracking integration for real-time call log capture.
-- **SMTP Services:** For sending transactional emails like password resets and notifications.
+- **Google Sheets API:** For bulk lead import.
+- **WhatsApp Business API:** For automated communication.
+- **Meta Graph API v21.0:** For Facebook & Instagram ad campaign insights.
+- **Callyzer:** Webhook-based integration for real-time call log capture and auto-lead creation.
+- **SMTP Services:** For sending transactional emails and notifications.

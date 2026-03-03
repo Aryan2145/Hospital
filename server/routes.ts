@@ -1105,10 +1105,67 @@ export async function registerRoutes(
     res.json(lead);
   });
 
+  app.get("/api/leads/check-duplicate", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const mobile = req.query.mobile as string;
+      if (!mobile || mobile.trim().length < 7) {
+        return res.json({ isDuplicate: false });
+      }
+      const normalized = normalizePhone(mobile);
+      const closedStatuses = ["Closed Won", "Closed Lost", "Unqualified"];
+      const result = await pool.query(
+        `SELECT l.id, l.name, l.status, l.phone_e164, l.created_at,
+          cu.employee_name as assigned_to_name
+        FROM leads l
+        LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
+        WHERE l.tenant_id = $1 AND l.mobile_normalized = $2
+          AND l.status NOT IN (${closedStatuses.map((_, i) => `$${i + 3}`).join(",")})
+        ORDER BY l.created_at DESC LIMIT 1`,
+        [tid, normalized, ...closedStatuses]
+      );
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        return res.json({
+          isDuplicate: true,
+          existingLead: {
+            id: row.id,
+            name: row.name,
+            status: row.status,
+            phone: row.phone_e164,
+            assignedTo: row.assigned_to_name || "Unassigned",
+            createdAt: row.created_at,
+          },
+        });
+      }
+      res.json({ isDuplicate: false });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.post(api.leads.create.path, isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
       const input = api.leads.create.input.parse({ ...req.body, tenantId: tid });
+      if (input.phoneE164) {
+        (input as any).mobileNormalized = normalizePhone(input.phoneE164);
+      }
+      const closedStatuses = ["Closed Won", "Closed Lost", "Unqualified"];
+      if (input.phoneE164) {
+        const dupResult = await pool.query(
+          `SELECT id, name, status FROM leads WHERE tenant_id = $1 AND mobile_normalized = $2
+           AND status NOT IN (${closedStatuses.map((_, i) => `$${i + 3}`).join(",")}) LIMIT 1`,
+          [tid, (input as any).mobileNormalized, ...closedStatuses]
+        );
+        if (dupResult.rows.length > 0) {
+          const dup = dupResult.rows[0];
+          return res.status(409).json({
+            message: `A lead with this mobile number already exists: ${dup.name} (${dup.status})`,
+            existingLeadId: dup.id,
+          });
+        }
+      }
       const lead = await storage.createLead(input);
       res.status(201).json(lead);
     } catch (err) {
@@ -1124,6 +1181,9 @@ export async function registerRoutes(
       const body = coerceDateFields(req.body, ["nextActionDate"]);
       const input = api.leads.update.input.parse(body);
       const leadId = Number(req.params.id);
+      if (input.phoneE164) {
+        (input as any).mobileNormalized = normalizePhone(input.phoneE164);
+      }
 
       let lead = await storage.updateLead(leadId, input);
 
@@ -4280,6 +4340,243 @@ export async function registerRoutes(
       res.json(ep);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // EPISODE CLINICAL NOTES EDIT WITH AUDIT (T008)
+  // =============================================
+
+  app.put("/api/episodes/:id/clinical-notes", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+      const { diagnosis, treatmentPlan, notes, editReason } = req.body;
+
+      if (!editReason || !editReason.trim()) {
+        return res.status(400).json({ message: "Reason for edit is required" });
+      }
+
+      const crmUser = req.session?.crmUser;
+      const allowedRoles = ["SYS_ADMIN", "ADMIN", "MANAGER"];
+      if (!crmUser || !allowedRoles.includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admins, Managers, and System Admins can edit clinical notes" });
+      }
+
+      const oldEpisode = await storage.getEpisode(episodeId, tid);
+      if (!oldEpisode) return res.status(404).json({ message: "Episode not found" });
+
+      const changedFields: string[] = [];
+      const oldValues: Record<string, any> = {};
+      const newValues: Record<string, any> = {};
+      const updates: Record<string, any> = {};
+
+      if (diagnosis !== undefined && diagnosis !== oldEpisode.diagnosis) {
+        changedFields.push("diagnosis");
+        oldValues.diagnosis = oldEpisode.diagnosis;
+        newValues.diagnosis = diagnosis;
+        updates.diagnosis = diagnosis;
+      }
+      if (treatmentPlan !== undefined && treatmentPlan !== oldEpisode.treatmentPlan) {
+        changedFields.push("treatmentPlan");
+        oldValues.treatmentPlan = oldEpisode.treatmentPlan;
+        newValues.treatmentPlan = treatmentPlan;
+        updates.treatmentPlan = treatmentPlan;
+      }
+      if (notes !== undefined && notes !== oldEpisode.notes) {
+        changedFields.push("notes");
+        oldValues.notes = oldEpisode.notes;
+        newValues.notes = notes;
+        updates.notes = notes;
+      }
+
+      if (changedFields.length === 0) {
+        return res.json(oldEpisode);
+      }
+
+      const ep = await storage.updateEpisode(episodeId, tid, updates);
+
+      const userName = crmUser?.employeeName || req.user?.firstName
+        ? `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim()
+        : req.user?.email || "System";
+      await storage.createAuditLog({
+        tenantId: tid,
+        entityType: "episode",
+        entityId: episodeId,
+        action: "clinical_edit",
+        oldValues,
+        newValues: { ...newValues, editReason: editReason.trim() },
+        changedFields: changedFields.join(","),
+        performedBy: userName,
+        performedByCrmUserId: crmUser?.id,
+      });
+
+      res.json(ep);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // DISCOUNT APPROVAL WORKFLOW (T011)
+  // =============================================
+
+  app.post("/api/episodes/:id/discount", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+      const { originalQuotedAmount, discountType, discountPercent, discountAmount, discountNotes } = req.body;
+
+      if (!discountNotes || !discountNotes.trim()) {
+        return res.status(400).json({ message: "Discount notes/reason are required" });
+      }
+
+      const oldEpisode = await storage.getEpisode(episodeId, tid);
+      if (!oldEpisode) return res.status(404).json({ message: "Episode not found" });
+
+      if (oldEpisode.discountStatus === "Approved") {
+        return res.status(400).json({ message: "Cannot modify an approved discount. Revoke approval first." });
+      }
+
+      const baseAmount = originalQuotedAmount || oldEpisode.originalQuotedAmount || oldEpisode.estimatedCost || 0;
+
+      let calcPercent = discountPercent || 0;
+      let calcAmount = discountAmount || 0;
+      let finalAmount = baseAmount;
+
+      if (discountType === "Percentage") {
+        calcPercent = Math.min(100, Math.max(0, discountPercent || 0));
+        calcAmount = Math.round(baseAmount * calcPercent / 100);
+        finalAmount = baseAmount - calcAmount;
+      } else if (discountType === "Flat") {
+        calcAmount = Math.min(baseAmount, Math.max(0, discountAmount || 0));
+        calcPercent = baseAmount > 0 ? Math.round((calcAmount / baseAmount) * 100) : 0;
+        finalAmount = baseAmount - calcAmount;
+      }
+
+      const updates: Record<string, any> = {
+        originalQuotedAmount: baseAmount,
+        discountApplied: true,
+        discountType,
+        discountPercent: calcPercent,
+        discountAmount: calcAmount,
+        discountValue: calcAmount,
+        discountNotes: discountNotes.trim(),
+        discountStatus: "Pending",
+        finalEstimatedAmount: Math.max(0, finalAmount),
+      };
+
+      const ep = await storage.updateEpisode(episodeId, tid, updates);
+
+      const crmUser = req.session?.crmUser;
+      const userName = crmUser?.employeeName || req.user?.email || "System";
+      await storage.createAuditLog({
+        tenantId: tid,
+        entityType: "episode",
+        entityId: episodeId,
+        action: "discount_submitted",
+        oldValues: { discountStatus: oldEpisode.discountStatus, discountAmount: oldEpisode.discountAmount },
+        newValues: { discountStatus: "Pending", discountAmount: calcAmount, discountPercent: calcPercent, finalAmount },
+        changedFields: "discountStatus,discountAmount,discountPercent,finalEstimatedAmount",
+        performedBy: userName,
+        performedByCrmUserId: crmUser?.id,
+      });
+
+      res.json(ep);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/episodes/:id/discount/approve", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+
+      const crmUser = req.session?.crmUser;
+      const allowedRoles = ["SYS_ADMIN", "ADMIN"];
+      if (!crmUser || !allowedRoles.includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admins and System Admins can approve discounts" });
+      }
+
+      const oldEpisode = await storage.getEpisode(episodeId, tid);
+      if (!oldEpisode) return res.status(404).json({ message: "Episode not found" });
+
+      if (!oldEpisode.discountApplied) {
+        return res.status(400).json({ message: "No discount has been submitted for approval" });
+      }
+      if (oldEpisode.discountStatus === "Approved") {
+        return res.status(400).json({ message: "Discount is already approved" });
+      }
+
+      const userName = crmUser?.employeeName || req.user?.email || "System";
+      const ep = await storage.updateEpisode(episodeId, tid, {
+        discountStatus: "Approved",
+        discountApprovedBy: userName,
+        discountApprovedAt: new Date(),
+        negotiationStatus: "Approved",
+      });
+
+      await storage.createAuditLog({
+        tenantId: tid,
+        entityType: "episode",
+        entityId: episodeId,
+        action: "discount_approved",
+        oldValues: { discountStatus: oldEpisode.discountStatus },
+        newValues: { discountStatus: "Approved", approvedBy: userName },
+        changedFields: "discountStatus,discountApprovedBy,discountApprovedAt",
+        performedBy: userName,
+        performedByCrmUserId: crmUser?.id,
+      });
+
+      res.json(ep);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/episodes/:id/discount/revoke", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+      const { reason } = req.body;
+
+      const crmUser = req.session?.crmUser;
+      const allowedRoles = ["SYS_ADMIN", "ADMIN"];
+      if (!crmUser || !allowedRoles.includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admins and System Admins can revoke discounts" });
+      }
+
+      if (!reason || !reason.trim()) {
+        return res.status(400).json({ message: "Reason for revoking is required" });
+      }
+
+      const oldEpisode = await storage.getEpisode(episodeId, tid);
+      if (!oldEpisode) return res.status(404).json({ message: "Episode not found" });
+
+      const userName = crmUser?.employeeName || req.user?.email || "System";
+      const ep = await storage.updateEpisode(episodeId, tid, {
+        discountStatus: "Draft",
+        discountApprovedBy: null,
+        discountApprovedAt: null,
+        negotiationStatus: "In Discussion",
+      });
+
+      await storage.createAuditLog({
+        tenantId: tid,
+        entityType: "episode",
+        entityId: episodeId,
+        action: "discount_revoked",
+        oldValues: { discountStatus: oldEpisode.discountStatus, approvedBy: oldEpisode.discountApprovedBy },
+        newValues: { discountStatus: "Draft", revokeReason: reason.trim() },
+        changedFields: "discountStatus,discountApprovedBy,discountApprovedAt",
+        performedBy: userName,
+        performedByCrmUserId: crmUser?.id,
+      });
+
+      res.json(ep);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 

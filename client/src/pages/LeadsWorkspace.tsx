@@ -5,7 +5,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, Mail, Calendar, ArrowUpDown, ChevronUp, ChevronDown, X } from "lucide-react";
+import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, Calendar, ArrowUpDown, ChevronUp, ChevronDown, X, Clock, Users, Flame, Moon, AlertCircle, Headphones, Building2, Stethoscope, Shield } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,19 +14,35 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { getStatusColor, getPriorityColor, LEAD_STATUSES } from "@/lib/lead-status";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
+import { getStatusColor, getTemperatureColor, LEAD_STATUSES } from "@/lib/lead-status";
 import { format, formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
-const PRIORITIES = ["Urgent", "High", "Medium", "Normal", "Low"] as const;
+type QuickFilter = "all" | "my-leads" | "hot" | "dormant" | "overdue" | "telecalling" | "front-office" | "doctor" | "insurance";
+
+const QUICK_FILTERS: { id: QuickFilter; label: string; icon: typeof Flame }[] = [
+  { id: "all", label: "All", icon: Users },
+  { id: "my-leads", label: "My Leads", icon: Users },
+  { id: "hot", label: "Hot", icon: Flame },
+  { id: "dormant", label: "Dormant", icon: Moon },
+  { id: "overdue", label: "Overdue", icon: AlertCircle },
+  { id: "telecalling", label: "Telecalling", icon: Headphones },
+  { id: "front-office", label: "Front Office", icon: Building2 },
+  { id: "doctor", label: "Doctor", icon: Stethoscope },
+  { id: "insurance", label: "Insurance", icon: Shield },
+];
 
 export default function LeadsWorkspace() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const { crmUser } = useCurrentUser();
 
   useEffect(() => {
     debounceRef.current = setTimeout(() => {
@@ -39,25 +55,34 @@ export default function LeadsWorkspace() {
   const [open, setOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [showFilters, setShowFilters] = useState(false);
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [filterStatus, setFilterStatus] = useState<string[]>([]);
-  const [filterPriority, setFilterPriority] = useState<string[]>([]);
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [, navigate] = useLocation();
 
-  const activeFilterCount = filterStatus.length + filterPriority.length + (filterDateFrom ? 1 : 0) + (filterDateTo ? 1 : 0);
+  const activeFilterCount = filterStatus.length + (filterDateFrom ? 1 : 0) + (filterDateTo ? 1 : 0);
 
-  const filteredLeads = (leads || []).filter((lead: any) => {
-    if (filterStatus.length > 0 && !filterStatus.includes(lead.status)) return false;
-    if (filterPriority.length > 0 && !filterPriority.includes(lead.priority || "Normal")) return false;
-    if (filterDateFrom && lead.createdAt && new Date(lead.createdAt) < new Date(filterDateFrom)) return false;
-    if (filterDateTo && lead.createdAt && new Date(lead.createdAt) > new Date(filterDateTo + "T23:59:59")) return false;
-    return true;
-  });
+  const filteredLeads = useMemo(() => {
+    return (leads || []).filter((lead: any) => {
+      if (quickFilter === "my-leads" && crmUser && lead.assignedCrmUserId !== crmUser.id) return false;
+      if (quickFilter === "hot" && !["Hot", "Very Hot"].includes(lead.leadTemperature || "")) return false;
+      if (quickFilter === "dormant" && lead.leadTemperature !== "Dormant") return false;
+      if (quickFilter === "overdue" && (!lead.nextActionDate || new Date(lead.nextActionDate) >= new Date())) return false;
+      if (quickFilter === "telecalling" && lead.ownerTeam !== "Telecalling") return false;
+      if (quickFilter === "front-office" && lead.ownerTeam !== "Front Office") return false;
+      if (quickFilter === "doctor" && lead.ownerTeam !== "Doctor") return false;
+      if (quickFilter === "insurance" && lead.ownerTeam !== "Insurance") return false;
+
+      if (filterStatus.length > 0 && !filterStatus.includes(lead.status)) return false;
+      if (filterDateFrom && lead.createdAt && new Date(lead.createdAt) < new Date(filterDateFrom)) return false;
+      if (filterDateTo && lead.createdAt && new Date(lead.createdAt) > new Date(filterDateTo + "T23:59:59")) return false;
+      return true;
+    });
+  }, [leads, quickFilter, crmUser, filterStatus, filterDateFrom, filterDateTo]);
 
   const clearAllFilters = () => {
     setFilterStatus([]);
-    setFilterPriority([]);
     setFilterDateFrom("");
     setFilterDateTo("");
   };
@@ -142,6 +167,32 @@ export default function LeadsWorkspace() {
           </div>
         </div>
 
+        <div className="px-4 md:px-6 py-2 border-b border-border bg-muted/20 z-10 overflow-x-auto">
+          <div className="flex items-center gap-1.5 min-w-max">
+            {QUICK_FILTERS.map((qf) => {
+              const isActive = quickFilter === qf.id;
+              const Icon = qf.icon;
+              return (
+                <button
+                  key={qf.id}
+                  type="button"
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap",
+                    isActive
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-muted-foreground border-border"
+                  )}
+                  onClick={() => setQuickFilter(qf.id)}
+                  data-testid={`quick-filter-${qf.id}`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {qf.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {showFilters && (
           <div className="px-4 md:px-6 py-3 border-b border-border bg-muted/30 z-10" data-testid="filter-panel">
             <div className="flex flex-wrap gap-4 items-end">
@@ -162,29 +213,6 @@ export default function LeadsWorkspace() {
                         data-testid={`filter-status-${s.toLowerCase().replace(/\s+/g, "-")}`}
                       >
                         {s}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Priority</label>
-                <div className="flex flex-wrap gap-1">
-                  {PRIORITIES.map((p) => {
-                    const active = filterPriority.includes(p);
-                    return (
-                      <button
-                        key={p}
-                        type="button"
-                        className={cn(
-                          "px-2 py-1 rounded text-[10px] font-medium border transition-colors",
-                          active ? getPriorityColor(p) : "bg-background text-muted-foreground border-border hover:bg-accent"
-                        )}
-                        onClick={() => setFilterPriority(active ? filterPriority.filter(x => x !== p) : [...filterPriority, p])}
-                        data-testid={`filter-priority-${p.toLowerCase()}`}
-                      >
-                        {p}
                       </button>
                     );
                   })}
@@ -241,12 +269,32 @@ export default function LeadsWorkspace() {
   );
 }
 
+function formatAgeing(lead: any): { text: string; isBreached: boolean } {
+  if (!lead.createdAt) return { text: "—", isBreached: false };
+  const days = lead.leadAgeingDays ?? Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+  const breached = lead.slaBreached === true;
+  if (days === 0) return { text: "Today", isBreached: breached };
+  if (days === 1) return { text: "1d", isBreached: breached };
+  if (days < 30) return { text: `${days}d`, isBreached: breached };
+  if (days < 365) return { text: `${Math.floor(days / 30)}mo`, isBreached: breached };
+  return { text: `${Math.floor(days / 365)}y`, isBreached: breached };
+}
+
 function LeadsListView({ leads }: { leads: any[] }) {
   const [sortField, setSortField] = useState<string>("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [, navigate] = useLocation();
   const { data: leadSources = [] } = useMasterData("leadSources");
   const sourceMap = Object.fromEntries(leadSources.map((s: any) => [s.id, s.name]));
+  const { data: crmUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/crm-users/active"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm-users/active", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const userMap = Object.fromEntries(crmUsers.map((u: any) => [u.id, u.name]));
 
   const toggleSort = (field: string) => {
     if (sortField === field) {
@@ -292,12 +340,12 @@ function LeadsListView({ leads }: { leads: any[] }) {
         <TableHeader>
           <TableRow className="bg-muted/30">
             <SortHeader field="name">Name</SortHeader>
-            <TableHead>Contact</TableHead>
-            <TableHead>Source</TableHead>
-            <SortHeader field="status">Status</SortHeader>
-            <SortHeader field="priority">Priority</SortHeader>
+            <SortHeader field="status">Stage</SortHeader>
+            <SortHeader field="leadTemperature">Temperature</SortHeader>
+            <TableHead>Owner</TableHead>
+            <SortHeader field="leadAgeingDays">Ageing</SortHeader>
             <TableHead>Next Action</TableHead>
-            <SortHeader field="createdAt">Created</SortHeader>
+            <TableHead>Source</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -308,69 +356,83 @@ function LeadsListView({ leads }: { leads: any[] }) {
               </TableCell>
             </TableRow>
           ) : (
-            sorted.map((lead) => (
-              <TableRow
-                key={lead.id}
-                className="cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() => navigate(`/leads/${lead.id}`)}
-                data-testid={`row-lead-${lead.id}`}
-              >
-                <TableCell>
-                  <div>
-                    <span className="font-medium text-foreground" data-testid={`text-lead-name-${lead.id}`}>{lead.name}</span>
-                    {lead.hmsPatientId && (
-                      <span className="ml-2 text-[10px] text-muted-foreground font-mono">#{lead.hmsPatientId}</span>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
-                    {lead.phoneE164 && (
-                      <span className="flex items-center gap-1" data-testid={`text-lead-phone-${lead.id}`}>
-                        <Phone className="w-3 h-3" /> {lead.phoneE164}
-                      </span>
-                    )}
-                    {lead.email && (
-                      <span className="flex items-center gap-1" data-testid={`text-lead-email-${lead.id}`}>
-                        <Mail className="w-3 h-3" /> {lead.email}
-                      </span>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <span className="text-xs text-muted-foreground" data-testid={`text-lead-source-${lead.id}`}>
-                    {lead.leadSourceId ? sourceMap[lead.leadSourceId] || "—" : "—"}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <Badge className={cn("text-[10px] whitespace-nowrap", getStatusColor(lead.status))} data-testid={`badge-status-${lead.id}`}>
-                    {lead.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {lead.priority && (
-                    <Badge variant="outline" className={cn("text-[10px]", getPriorityColor(lead.priority))} data-testid={`badge-priority-${lead.id}`}>
-                      {lead.priority}
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {lead.nextActionDate ? (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Calendar className="w-3 h-3" />
-                      <span>{format(new Date(lead.nextActionDate), "MMM d, h:mm a")}</span>
+            sorted.map((lead) => {
+              const ageing = formatAgeing(lead);
+              const temp = lead.leadTemperature || null;
+              return (
+                <TableRow
+                  key={lead.id}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => navigate(`/leads/${lead.id}`)}
+                  data-testid={`row-lead-${lead.id}`}
+                >
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-medium text-foreground" data-testid={`text-lead-name-${lead.id}`}>{lead.name}</span>
+                      {lead.phoneE164 && (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5" data-testid={`text-lead-phone-${lead.id}`}>
+                          <Phone className="w-3 h-3" /> {lead.phoneE164}
+                        </span>
+                      )}
                     </div>
-                  ) : (
-                    <span className="text-xs text-muted-foreground/50">—</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <span className="text-xs text-muted-foreground" data-testid={`text-lead-created-${lead.id}`}>
-                    {lead.createdAt ? formatDistanceToNow(new Date(lead.createdAt), { addSuffix: true }) : "—"}
-                  </span>
-                </TableCell>
-              </TableRow>
-            ))
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={cn("text-[10px] whitespace-nowrap", getStatusColor(lead.status))} data-testid={`badge-status-${lead.id}`}>
+                      {lead.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {temp ? (
+                      <Badge className={cn("text-[10px] whitespace-nowrap", getTemperatureColor(temp))} data-testid={`badge-temperature-${lead.id}`}>
+                        {temp}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground/50">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col text-xs" data-testid={`text-lead-owner-${lead.id}`}>
+                      {lead.ownerTeam && (
+                        <span className="text-muted-foreground">{lead.ownerTeam}</span>
+                      )}
+                      <span className="text-foreground">
+                        {lead.assignedCrmUserId ? userMap[lead.assignedCrmUserId] || "—" : "—"}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={cn(
+                        "text-xs font-medium",
+                        ageing.isBreached ? "text-red-600" : "text-muted-foreground"
+                      )}
+                      data-testid={`text-lead-ageing-${lead.id}`}
+                    >
+                      {ageing.isBreached && <Clock className="w-3 h-3 inline mr-0.5 text-red-600" />}
+                      {ageing.text}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    {lead.nextActionDate ? (
+                      <div className={cn(
+                        "flex items-center gap-1 text-xs",
+                        new Date(lead.nextActionDate) < new Date() ? "text-red-600" : "text-muted-foreground"
+                      )} data-testid={`text-lead-next-action-${lead.id}`}>
+                        <Calendar className="w-3 h-3" />
+                        <span>{format(new Date(lead.nextActionDate), "MMM d, h:mm a")}</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground/50">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-xs text-muted-foreground" data-testid={`text-lead-source-${lead.id}`}>
+                      {lead.leadSourceId ? sourceMap[lead.leadSourceId] || "—" : "—"}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              );
+            })
           )}
         </TableBody>
       </Table>
@@ -391,6 +453,14 @@ function useMasterData(tableName: string) {
 
 function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
   const createLead = useCreateLead();
+  const [, navigate] = useLocation();
+  const [duplicateInfo, setDuplicateInfo] = useState<{
+    isDuplicate: boolean;
+    existingLead?: { id: number; name: string; status: string; assignedTo: string; createdAt: string };
+  } | null>(null);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const duplicateDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const lastCheckedPhone = useRef<string>("");
 
   const { data: branches = [] } = useMasterData("branches");
   const { data: leadSourceCategories = [] } = useMasterData("lead_source_categories");
@@ -416,6 +486,47 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
     },
   });
 
+  const checkDuplicate = useCallback(async (phone: string) => {
+    const digitsOnly = phone.replace(/\D/g, "");
+    if (digitsOnly.length < 10) {
+      setDuplicateInfo(null);
+      lastCheckedPhone.current = "";
+      return;
+    }
+    if (phone === lastCheckedPhone.current) return;
+    lastCheckedPhone.current = phone;
+    setCheckingDuplicate(true);
+    try {
+      const res = await fetch(`/api/leads/check-duplicate?mobile=${encodeURIComponent(phone)}`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setDuplicateInfo(data.isDuplicate ? data : null);
+      } else {
+        setDuplicateInfo(null);
+      }
+    } catch {
+      setDuplicateInfo(null);
+    } finally {
+      setCheckingDuplicate(false);
+    }
+  }, []);
+
+  const handlePhoneChange = useCallback((value: string, originalOnChange: (v: string) => void) => {
+    originalOnChange(value);
+    setDuplicateInfo(null);
+    lastCheckedPhone.current = "";
+    if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
+    const digitsOnly = value.replace(/\D/g, "");
+    if (digitsOnly.length >= 10) {
+      duplicateDebounceRef.current = setTimeout(() => checkDuplicate(value), 500);
+    }
+  }, [checkDuplicate]);
+
+  const handlePhoneBlur = useCallback((value: string) => {
+    if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
+    checkDuplicate(value);
+  }, [checkDuplicate]);
+
   const form = useForm<InsertLead>({
     resolver: zodResolver(insertLeadSchema),
     defaultValues: {
@@ -435,7 +546,10 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
     ? leadSources.filter((s: any) => s.categoryId === selectedSourceCategoryId)
     : leadSources;
 
+  const isDuplicateDetected = duplicateInfo?.isDuplicate === true;
+
   function onSubmit(data: InsertLead) {
+    if (isDuplicateDetected) return;
     createLead.mutate(data, {
       onSuccess: () => onSuccess(),
     });
@@ -465,9 +579,56 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
               <FormItem>
                 <FormLabel>Phone Number *</FormLabel>
                 <FormControl>
-                  <Input placeholder="e.g. 9876543210" {...field} data-testid="input-lead-phone" />
+                  <Input
+                    placeholder="e.g. 9876543210"
+                    {...field}
+                    onChange={(e) => handlePhoneChange(e.target.value, field.onChange)}
+                    onBlur={() => handlePhoneBlur(field.value || "")}
+                    data-testid="input-lead-phone"
+                  />
                 </FormControl>
                 <FormMessage />
+                {checkingDuplicate && (
+                  <p className="text-xs text-muted-foreground" data-testid="text-checking-duplicate">Checking for duplicates...</p>
+                )}
+                {isDuplicateDetected && duplicateInfo?.existingLead && (
+                  <Alert variant="destructive" className="mt-2" data-testid="duplicate-warning-banner">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle data-testid="text-duplicate-heading">Duplicate Lead Found</AlertTitle>
+                    <AlertDescription>
+                      <div className="mt-1 space-y-1 text-sm">
+                        <p data-testid="text-duplicate-name"><span className="font-medium">Name:</span> {duplicateInfo.existingLead.name}</p>
+                        <p data-testid="text-duplicate-status"><span className="font-medium">Status:</span> {duplicateInfo.existingLead.status}</p>
+                        <p data-testid="text-duplicate-assigned"><span className="font-medium">Assigned To:</span> {duplicateInfo.existingLead.assignedTo || "Unassigned"}</p>
+                        <p data-testid="text-duplicate-created"><span className="font-medium">Created:</span> {duplicateInfo.existingLead.createdAt ? format(new Date(duplicateInfo.existingLead.createdAt), "MMM d, yyyy") : "—"}</p>
+                      </div>
+                      <div className="flex items-center gap-2 mt-3 flex-wrap">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate(`/leads/${duplicateInfo.existingLead!.id}`)}
+                          data-testid="button-open-existing-lead"
+                        >
+                          Open Existing Lead
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setDuplicateInfo(null);
+                            lastCheckedPhone.current = "";
+                            form.setValue("phoneE164", "");
+                          }}
+                          data-testid="button-cancel-duplicate"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
               </FormItem>
             )}
           />
@@ -724,8 +885,8 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
           )}
         />
 
-        <Button type="submit" className="w-full" disabled={createLead.isPending} data-testid="button-create-lead">
-          {createLead.isPending ? "Creating..." : "Create Lead"}
+        <Button type="submit" className="w-full" disabled={createLead.isPending || isDuplicateDetected} data-testid="button-create-lead">
+          {createLead.isPending ? "Creating..." : isDuplicateDetected ? "Duplicate Detected — Cannot Submit" : "Create Lead"}
         </Button>
       </form>
     </Form>

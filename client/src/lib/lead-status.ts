@@ -109,7 +109,7 @@ export function getPriorityColor(priority: string | null | undefined): string {
 const LEAD_TERMINAL_STATUSES = ["Closed Won", "Closed Lost", "Unqualified"];
 const ACTIVE_STAGES = ["Raw Lead Captured", "Contacted", "Qualified"];
 
-export type LeadTemperature = "Hot" | "Warm" | "Cold";
+export type LeadTemperature = "Very Hot" | "Hot" | "Warm++" | "Warm+" | "Warm" | "Cold" | "Dormant";
 
 export function getLeadTemperature(lead: { lastContactAt?: string | Date | null; updatedAt?: string | Date | null; createdAt?: string | Date | null; status: string }): LeadTemperature | null {
   if (LEAD_TERMINAL_STATUSES.includes(lead.status)) return null;
@@ -136,19 +136,29 @@ export function getLeadTemperature(lead: { lastContactAt?: string | Date | null;
   return "Cold";
 }
 
-export function getTemperatureColor(temp: LeadTemperature): string {
+export function getTemperatureColor(temp: string | null | undefined): string {
   switch (temp) {
+    case "Very Hot": return "bg-rose-100 text-rose-700 border-rose-200";
     case "Hot": return "bg-red-100 text-red-700 border-red-200";
-    case "Warm": return "bg-orange-100 text-orange-700 border-orange-200";
+    case "Warm++": return "bg-orange-100 text-orange-700 border-orange-200";
+    case "Warm+": return "bg-amber-100 text-amber-700 border-amber-200";
+    case "Warm": return "bg-yellow-100 text-yellow-700 border-yellow-200";
     case "Cold": return "bg-blue-100 text-blue-700 border-blue-200";
+    case "Dormant": return "bg-gray-100 text-gray-500 border-gray-200";
+    default: return "bg-muted text-muted-foreground border-border";
   }
 }
 
-export function getTemperatureIcon(temp: LeadTemperature): string {
+export function getTemperatureIcon(temp: string | null | undefined): string {
   switch (temp) {
+    case "Very Hot": return "Flame";
     case "Hot": return "Flame";
+    case "Warm++": return "Sun";
+    case "Warm+": return "Sun";
     case "Warm": return "Sun";
     case "Cold": return "Snowflake";
+    case "Dormant": return "Moon";
+    default: return "Thermometer";
   }
 }
 

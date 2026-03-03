@@ -9,14 +9,24 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { cn } from "@/lib/utils";
 import { getStatusColor, getValidEpisodeTransitions, getPriorityColor } from "@/lib/lead-status";
 import { format, formatDistanceToNow } from "date-fns";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   ArrowLeft,
   Target,
@@ -35,6 +45,9 @@ import {
   Users,
   TrendingUp,
   Plus,
+  Pencil,
+  Save,
+  X,
 } from "lucide-react";
 
 interface AuditLogEntry {
@@ -65,6 +78,60 @@ export default function EpisodeDetailPage() {
   const updateEpisode = useUpdateEpisode();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { roleCode } = useCurrentUser();
+
+  const canEditClinical = roleCode === "ADMIN" || roleCode === "MANAGER" || roleCode === "SYS_ADMIN";
+  const [clinicalEditMode, setClinicalEditMode] = useState(false);
+  const [editDiagnosis, setEditDiagnosis] = useState("");
+  const [editTreatmentPlan, setEditTreatmentPlan] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [showReasonModal, setShowReasonModal] = useState(false);
+  const [editReason, setEditReason] = useState("");
+
+  const clinicalNotesMutation = useMutation({
+    mutationFn: async (data: { diagnosis: string; treatmentPlan: string; notes: string; editReason: string }) => {
+      const res = await apiRequest("PUT", `/api/episodes/${episodeId}/clinical-notes`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Clinical notes updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/episodes", episodeId] });
+      setClinicalEditMode(false);
+      setShowReasonModal(false);
+      setEditReason("");
+    },
+    onError: (err) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleStartClinicalEdit = () => {
+    setEditDiagnosis(episode?.diagnosis || "");
+    setEditTreatmentPlan(episode?.treatmentPlan || "");
+    setEditNotes(episode?.notes || "");
+    setClinicalEditMode(true);
+  };
+
+  const handleCancelClinicalEdit = () => {
+    setClinicalEditMode(false);
+    setEditDiagnosis("");
+    setEditTreatmentPlan("");
+    setEditNotes("");
+  };
+
+  const handleSaveClinicalNotes = () => {
+    setShowReasonModal(true);
+  };
+
+  const handleConfirmSave = () => {
+    if (!editReason.trim()) return;
+    clinicalNotesMutation.mutate({
+      diagnosis: editDiagnosis,
+      treatmentPlan: editTreatmentPlan,
+      notes: editNotes,
+      editReason: editReason.trim(),
+    });
+  };
 
   const { data: episode, isLoading } = useQuery({
     queryKey: ["/api/episodes", episodeId],
@@ -310,15 +377,86 @@ export default function EpisodeDetailPage() {
               </Card>
 
               <Card className="p-4" data-testid="card-episode-clinical">
-                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                  <Stethoscope className="w-4 h-4 text-primary" />
-                  Clinical Information
-                </h3>
-                <div className="space-y-3">
-                  <InfoRow label="Diagnosis" value={episode.diagnosis} />
-                  <InfoRow label="Treatment Plan" value={episode.treatmentPlan} />
-                  <InfoRow label="Notes" value={episode.notes} />
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <Stethoscope className="w-4 h-4 text-primary" />
+                    Clinical Information
+                  </h3>
+                  {canEditClinical && !clinicalEditMode && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleStartClinicalEdit}
+                      data-testid="button-edit-clinical-notes"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                  )}
+                  {clinicalEditMode && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={handleSaveClinicalNotes}
+                        disabled={clinicalNotesMutation.isPending}
+                        data-testid="button-save-clinical-notes"
+                      >
+                        <Save className="w-3.5 h-3.5 mr-1" />
+                        Save
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCancelClinicalEdit}
+                        disabled={clinicalNotesMutation.isPending}
+                        data-testid="button-cancel-clinical-notes"
+                      >
+                        <X className="w-3.5 h-3.5 mr-1" />
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
                 </div>
+                {clinicalEditMode ? (
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Diagnosis</Label>
+                      <Textarea
+                        value={editDiagnosis}
+                        onChange={(e) => setEditDiagnosis(e.target.value)}
+                        placeholder="Enter diagnosis..."
+                        className="text-xs min-h-[60px] resize-none"
+                        data-testid="textarea-edit-diagnosis"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Treatment Plan</Label>
+                      <Textarea
+                        value={editTreatmentPlan}
+                        onChange={(e) => setEditTreatmentPlan(e.target.value)}
+                        placeholder="Enter treatment plan..."
+                        className="text-xs min-h-[60px] resize-none"
+                        data-testid="textarea-edit-treatment-plan"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Notes</Label>
+                      <Textarea
+                        value={editNotes}
+                        onChange={(e) => setEditNotes(e.target.value)}
+                        placeholder="Enter notes..."
+                        className="text-xs min-h-[60px] resize-none"
+                        data-testid="textarea-edit-notes"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <InfoRow label="Diagnosis" value={episode.diagnosis} />
+                    <InfoRow label="Treatment Plan" value={episode.treatmentPlan} />
+                    <InfoRow label="Notes" value={episode.notes} />
+                  </div>
+                )}
               </Card>
             </div>
 
@@ -437,7 +575,351 @@ export default function EpisodeDetailPage() {
           )}
         </Card>
       </div>
+
+      <Dialog open={showReasonModal} onOpenChange={(open) => { if (!open) { setShowReasonModal(false); setEditReason(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reason for Edit</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for editing the clinical notes. This will be recorded in the audit log.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label className="text-sm">Reason (required)</Label>
+            <Input
+              value={editReason}
+              onChange={(e) => setEditReason(e.target.value)}
+              placeholder="Enter reason for editing clinical notes..."
+              data-testid="input-edit-reason"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => { setShowReasonModal(false); setEditReason(""); }}
+              disabled={clinicalNotesMutation.isPending}
+              data-testid="button-cancel-reason"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmSave}
+              disabled={!editReason.trim() || clinicalNotesMutation.isPending}
+              data-testid="button-confirm-save"
+            >
+              {clinicalNotesMutation.isPending ? "Saving..." : "Confirm Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
+  );
+}
+
+function NegotiationDiscountCard({ episode }: { episode: any }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { isAdmin } = useCurrentUser();
+
+  const isApproved = episode.discountStatus === "Approved";
+  const isDraft = !episode.discountStatus || episode.discountStatus === "Draft";
+  const isPending_ = episode.discountStatus === "Pending";
+
+  const [originalQuotedAmount, setOriginalQuotedAmount] = useState<number>(
+    episode.originalQuotedAmount ?? episode.estimatedCost ?? 0
+  );
+  const [discountType, setDiscountType] = useState<string>(
+    episode.discountType || "Percentage"
+  );
+  const [discountPercent, setDiscountPercent] = useState<number>(
+    episode.discountPercent ?? 0
+  );
+  const [discountAmount, setDiscountAmount] = useState<number>(
+    episode.discountAmount ?? 0
+  );
+  const [discountNotes, setDiscountNotes] = useState<string>(
+    episode.discountNotes || ""
+  );
+  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
+  const [revokeReason, setRevokeReason] = useState("");
+
+  const finalAmount = Math.max(0, originalQuotedAmount - discountAmount);
+
+  const handlePercentChange = (pct: number) => {
+    const clamped = Math.min(100, Math.max(0, pct));
+    setDiscountPercent(clamped);
+    setDiscountAmount(Math.round((originalQuotedAmount * clamped) / 100));
+  };
+
+  const handleAmountChange = (amt: number) => {
+    const clamped = Math.min(originalQuotedAmount, Math.max(0, amt));
+    setDiscountAmount(clamped);
+    setDiscountPercent(
+      originalQuotedAmount > 0
+        ? Math.round((clamped / originalQuotedAmount) * 100)
+        : 0
+    );
+  };
+
+  const handleOriginalAmountChange = (amt: number) => {
+    setOriginalQuotedAmount(amt);
+    if (discountType === "Percentage") {
+      setDiscountAmount(Math.round((amt * discountPercent) / 100));
+    } else {
+      setDiscountPercent(
+        amt > 0 ? Math.round((discountAmount / amt) * 100) : 0
+      );
+    }
+  };
+
+  const submitDiscount = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/episodes/${episode.id}/discount`, {
+        originalQuotedAmount,
+        discountType,
+        discountPercent,
+        discountAmount,
+        discountNotes,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Discount submitted" });
+      queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id] });
+    },
+    onError: (err) =>
+      toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const approveDiscount = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/episodes/${episode.id}/discount/approve`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Discount approved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id] });
+    },
+    onError: (err) =>
+      toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const revokeDiscount = useMutation({
+    mutationFn: async (reason: string) => {
+      const res = await apiRequest("POST", `/api/episodes/${episode.id}/discount/revoke`, { reason });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Discount revoked" });
+      setRevokeDialogOpen(false);
+      setRevokeReason("");
+      queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id] });
+    },
+    onError: (err) =>
+      toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const statusBadgeClass =
+    isApproved
+      ? "bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300"
+      : isPending_
+        ? "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300"
+        : "bg-muted text-muted-foreground";
+
+  const fieldsReadOnly = isApproved;
+
+  return (
+    <>
+      <Card className="p-4" data-testid="card-financial-negotiation">
+        <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <IndianRupee className="w-4 h-4 text-primary" />
+            Negotiation & Discount
+          </h3>
+          <Badge
+            className={cn("text-xs", statusBadgeClass)}
+            data-testid="badge-discount-status"
+          >
+            {episode.discountStatus || "Draft"}
+          </Badge>
+        </div>
+
+        {isApproved && episode.discountApprovedBy && (
+          <p
+            className="text-xs text-green-700 dark:text-green-400 mb-3"
+            data-testid="text-discount-approved-info"
+          >
+            Approved by {episode.discountApprovedBy}
+            {episode.discountApprovedAt &&
+              ` on ${format(new Date(episode.discountApprovedAt), "MMM d, yyyy")}`}
+          </p>
+        )}
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Original Quoted Amount</Label>
+            <Input
+              type="number"
+              value={originalQuotedAmount || ""}
+              onChange={(e) => handleOriginalAmountChange(Number(e.target.value) || 0)}
+              disabled={fieldsReadOnly}
+              className="text-xs"
+              data-testid="input-original-quoted-amount"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Discount Type</Label>
+            <SearchableSelect
+              value={discountType}
+              onValueChange={(val) => {
+                setDiscountType(val);
+                if (val === "Percentage") {
+                  setDiscountAmount(
+                    Math.round((originalQuotedAmount * discountPercent) / 100)
+                  );
+                } else {
+                  setDiscountPercent(
+                    originalQuotedAmount > 0
+                      ? Math.round((discountAmount / originalQuotedAmount) * 100)
+                      : 0
+                  );
+                }
+              }}
+              options={[
+                { value: "Percentage", label: "Percentage" },
+                { value: "Flat", label: "Flat Amount" },
+              ]}
+              placeholder="Select type"
+              triggerClassName="text-xs"
+              disabled={fieldsReadOnly}
+              data-testid="select-discount-type"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Discount %</Label>
+              <Input
+                type="number"
+                value={discountPercent || ""}
+                onChange={(e) => handlePercentChange(Number(e.target.value) || 0)}
+                disabled={fieldsReadOnly || discountType === "Flat"}
+                className="text-xs"
+                data-testid="input-discount-percent"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Discount Amount</Label>
+              <Input
+                type="number"
+                value={discountAmount || ""}
+                onChange={(e) => handleAmountChange(Number(e.target.value) || 0)}
+                disabled={fieldsReadOnly || discountType === "Percentage"}
+                className="text-xs"
+                data-testid="input-discount-amount"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Final Amount</Label>
+            <Input
+              type="number"
+              value={finalAmount}
+              readOnly
+              className="text-xs bg-muted"
+              data-testid="input-final-amount"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">
+              Discount Notes <span className="text-destructive">*</span>
+            </Label>
+            <Textarea
+              value={discountNotes}
+              onChange={(e) => setDiscountNotes(e.target.value)}
+              disabled={fieldsReadOnly}
+              placeholder="Reason for discount (mandatory)..."
+              className="text-xs min-h-[80px] resize-none"
+              data-testid="textarea-discount-notes"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 pt-2 flex-wrap">
+            {!isApproved && (
+              <Button
+                onClick={() => submitDiscount.mutate()}
+                disabled={
+                  submitDiscount.isPending ||
+                  !discountNotes.trim() ||
+                  originalQuotedAmount <= 0
+                }
+                data-testid="button-submit-discount"
+              >
+                {submitDiscount.isPending ? "Submitting..." : "Submit Discount"}
+              </Button>
+            )}
+
+            {isAdmin && (isPending_ || isDraft) && discountAmount > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => approveDiscount.mutate()}
+                disabled={approveDiscount.isPending}
+                data-testid="button-approve-discount"
+              >
+                {approveDiscount.isPending ? "Approving..." : "Approve"}
+              </Button>
+            )}
+
+            {isAdmin && isApproved && (
+              <Button
+                variant="outline"
+                onClick={() => setRevokeDialogOpen(true)}
+                data-testid="button-revoke-discount"
+              >
+                Revoke Approval
+              </Button>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      <Dialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Revoke Discount Approval</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for revoking this discount approval.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={revokeReason}
+            onChange={(e) => setRevokeReason(e.target.value)}
+            placeholder="Reason for revoking..."
+            className="text-xs min-h-[80px] resize-none"
+            data-testid="textarea-revoke-reason"
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRevokeDialogOpen(false)}
+              data-testid="button-cancel-revoke"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => revokeDiscount.mutate(revokeReason)}
+              disabled={!revokeReason.trim() || revokeDiscount.isPending}
+              data-testid="button-confirm-revoke"
+            >
+              {revokeDiscount.isPending ? "Revoking..." : "Revoke"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -469,47 +951,7 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
         </div>
       </Card>
 
-      <Card className="p-4" data-testid="card-financial-negotiation">
-        <h3 className="text-sm font-semibold text-foreground mb-3">Negotiation & Discount</h3>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Negotiation Status</Label>
-            <SearchableSelect
-              value={episode.negotiationStatus || "None"}
-              onValueChange={(val) => onUpdate({ negotiationStatus: val })}
-              options={[
-                { value: "None", label: "None" },
-                { value: "In Progress", label: "In Progress" },
-                { value: "Accepted", label: "Accepted" },
-                { value: "Rejected", label: "Rejected" },
-              ]}
-              placeholder="Select status"
-              triggerClassName="text-xs"
-              data-testid="select-negotiation-status"
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <Label className="text-xs text-muted-foreground">Discount Applied</Label>
-            <Switch
-              checked={!!episode.discountApplied}
-              onCheckedChange={(checked) => onUpdate({ discountApplied: checked })}
-              disabled={isPending}
-              data-testid="switch-discount-applied"
-            />
-          </div>
-          {episode.discountApplied && (
-            <>
-              <InfoRow label="Discount Type" value={episode.discountType} />
-              <InfoRow label="Discount Value" value={episode.discountValue != null ? `₹${episode.discountValue.toLocaleString()}` : null} />
-              <InfoRow label="Approved By" value={episode.discountApprovedBy} />
-              {episode.discountApprovedAt && (
-                <InfoRow label="Approved At" value={format(new Date(episode.discountApprovedAt), "MMM d, yyyy")} />
-              )}
-            </>
-          )}
-        </div>
-      </Card>
+      <NegotiationDiscountCard episode={episode} />
 
       <Card className="p-4" data-testid="card-financial-payment">
         <h3 className="text-sm font-semibold text-foreground mb-3">Payment Details</h3>

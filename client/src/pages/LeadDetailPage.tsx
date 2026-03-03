@@ -47,6 +47,11 @@ import {
   CalendarClock,
   Ban,
   RefreshCw,
+  Globe,
+  Gauge,
+  Zap,
+  Hash,
+  Percent,
 } from "lucide-react";
 
 const ACTIVITY_ICONS: Record<string, typeof Phone> = {
@@ -117,6 +122,7 @@ export default function LeadDetailPage() {
   return (
     <AppLayout className="flex-1 flex flex-col h-full overflow-hidden">
       <LeadHeader lead={lead} onBack={() => setLocation("/leads")} />
+      <IntelligenceStrip lead={lead} />
       {lead.handoverStatus === "Pending" && <HandoverBanner lead={lead} />}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden lg:border-r border-border">
@@ -127,6 +133,7 @@ export default function LeadDetailPage() {
         <div className="w-full lg:w-80 flex flex-col overflow-y-auto bg-muted/20 border-t lg:border-t-0">
           <NextActionPanel lead={lead} />
           <TasksPanel leadId={lead.id} />
+          <OwnershipCard lead={lead} />
           <QuickActions lead={lead} />
           <TemperatureHistory leadId={lead.id} />
           <HandoverHistory leadId={lead.id} />
@@ -140,6 +147,15 @@ function LeadHeader({ lead, onBack }: { lead: any; onBack: () => void }) {
   const updateLead = useUpdateLead();
   const { toast } = useToast();
   const { data: masterLeadStatuses } = useLeadStatuses();
+  const { data: leadSources } = useQuery<any[]>({
+    queryKey: ["/api/masters/leadSources"],
+    queryFn: async () => {
+      const res = await fetch("/api/masters/leadSources", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const sourceName = lead.leadSourceId ? leadSources?.find((s: any) => s.id === lead.leadSourceId)?.name : null;
   const allStatuses = (masterLeadStatuses || [])
     .filter((s: any) => s.status === "Active")
     .map((s: any) => s.name);
@@ -172,9 +188,10 @@ function LeadHeader({ lead, onBack }: { lead: any; onBack: () => void }) {
           {lead.status}
         </Badge>
 
-        {lead.priority && lead.priority !== "Normal" && (
-          <Badge className={cn("text-xs", getPriorityColor(lead.priority))} data-testid="badge-priority">
-            {lead.priority}
+        {sourceName && (
+          <Badge variant="outline" className="text-xs gap-1" data-testid="badge-source">
+            <Globe className="w-3 h-3" />
+            {sourceName}
           </Badge>
         )}
 
@@ -364,6 +381,88 @@ function HandoverBanner({ lead }: { lead: any }) {
           </DialogContent>
         </Dialog>
       </div>
+    </div>
+  );
+}
+
+function IntelligenceStrip({ lead }: { lead: any }) {
+  const { data: episodes } = useEpisodes(lead.id);
+
+  const leadAgeDays = lead.createdAt
+    ? Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+    : 0;
+  const reschedules = lead.rescheduleCount ?? 0;
+  const noShows = lead.noShowCount ?? 0;
+  const frt = lead.firstResponseTimeMinutes;
+  const frtDisplay = frt != null ? `${frt}m` : "-";
+  const episodesCount = episodes?.length ?? 0;
+  const avgProbability = episodes && episodes.length > 0
+    ? Math.round(episodes.reduce((sum: number, ep: any) => sum + (ep.revenueProbability || 0), 0) / episodes.length)
+    : null;
+
+  const metrics = [
+    { label: "Lead Age", value: `${leadAgeDays}d`, icon: CalendarClock, testId: "metric-lead-age" },
+    { label: "Reschedules", value: String(reschedules), icon: RefreshCw, testId: "metric-reschedules" },
+    { label: "No Shows", value: String(noShows), icon: Ban, testId: "metric-no-shows" },
+    { label: "FRT", value: frtDisplay, icon: Zap, testId: "metric-frt" },
+    { label: "Episodes", value: String(episodesCount), icon: Hash, testId: "metric-episodes-count" },
+    { label: "Avg Prob%", value: avgProbability != null ? `${avgProbability}%` : "-", icon: Percent, testId: "metric-avg-probability" },
+  ];
+
+  return (
+    <div className="px-3 md:px-4 py-2 border-b border-border bg-muted/30" data-testid="intelligence-strip">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Gauge className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Intelligence</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {metrics.map((m) => (
+            <div
+              key={m.testId}
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-background border border-border text-xs"
+              data-testid={m.testId}
+            >
+              <m.icon className="w-3 h-3 text-muted-foreground" />
+              <span className="text-muted-foreground">{m.label}:</span>
+              <span className="font-medium text-foreground">{m.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OwnershipCard({ lead }: { lead: any }) {
+  const { data: crmUsers } = useActiveCrmUsers();
+
+  const primaryOwnerName = lead.primaryOwnerUserId && crmUsers
+    ? crmUsers.find((u) => u.id === lead.primaryOwnerUserId)?.name || `User #${lead.primaryOwnerUserId}`
+    : null;
+  const assignedToName = lead.assignedCrmUserId && crmUsers
+    ? crmUsers.find((u) => u.id === lead.assignedCrmUserId)?.name || `User #${lead.assignedCrmUserId}`
+    : null;
+
+  const infoRow = (label: string, value: string | null, testId: string) => (
+    <div className="flex items-center justify-between py-1.5">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="text-xs font-medium text-foreground" data-testid={testId}>{value || "-"}</span>
+    </div>
+  );
+
+  return (
+    <div className="p-4 border-b border-border" data-testid="ownership-card">
+      <h3 className="font-semibold text-sm text-foreground flex items-center gap-2 mb-3">
+        <Users className="w-4 h-4 text-primary" />
+        Ownership
+      </h3>
+      <Card className="p-3">
+        <div className="divide-y divide-border">
+          {infoRow("Current Team", lead.ownerTeam || null, "text-owner-team")}
+          {infoRow("Primary Owner", primaryOwnerName, "text-primary-owner")}
+          {infoRow("Assigned To", assignedToName, "text-assigned-to")}
+          {infoRow("Last Handover", lead.lastHandoverAt ? format(new Date(lead.lastHandoverAt), "MMM d, yyyy h:mm a") : null, "text-last-handover")}
+        </div>
+      </Card>
     </div>
   );
 }
@@ -1235,9 +1334,20 @@ function EpisodesSection({ lead }: { lead: any }) {
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-medium text-foreground truncate">{ep.episodeName}</span>
                     <Badge className={cn("text-[10px] shrink-0", getStatusColor(ep.status))}>{ep.status}</Badge>
+                    {ep.insuranceApplicable && (
+                      <Badge className="text-[10px] shrink-0 bg-teal-100 text-teal-700 border-teal-200" data-testid={`badge-insurance-${ep.id}`}>
+                        <Shield className="w-2.5 h-2.5 mr-0.5" />
+                        Insurance
+                      </Badge>
+                    )}
+                    {ep.preauthStatusId && (
+                      <Badge variant="outline" className="text-[10px] shrink-0" data-testid={`badge-preauth-${ep.id}`}>
+                        Preauth #{ep.preauthStatusId}
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
                     {ep.episodeType && <span>{ep.episodeType}</span>}
