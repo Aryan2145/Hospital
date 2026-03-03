@@ -33,6 +33,10 @@ The platform is built with a modern web stack:
 - **Episode Clinical Notes with Audit:** Allows editing clinical notes for specific roles with mandatory reason and audit logging.
 - **Negotiation Discount Approval Workflow:** Manages discount submission, approval, and revocation for episodes, with audit logging and role-based access.
 - **Per-Tenant SMTP & Password Reset:** Configurable SMTP settings per tenant for sending branded emails, including password resets, with fallback to global settings.
+- **Duplicate Lead Validation:** `mobileNormalized` field on leads, `GET /api/leads/check-duplicate?mobile=X` endpoint, server-side 409 on duplicate creation, frontend phone-blur check with warning banner.
+- **Episode Clinical Notes Edit with Audit:** `PUT /api/episodes/:id/clinical-notes` with mandatory editReason, role-gated via configurable `clinical_notes_edit_roles` table (per-tenant, fallback to SYS_ADMIN/ADMIN/MANAGER). Config endpoints: `GET/POST /api/episodes/clinical-notes-edit-roles/config`. Frontend query checks allowed roles dynamically. Audit logs written on every edit.
+- **Negotiation Discount Approval Workflow:** `originalQuotedAmount`, `discountPercent`, `discountAmount`, `discountNotes`, `discountStatus` fields. Endpoints: `POST /api/episodes/:id/discount`, `POST /api/episodes/:id/discount/approve`, `POST /api/episodes/:id/discount/revoke`. All with audit logging.
+- **Desktop Wireframe Upgrades:** Leads list redesign (Stage/Temperature/Owner/Ageing/Source columns), quick filter bar (All/My Leads/Hot/Dormant/Overdue/team filters), Intelligence Strip on Lead Detail, Ownership Card in sidebar, Insurance badges on episode cards.
 
 ## External Dependencies
 - **Replit Auth:** For user authentication leveraging OpenID Connect.

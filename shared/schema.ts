@@ -1193,6 +1193,15 @@ export const episodes = pgTable("episodes", {
   modifiedBy: varchar("modified_by"),
 });
 
+// --- Clinical Notes Edit Roles Config ---
+export const clinicalNotesEditRoles = pgTable("clinical_notes_edit_roles", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  roleCode: text("role_code").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // --- Audit Log ---
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),

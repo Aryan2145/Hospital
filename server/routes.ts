@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -4347,6 +4347,89 @@ export async function registerRoutes(
   // EPISODE CLINICAL NOTES EDIT WITH AUDIT (T008)
   // =============================================
 
+  const DEFAULT_CLINICAL_EDIT_ROLES = ["SYS_ADMIN", "ADMIN", "MANAGER"];
+  const ROLE_DISPLAY_NAMES: Record<string, string> = {
+    SYS_ADMIN: "Super Admin",
+    ADMIN: "Medical Admin",
+    MANAGER: "Doctor / Manager",
+    AGENT: "Agent",
+    COUNSELLOR: "Counsellor",
+  };
+
+  async function getClinicalNotesAllowedRoles(tenantId: number): Promise<string[]> {
+    const configured = await db
+      .select({ roleCode: clinicalNotesEditRoles.roleCode })
+      .from(clinicalNotesEditRoles)
+      .where(and(
+        eq(clinicalNotesEditRoles.tenantId, tenantId),
+        eq(clinicalNotesEditRoles.isActive, true)
+      ));
+    if (configured.length > 0) {
+      return configured.map(r => r.roleCode);
+    }
+    return DEFAULT_CLINICAL_EDIT_ROLES;
+  }
+
+  app.get("/api/episodes/clinical-notes-edit-roles", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const allowedRoles = await getClinicalNotesAllowedRoles(tid);
+      res.json({ allowedRoles });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/episodes/clinical-notes-edit-roles/config", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = req.session?.crmUser;
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admins can manage clinical notes edit roles" });
+      }
+      const rows = await db
+        .select()
+        .from(clinicalNotesEditRoles)
+        .where(eq(clinicalNotesEditRoles.tenantId, tid));
+      res.json({ roles: rows, defaults: DEFAULT_CLINICAL_EDIT_ROLES });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/episodes/clinical-notes-edit-roles/config", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = req.session?.crmUser;
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admins can manage clinical notes edit roles" });
+      }
+      const { roleCodes } = req.body;
+      if (!Array.isArray(roleCodes) || roleCodes.length === 0) {
+        return res.status(400).json({ message: "At least one role must be selected" });
+      }
+      await db.delete(clinicalNotesEditRoles).where(eq(clinicalNotesEditRoles.tenantId, tid));
+      for (const rc of roleCodes) {
+        await db.insert(clinicalNotesEditRoles).values({ tenantId: tid, roleCode: rc, isActive: true });
+      }
+      const userName = crmUser.employeeName || req.user?.email || "System";
+      await storage.createAuditLog({
+        tenantId: tid,
+        entityType: "config",
+        entityId: 0,
+        action: "clinical_notes_edit_roles_updated",
+        oldValues: null,
+        newValues: { roleCodes },
+        changedFields: "roleCodes",
+        performedBy: userName,
+        performedByCrmUserId: crmUser.id,
+      });
+      res.json({ allowedRoles: roleCodes });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.put("/api/episodes/:id/clinical-notes", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId(req);
@@ -4358,9 +4441,10 @@ export async function registerRoutes(
       }
 
       const crmUser = req.session?.crmUser;
-      const allowedRoles = ["SYS_ADMIN", "ADMIN", "MANAGER"];
+      const allowedRoles = await getClinicalNotesAllowedRoles(tid);
       if (!crmUser || !allowedRoles.includes(crmUser.roleCode)) {
-        return res.status(403).json({ message: "Only Admins, Managers, and System Admins can edit clinical notes" });
+        const roleNames = allowedRoles.map(r => ROLE_DISPLAY_NAMES[r] || r).join(" / ");
+        return res.status(403).json({ message: `You don't have permission to edit clinical notes. Allowed: ${roleNames}.` });
       }
 
       const oldEpisode = await storage.getEpisode(episodeId, tid);

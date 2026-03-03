@@ -80,7 +80,10 @@ export default function EpisodeDetailPage() {
   const queryClient = useQueryClient();
   const { roleCode } = useCurrentUser();
 
-  const canEditClinical = roleCode === "ADMIN" || roleCode === "MANAGER" || roleCode === "SYS_ADMIN";
+  const { data: clinicalEditRolesData } = useQuery<{ allowedRoles: string[] }>({
+    queryKey: ["/api/episodes/clinical-notes-edit-roles"],
+  });
+  const canEditClinical = roleCode != null && (clinicalEditRolesData?.allowedRoles || []).includes(roleCode);
   const [clinicalEditMode, setClinicalEditMode] = useState(false);
   const [editDiagnosis, setEditDiagnosis] = useState("");
   const [editTreatmentPlan, setEditTreatmentPlan] = useState("");
