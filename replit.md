@@ -93,6 +93,29 @@ The platform is built with a modern web stack:
 - **Episode visit tracking:** `episodes` table: `visitType` (New/Follow Up), `parentEpisodeId`, `visitNumber`
 - **Episode creation:** Patient dropdown shows checked-in patients first (marked with ✓), follow-up episodes link to parent episode with auto-incremented visit number
 
+### Episode Intelligence Layer V2 (Mar 2026)
+- **Temperature Engine** (`server/services/temperatureEngine.ts`): 7-level lead temperature tracking (Cold→Warm→Warm+→Warm++→Hot→Very Hot|Dormant), auto-computed on trigger events (appointment booked, consultation done, estimate shared, insurance approved, advance received, no-show, reschedule), logged to `temperature_logs` table
+- **Auto-Handover Engine** (`server/services/handoverEngine.ts`): Stage-based team assignment (Appointment Booked→Front Office, Checked In→Doctor, Estimate Shared→Financial, Insurance→Insurance Desk, Surgery→OT/IP Desk), logged to `handover_logs` table
+- **Revenue Probability** (`server/services/revenueProbability.ts`): Configurable stage→% mapping with DB-stored config (`revenue_probability_config` table), auto-computed on episode status changes
+- **Schema additions:**
+  - `leads` table: `leadTemperature`, `leadAgeingDays`, `firstResponseTimeMinutes`, `appointmentConversionFlag`, `noShowCount`, `rescheduleCount`, `lastActivityAt`, `temperatureLastUpdatedAt`, `primaryOwnerUserId`, `ownerTeam`, `lastHandoverAt`
+  - `episodes` table: ~28 new fields across Financial (estimateShared, negotiationStatus, discount fields, advance, payment), Insurance (insurerId, tpaId, policyTypeId, preauthStatusId, preauthApprovedAmount, rejectionReasonId), Family (familyDiscussionDone, secondOpinionTaken, decisionStatus), Revenue (revenueProbability, expectedRevenueAmount), Drop-off (lostAtStage, lostValue)
+  - New tables: `handover_logs`, `reschedule_history`, `temperature_logs`, `revenue_probability_config`
+  - 5 new insurance master tables: `insurers`, `tpas`, `policyTypes`, `preauthStatuses`, `rejectionReasons` (registered in MASTER_TABLE_REGISTRY under "Insurance" category)
+- **Endpoints:**
+  - `GET /api/handover-logs?entityType=&entityId=` — Handover history
+  - `GET /api/temperature-logs?leadId=` — Temperature change log
+  - `GET /api/reschedule-history?appointmentId=` — Reschedule history
+  - `GET /api/revenue-probability-config` — Stage→probability mapping
+  - `PATCH /api/revenue-probability-config/:id` — Update probability
+  - `GET /api/intelligence/stats` — Dashboard intelligence stats (temperature breakdown, episode stats, no-show by doctor, drop-off by stage)
+- **Frontend:**
+  - `EpisodeDetailPage.tsx`: Tabbed layout (Clinical Status, Financial Status, Insurance Status, Family Status) with revenue probability badge
+  - `LeadDetailPage.tsx`: Temperature badge (color-coded), owner team, ageing days, no-show/reschedule count badges, temperature history timeline
+  - `AppointmentsPage.tsx`: Post check-in "Find or Create Episode" dialog with search/create functionality
+  - `IntelligenceConfigPage.tsx` (`/intelligence-config`): Temperature rules viewer, revenue probability editor, escalation rules
+  - `Dashboard.tsx`: Intelligence Overview section with 5 KPI cards (Lead→Consultation %, Consultation→Surgery %, Insurance Approval %, Revenue Forecast, Drop-Off Rate), temperature breakdown chart, no-show rate by doctor, drop-off by stage
+
 ## External Dependencies
 - **Replit Auth:** For user authentication leveraging OpenID Connect.
 - **Google Sheets API:** Integration for bulk lead import.
