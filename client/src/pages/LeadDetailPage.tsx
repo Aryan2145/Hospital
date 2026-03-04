@@ -596,7 +596,64 @@ function ActivityTimeline({ leadId }: { leadId: number }) {
                         <Badge variant="outline" className="text-[10px]">{(activity.metadata as any).newTemperature}</Badge>
                       </div>
                     )}
-                    {activity.callDurationSeconds && (
+                    {activity.type === "call" && (activity.callDurationSeconds || activity.callDirection) && (
+                      <div className="mt-1.5 space-y-1">
+                        <p className="text-xs text-muted-foreground">
+                          {activity.callDurationSeconds != null && (
+                            <span>Duration: {Math.floor(activity.callDurationSeconds / 60)}m {activity.callDurationSeconds % 60}s</span>
+                          )}
+                          {activity.callDirection && <span> | {activity.callDirection}</span>}
+                        </p>
+                        {activity.metadata && (activity.metadata as any).source === "callyzer" && (
+                          <div className="bg-muted/50 rounded-md p-2 space-y-1 border border-border/50">
+                            {(activity.metadata as any).empName && (
+                              <p className="text-[11px] text-muted-foreground">
+                                <span className="font-medium text-foreground/80">Employee:</span>{" "}
+                                {(activity.metadata as any).empName}
+                                {(activity.metadata as any).empNumber && ` (${(activity.metadata as any).empNumber})`}
+                              </p>
+                            )}
+                            {(activity.metadata as any).callTimestamp && (
+                              <p className="text-[11px] text-muted-foreground">
+                                <span className="font-medium text-foreground/80">Call Time:</span>{" "}
+                                {(() => { try { return format(new Date((activity.metadata as any).callTimestamp), "dd MMM yyyy, hh:mm a"); } catch { return (activity.metadata as any).callTimestamp; } })()}
+                              </p>
+                            )}
+                            {(activity.metadata as any).notes && (
+                              <p className="text-xs text-foreground/80 mt-1 italic border-l-2 border-primary/30 pl-2">
+                                {(activity.metadata as any).notes}
+                              </p>
+                            )}
+                            {(activity.metadata as any).noteUpdatedAt && (
+                              <p className="text-[10px] text-muted-foreground/70">
+                                Note updated: {(() => { try { return format(new Date((activity.metadata as any).noteUpdatedAt), "dd MMM yyyy, hh:mm a"); } catch { return (activity.metadata as any).noteUpdatedAt; } })()}
+                              </p>
+                            )}
+                            {(activity.metadata as any).callyzerLeadStatus && (
+                              <p className="text-[11px] text-muted-foreground">
+                                <span className="font-medium text-foreground/80">Callyzer Status:</span>{" "}
+                                {(activity.metadata as any).callyzerLeadStatus}
+                                {(activity.metadata as any).callyzerLeadStatusDate && (
+                                  <span className="text-[10px]"> ({(() => { try { return format(new Date((activity.metadata as any).callyzerLeadStatusDate), "dd MMM yyyy, hh:mm a"); } catch { return (activity.metadata as any).callyzerLeadStatusDate; } })()})</span>
+                                )}
+                              </p>
+                            )}
+                            {(activity.metadata as any).recordingUrl && (
+                              <a
+                                href={(activity.metadata as any).recordingUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
+                                data-testid="link-call-recording"
+                              >
+                                🎙 Listen to recording
+                              </a>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {activity.type !== "call" && activity.callDurationSeconds != null && activity.callDurationSeconds > 0 && (
                       <p className="text-xs text-muted-foreground mt-1">
                         Duration: {Math.floor(activity.callDurationSeconds / 60)}m {activity.callDurationSeconds % 60}s
                         {activity.callDirection && ` | ${activity.callDirection}`}

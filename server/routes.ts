@@ -2891,6 +2891,10 @@ export async function registerRoutes(
         const callTime = call.call_time || call.callTime || call.timestamp || "";
         const callTimestamp = callDate && callTime ? `${callDate}T${callTime}` : new Date().toISOString();
         const callyzerCallId = call.id || null;
+        const noteUpdatedAt = call.note_updated_at || call.noteUpdatedAt || call.note_updated_date || "";
+        const callyzerLeadStatus = call.lead_status || call.leadStatus || call.status_name || "";
+        const callyzerLeadStatusDate = call.lead_status_date || call.leadStatusDate || call.status_date || "";
+        const clientName = call.client_name || call.clientName || call.name || "";
 
         if (callyzerCallId) {
           const [existingLog] = await db.select({ id: callyzerWebhookLogs.id }).from(callyzerWebhookLogs)
@@ -2990,9 +2994,12 @@ export async function registerRoutes(
               notes,
               empNumber,
               empName,
-              clientName: call.client_name || "",
+              clientName,
               callTimestamp,
               connectorId: connector.id,
+              noteUpdatedAt: noteUpdatedAt || undefined,
+              callyzerLeadStatus: callyzerLeadStatus || undefined,
+              callyzerLeadStatusDate: callyzerLeadStatusDate || undefined,
             },
           });
 
@@ -3067,10 +3074,13 @@ export async function registerRoutes(
                 notes,
                 empNumber,
                 empName,
-                clientName: call.client_name || "",
+                clientName,
                 callTimestamp,
                 connectorId: connector.id,
                 autoCreated: true,
+                noteUpdatedAt: noteUpdatedAt || undefined,
+                callyzerLeadStatus: callyzerLeadStatus || undefined,
+                callyzerLeadStatusDate: callyzerLeadStatusDate || undefined,
               },
             });
 

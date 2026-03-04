@@ -459,6 +459,27 @@ function TimelineEvent({ event }: { event: any }) {
           </div>
         )}
 
+        {event.type === "call" && event.metadata && (event.metadata as any).source === "callyzer" && (
+          <div className="bg-muted/50 rounded-md p-1.5 mt-1 space-y-0.5 border border-border/50">
+            {(event.metadata as any).empName && (
+              <p className="text-[10px] text-muted-foreground">
+                <span className="font-medium text-foreground/80">Employee:</span> {(event.metadata as any).empName}
+                {(event.metadata as any).empNumber && ` (${(event.metadata as any).empNumber})`}
+              </p>
+            )}
+            {(event.metadata as any).notes && (
+              <p className="text-[10px] text-foreground/80 italic border-l-2 border-primary/30 pl-1.5">
+                {(event.metadata as any).notes}
+              </p>
+            )}
+            {(event.metadata as any).callyzerLeadStatus && (
+              <p className="text-[10px] text-muted-foreground">
+                <span className="font-medium text-foreground/80">Status:</span> {(event.metadata as any).callyzerLeadStatus}
+              </p>
+            )}
+          </div>
+        )}
+
         {event.performedBy && (
           <span className="text-[10px] text-muted-foreground mt-0.5 block">by {event.performedBy}</span>
         )}
