@@ -41,6 +41,7 @@ import {
   ArrowRightCircle,
   PlusCircle,
   User,
+  Users,
   Shield,
   TrendingUp,
   Plus,
@@ -90,6 +91,9 @@ export default function EpisodeDetailPage() {
   const [editNotes, setEditNotes] = useState("");
   const [showReasonModal, setShowReasonModal] = useState(false);
   const [editReason, setEditReason] = useState("");
+  const [stageChangeTarget, setStageChangeTarget] = useState<string | null>(null);
+  const [stageRemarks, setStageRemarks] = useState("");
+  const [stageChangeOpen, setStageChangeOpen] = useState(false);
 
   const clinicalNotesMutation = useMutation({
     mutationFn: async (data: { diagnosis: string; treatmentPlan: string; notes: string; editReason: string }) => {
@@ -202,12 +206,22 @@ export default function EpisodeDetailPage() {
   const validTransitions = getValidEpisodeTransitions(episode.status);
 
   const handleStatusChange = (newStatus: string) => {
+    setStageChangeTarget(newStatus);
+    setStageRemarks("");
+    setStageChangeOpen(true);
+  };
+
+  const confirmStageChange = () => {
+    if (!stageChangeTarget || stageRemarks.trim().length < 5) return;
     updateEpisode.mutate(
-      { id: episode.id, status: newStatus },
+      { id: episode.id, status: stageChangeTarget, stageRemarks: stageRemarks.trim() },
       {
         onSuccess: () => {
           toast({ title: "Status updated" });
           queryClient.invalidateQueries({ queryKey: ["/api/episodes", episodeId] });
+          setStageChangeOpen(false);
+          setStageChangeTarget(null);
+          setStageRemarks("");
         },
         onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
       }
@@ -349,6 +363,10 @@ export default function EpisodeDetailPage() {
             <TabsTrigger value="insurance" data-testid="tab-insurance">
               <Shield className="w-3.5 h-3.5 mr-1.5" />
               Insurance
+            </TabsTrigger>
+            <TabsTrigger value="family" data-testid="tab-family">
+              <Users className="w-3.5 h-3.5 mr-1.5" />
+              Family Status
             </TabsTrigger>
           </TabsList>
 
@@ -519,6 +537,10 @@ export default function EpisodeDetailPage() {
               rejectionReasons={activeItems(rejectionReasons)}
             />
           </TabsContent>
+
+          <TabsContent value="family" className="mt-4" data-testid="tab-content-family">
+            <FamilyTab episode={episode} onUpdate={handleFieldUpdate} isPending={updateEpisode.isPending} />
+          </TabsContent>
         </Tabs>
 
         <Card className="p-4" data-testid="card-episode-journey-timeline">
@@ -568,6 +590,11 @@ export default function EpisodeDetailPage() {
                           </p>
                           {event.description && (
                             <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>
+                          )}
+                          {event.stageRemarks && (
+                            <p className="text-xs text-foreground/80 mt-1 italic border-l-2 border-primary/30 pl-2" data-testid={`timeline-remarks-${idx}`}>
+                              "{event.stageRemarks}"
+                            </p>
                           )}
                           {event.statusTransition && (
                             <div className="flex items-center gap-1.5 mt-1.5">
@@ -643,6 +670,47 @@ export default function EpisodeDetailPage() {
               data-testid="button-confirm-save"
             >
               {clinicalNotesMutation.isPending ? "Saving..." : "Confirm Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={stageChangeOpen} onOpenChange={(open) => { if (!open) { setStageChangeOpen(false); setStageChangeTarget(null); setStageRemarks(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Stage Transition Remarks</DialogTitle>
+            <DialogDescription>
+              Moving from <span className="font-semibold">{episode.status}</span> to <span className="font-semibold">{stageChangeTarget}</span>. Please provide remarks for this stage change.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label className="text-sm">Remarks (required)</Label>
+            <Textarea
+              value={stageRemarks}
+              onChange={(e) => setStageRemarks(e.target.value)}
+              placeholder="Enter remarks for this stage transition (min 5 characters)..."
+              className="text-sm min-h-[80px] resize-none"
+              data-testid="textarea-stage-remarks"
+            />
+            {stageRemarks.trim().length > 0 && stageRemarks.trim().length < 5 && (
+              <p className="text-xs text-destructive" data-testid="text-stage-remarks-error">Remarks must be at least 5 characters</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => { setStageChangeOpen(false); setStageChangeTarget(null); setStageRemarks(""); }}
+              disabled={updateEpisode.isPending}
+              data-testid="button-cancel-stage-change"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmStageChange}
+              disabled={stageRemarks.trim().length < 5 || updateEpisode.isPending}
+              data-testid="button-confirm-stage-change"
+            >
+              {updateEpisode.isPending ? "Updating..." : "Confirm"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1176,11 +1244,87 @@ function InsuranceTab({
   );
 }
 
+function FamilyTab({ episode, onUpdate, isPending }: { episode: any; onUpdate: (fields: Record<string, any>) => void; isPending: boolean }) {
+  const [localDecisionNotes, setLocalDecisionNotes] = useState(episode.decisionNotes || "");
+
+  return (
+    <Card className="p-4" data-testid="card-family-status">
+      <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+        <Users className="w-4 h-4 text-primary" />
+        Family & Decision Status
+      </h3>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-xs font-medium text-foreground">Family Discussion Done</Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Has the family been consulted about the treatment plan?</p>
+          </div>
+          <Switch
+            checked={!!episode.familyDiscussionDone}
+            onCheckedChange={(checked) => onUpdate({ familyDiscussionDone: checked })}
+            disabled={isPending}
+            data-testid="switch-family-discussion"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-xs font-medium text-foreground">Second Opinion Taken</Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Has the patient sought a second medical opinion?</p>
+          </div>
+          <Switch
+            checked={!!episode.secondOpinionTaken}
+            onCheckedChange={(checked) => onUpdate({ secondOpinionTaken: checked })}
+            disabled={isPending}
+            data-testid="switch-second-opinion"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Decision Status</Label>
+          <SearchableSelect
+            value={episode.decisionStatus || "Pending"}
+            onValueChange={(val) => onUpdate({ decisionStatus: val })}
+            options={[
+              { value: "Pending", label: "Pending" },
+              { value: "Approved by Family", label: "Approved by Family" },
+              { value: "Rejected by Family", label: "Rejected by Family" },
+              { value: "Seeking Second Opinion", label: "Seeking Second Opinion" },
+              { value: "Decided to Proceed", label: "Decided to Proceed" },
+              { value: "Decided Not to Proceed", label: "Decided Not to Proceed" },
+            ]}
+            placeholder="Select decision status"
+            triggerClassName="text-xs"
+            data-testid="select-decision-status"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Decision Notes</Label>
+          <Textarea
+            value={localDecisionNotes}
+            onChange={(e) => setLocalDecisionNotes(e.target.value)}
+            onBlur={(e) => {
+              if (e.target.value !== (episode.decisionNotes || "")) {
+                onUpdate({ decisionNotes: e.target.value });
+              }
+            }}
+            placeholder="Notes about family decision..."
+            className="text-xs min-h-[80px] resize-none"
+            data-testid="textarea-decision-notes"
+          />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 interface JourneyEvent {
   id: string;
   type: "created" | "status_change";
   title: string;
   description?: string;
+  stageRemarks?: string;
   timestamp: string;
   performedBy?: string;
   statusTransition?: { from: string; to: string };
@@ -1225,6 +1369,7 @@ function buildJourneyTimeline(episode: any, auditLogs: AuditLogEntry[]): Journey
         type: "status_change",
         title: getStatusChangeTitle(toStatus),
         description: getStatusChangeDescription(fromStatus, toStatus),
+        stageRemarks: newVals?.stageRemarks || undefined,
         timestamp: log.createdAt,
         performedBy: log.performedBy || undefined,
         statusTransition: { from: fromStatus, to: toStatus },

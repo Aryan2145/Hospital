@@ -4948,6 +4948,15 @@ export async function registerRoutes(
         body.variance = fq - (body.actualBill || 0);
       }
 
+      if (oldEpisode && body.status && body.status !== oldEpisode.status) {
+        if (!body.stageRemarks || !body.stageRemarks.trim() || body.stageRemarks.trim().length < 5) {
+          return res.status(400).json({ message: "Stage transition remarks are required (minimum 5 characters)" });
+        }
+      }
+
+      const stageRemarksVal = body.stageRemarks;
+      delete body.stageRemarks;
+
       const parsed = insertEpisodeSchema.partial().parse(body);
       const ep = await storage.updateEpisode(episodeId, tid, parsed);
 
@@ -4965,7 +4974,7 @@ export async function registerRoutes(
           entityId: episodeId,
           action: "status_change",
           oldValues: { status: oldEpisode.status },
-          newValues: { status: body.status },
+          newValues: { status: body.status, stageRemarks: stageRemarksVal?.trim() || "" },
           changedFields: changedFields.join(","),
           performedBy: userName,
         });
