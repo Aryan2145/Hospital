@@ -428,10 +428,19 @@ export default function MasterData() {
     },
   });
 
+  const FIELD_DEFAULTS: Record<string, Record<string, any>> = {
+    crmUsers: { accessScopeType: "Self", phiAccessLevel: "None", isActive: true },
+  };
+
   function resetForm() {
     const base: Record<string, any> = { code: "", name: "", status: "Active", displayOrder: 0 };
+    const tableDefaults = selectedTable ? FIELD_DEFAULTS[selectedTable] || {} : {};
     extraFields.forEach((f) => {
-      base[f.key] = f.type === "number" ? 0 : f.type === "boolean" ? false : (f.type === "multiselect" || f.type === "multiref") ? [] : "";
+      if (tableDefaults[f.key] !== undefined) {
+        base[f.key] = tableDefaults[f.key];
+      } else {
+        base[f.key] = f.type === "number" ? 0 : f.type === "boolean" ? false : (f.type === "multiselect" || f.type === "multiref") ? [] : "";
+      }
     });
     setFormData(base);
     setEditingRecord(null);

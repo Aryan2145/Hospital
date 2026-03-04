@@ -3464,6 +3464,13 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["leaveDate", "leaveEndDate", "holidayDate", "startDate", "endDate"]);
+
+      if (tableName === "crmUsers") {
+        if (!body.accessScopeType) body.accessScopeType = "Self";
+        if (!body.phiAccessLevel) body.phiAccessLevel = "None";
+        if (body.isActive === undefined || body.isActive === "") body.isActive = true;
+      }
+
       const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid, approvalStatus: "Pending" });
       res.status(201).json(record);
     } catch (err: any) {
@@ -3638,6 +3645,9 @@ export async function registerRoutes(
       }
       const userDigits = Math.max(3, String(userSeq).length);
       body.code = `USR_${String(userSeq).padStart(userDigits, "0")}`;
+
+      if (!body.accessScopeType) body.accessScopeType = "Self";
+      if (!body.phiAccessLevel) body.phiAccessLevel = "None";
 
       const parsed = insertCrmUserSchema.parse({ ...body, tenantId: tid, passwordHash });
       const user = await storage.createCrmUser(parsed);
