@@ -4933,6 +4933,21 @@ export async function registerRoutes(
         body.finalEstimatedAmount = body.estimatedCost;
       }
 
+      if (body.initialQuote !== undefined || body.approvedDiscount !== undefined) {
+        const iq = body.initialQuote ?? oldEpisode?.initialQuote ?? 0;
+        const ad = body.approvedDiscount ?? oldEpisode?.approvedDiscount ?? 0;
+        body.finalQuote = Math.max(0, iq - ad);
+        body.initialQuote = iq;
+        body.approvedDiscount = ad;
+        body.estimatedCost = iq;
+        body.finalEstimatedAmount = body.finalQuote;
+      }
+
+      if (body.actualBill !== undefined) {
+        const fq = body.finalQuote ?? oldEpisode?.finalQuote ?? oldEpisode?.finalEstimatedAmount ?? 0;
+        body.variance = fq - (body.actualBill || 0);
+      }
+
       const parsed = insertEpisodeSchema.partial().parse(body);
       const ep = await storage.updateEpisode(episodeId, tid, parsed);
 
@@ -5206,6 +5221,9 @@ export async function registerRoutes(
         discountNotes: discountNotes.trim(),
         discountStatus: "Pending",
         finalEstimatedAmount: Math.max(0, finalAmount),
+        initialQuote: baseAmount,
+        approvedDiscount: calcAmount,
+        finalQuote: Math.max(0, finalAmount),
       };
 
       const ep = await storage.updateEpisode(episodeId, tid, updates);
@@ -5252,12 +5270,23 @@ export async function registerRoutes(
       }
 
       const userName = crmUser?.employeeName || req.user?.email || "System";
-      const ep = await storage.updateEpisode(episodeId, tid, {
+      const discountAmt = oldEpisode.discountAmount || oldEpisode.approvedDiscount || 0;
+      const baseAmt = oldEpisode.originalQuotedAmount || oldEpisode.initialQuote || oldEpisode.estimatedCost || 0;
+      const newFinalQuote = Math.max(0, baseAmt - discountAmt);
+      const updateFields: Record<string, any> = {
         discountStatus: "Approved",
         discountApprovedBy: userName,
         discountApprovedAt: new Date(),
         negotiationStatus: "Approved",
-      });
+        approvedDiscount: discountAmt,
+        finalQuote: newFinalQuote,
+        estimatedCost: baseAmt,
+        finalEstimatedAmount: newFinalQuote,
+      };
+      if (oldEpisode.actualBill != null) {
+        updateFields.variance = newFinalQuote - (oldEpisode.actualBill || 0);
+      }
+      const ep = await storage.updateEpisode(episodeId, tid, updateFields);
 
       await storage.createAuditLog({
         tenantId: tid,
@@ -5297,12 +5326,20 @@ export async function registerRoutes(
       if (!oldEpisode) return res.status(404).json({ message: "Episode not found" });
 
       const userName = crmUser?.employeeName || req.user?.email || "System";
-      const ep = await storage.updateEpisode(episodeId, tid, {
+      const baseAmt = oldEpisode.originalQuotedAmount || oldEpisode.initialQuote || oldEpisode.estimatedCost || 0;
+      const revokeFields: Record<string, any> = {
         discountStatus: "Draft",
         discountApprovedBy: null,
         discountApprovedAt: null,
         negotiationStatus: "In Discussion",
-      });
+        approvedDiscount: 0,
+        finalQuote: baseAmt,
+        finalEstimatedAmount: baseAmt,
+      };
+      if (oldEpisode.actualBill != null) {
+        revokeFields.variance = baseAmt - (oldEpisode.actualBill || 0);
+      }
+      const ep = await storage.updateEpisode(episodeId, tid, revokeFields);
 
       await storage.createAuditLog({
         tenantId: tid,
