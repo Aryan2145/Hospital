@@ -76,6 +76,19 @@ function normalizePhoneNumber(phone: string): string {
   return "+" + digits;
 }
 
+function normalizeCrmPhone(phone: string): string {
+  if (!phone || !phone.trim()) return "";
+  let cleaned = phone.replace(/[\s\-\(\)\.]/g, "");
+  if (cleaned.startsWith("00")) cleaned = "+" + cleaned.slice(2);
+  if (!cleaned.startsWith("+")) {
+    const digits = cleaned.replace(/[^0-9]/g, "");
+    if (digits.length === 10) return "+91" + digits;
+    if (digits.startsWith("91") && digits.length === 12) return "+" + digits;
+    return "+91" + digits;
+  }
+  return cleaned;
+}
+
 function getPhoneVariants(normalized: string): string[] {
   const variants: string[] = [];
   const digits = normalized.replace(/[^0-9]/g, "");
@@ -3585,11 +3598,11 @@ export async function registerRoutes(
       if (!body.phone || !body.phone.trim()) {
         return res.status(400).json({ message: "Mobile number is required (used as login username)" });
       }
-      const normalizedPhone = body.phone.trim().replace(/\s+/g, "");
+      const normalizedPhone = normalizeCrmPhone(body.phone);
       body.phone = normalizedPhone;
 
       const existingUsers = await storage.getCrmUsers(tid);
-      const phoneDuplicate = existingUsers.find((u: any) => u.phone === normalizedPhone);
+      const phoneDuplicate = existingUsers.find((u: any) => normalizeCrmPhone(u.phone || "") === normalizedPhone);
       if (phoneDuplicate) {
         return res.status(400).json({ message: "A user with this mobile number already exists" });
       }
@@ -3630,8 +3643,20 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       if (!(await requireAdminRole(req, res, tid))) return;
       const body = coerceDateFields(req.body, ["joiningDate", "resetTokenExpiry"]);
+      const userId = Number(req.params.id);
+
+      if (body.phone) {
+        const normalizedPhone = normalizeCrmPhone(body.phone);
+        body.phone = normalizedPhone;
+        const existingUsers = await storage.getCrmUsers(tid);
+        const phoneDuplicate = existingUsers.find((u: any) => u.id !== userId && normalizeCrmPhone(u.phone || "") === normalizedPhone);
+        if (phoneDuplicate) {
+          return res.status(400).json({ message: "A user with this mobile number already exists" });
+        }
+      }
+
       const parsed = insertCrmUserSchema.partial().parse(body);
-      const user = await storage.updateCrmUser(Number(req.params.id), tid, parsed);
+      const user = await storage.updateCrmUser(userId, tid, parsed);
       res.json(user);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
@@ -3694,6 +3719,8 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["dateOfBirth"]);
+      if (body.primaryPhone) body.primaryPhone = normalizeCrmPhone(body.primaryPhone);
+      if (body.secondaryPhone) body.secondaryPhone = normalizeCrmPhone(body.secondaryPhone);
       const parsed = insertPatientSchema.parse({ ...body, tenantId: tid });
       const patient = await storage.createPatient(parsed);
       res.status(201).json(patient);
@@ -3706,6 +3733,8 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["dateOfBirth"]);
+      if (body.primaryPhone) body.primaryPhone = normalizeCrmPhone(body.primaryPhone);
+      if (body.secondaryPhone) body.secondaryPhone = normalizeCrmPhone(body.secondaryPhone);
       const parsed = insertPatientSchema.partial().parse(body);
       const patient = await storage.updatePatient(Number(req.params.id), tid, parsed);
       res.json(patient);
