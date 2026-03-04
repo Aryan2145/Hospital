@@ -15,7 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, addWeeks, subWeeks, isSameMonth, isSameDay, isToday } from "date-fns";
 import { useState, useMemo } from "react";
-import { Calendar, Clock, User, Hash, CheckCircle2, XCircle, RotateCcw, AlertTriangle, Stethoscope, Plus, Loader2, ChevronLeft, ChevronRight, Building, ListOrdered, CalendarDays, UserPlus, Phone, Search, ChevronDown, ChevronUp, Users, Filter, FileText, LinkIcon, ExternalLink } from "lucide-react";
+import { Calendar, Clock, User, Hash, CheckCircle2, XCircle, RotateCcw, AlertTriangle, Stethoscope, Plus, Loader2, ChevronLeft, ChevronRight, Building, ListOrdered, CalendarDays, UserPlus, Phone, Search, ChevronDown, ChevronUp, Users, Filter, FileText, LinkIcon, ExternalLink, CalendarCheck, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -51,17 +51,57 @@ function useBranches() {
   });
 }
 
+interface LeaveRecord {
+  id: number;
+  doctorId: number;
+  doctorName: string;
+  leaveDate: string;
+  leaveEndDate: string | null;
+  reason: string | null;
+  status: string;
+}
+
+function useDoctorLeaves(doctorId?: string) {
+  const url = doctorId && doctorId !== "all"
+    ? `/api/doctor-leaves?doctorId=${doctorId}`
+    : "/api/doctor-leaves";
+  return useQuery<LeaveRecord[]>({
+    queryKey: [url],
+  });
+}
+
 export default function AppointmentsPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("schedule");
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
+  const [slotCallback, setSlotCallback] = useState<{ fn: ((doctor: string, date: string, time: string) => void) | null }>({ fn: null });
+
+  const openAvailabilityForBooking = (callback: (doctor: string, date: string, time: string) => void) => {
+    setSlotCallback({ fn: callback });
+    setAvailabilityOpen(true);
+  };
+
+  const handleSlotSelected = (doctorId: string, date: string, time: string) => {
+    if (slotCallback.fn) {
+      slotCallback.fn(doctorId, date, time);
+      setSlotCallback({ fn: null });
+    }
+    setAvailabilityOpen(false);
+  };
 
   return (
     <AppLayout>
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
-          <div>
-            <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground" data-testid="text-appointments-title">Appointments</h2>
-            <p className="text-muted-foreground mt-1">View and manage patient appointments.</p>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground" data-testid="text-appointments-title">Appointments</h2>
+              <p className="text-muted-foreground mt-1">View and manage patient appointments.</p>
+            </div>
+            <Button variant="outline" onClick={() => { setSlotCallback({ fn: null }); setAvailabilityOpen(true); }} data-testid="button-availability-calendar" className="gap-2">
+              <CalendarCheck className="w-4 h-4" />
+              Availability Calendar
+            </Button>
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -77,7 +117,7 @@ export default function AppointmentsPage() {
             </TabsList>
 
             <TabsContent value="schedule">
-              <DoctorScheduleView />
+              <DoctorScheduleView onOpenAvailability={openAvailabilityForBooking} />
             </TabsContent>
             <TabsContent value="calendar">
               <CalendarView />
@@ -85,11 +125,18 @@ export default function AppointmentsPage() {
           </Tabs>
         </div>
       </div>
+
+      <AvailabilityCalendarModal
+        open={availabilityOpen}
+        onOpenChange={setAvailabilityOpen}
+        selectMode={!!slotCallback.fn}
+        onSlotSelected={handleSlotSelected}
+      />
     </AppLayout>
   );
 }
 
-function DoctorScheduleView() {
+function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (doctor: string, date: string, time: string) => void) => void }) {
   const { toast } = useToast();
   const { data: doctorsList } = useDoctors();
   const appointmentAction = useAppointmentAction();
@@ -1173,6 +1220,22 @@ function DoctorScheduleView() {
               <Label className="text-xs font-medium text-muted-foreground">Date *</Label>
               <Input type="date" value={bookDate} onChange={(e) => { setBookDate(e.target.value); setBookSlot(""); }} min={new Date().toISOString().split("T")[0]} data-testid="book-input-date" />
             </div>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="text-xs p-0 h-auto text-primary"
+              onClick={() => onOpenAvailability((doctorId, date, time) => {
+                setBookDoctorId(doctorId);
+                setBookDate(date);
+                setBookSlot(time);
+                setBookManualTime("");
+              })}
+              data-testid="button-check-availability"
+            >
+              <CalendarCheck className="w-3.5 h-3.5 mr-1" />
+              Check Availability & Pick a Slot
+            </Button>
             <div>
               <Label className="text-xs font-medium text-muted-foreground">Appointment Time *</Label>
               {!bookDoctorId || !bookDate ? (
@@ -1554,6 +1617,501 @@ function CalendarView() {
             </div>
           )}
         </Card>
+      )}
+    </div>
+  );
+}
+
+function AvailabilityCalendarModal({ open, onOpenChange, selectMode, onSlotSelected }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  selectMode: boolean;
+  onSlotSelected: (doctorId: string, date: string, time: string) => void;
+}) {
+  const { data: doctorsList } = useDoctors();
+  const [selectedDoctor, setSelectedDoctor] = useState("all");
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [viewMode, setViewMode] = useState<"month" | "day" | "week">("month");
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const { data: leaves, isLoading: leavesLoading } = useDoctorLeaves(selectedDoctor);
+
+  const activeDoctors = (doctorsList?.filter((d: any) => d.status === "Active") || []);
+
+  const selectedDayDoctorId = selectedDoctor !== "all" ? selectedDoctor : null;
+  const dayAvailability = useDoctorAvailability(
+    selectedDayDoctorId ? Number(selectedDayDoctorId) : null,
+    selectedDay
+  );
+
+  const monthStart = startOfMonth(currentMonth);
+  const monthEnd = endOfMonth(currentMonth);
+  const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+
+  const leaveDateMap = useMemo(() => {
+    const map = new Map<string, LeaveRecord[]>();
+    if (!leaves) return map;
+    leaves.forEach((leave) => {
+      const start = new Date(leave.leaveDate);
+      const end = leave.leaveEndDate ? new Date(leave.leaveEndDate) : start;
+      const days = eachDayOfInterval({ start, end });
+      days.forEach((day) => {
+        const key = format(day, "yyyy-MM-dd");
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(leave);
+      });
+    });
+    return map;
+  }, [leaves]);
+
+  const upcomingLeaves = useMemo(() => {
+    if (!leaves) return [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return leaves
+      .filter((l) => {
+        const end = l.leaveEndDate ? new Date(l.leaveEndDate) : new Date(l.leaveDate);
+        return end >= today;
+      })
+      .sort((a, b) => new Date(a.leaveDate).getTime() - new Date(b.leaveDate).getTime())
+      .slice(0, 10);
+  }, [leaves]);
+
+  const handleDayClick = (dateKey: string) => {
+    setSelectedDay(dateKey);
+    if (selectMode && selectedDoctor !== "all") {
+      setViewMode("day");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="availability-calendar-modal">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarCheck className="w-5 h-5 text-primary" />
+            Doctor Availability Calendar
+            {selectMode && <Badge variant="outline" className="text-xs ml-2">Select a slot to book</Badge>}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <div className="min-w-[200px]">
+            <SearchableSelect
+              value={selectedDoctor}
+              onValueChange={(v) => { setSelectedDoctor(v); setSelectedDay(null); }}
+              options={[
+                { value: "all", label: "All Doctors" },
+                ...activeDoctors.map((d: any) => ({ value: String(d.id), label: d.name })),
+              ]}
+              placeholder="Select doctor..."
+              data-testid="avail-select-doctor"
+            />
+          </div>
+          <div className="flex gap-1 bg-muted/50 rounded-lg p-0.5">
+            <Button size="sm" variant={viewMode === "month" ? "default" : "ghost"} className="text-xs h-7" onClick={() => setViewMode("month")} data-testid="avail-view-month">Month</Button>
+            <Button size="sm" variant={viewMode === "day" ? "default" : "ghost"} className="text-xs h-7" onClick={() => setViewMode("day")} data-testid="avail-view-day">Day</Button>
+            <Button size="sm" variant={viewMode === "week" ? "default" : "ghost"} className="text-xs h-7" onClick={() => setViewMode("week")} data-testid="avail-view-week">Week</Button>
+          </div>
+        </div>
+
+        {viewMode === "month" && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2">
+              <Card className="p-4" data-testid="avail-calendar-card">
+                <div className="flex items-center justify-between mb-4">
+                  <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} data-testid="avail-prev-month">
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <h2 className="text-base font-semibold">{format(currentMonth, "MMMM yyyy")}</h2>
+                  <Button variant="outline" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} data-testid="avail-next-month">
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+
+                {leavesLoading ? (
+                  <div className="flex justify-center py-12"><LoadingSpinner /></div>
+                ) : (
+                  <div className="grid grid-cols-7 gap-px bg-muted rounded-lg overflow-hidden">
+                    {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
+                      <div key={day} className="bg-muted/50 py-2 text-center text-xs font-medium text-muted-foreground">{day}</div>
+                    ))}
+                    {calendarDays.map((day) => {
+                      const key = format(day, "yyyy-MM-dd");
+                      const dayLeaves = leaveDateMap.get(key) || [];
+                      const hasLeave = dayLeaves.length > 0;
+                      const inCurrentMonth = isSameMonth(day, currentMonth);
+                      const todayFlag = isToday(day);
+                      const isSunday = day.getDay() === 0;
+                      const isSelected = selectedDay === key;
+
+                      return (
+                        <div
+                          key={key}
+                          className={cn(
+                            "min-h-[70px] p-1.5 bg-background transition-colors relative cursor-pointer hover:bg-primary/5",
+                            !inCurrentMonth && "opacity-40",
+                            todayFlag && "ring-2 ring-primary ring-inset",
+                            hasLeave && inCurrentMonth && "bg-destructive/5",
+                            isSunday && !hasLeave && inCurrentMonth && "bg-muted/30",
+                            isSelected && "ring-2 ring-primary bg-primary/10"
+                          )}
+                          onClick={() => inCurrentMonth && handleDayClick(key)}
+                          data-testid={`avail-day-${key}`}
+                        >
+                          <div className={cn(
+                            "text-xs font-medium mb-1",
+                            todayFlag && "text-primary font-bold",
+                            isSunday && "text-muted-foreground",
+                            hasLeave && "text-destructive"
+                          )}>
+                            {format(day, "d")}
+                          </div>
+                          {hasLeave && inCurrentMonth && (
+                            <div className="space-y-0.5">
+                              {dayLeaves.slice(0, 2).map((leave, i) => (
+                                <div key={`${leave.id}-${i}`} className="text-[9px] leading-tight bg-destructive/10 text-destructive rounded px-1 py-0.5 truncate" title={`${leave.doctorName}${leave.reason ? ` - ${leave.reason}` : ""}`}>
+                                  <span className="font-medium">{leave.doctorName.replace(/^Dr\.?\s*/i, "").split(" ")[0]}</span>
+                                </div>
+                              ))}
+                              {dayLeaves.length > 2 && (
+                                <div className="text-[8px] text-destructive/70 font-medium px-1">+{dayLeaves.length - 2} more</div>
+                              )}
+                            </div>
+                          )}
+                          {isSunday && !hasLeave && inCurrentMonth && (
+                            <div className="text-[8px] text-muted-foreground font-medium">Holiday</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded bg-destructive/10 border border-destructive/20" />
+                    <span>Doctor on leave</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded bg-muted border border-border" />
+                    <span>Sunday</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded ring-2 ring-primary" />
+                    <span>Today</span>
+                  </div>
+                  {selectMode && (
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded bg-primary/10 ring-2 ring-primary" />
+                      <span>Click day to view slots</span>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </div>
+
+            <div className="space-y-4">
+              {selectedDay && selectedDoctor !== "all" && (
+                <AvailabilityDaySlots
+                  date={selectedDay}
+                  doctorId={selectedDoctor}
+                  doctorName={activeDoctors.find((d: any) => String(d.id) === selectedDoctor)?.name || ""}
+                  availability={dayAvailability}
+                  selectMode={selectMode}
+                  onSlotSelected={onSlotSelected}
+                  leaveDateMap={leaveDateMap}
+                />
+              )}
+              {selectedDay && selectedDoctor === "all" && (
+                <Card className="p-4">
+                  <p className="text-xs text-muted-foreground text-center py-4">Select a specific doctor to see available slots for {format(new Date(selectedDay + "T12:00:00"), "MMM d, yyyy")}.</p>
+                </Card>
+              )}
+              <Card className="p-4" data-testid="avail-upcoming-leaves">
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-destructive" />
+                  Upcoming Leaves
+                </h3>
+                {leavesLoading ? (
+                  <LoadingSpinner />
+                ) : upcomingLeaves.length === 0 ? (
+                  <div className="text-xs text-muted-foreground text-center py-4">No upcoming leaves found</div>
+                ) : (
+                  <div className="space-y-2">
+                    {upcomingLeaves.slice(0, 5).map((leave) => {
+                      const startDate = new Date(leave.leaveDate);
+                      const endDate = leave.leaveEndDate ? new Date(leave.leaveEndDate) : startDate;
+                      const isMultiDay = leave.leaveEndDate && format(startDate, "yyyy-MM-dd") !== format(endDate, "yyyy-MM-dd");
+                      return (
+                        <div key={leave.id} className="rounded-lg border p-2 text-xs bg-destructive/5 border-destructive/10" data-testid={`avail-leave-${leave.id}`}>
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <Stethoscope className="w-3 h-3 text-primary flex-shrink-0" />
+                            <span className="font-medium truncate">{leave.doctorName}</span>
+                          </div>
+                          <div className="text-muted-foreground ml-4">
+                            {format(startDate, "dd MMM")}
+                            {isMultiDay && ` → ${format(endDate, "dd MMM")}`}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+              <Card className="p-4" data-testid="avail-quick-stats">
+                <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+                  <Info className="w-4 h-4 text-primary" />
+                  Quick Stats
+                </h3>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Active Doctors</span>
+                    <Badge variant="outline" className="text-[10px] h-5">{activeDoctors.length}</Badge>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Leaves This Month</span>
+                    <Badge variant="outline" className="text-[10px] h-5 text-destructive border-destructive/20">
+                      {leaves?.filter((l) => {
+                        const start = new Date(l.leaveDate);
+                        const end = l.leaveEndDate ? new Date(l.leaveEndDate) : start;
+                        return (start >= monthStart && start <= monthEnd) || (end >= monthStart && end <= monthEnd) ||
+                               (start <= monthStart && end >= monthEnd);
+                      }).length || 0}
+                    </Badge>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {(viewMode === "day" || viewMode === "week") && (
+          <AvailabilityDayWeekView
+            viewMode={viewMode}
+            selectedDate={selectedDay || format(new Date(), "yyyy-MM-dd")}
+            onDateChange={setSelectedDay}
+            doctorId={selectedDoctor}
+            doctorsList={activeDoctors}
+            selectMode={selectMode}
+            onSlotSelected={onSlotSelected}
+            leaveDateMap={leaveDateMap}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AvailabilityDaySlots({ date, doctorId, doctorName, availability, selectMode, onSlotSelected, leaveDateMap }: {
+  date: string;
+  doctorId: string;
+  doctorName: string;
+  availability: any;
+  selectMode: boolean;
+  onSlotSelected: (doctorId: string, date: string, time: string) => void;
+  leaveDateMap: Map<string, LeaveRecord[]>;
+}) {
+  const dayLeaves = leaveDateMap.get(date) || [];
+  const hasLeave = dayLeaves.some(l => String(l.doctorId) === doctorId);
+
+  return (
+    <Card className="p-4" data-testid="avail-day-slots">
+      <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+        <Clock className="w-4 h-4 text-primary" />
+        {format(new Date(date + "T12:00:00"), "MMM d, yyyy")}
+      </h3>
+      <p className="text-xs text-muted-foreground mb-3">{doctorName}</p>
+
+      {hasLeave && (
+        <div className="mb-3 p-2 rounded bg-destructive/10 text-destructive text-xs flex items-center gap-1.5">
+          <AlertTriangle className="w-3.5 h-3.5" />
+          Doctor is on leave this day
+        </div>
+      )}
+
+      {availability.isLoading ? (
+        <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /></div>
+      ) : !availability.data?.available ? (
+        <p className="text-xs text-muted-foreground py-4 text-center">{availability.data?.reason || "Not available on this date"}</p>
+      ) : availability.data.slots.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-4 text-center">No OPD slots configured for this day</p>
+      ) : (
+        <div className="space-y-1.5">
+          {availability.data.slots.map((slot: any) => (
+            <div key={slot.startTime} className={cn("flex items-center justify-between p-2 rounded border text-xs", slot.availableCount <= 0 ? "bg-muted/50 opacity-50" : "hover:bg-primary/5")}>
+              <div className="flex items-center gap-2">
+                <Clock className="w-3 h-3 text-primary" />
+                <span className="font-medium">{slot.startTime} - {slot.endTime}</span>
+                <Badge variant="outline" className={cn("text-[10px] h-4", slot.availableCount <= 0 ? "text-destructive" : "text-green-600")}>
+                  {slot.availableCount <= 0 ? "Full" : `${slot.availableCount} left`}
+                </Badge>
+              </div>
+              {selectMode && slot.availableCount > 0 && (
+                <Button size="sm" variant="default" className="text-[10px] h-6 px-2" onClick={() => onSlotSelected(doctorId, date, slot.startTime)} data-testid={`avail-pick-slot-${slot.startTime}`}>
+                  Select
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function AvailabilityDayWeekView({ viewMode, selectedDate, onDateChange, doctorId, doctorsList, selectMode, onSlotSelected, leaveDateMap }: {
+  viewMode: "day" | "week";
+  selectedDate: string;
+  onDateChange: (d: string) => void;
+  doctorId: string;
+  doctorsList: any[];
+  selectMode: boolean;
+  onSlotSelected: (doctorId: string, date: string, time: string) => void;
+  leaveDateMap: Map<string, LeaveRecord[]>;
+}) {
+  const dateObj = new Date(selectedDate + "T12:00:00");
+  const dates = viewMode === "day" ? [dateObj] : eachDayOfInterval({ start: startOfWeek(dateObj, { weekStartsOn: 1 }), end: endOfWeek(dateObj, { weekStartsOn: 1 }) });
+
+  const doctorsToShow = doctorId !== "all" ? doctorsList.filter((d: any) => String(d.id) === doctorId) : doctorsList.slice(0, 10);
+
+  const navigateDate = (dir: number) => {
+    const d = new Date(selectedDate + "T12:00:00");
+    if (viewMode === "day") d.setDate(d.getDate() + dir);
+    else d.setDate(d.getDate() + dir * 7);
+    onDateChange(format(d, "yyyy-MM-dd"));
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <Button variant="outline" size="icon" onClick={() => navigateDate(-1)} data-testid="avail-nav-prev">
+          <ChevronLeft className="w-4 h-4" />
+        </Button>
+        <h3 className="font-semibold text-sm">
+          {viewMode === "day"
+            ? format(dateObj, "EEEE, MMMM d, yyyy")
+            : `${format(dates[0], "MMM d")} — ${format(dates[dates.length - 1], "MMM d, yyyy")}`}
+        </h3>
+        <Button variant="outline" size="icon" onClick={() => navigateDate(1)} data-testid="avail-nav-next">
+          <ChevronRight className="w-4 h-4" />
+        </Button>
+      </div>
+
+      {doctorId === "all" && doctorsList.length > 10 && (
+        <p className="text-xs text-muted-foreground text-center">Showing first 10 doctors. Select a specific doctor for full detail.</p>
+      )}
+
+      <div className={cn("grid gap-3", viewMode === "week" ? "grid-cols-7" : "grid-cols-1")}>
+        {dates.map((day) => {
+          const key = format(day, "yyyy-MM-dd");
+          const dayLeaves = leaveDateMap.get(key) || [];
+          const isSunday = day.getDay() === 0;
+
+          return (
+            <div key={key} className={cn("space-y-2", viewMode === "week" && "min-w-0")}>
+              <div className={cn("text-xs font-semibold text-center py-1 rounded", isToday(day) ? "bg-primary text-primary-foreground" : "bg-muted")}>
+                {viewMode === "week" ? format(day, "EEE d") : format(day, "EEEE, MMM d")}
+              </div>
+              {isSunday ? (
+                <div className="text-[10px] text-muted-foreground text-center py-3">Holiday</div>
+              ) : (
+                <div className="space-y-1">
+                  {doctorsToShow.map((doc: any) => {
+                    const docId = String(doc.id);
+                    const onLeave = dayLeaves.some(l => String(l.doctorId) === docId);
+                    return (
+                      <DayDoctorSlotRow
+                        key={docId}
+                        doctorId={docId}
+                        doctorName={doc.name}
+                        date={key}
+                        onLeave={onLeave}
+                        selectMode={selectMode}
+                        onSlotSelected={onSlotSelected}
+                        compact={viewMode === "week"}
+                      />
+                    );
+                  })}
+                  {doctorsToShow.length === 0 && (
+                    <p className="text-[10px] text-muted-foreground text-center py-2">Select a doctor</p>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DayDoctorSlotRow({ doctorId, doctorName, date, onLeave, selectMode, onSlotSelected, compact }: {
+  doctorId: string;
+  doctorName: string;
+  date: string;
+  onLeave: boolean;
+  selectMode: boolean;
+  onSlotSelected: (doctorId: string, date: string, time: string) => void;
+  compact: boolean;
+}) {
+  const availability = useDoctorAvailability(Number(doctorId), date);
+
+  if (onLeave) {
+    return (
+      <div className="text-[10px] p-1.5 rounded bg-destructive/5 border border-destructive/10 text-destructive truncate" data-testid={`avail-slot-row-${doctorId}-${date}`}>
+        <Stethoscope className="w-2.5 h-2.5 inline mr-1" />
+        {compact ? doctorName.split(" ")[0] : doctorName} — Leave
+      </div>
+    );
+  }
+
+  if (availability.isLoading) {
+    return (
+      <div className="text-[10px] p-1.5 rounded bg-muted/50 text-muted-foreground truncate">
+        <Stethoscope className="w-2.5 h-2.5 inline mr-1" />
+        {compact ? doctorName.split(" ")[0] : doctorName} <Loader2 className="w-2.5 h-2.5 inline animate-spin ml-1" />
+      </div>
+    );
+  }
+
+  const slots = availability.data?.slots || [];
+  const totalAvailable = slots.reduce((sum: number, s: any) => sum + Math.max(0, s.availableCount), 0);
+
+  return (
+    <div className="text-[10px] p-1.5 rounded border bg-background" data-testid={`avail-slot-row-${doctorId}-${date}`}>
+      <div className="flex items-center gap-1 mb-1">
+        <Stethoscope className="w-2.5 h-2.5 text-primary flex-shrink-0" />
+        <span className="font-medium truncate">{compact ? doctorName.split(" ")[0] : doctorName}</span>
+        {totalAvailable > 0 && (
+          <Badge variant="outline" className="text-[8px] h-3.5 ml-auto text-green-600 border-green-200">{totalAvailable} slots</Badge>
+        )}
+      </div>
+      {!availability.data?.available ? (
+        <span className="text-muted-foreground">Unavailable</span>
+      ) : slots.length === 0 ? (
+        <span className="text-muted-foreground">No OPD slots</span>
+      ) : (
+        <div className={cn("flex gap-1 flex-wrap", compact && "flex-col")}>
+          {slots.map((slot: any) => (
+            <button
+              key={slot.startTime}
+              className={cn(
+                "px-1.5 py-0.5 rounded text-[9px] border transition-colors",
+                slot.availableCount <= 0
+                  ? "bg-muted/50 text-muted-foreground cursor-not-allowed"
+                  : selectMode
+                    ? "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 cursor-pointer"
+                    : "bg-muted/30 text-foreground"
+              )}
+              disabled={slot.availableCount <= 0}
+              onClick={() => selectMode && slot.availableCount > 0 && onSlotSelected(doctorId, date, slot.startTime)}
+              data-testid={`avail-slot-${doctorId}-${date}-${slot.startTime}`}
+            >
+              {slot.startTime}{!compact && `-${slot.endTime}`} ({slot.availableCount})
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

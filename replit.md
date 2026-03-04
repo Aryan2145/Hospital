@@ -24,6 +24,7 @@ The platform is built with a modern web stack:
 - **Branding:** Dynamic per-tenant branding for logos, favicons, display names, and color schemes.
 - **System Admin Panel:** Separate `/admin/*` routes for SYS_ADMINs with distinct dark theme, managing hospitals, subscription plans, payments, and tenant suspension.
 - **Check-In & Front Office:** Integrated into the Appointments page, allowing check-in, patient record creation from lead data, and tracking appointment statuses.
+- **Doctor Availability Calendar:** Embedded as a modal overlay within the Appointments page (no separate sidebar menu item). Accessible via "Availability Calendar" button in page header and "Check Availability" link in the booking dialog. Supports Month/Day/Week views with leave display and slot selection that prefills the booking form. Route `/doctor-availability` redirects to `/appointments`.
 - **Episode Intelligence Layer:**
     - **Temperature Engine:** 7-level lead temperature tracking, auto-computed on trigger events.
     - **Auto-Handover Engine:** Stage-based team assignment.

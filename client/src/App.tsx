@@ -112,7 +112,7 @@ function Router() {
 
       <Route path="/doctor-availability">
         {isAuthenticated ? (
-          <RoleGate page="appointments"><DoctorAvailabilityPage /></RoleGate>
+          <Redirect to="/appointments" />
         ) : <Landing />}
       </Route>
 

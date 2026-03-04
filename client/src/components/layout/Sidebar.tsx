@@ -15,7 +15,6 @@ import {
   Paintbrush,
   ClipboardCheck,
   Settings2,
-  CalendarOff,
   Phone,
   Brain,
 } from "lucide-react";
@@ -41,7 +40,6 @@ const sections: { label: string; items: NavItem[] }[] = [
       { icon: Megaphone, label: "Campaigns", href: "/campaigns", page: "campaigns" },
       { icon: Users, label: "Leads", href: "/leads", page: "leads" },
       { icon: Calendar, label: "Appointments", href: "/appointments", page: "appointments" },
-      { icon: CalendarOff, label: "Doctor Availability", href: "/doctor-availability", page: "appointments" },
       { icon: HeartPulse, label: "Consultation Episodes", href: "/transactions", page: "transactions" },
     ],
   },
