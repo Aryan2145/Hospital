@@ -14,7 +14,6 @@ import {
   HeartPulse,
   Paintbrush,
   ClipboardCheck,
-  Settings2,
   Phone,
   Brain,
 } from "lucide-react";
@@ -66,7 +65,6 @@ export function Sidebar() {
   const { crmUser, roleName, roleCode, canViewPage } = useCurrentUser();
   const { displayName: tenantDisplayName, logoUrl: tenantLogo } = useTenantBranding();
 
-  const { isSysAdmin } = useCurrentUser();
   const displayName = crmUser?.name || `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User";
   const displayEmail = crmUser?.email || user?.email || "";
 
@@ -149,19 +147,6 @@ export function Sidebar() {
           </div>
         </div>
         <p className="text-xs text-muted-foreground truncate mb-2 px-1" data-testid="text-user-email">{displayEmail}</p>
-        {isSysAdmin && (
-          <Link href="/admin">
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full mb-2 border-orange-200 text-orange-700 hover:bg-orange-50 hover:text-orange-800"
-              data-testid="button-admin-panel"
-            >
-              <Settings2 className="w-3.5 h-3.5 mr-2" />
-              Admin Panel
-            </Button>
-          </Link>
-        )}
         <Button
           variant="outline"
           size="sm"
