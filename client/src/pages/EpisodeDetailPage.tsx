@@ -49,6 +49,12 @@ import {
   Save,
   X,
   UserCog,
+  Phone,
+  MessageCircle,
+  Mail,
+  MessageSquare,
+  CalendarClock,
+  StickyNote,
 } from "lucide-react";
 
 interface AuditLogEntry {
@@ -349,6 +355,8 @@ export default function EpisodeDetailPage() {
             })}
           </div>
         </Card>
+
+        <LogAndNextActionCard episode={episode} />
 
         <Tabs defaultValue="clinical" className="w-full" data-testid="episode-tabs">
           <TabsList className="w-full justify-start gap-1 flex-wrap" data-testid="episode-tabs-list">
@@ -716,6 +724,231 @@ export default function EpisodeDetailPage() {
         </DialogContent>
       </Dialog>
     </AppLayout>
+  );
+}
+
+function LogAndNextActionCard({ episode }: { episode: any }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const updateEpisode = useUpdateEpisode();
+  const [expanded, setExpanded] = useState(false);
+
+  const [activityType, setActivityType] = useState("Call");
+  const [activityDescription, setActivityDescription] = useState("");
+  const [activityOutcome, setActivityOutcome] = useState("Interested");
+  const [callDuration, setCallDuration] = useState("");
+
+  const [nextActionDate, setNextActionDate] = useState(
+    episode.nextActionDate ? format(new Date(episode.nextActionDate), "yyyy-MM-dd'T'HH:mm") : ""
+  );
+  const [nextActionNotes, setNextActionNotes] = useState(episode.nextActionNotes || "");
+  const [nextActionTypeId, setNextActionTypeId] = useState(
+    episode.nextActionTypeId ? String(episode.nextActionTypeId) : ""
+  );
+
+  const { data: nextActionTypesData = [] } = useQuery<any[]>({
+    queryKey: ["/api/masters/nextActionTypes"],
+    enabled: expanded,
+  });
+  const activeNextActionTypes = (nextActionTypesData || []).filter(
+    (t: any) => t.status === "Active"
+  );
+
+  const logActivityMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", `/api/leads/${episode.leadId}/activities`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Activity logged" });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads", episode.leadId, "activities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/audit-logs"] });
+      setActivityDescription("");
+      setCallDuration("");
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleLogActivity = () => {
+    if (!activityDescription.trim()) return;
+    const payload: any = {
+      leadId: episode.leadId,
+      tenantId: episode.tenantId,
+      type: activityType.toLowerCase(),
+      description: activityDescription.trim(),
+      outcome: activityOutcome,
+    };
+    if (activityType === "Call" && callDuration) {
+      payload.callDuration = Number(callDuration);
+    }
+    logActivityMutation.mutate(payload);
+  };
+
+  const handleSetNextAction = () => {
+    const fields: Record<string, any> = {};
+    if (nextActionTypeId) fields.nextActionTypeId = Number(nextActionTypeId);
+    if (nextActionDate) fields.nextActionDate = new Date(nextActionDate).toISOString();
+    if (nextActionNotes.trim()) fields.nextActionNotes = nextActionNotes.trim();
+    if (Object.keys(fields).length === 0) return;
+    updateEpisode.mutate(
+      { id: episode.id, ...fields },
+      {
+        onSuccess: () => {
+          toast({ title: "Next action updated" });
+          queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id] });
+        },
+        onError: (err: any) => {
+          toast({ title: "Error", description: err.message, variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  const ACTIVITY_TYPE_OPTIONS = [
+    { value: "Call", label: "Call", icon: Phone },
+    { value: "Note", label: "Note", icon: StickyNote },
+    { value: "WhatsApp", label: "WhatsApp", icon: MessageCircle },
+    { value: "Email", label: "Email", icon: Mail },
+    { value: "SMS", label: "SMS", icon: MessageSquare },
+  ];
+
+  const OUTCOME_OPTIONS = ["Interested", "Follow Up", "Not Interested", "Callback", "Other"];
+
+  const currentNextActionType = episode.nextActionTypeId
+    ? nextActionTypesData.find((t: any) => t.id === episode.nextActionTypeId)?.name
+    : null;
+
+  return (
+    <Card className="p-4" data-testid="card-log-next-action">
+      <button
+        className="w-full flex items-center justify-between"
+        onClick={() => setExpanded(!expanded)}
+        data-testid="button-toggle-log-next-action"
+      >
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <CalendarClock className="w-4 h-4 text-primary" />
+          Log & Next Action
+        </h3>
+        <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", expanded && "rotate-90")} />
+      </button>
+
+      {episode.nextActionDate && !expanded && (
+        <div className="mt-2 flex items-center gap-2 text-xs">
+          <Badge variant="outline" className="text-[10px]" data-testid="badge-current-next-action">
+            <CalendarClock className="w-3 h-3 mr-1" />
+            Next: {currentNextActionType || "Action"} on {format(new Date(episode.nextActionDate), "MMM d, yyyy h:mm a")}
+          </Badge>
+          {episode.nextActionNotes && (
+            <span className="text-muted-foreground truncate max-w-[200px]">{episode.nextActionNotes}</span>
+          )}
+        </div>
+      )}
+
+      {expanded && (
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Log Activity</h4>
+            <div className="space-y-2">
+              <SearchableSelect
+                value={activityType}
+                onValueChange={setActivityType}
+                options={ACTIVITY_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                placeholder="Activity Type"
+                triggerClassName="text-xs"
+                data-testid="input-activity-type"
+              />
+              <Textarea
+                value={activityDescription}
+                onChange={(e) => setActivityDescription(e.target.value)}
+                placeholder="Description..."
+                rows={2}
+                className="text-xs resize-none"
+                data-testid="input-activity-description"
+              />
+              <SearchableSelect
+                value={activityOutcome}
+                onValueChange={setActivityOutcome}
+                options={OUTCOME_OPTIONS.map((o) => ({ value: o, label: o }))}
+                placeholder="Outcome"
+                triggerClassName="text-xs"
+                data-testid="input-activity-outcome"
+              />
+              {activityType === "Call" && (
+                <Input
+                  type="number"
+                  value={callDuration}
+                  onChange={(e) => setCallDuration(e.target.value)}
+                  placeholder="Call duration (minutes)"
+                  className="text-xs"
+                  min={0}
+                  data-testid="input-call-duration"
+                />
+              )}
+              <Button
+                size="sm"
+                onClick={handleLogActivity}
+                disabled={!activityDescription.trim() || logActivityMutation.isPending}
+                className="w-full"
+                data-testid="button-log-activity"
+              >
+                {logActivityMutation.isPending ? "Logging..." : "Log Activity"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Next Action</h4>
+
+            {episode.nextActionDate && (
+              <div className="p-2 rounded-md bg-primary/5 border border-primary/10" data-testid="current-next-action-display">
+                <p className="text-xs font-medium text-foreground">
+                  {currentNextActionType || "Next Action"}: {format(new Date(episode.nextActionDate), "MMM d, yyyy h:mm a")}
+                </p>
+                {episode.nextActionNotes && (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{episode.nextActionNotes}</p>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <SearchableSelect
+                value={nextActionTypeId}
+                onValueChange={setNextActionTypeId}
+                options={activeNextActionTypes.map((t: any) => ({ value: String(t.id), label: t.name }))}
+                placeholder="Next Action Type"
+                triggerClassName="text-xs"
+                data-testid="select-next-action-type"
+              />
+              <Input
+                type="datetime-local"
+                value={nextActionDate}
+                onChange={(e) => setNextActionDate(e.target.value)}
+                className="text-xs"
+                data-testid="input-next-action-date"
+              />
+              <Input
+                value={nextActionNotes}
+                onChange={(e) => setNextActionNotes(e.target.value)}
+                placeholder="Next action notes..."
+                className="text-xs"
+                data-testid="input-next-action-notes"
+              />
+              <Button
+                size="sm"
+                onClick={handleSetNextAction}
+                disabled={(!nextActionTypeId && !nextActionDate && !nextActionNotes.trim()) || updateEpisode.isPending}
+                className="w-full"
+                data-testid="button-set-next-action"
+              >
+                {updateEpisode.isPending ? "Saving..." : "Set Next Action"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 

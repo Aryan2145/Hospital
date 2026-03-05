@@ -5,7 +5,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Calendar, ArrowUpDown, ChevronUp, ChevronDown, X, Clock, Users, Flame, Moon, AlertCircle, Headphones, Building2, Stethoscope, Shield, GitMerge } from "lucide-react";
+import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Calendar, ArrowUpDown, ChevronUp, ChevronDown, ChevronRight, X, Clock, Users, Flame, Moon, AlertCircle, Headphones, Building2, Stethoscope, Shield, GitMerge } from "lucide-react";
 import { MergeLeadsModal } from "@/components/leads/MergeLeadsModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
@@ -341,6 +341,56 @@ function formatAgeing(lead: any): { text: string; isBreached: boolean } {
   return { text: `${Math.floor(days / 365)}y`, isBreached: breached };
 }
 
+const LEAD_FUNNEL_STAGES = [
+  "Raw Lead Captured",
+  "Contacted",
+  "Qualified",
+  "Appointment Booked",
+  "Reminder Running",
+  "Consultation Done",
+];
+
+const TERMINAL_STATUSES = ["Closed Won", "Closed Lost", "Unqualified", "Nurture"];
+
+function LeadFunnelStrip({ leadId, status }: { leadId: number; status: string }) {
+  const isTerminal = TERMINAL_STATUSES.includes(status);
+  const currentStageIndex = LEAD_FUNNEL_STAGES.indexOf(status);
+
+  return (
+    <div className="flex flex-col gap-1" data-testid={`funnel-lead-${leadId}`}>
+      <div className="flex items-center gap-0.5">
+        {LEAD_FUNNEL_STAGES.map((stage, idx) => {
+          const isCurrent = stage === status;
+          const isPast = currentStageIndex >= 0 && idx < currentStageIndex;
+          return (
+            <div key={stage} className="flex items-center">
+              <div
+                className={cn(
+                  "px-1.5 py-0.5 rounded text-[9px] font-medium whitespace-nowrap border transition-colors",
+                  isCurrent && "bg-primary text-primary-foreground border-primary",
+                  isPast && !isCurrent && "bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300 border-green-200 dark:border-green-800",
+                  !isCurrent && !isPast && "bg-muted text-muted-foreground border-border",
+                )}
+                data-testid={`funnel-stage-${stage.toLowerCase().replace(/\s+/g, "-")}-${leadId}`}
+              >
+                {stage.replace("Raw Lead Captured", "Raw").replace("Appointment Booked", "Appt").replace("Reminder Running", "Reminder").replace("Consultation Done", "Consult")}
+              </div>
+              {idx < LEAD_FUNNEL_STAGES.length - 1 && (
+                <ChevronRight className="w-2.5 h-2.5 text-muted-foreground mx-0.5 shrink-0" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {isTerminal && (
+        <Badge className={cn("text-[9px] w-fit", getStatusColor(status))} data-testid={`badge-status-${leadId}`}>
+          {status}
+        </Badge>
+      )}
+    </div>
+  );
+}
+
 function LeadsListView({ leads }: { leads: any[] }) {
   const [sortField, setSortField] = useState<string>("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -443,9 +493,7 @@ function LeadsListView({ leads }: { leads: any[] }) {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge className={cn("text-[10px] whitespace-nowrap", getStatusColor(lead.status))} data-testid={`badge-status-${lead.id}`}>
-                      {lead.status}
-                    </Badge>
+                    <LeadFunnelStrip leadId={lead.id} status={lead.status} />
                   </TableCell>
                   <TableCell>
                     {temp ? (
