@@ -15,6 +15,8 @@ import { stringify } from "csv-stringify/sync";
 import { desc, eq, and, sql, count, gte, lte, isNull, inArray } from "drizzle-orm";
 import { computeAndUpdateTemperature, checkDormantLeads } from "./services/temperatureEngine";
 import { processAutoHandover } from "./services/handoverEngine";
+import { createNurtureTaskChain, processNurtureTaskCompletion, processAutoNurtureOnNoShow } from "./services/nurtureEngine";
+import { startBackgroundScheduler } from "./services/backgroundScheduler";
 import { computeRevenueProbability, seedDefaultProbabilityConfig } from "./services/revenueProbability";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -1273,7 +1275,18 @@ export async function registerRoutes(
         }
       }
 
+      const oldLead = await storage.getLead(leadId);
       let lead = await storage.updateLead(leadId, input);
+
+      if (input.status === "Nurture" && oldLead?.status !== "Nurture") {
+        try {
+          const tid = await getDefaultTenantId(req);
+          const userId = String((req as any).session?.crmUserId || "system");
+          await createNurtureTaskChain(leadId, tid, lead.assignedCrmUserId || null, userId);
+        } catch (nurtureErr: any) {
+          console.error("Nurture task chain creation failed:", nurtureErr.message);
+        }
+      }
 
       if (input.status === "Consultation Done" && !lead.patientId) {
         try {
@@ -1403,7 +1416,18 @@ export async function registerRoutes(
   app.patch(api.tasks.update.path, isAuthenticated, async (req, res) => {
     try {
       const input = api.tasks.update.input.parse(req.body);
-      const task = await storage.updateTask(Number(req.params.id), input);
+      const taskId = Number(req.params.id);
+      const task = await storage.updateTask(taskId, input);
+
+      if (input.status === "Completed") {
+        try {
+          const tid = await getDefaultTenantId(req);
+          const userId = String((req as any).session?.crmUserId || "system");
+          const outcome = (req.body as any).nurtureOutcome || null;
+          await processNurtureTaskCompletion(taskId, tid, outcome, userId);
+        } catch {}
+      }
+
       res.json(task);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -4418,6 +4442,12 @@ export async function registerRoutes(
               } as any);
             }
           } catch {}
+
+          try {
+            await processAutoNurtureOnNoShow(appt.leadId, tid, newNoShowCount, userId);
+          } catch (nurtureErr: any) {
+            console.error("Auto-nurture on no-show failed:", nurtureErr.message);
+          }
         }
       }
 

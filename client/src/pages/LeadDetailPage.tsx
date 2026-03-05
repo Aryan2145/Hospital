@@ -857,12 +857,30 @@ function NextActionPanel({ lead }: { lead: any }) {
 function TasksPanel({ leadId }: { leadId: number }) {
   const { data: leadTasks, isLoading } = useTasks(leadId);
   const updateTask = useUpdateTask();
+  const [nurtureOutcomeTaskId, setNurtureOutcomeTaskId] = useState<number | null>(null);
 
-  const pendingTasks = leadTasks?.filter((t) => t.status !== "Completed") || [];
-  const completedTasks = leadTasks?.filter((t) => t.status === "Completed") || [];
+  const pendingTasks = leadTasks?.filter((t) => t.status !== "Completed" && t.status !== "Cancelled") || [];
 
-  const handleComplete = (taskId: number) => {
+  const isNurtureTask = (task: any) => {
+    return task.title?.startsWith("Nurture Follow-up");
+  };
+
+  const handleComplete = (taskId: number, task: any) => {
+    if (isNurtureTask(task)) {
+      setNurtureOutcomeTaskId(taskId);
+      return;
+    }
     updateTask.mutate({ id: taskId, status: "Completed" });
+  };
+
+  const handleNurtureOutcome = (outcome: string) => {
+    if (!nurtureOutcomeTaskId) return;
+    updateTask.mutate({
+      id: nurtureOutcomeTaskId,
+      status: "Completed",
+      nurtureOutcome: outcome,
+    } as any);
+    setNurtureOutcomeTaskId(null);
   };
 
   return (
@@ -872,17 +890,40 @@ function TasksPanel({ leadId }: { leadId: number }) {
         Tasks ({pendingTasks.length})
       </h3>
 
+      {nurtureOutcomeTaskId && (
+        <Card className="p-3 mb-3 border-primary/30 bg-primary/5" data-testid="nurture-outcome-dialog">
+          <p className="text-xs font-medium text-foreground mb-2">What was the nurture outcome?</p>
+          <div className="flex flex-wrap gap-1.5">
+            <Button size="sm" variant="outline" className="text-[10px] h-7 bg-green-50 border-green-200 text-green-700 hover:bg-green-100" onClick={() => handleNurtureOutcome("interested")} data-testid="button-nurture-interested">
+              Interested
+            </Button>
+            <Button size="sm" variant="outline" className="text-[10px] h-7" onClick={() => handleNurtureOutcome("follow_up")} data-testid="button-nurture-followup">
+              Follow Up Later
+            </Button>
+            <Button size="sm" variant="outline" className="text-[10px] h-7 bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100" onClick={() => handleNurtureOutcome("not_reached")} data-testid="button-nurture-not-reached">
+              Not Reached
+            </Button>
+            <Button size="sm" variant="outline" className="text-[10px] h-7 bg-red-50 border-red-200 text-red-700 hover:bg-red-100" onClick={() => handleNurtureOutcome("closed")} data-testid="button-nurture-closed">
+              Not Needed / Treated Elsewhere
+            </Button>
+            <Button size="sm" variant="ghost" className="text-[10px] h-7" onClick={() => setNurtureOutcomeTaskId(null)} data-testid="button-nurture-cancel">
+              Cancel
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {isLoading ? (
         <p className="text-xs text-muted-foreground">Loading...</p>
       ) : pendingTasks.length === 0 ? (
         <p className="text-xs text-muted-foreground">No pending tasks.</p>
       ) : (
         <div className="space-y-2">
-          {pendingTasks.slice(0, 5).map((task) => (
-            <Card key={task.id} className="p-2" data-testid={`task-${task.id}`}>
+          {pendingTasks.slice(0, 8).map((task) => (
+            <Card key={task.id} className={cn("p-2", isNurtureTask(task) && "border-l-2 border-l-cyan-400")} data-testid={`task-${task.id}`}>
               <div className="flex items-start gap-2">
                 <button
-                  onClick={() => handleComplete(task.id)}
+                  onClick={() => handleComplete(task.id, task)}
                   className="mt-0.5 w-4 h-4 rounded border border-border flex items-center justify-center shrink-0 hover:bg-primary/10"
                   data-testid={`button-complete-task-${task.id}`}
                 >
@@ -890,13 +931,18 @@ function TasksPanel({ leadId }: { leadId: number }) {
                 </button>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-foreground truncate">{task.title}</p>
+                  {task.description && isNurtureTask(task) && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{task.description}</p>
+                  )}
                   {task.dueDate && (
                     <p className={cn("text-[10px]", isPast(new Date(task.dueDate)) ? "text-red-500" : "text-muted-foreground")}>
                       Due: {format(new Date(task.dueDate), "MMM d")}
                     </p>
                   )}
                 </div>
+                {task.priority === "Urgent" && <Badge className="text-[10px] bg-rose-100 text-rose-700 border-rose-200">Urgent</Badge>}
                 {task.priority === "High" && <Badge className="text-[10px] bg-red-100 text-red-700 border-red-200">High</Badge>}
+                {isNurtureTask(task) && <Badge className="text-[10px] bg-cyan-100 text-cyan-700 border-cyan-200">Nurture</Badge>}
               </div>
             </Card>
           ))}
