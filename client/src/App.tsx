@@ -92,6 +92,12 @@ function Router() {
         ) : <Landing />}
       </Route>
 
+      <Route path="/dashboard">
+        {isAuthenticated ? (
+          <Redirect to="/" />
+        ) : <Landing />}
+      </Route>
+
       <Route path="/leads">
         {isAuthenticated ? (
           <RoleGate page="leads"><LeadsWorkspace /></RoleGate>

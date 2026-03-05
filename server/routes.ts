@@ -5619,6 +5619,184 @@ export async function registerRoutes(
   });
 
   // =============================================
+  // DASHBOARD STATS (Role-Aware)
+  // =============================================
+  app.get("/api/dashboard/stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUserId = req.session?.crmUserId;
+      let roleCode = "AGENT";
+      let userName = "User";
+      if (crmUserId) {
+        const [userRow] = (await pool.query(
+          `SELECT cu.name, sr.code as role_code FROM crm_users cu
+           LEFT JOIN system_roles sr ON cu.system_role_id = sr.id
+           WHERE cu.id = $1 AND cu.tenant_id = $2`,
+          [crmUserId, tid]
+        )).rows;
+        if (userRow) {
+          roleCode = userRow.role_code || "AGENT";
+          userName = userRow.name || "User";
+        }
+      }
+
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+      const todayISO = todayStart.toISOString();
+      const todayEndISO = todayEnd.toISOString();
+
+      const isManagement = roleCode === "SYS_ADMIN" || roleCode === "ADMIN";
+      const isManager = roleCode === "MANAGER";
+
+      const scopeFilter = isManagement ? "" : ` AND (l.assigned_crm_user_id = ${crmUserId} OR l.assigned_to = '${crmUserId}')`;
+      const epScopeFilter = isManagement ? "" : ` AND (e.assigned_crm_user_id = ${crmUserId} OR e.doctor_id IN (SELECT id FROM doctors WHERE tenant_id = ${tid}))`;
+
+      const [leadCounts] = (await pool.query(
+        `SELECT 
+          COUNT(*) as total_leads,
+          COUNT(*) FILTER (WHERE l.status = 'Raw Lead Captured') as raw_leads,
+          COUNT(*) FILTER (WHERE l.status = 'Contacted') as contacted,
+          COUNT(*) FILTER (WHERE l.status = 'Qualified') as qualified,
+          COUNT(*) FILTER (WHERE l.status = 'Appointment Booked') as appointment_booked,
+          COUNT(*) FILTER (WHERE l.status = 'Consultation Done') as consultation_done,
+          COUNT(*) FILTER (WHERE l.status = 'Closed Won') as closed_won,
+          COUNT(*) FILTER (WHERE l.status = 'Closed Lost') as closed_lost,
+          COUNT(*) FILTER (WHERE l.status = 'Nurture') as nurture,
+          COUNT(*) FILTER (WHERE l.created_at >= $2) as today_new,
+          COUNT(*) FILTER (WHERE l.lead_temperature IN ('Very Hot', 'Hot')) as hot_leads,
+          COUNT(*) FILTER (WHERE l.lead_temperature = 'Dormant' OR (l.last_contact_at IS NOT NULL AND l.last_contact_at < NOW() - INTERVAL '5 days')) as dormant_leads,
+          COUNT(*) FILTER (WHERE l.next_action_date IS NOT NULL AND l.next_action_date < $2) as overdue_actions,
+          COUNT(*) FILTER (WHERE l.next_action_date >= $2 AND l.next_action_date < $3) as today_actions
+        FROM leads l WHERE l.tenant_id = $1${scopeFilter}`,
+        [tid, todayISO, todayEndISO]
+      )).rows;
+
+      const [episodeCounts] = (await pool.query(
+        `SELECT
+          COUNT(*) as total_episodes,
+          COUNT(*) FILTER (WHERE e.status NOT IN ('Completed', 'Discontinued')) as active_episodes,
+          COUNT(*) FILTER (WHERE e.status = 'Consultation Done') as consultations,
+          COUNT(*) FILTER (WHERE e.status IN ('Surgery Scheduled', 'Surgery Done')) as surgeries,
+          COUNT(*) FILTER (WHERE e.status = 'Completed') as completed,
+          COUNT(*) FILTER (WHERE e.status = 'Discontinued') as discontinued,
+          COALESCE(SUM(e.initial_quote) FILTER (WHERE e.status NOT IN ('Completed', 'Discontinued')), 0) as pipeline_value,
+          COALESCE(SUM(e.actual_bill) FILTER (WHERE e.status = 'Completed'), 0) as realized_revenue,
+          COUNT(*) FILTER (WHERE e.insurance_applicable = true) as insurance_cases,
+          COUNT(*) FILTER (WHERE e.next_action_date IS NOT NULL AND e.next_action_date < $2) as overdue_ep_actions,
+          COUNT(*) FILTER (WHERE e.next_action_date >= $2 AND e.next_action_date < $3) as today_ep_actions
+        FROM episodes e WHERE e.tenant_id = $1${isManagement ? "" : ` AND e.assigned_crm_user_id = ${crmUserId}`}`,
+        [tid, todayISO, todayEndISO]
+      )).rows;
+
+      const [appointmentCounts] = (await pool.query(
+        `SELECT
+          COUNT(*) FILTER (WHERE a.appointment_date >= $2 AND a.appointment_date < $3) as today_appointments,
+          COUNT(*) FILTER (WHERE a.appointment_date >= $2 AND a.appointment_date < $3 AND a.status = 'Completed') as today_completed,
+          COUNT(*) FILTER (WHERE a.appointment_date >= $2 AND a.appointment_date < $3 AND a.status = 'No Show') as today_no_shows,
+          COUNT(*) FILTER (WHERE a.appointment_date >= $2 AND a.appointment_date < $3 AND a.status IN ('Scheduled', 'Confirmed')) as today_pending
+        FROM appointments a WHERE a.tenant_id = $1`,
+        [tid, todayISO, todayEndISO]
+      )).rows;
+
+      const nextActions = (await pool.query(
+        `(SELECT 'lead' as entity_type, l.id as entity_id, l.name as entity_name, l.next_action_date, l.next_action_notes, 
+            nat.name as action_type_name, cu.name as assigned_to_name
+          FROM leads l
+          LEFT JOIN next_action_types nat ON l.next_action_type_id = nat.id
+          LEFT JOIN crm_users cu ON l.next_action_assigned_to = cu.id
+          WHERE l.tenant_id = $1 AND l.next_action_date IS NOT NULL
+            AND l.next_action_date >= $2 AND l.next_action_date < $3
+            ${isManagement ? "" : `AND (l.next_action_assigned_to = ${crmUserId} OR l.assigned_crm_user_id = ${crmUserId})`}
+          ORDER BY l.next_action_date LIMIT 20)
+        UNION ALL
+        (SELECT 'episode' as entity_type, e.id as entity_id, e.episode_name as entity_name, e.next_action_date, e.next_action_notes,
+            nat.name as action_type_name, cu.name as assigned_to_name
+          FROM episodes e
+          LEFT JOIN next_action_types nat ON e.next_action_type_id = nat.id
+          LEFT JOIN crm_users cu ON e.next_action_assigned_to = cu.id
+          WHERE e.tenant_id = $1 AND e.next_action_date IS NOT NULL
+            AND e.next_action_date >= $2 AND e.next_action_date < $3
+            ${isManagement ? "" : `AND (e.next_action_assigned_to = ${crmUserId} OR e.assigned_crm_user_id = ${crmUserId})`}
+          ORDER BY e.next_action_date LIMIT 20)
+        ORDER BY next_action_date
+        LIMIT 20`,
+        [tid, todayISO, todayEndISO]
+      )).rows;
+
+      const overdueActions = (await pool.query(
+        `(SELECT 'lead' as entity_type, l.id as entity_id, l.name as entity_name, l.next_action_date, l.next_action_notes,
+            nat.name as action_type_name, cu.name as assigned_to_name
+          FROM leads l
+          LEFT JOIN next_action_types nat ON l.next_action_type_id = nat.id
+          LEFT JOIN crm_users cu ON l.next_action_assigned_to = cu.id
+          WHERE l.tenant_id = $1 AND l.next_action_date IS NOT NULL AND l.next_action_date < $2
+            ${isManagement ? "" : `AND (l.next_action_assigned_to = ${crmUserId} OR l.assigned_crm_user_id = ${crmUserId})`}
+          ORDER BY l.next_action_date DESC LIMIT 10)
+        UNION ALL
+        (SELECT 'episode' as entity_type, e.id as entity_id, e.episode_name as entity_name, e.next_action_date, e.next_action_notes,
+            nat.name as action_type_name, cu.name as assigned_to_name
+          FROM episodes e
+          LEFT JOIN next_action_types nat ON e.next_action_type_id = nat.id
+          LEFT JOIN crm_users cu ON e.next_action_assigned_to = cu.id
+          WHERE e.tenant_id = $1 AND e.next_action_date IS NOT NULL AND e.next_action_date < $2
+            ${isManagement ? "" : `AND (e.next_action_assigned_to = ${crmUserId} OR e.assigned_crm_user_id = ${crmUserId})`}
+          ORDER BY e.next_action_date DESC LIMIT 10)
+        ORDER BY next_action_date
+        LIMIT 10`,
+        [tid, todayISO]
+      )).rows;
+
+      let teamStats = null;
+      if (isManagement || isManager) {
+        const teamLeadCounts = (await pool.query(
+          `SELECT cu.id, cu.name, sr.code as role_code,
+            COUNT(l.id) as total_leads,
+            COUNT(l.id) FILTER (WHERE l.status = 'Raw Lead Captured') as untouched,
+            COUNT(l.id) FILTER (WHERE l.created_at >= $2) as today_new,
+            COUNT(l.id) FILTER (WHERE l.next_action_date IS NOT NULL AND l.next_action_date < $2) as overdue
+          FROM crm_users cu
+          LEFT JOIN system_roles sr ON cu.system_role_id = sr.id
+          LEFT JOIN leads l ON (l.assigned_crm_user_id = cu.id OR l.assigned_to = cu.id::text) AND l.tenant_id = $1
+          WHERE cu.tenant_id = $1 AND cu.is_active = true
+            AND sr.code IN ('AGENT', 'COUNSELLOR', 'MANAGER')
+          GROUP BY cu.id, cu.name, sr.code
+          ORDER BY total_leads DESC`,
+          [tid, todayISO]
+        )).rows;
+        teamStats = teamLeadCounts;
+      }
+
+      let recentActivities = null;
+      if (!isManagement) {
+        recentActivities = (await pool.query(
+          `SELECT a.id, a.type, a.description, a.outcome, a.created_at, l.name as lead_name, l.id as lead_id
+          FROM activities a
+          JOIN leads l ON a.lead_id = l.id
+          WHERE a.tenant_id = $1 AND a.created_by = $2
+          ORDER BY a.created_at DESC LIMIT 10`,
+          [tid, String(crmUserId)]
+        )).rows;
+      }
+
+      res.json({
+        roleCode,
+        userName,
+        leadCounts,
+        episodeCounts,
+        appointmentCounts,
+        nextActions,
+        overdueActions,
+        teamStats,
+        recentActivities,
+      });
+    } catch (err: any) {
+      console.error("Dashboard stats error:", err);
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
   // AUDIT LOG ROUTES
   // =============================================
   app.get("/api/audit-logs", isAuthenticated, async (req, res) => {
