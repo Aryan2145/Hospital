@@ -48,5 +48,5 @@ The platform is built with a modern web stack:
 - **Google Sheets API:** For bulk lead import.
 - **WhatsApp Business API:** For automated communication.
 - **Meta Graph API v21.0:** For Facebook & Instagram ad campaign insights.
-- **Callyzer:** Webhook-based integration for real-time call log capture and auto-lead creation.
+- **Callyzer:** Webhook-based integration for real-time call log capture and auto-lead creation. Rich call card display in Lead Detail timeline (employee, notes, status, recording). Last Call column in Lead Workspace list view. Callyzer Reports page with SQL-aggregated stats (date-filtered), default date range: yesterday→today.
 - **SMTP Services:** For sending transactional emails and notifications.

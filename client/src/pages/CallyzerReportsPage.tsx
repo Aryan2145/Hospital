@@ -40,9 +40,9 @@ function formatDurationShort(seconds: number): string {
 
 export default function CallyzerReportsPage() {
   const today = format(new Date(), "yyyy-MM-dd");
-  const thirtyDaysAgo = format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), "yyyy-MM-dd");
+  const yesterday = format(new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), "yyyy-MM-dd");
 
-  const [dateFrom, setDateFrom] = useState(thirtyDaysAgo);
+  const [dateFrom, setDateFrom] = useState(yesterday);
   const [dateTo, setDateTo] = useState(today);
   const [callTypeFilter, setCallTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");

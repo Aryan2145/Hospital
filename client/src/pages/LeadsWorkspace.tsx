@@ -5,7 +5,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, Calendar, ArrowUpDown, ChevronUp, ChevronDown, X, Clock, Users, Flame, Moon, AlertCircle, Headphones, Building2, Stethoscope, Shield, GitMerge } from "lucide-react";
+import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Calendar, ArrowUpDown, ChevronUp, ChevronDown, X, Clock, Users, Flame, Moon, AlertCircle, Headphones, Building2, Stethoscope, Shield, GitMerge } from "lucide-react";
 import { MergeLeadsModal } from "@/components/leads/MergeLeadsModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
@@ -357,6 +357,10 @@ function LeadsListView({ leads }: { leads: any[] }) {
   });
   const userMap = Object.fromEntries(crmUsers.map((u: any) => [u.id, u.name]));
 
+  const { data: lastCallsMap = {} } = useQuery<Record<number, any>>({
+    queryKey: ["/api/leads/last-calls"],
+  });
+
   const toggleSort = (field: string) => {
     if (sortField === field) {
       setSortDir(sortDir === "asc" ? "desc" : "asc");
@@ -405,6 +409,7 @@ function LeadsListView({ leads }: { leads: any[] }) {
             <SortHeader field="leadTemperature">Temperature</SortHeader>
             <TableHead>Owner</TableHead>
             <SortHeader field="leadAgeingDays">Ageing</SortHeader>
+            <TableHead>Last Call</TableHead>
             <TableHead>Next Action</TableHead>
             <TableHead>Source</TableHead>
           </TableRow>
@@ -412,7 +417,7 @@ function LeadsListView({ leads }: { leads: any[] }) {
         <TableBody>
           {sorted.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
+              <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
                 No leads found.
               </TableCell>
             </TableRow>
@@ -472,6 +477,46 @@ function LeadsListView({ leads }: { leads: any[] }) {
                       {ageing.isBreached && <Clock className="w-3 h-3 inline mr-0.5 text-red-600" />}
                       {ageing.text}
                     </span>
+                  </TableCell>
+                  <TableCell>
+                    {(() => {
+                      const lc = lastCallsMap[lead.id];
+                      if (!lc) return <span className="text-xs text-muted-foreground/50">—</span>;
+                      const meta = lc.metadata || {};
+                      const empName = meta.empName || lc.createdBy || "";
+                      const empNumber = meta.empNumber || "";
+                      const callDir = lc.callDirection || "";
+                      const dur = lc.callDurationSeconds || 0;
+                      const durStr = dur > 0 ? (dur >= 3600 ? `${Math.floor(dur / 3600)}h ${Math.floor((dur % 3600) / 60)}m ${dur % 60}s` : dur >= 60 ? `${Math.floor(dur / 60)}m ${dur % 60}s` : `${dur}s`) : "";
+                      const notes = meta.notes || "";
+                      const callTime = lc.createdAt;
+                      const DirIcon = callDir === "Incoming" ? PhoneIncoming : callDir === "Outgoing" ? PhoneOutgoing : callDir === "Missed" ? PhoneMissed : Phone;
+                      const dirColor = callDir === "Incoming" ? "text-blue-600" : callDir === "Outgoing" ? "text-green-600" : callDir === "Missed" ? "text-red-600" : "text-muted-foreground";
+                      return (
+                        <div className="flex flex-col gap-0.5 max-w-[200px]" data-testid={`last-call-${lead.id}`}>
+                          <div className="flex items-center gap-1 text-[11px]">
+                            <DirIcon className={cn("w-3 h-3", dirColor)} />
+                            <span className={cn("font-medium", dirColor)} data-testid={`text-call-direction-${lead.id}`}>{callDir}</span>
+                            {durStr && <span className="text-muted-foreground" data-testid={`text-call-duration-${lead.id}`}>{durStr}</span>}
+                          </div>
+                          {empName && (
+                            <span className="text-[10px] text-muted-foreground truncate" data-testid={`text-call-employee-${lead.id}`}>
+                              {empName}{empNumber ? ` (${empNumber})` : ""}
+                            </span>
+                          )}
+                          {callTime && (
+                            <span className="text-[10px] text-muted-foreground/70" data-testid={`text-call-time-${lead.id}`}>
+                              {format(new Date(callTime), "dd MMM, hh:mm a")}
+                            </span>
+                          )}
+                          {notes && (
+                            <span className="text-[10px] text-foreground/70 italic truncate" title={notes} data-testid={`text-call-notes-${lead.id}`}>
+                              {notes}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     {lead.nextActionDate ? (

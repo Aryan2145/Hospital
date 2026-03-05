@@ -981,6 +981,38 @@ export async function registerRoutes(
     res.json(filtered);
   });
 
+  app.get("/api/leads/last-calls", isAuthenticated, async (req: any, res) => {
+    try {
+      const reqTid = req.session?.tenantId || tid;
+      const lastCallsResult = await pool.query(`
+        SELECT DISTINCT ON (lead_id) 
+          id, lead_id, description, call_direction, call_duration_seconds, call_status, 
+          outcome, created_by, created_at, metadata
+        FROM activities 
+        WHERE tenant_id = $1 AND type = 'call' AND lead_id IS NOT NULL
+        ORDER BY lead_id, created_at DESC NULLS LAST, id DESC
+      `, [reqTid]);
+      const lastCallMap: Record<number, any> = {};
+      lastCallsResult.rows.forEach((row: any) => {
+        lastCallMap[row.lead_id] = {
+          id: row.id,
+          leadId: row.lead_id,
+          description: row.description,
+          callDirection: row.call_direction,
+          callDurationSeconds: row.call_duration_seconds,
+          callStatus: row.call_status,
+          outcome: row.outcome,
+          createdBy: row.created_by,
+          createdAt: row.created_at,
+          metadata: row.metadata,
+        };
+      });
+      res.json(lastCallMap);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.get("/api/leads/dormant", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId(req);
@@ -3130,17 +3162,30 @@ export async function registerRoutes(
       if (status) conditions.push(eq(callyzerWebhookLogs.processingStatus, status));
       if (employeeNumber) conditions.push(eq(callyzerWebhookLogs.employeeNumber, employeeNumber));
 
+      const summaryResult = await db.select({
+        totalCalls: sql<number>`COUNT(*)::int`,
+        incomingCalls: sql<number>`COUNT(*) FILTER (WHERE LOWER(${callyzerWebhookLogs.callType}) LIKE '%incoming%')::int`,
+        outgoingCalls: sql<number>`COUNT(*) FILTER (WHERE LOWER(${callyzerWebhookLogs.callType}) LIKE '%outgoing%')::int`,
+        missedCalls: sql<number>`COUNT(*) FILTER (WHERE LOWER(${callyzerWebhookLogs.callType}) LIKE '%missed%')::int`,
+        matchedCalls: sql<number>`COUNT(*) FILTER (WHERE ${callyzerWebhookLogs.processingStatus} = 'matched')::int`,
+        autoCreatedCalls: sql<number>`COUNT(*) FILTER (WHERE ${callyzerWebhookLogs.processingStatus} = 'auto_created')::int`,
+        unmatchedCalls: sql<number>`COUNT(*) FILTER (WHERE ${callyzerWebhookLogs.processingStatus} = 'unmatched')::int`,
+        totalDuration: sql<number>`COALESCE(SUM(${callyzerWebhookLogs.callDuration}), 0)::int`,
+      }).from(callyzerWebhookLogs).where(and(...conditions));
+
+      const stats = summaryResult[0] || { totalCalls: 0, incomingCalls: 0, outgoingCalls: 0, missedCalls: 0, matchedCalls: 0, autoCreatedCalls: 0, unmatchedCalls: 0, totalDuration: 0 };
+      const avgDuration = stats.totalCalls > 0 ? Math.round(stats.totalDuration / stats.totalCalls) : 0;
+
       const logs = await db.select().from(callyzerWebhookLogs)
         .where(and(...conditions))
         .orderBy(desc(callyzerWebhookLogs.createdAt))
         .limit(parseInt(limitParam || "500"));
 
-      const crmUserIds = Array.from(new Set(logs.filter(l => l.matchedCrmUserId).map(l => l.matchedCrmUserId!)));
-      const leadIds = Array.from(new Set(logs.filter(l => l.matchedLeadId).map(l => l.matchedLeadId!)));
       const allCrmUsers = await storage.getCrmUsers(tid);
       const crmUserMap: Record<number, string> = {};
       allCrmUsers.forEach(u => { crmUserMap[u.id] = u.name || "Unknown"; });
 
+      const leadIds = Array.from(new Set(logs.filter(l => l.matchedLeadId).map(l => l.matchedLeadId!)));
       const leadMap: Record<number, string> = {};
       if (leadIds.length > 0) {
         const allLeads = await db.select({ id: leads.id, name: leads.name }).from(leads).where(and(eq(leads.tenantId, tid), inArray(leads.id, leadIds)));
@@ -3153,34 +3198,38 @@ export async function registerRoutes(
         leadName: l.matchedLeadId ? (leadMap[l.matchedLeadId] || null) : null,
       }));
 
-      const totalCalls = logs.length;
-      const incomingCalls = logs.filter(l => l.callType?.toLowerCase().includes("incoming")).length;
-      const outgoingCalls = logs.filter(l => l.callType?.toLowerCase().includes("outgoing")).length;
-      const missedCalls = logs.filter(l => l.callType?.toLowerCase().includes("missed")).length;
-      const matchedCalls = logs.filter(l => l.processingStatus === "matched").length;
-      const autoCreatedCalls = logs.filter(l => l.processingStatus === "auto_created").length;
-      const unmatchedCalls = logs.filter(l => l.processingStatus === "unmatched").length;
-      const totalDuration = logs.reduce((sum, l) => sum + (l.callDuration || 0), 0);
-      const avgDuration = totalCalls > 0 ? Math.round(totalDuration / totalCalls) : 0;
+      const empStatsRows = await db.select({
+        employeeNumber: callyzerWebhookLogs.employeeNumber,
+        matchedCrmUserId: callyzerWebhookLogs.matchedCrmUserId,
+        total: sql<number>`COUNT(*)::int`,
+        incoming: sql<number>`COUNT(*) FILTER (WHERE LOWER(${callyzerWebhookLogs.callType}) LIKE '%incoming%')::int`,
+        outgoing: sql<number>`COUNT(*) FILTER (WHERE LOWER(${callyzerWebhookLogs.callType}) LIKE '%outgoing%')::int`,
+        missed: sql<number>`COUNT(*) FILTER (WHERE LOWER(${callyzerWebhookLogs.callType}) LIKE '%missed%')::int`,
+        totalDuration: sql<number>`COALESCE(SUM(${callyzerWebhookLogs.callDuration}), 0)::int`,
+        matched: sql<number>`COUNT(*) FILTER (WHERE ${callyzerWebhookLogs.processingStatus} = 'matched')::int`,
+      }).from(callyzerWebhookLogs)
+        .where(and(...conditions))
+        .groupBy(callyzerWebhookLogs.employeeNumber, callyzerWebhookLogs.matchedCrmUserId)
+        .orderBy(sql`COUNT(*) DESC`);
 
-      const employeeStats: Record<string, { name: string; total: number; incoming: number; outgoing: number; missed: number; totalDuration: number; matched: number }> = {};
-      logs.forEach(l => {
-        const emp = l.employeeNumber || "Unknown";
-        if (!employeeStats[emp]) {
-          employeeStats[emp] = { name: l.matchedCrmUserId ? (crmUserMap[l.matchedCrmUserId] || emp) : emp, total: 0, incoming: 0, outgoing: 0, missed: 0, totalDuration: 0, matched: 0 };
+      const empGrouped: Record<string, { name: string; total: number; incoming: number; outgoing: number; missed: number; totalDuration: number; matched: number }> = {};
+      empStatsRows.forEach(r => {
+        const emp = r.employeeNumber || "Unknown";
+        if (!empGrouped[emp]) {
+          empGrouped[emp] = { name: r.matchedCrmUserId ? (crmUserMap[r.matchedCrmUserId] || emp) : emp, total: 0, incoming: 0, outgoing: 0, missed: 0, totalDuration: 0, matched: 0 };
         }
-        employeeStats[emp].total++;
-        if (l.callType?.toLowerCase().includes("incoming")) employeeStats[emp].incoming++;
-        if (l.callType?.toLowerCase().includes("outgoing")) employeeStats[emp].outgoing++;
-        if (l.callType?.toLowerCase().includes("missed")) employeeStats[emp].missed++;
-        employeeStats[emp].totalDuration += (l.callDuration || 0);
-        if (l.processingStatus === "matched") employeeStats[emp].matched++;
+        empGrouped[emp].total += r.total;
+        empGrouped[emp].incoming += r.incoming;
+        empGrouped[emp].outgoing += r.outgoing;
+        empGrouped[emp].missed += r.missed;
+        empGrouped[emp].totalDuration += r.totalDuration;
+        empGrouped[emp].matched += r.matched;
       });
 
       res.json({
         logs: enrichedLogs,
-        summary: { totalCalls, incomingCalls, outgoingCalls, missedCalls, matchedCalls, autoCreatedCalls, unmatchedCalls, totalDuration, avgDuration },
-        employeeStats: Object.values(employeeStats).sort((a, b) => b.total - a.total),
+        summary: { ...stats, avgDuration },
+        employeeStats: Object.values(empGrouped).sort((a, b) => b.total - a.total),
       });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
