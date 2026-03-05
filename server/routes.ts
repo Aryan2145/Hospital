@@ -4396,10 +4396,11 @@ export async function registerRoutes(
         if (newNoShowCount >= 2) {
           try {
             const supervisorResult = await pool.query(
-              `SELECT cu.id, cu.employee_name FROM crm_users cu
+              `SELECT cu.id, cu.name FROM crm_users cu
                JOIN system_roles sr ON cu.system_role_id = sr.id
-               WHERE cu.tenant_id = $1 AND sr.code IN ('MANAGER', 'ADMIN') AND cu.status = 'Active'
-               AND cu.branch_id = $2
+               WHERE cu.tenant_id = $1 AND sr.code IN ('MANAGER', 'ADMIN') AND cu.is_active = true
+               AND ($2::integer IS NULL OR cu.branch_id = $2)
+               ORDER BY CASE sr.code WHEN 'MANAGER' THEN 1 WHEN 'ADMIN' THEN 2 END
                LIMIT 1`,
               [tid, appt.branchId || null]
             );

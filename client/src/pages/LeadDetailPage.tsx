@@ -58,6 +58,17 @@ import {
   Percent,
 } from "lucide-react";
 
+const LEAD_FUNNEL_STAGES = [
+  "Raw Lead Captured",
+  "Contacted",
+  "Qualified",
+  "Appointment Booked",
+  "Reminder Running",
+  "Consultation Done",
+] as const;
+
+const LEAD_TERMINAL_STATUSES = ["Closed Won", "Closed Lost", "Unqualified", "Nurture"];
+
 const ACTIVITY_ICONS: Record<string, typeof Phone> = {
   call: Phone,
   note: StickyNote,
@@ -166,6 +177,7 @@ export default function LeadDetailPage() {
       {lead.handoverStatus === "Pending" && <HandoverBanner lead={lead} />}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden lg:border-r border-border">
+          <LeadJourneyFunnel status={lead.status} leadId={lead.id} />
           <JourneySnapshot leadId={lead.id} />
           <DemographicsSection lead={lead} />
           <TreatmentJourneyTimeline leadId={lead.id} />
@@ -181,6 +193,52 @@ export default function LeadDetailPage() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+function LeadJourneyFunnel({ status, leadId }: { status: string; leadId: number }) {
+  const currentStageIndex = LEAD_FUNNEL_STAGES.indexOf(status as any);
+  const isTerminal = LEAD_TERMINAL_STATUSES.includes(status);
+
+  return (
+    <Card className="mx-4 mt-4 p-4" data-testid={`card-lead-funnel-${leadId}`}>
+      <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+        <Target className="w-4 h-4 text-primary" />
+        Lead Journey
+      </h3>
+      <div className="flex items-center gap-1 overflow-x-auto pb-2">
+        {LEAD_FUNNEL_STAGES.map((stage, idx) => {
+          const isCurrent = stage === status;
+          const isPast = currentStageIndex >= 0 && idx < currentStageIndex;
+          return (
+            <div key={stage} className="flex items-center">
+              <div
+                className={cn(
+                  "px-3 py-1.5 rounded text-[11px] font-medium whitespace-nowrap border transition-colors",
+                  isCurrent && "bg-primary text-primary-foreground border-primary",
+                  isPast && !isCurrent && "bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300 border-green-200 dark:border-green-800",
+                  !isCurrent && !isPast && !isTerminal && "bg-muted text-muted-foreground border-border",
+                  isTerminal && !isCurrent && "bg-muted text-muted-foreground border-border",
+                )}
+                data-testid={`funnel-stage-${stage.toLowerCase().replace(/\s+/g, "-")}-${leadId}`}
+              >
+                {stage}
+              </div>
+              {idx < LEAD_FUNNEL_STAGES.length - 1 && (
+                <ChevronRight className="w-4 h-4 text-muted-foreground mx-0.5 shrink-0" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {isTerminal && (
+        <div className="mt-2">
+          <Badge className={cn("text-xs", getStatusColor(status))} data-testid={`badge-terminal-status-${leadId}`}>
+            {status}
+          </Badge>
+        </div>
+      )}
+    </Card>
   );
 }
 
