@@ -2,6 +2,7 @@ import { useRoute, useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers, useDoctors, useDoctorAvailability, useCreateAppointment, useNextActionTypes, useEpisodes, useLeadStatuses } from "@/hooks/use-leads";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -13,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { getStatusColor, getPriorityColor, getLeadTemperature, getTemperatureColor } from "@/lib/lead-status";
 import { format, formatDistanceToNow, isPast } from "date-fns";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { JourneySnapshot, TreatmentJourneyTimeline, UnifiedJourneyTimeline } from "@/components/leads/JourneyView";
@@ -699,20 +700,35 @@ function ActivityTimeline({ leadId }: { leadId: number }) {
 
 function NextActionPanel({ lead }: { lead: any }) {
   const updateLead = useUpdateLead();
+  const { crmUser } = useCurrentUser();
+  const { data: activeCrmUsers = [] } = useActiveCrmUsers();
   const [editing, setEditing] = useState(false);
   const [nextActionDate, setNextActionDate] = useState(lead.nextActionDate ? format(new Date(lead.nextActionDate), "yyyy-MM-dd'T'HH:mm") : "");
   const [nextActionNotes, setNextActionNotes] = useState(lead.nextActionNotes || "");
+  const defaultAssignee = lead.nextActionAssignedTo ? String(lead.nextActionAssignedTo) : (crmUser?.id ? String(crmUser.id) : "");
+  const [nextActionAssignedTo, setNextActionAssignedTo] = useState(defaultAssignee);
+
+  useEffect(() => {
+    if (!nextActionAssignedTo && crmUser?.id) {
+      setNextActionAssignedTo(String(crmUser.id));
+    }
+  }, [crmUser?.id]);
 
   const handleSave = () => {
+    const assignedTo = nextActionAssignedTo ? Number(nextActionAssignedTo) : (crmUser?.id || null);
     updateLead.mutate({
       id: lead.id,
       nextActionDate: nextActionDate ? new Date(nextActionDate) : undefined,
       nextActionNotes: nextActionNotes || null,
-    });
+      nextActionAssignedTo: assignedTo,
+    } as any);
     setEditing(false);
   };
 
   const hasNextAction = lead.nextActionDate || lead.nextActionNotes;
+  const assigneeName = lead.nextActionAssignedTo
+    ? activeCrmUsers.find((u: any) => u.id === lead.nextActionAssignedTo)?.name
+    : null;
 
   return (
     <div className="p-4 border-b border-border">
@@ -728,6 +744,14 @@ function NextActionPanel({ lead }: { lead: any }) {
 
       {editing ? (
         <div className="space-y-2">
+          <SearchableSelect
+            value={nextActionAssignedTo}
+            onValueChange={setNextActionAssignedTo}
+            options={activeCrmUsers.map((u: any) => ({ value: String(u.id), label: u.name }))}
+            placeholder="Assign To (default: self)"
+            triggerClassName="text-xs"
+            data-testid="select-next-action-assigned-to"
+          />
           <Input
             type="datetime-local"
             value={nextActionDate}
@@ -757,6 +781,9 @@ function NextActionPanel({ lead }: { lead: any }) {
                 <Badge variant="outline" className="text-[10px] bg-red-50 text-red-600 border-red-200">Overdue</Badge>
               )}
             </div>
+          )}
+          {assigneeName && (
+            <p className="text-[11px] text-primary font-medium mt-1">Assigned to: {assigneeName}</p>
           )}
           {lead.nextActionNotes && (
             <p className="text-xs text-muted-foreground mt-1">{lead.nextActionNotes}</p>

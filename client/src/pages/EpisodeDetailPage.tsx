@@ -18,7 +18,7 @@ import { getStatusColor, getValidEpisodeTransitions } from "@/lib/lead-status";
 import { format, formatDistanceToNow } from "date-fns";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -731,6 +731,7 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const updateEpisode = useUpdateEpisode();
+  const { crmUser } = useCurrentUser();
   const [expanded, setExpanded] = useState(false);
 
   const [activityType, setActivityType] = useState("Call");
@@ -745,6 +746,15 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
   const [nextActionTypeId, setNextActionTypeId] = useState(
     episode.nextActionTypeId ? String(episode.nextActionTypeId) : ""
   );
+  const [nextActionAssignedTo, setNextActionAssignedTo] = useState(
+    episode.nextActionAssignedTo ? String(episode.nextActionAssignedTo) : (crmUser?.id ? String(crmUser.id) : "")
+  );
+
+  useEffect(() => {
+    if (!nextActionAssignedTo && crmUser?.id) {
+      setNextActionAssignedTo(String(crmUser.id));
+    }
+  }, [crmUser?.id]);
 
   const { data: nextActionTypesData = [] } = useQuery<any[]>({
     queryKey: ["/api/masters/nextActionTypes"],
@@ -753,6 +763,16 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
   const activeNextActionTypes = (nextActionTypesData || []).filter(
     (t: any) => t.status === "Active"
   );
+
+  const { data: activeCrmUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/crm-users/active"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm-users/active", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: expanded,
+  });
 
   const logActivityMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -791,6 +811,7 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
     if (nextActionTypeId) fields.nextActionTypeId = Number(nextActionTypeId);
     if (nextActionDate) fields.nextActionDate = new Date(nextActionDate).toISOString();
     if (nextActionNotes.trim()) fields.nextActionNotes = nextActionNotes.trim();
+    fields.nextActionAssignedTo = nextActionAssignedTo ? Number(nextActionAssignedTo) : (crmUser?.id || null);
     if (Object.keys(fields).length === 0) return;
     updateEpisode.mutate(
       { id: episode.id, ...fields },
@@ -820,6 +841,10 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
     ? nextActionTypesData.find((t: any) => t.id === episode.nextActionTypeId)?.name
     : null;
 
+  const assigneeName = episode.nextActionAssignedTo
+    ? activeCrmUsers.find((u: any) => u.id === episode.nextActionAssignedTo)?.name
+    : null;
+
   return (
     <Card className="p-4" data-testid="card-log-next-action">
       <button
@@ -835,11 +860,16 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
       </button>
 
       {episode.nextActionDate && !expanded && (
-        <div className="mt-2 flex items-center gap-2 text-xs">
+        <div className="mt-2 flex items-center gap-2 text-xs flex-wrap">
           <Badge variant="outline" className="text-[10px]" data-testid="badge-current-next-action">
             <CalendarClock className="w-3 h-3 mr-1" />
             Next: {currentNextActionType || "Action"} on {format(new Date(episode.nextActionDate), "MMM d, yyyy h:mm a")}
           </Badge>
+          {assigneeName && (
+            <Badge variant="secondary" className="text-[10px]" data-testid="badge-next-action-assignee">
+              → {assigneeName}
+            </Badge>
+          )}
           {episode.nextActionNotes && (
             <span className="text-muted-foreground truncate max-w-[200px]">{episode.nextActionNotes}</span>
           )}
@@ -906,6 +936,9 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
                 <p className="text-xs font-medium text-foreground">
                   {currentNextActionType || "Next Action"}: {format(new Date(episode.nextActionDate), "MMM d, yyyy h:mm a")}
                 </p>
+                {assigneeName && (
+                  <p className="text-[11px] text-primary font-medium mt-0.5">Assigned to: {assigneeName}</p>
+                )}
                 {episode.nextActionNotes && (
                   <p className="text-[11px] text-muted-foreground mt-0.5">{episode.nextActionNotes}</p>
                 )}
@@ -920,6 +953,14 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
                 placeholder="Next Action Type"
                 triggerClassName="text-xs"
                 data-testid="select-next-action-type"
+              />
+              <SearchableSelect
+                value={nextActionAssignedTo}
+                onValueChange={setNextActionAssignedTo}
+                options={activeCrmUsers.map((u: any) => ({ value: String(u.id), label: u.name }))}
+                placeholder="Assign To (default: self)"
+                triggerClassName="text-xs"
+                data-testid="select-next-action-assigned-to"
               />
               <Input
                 type="datetime-local"
