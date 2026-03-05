@@ -148,14 +148,14 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
   const realizedRevenue = Number(ec.realized_revenue) || 0;
 
   const pipelineData = [
-    { name: "Raw Lead", count: Number(lc.raw_leads) || 0, color: "#94a3b8" },
-    { name: "Contacted", count: Number(lc.contacted) || 0, color: "#3b82f6" },
-    { name: "Qualified", count: Number(lc.qualified) || 0, color: "#8b5cf6" },
-    { name: "Appt Booked", count: Number(lc.appointment_booked) || 0, color: VIROC_ORANGE },
-    { name: "Consulted", count: Number(lc.consultation_done) || 0, color: "#10b981" },
-    { name: "Won", count: Number(lc.closed_won) || 0, color: "#22c55e" },
-    { name: "Lost", count: Number(lc.closed_lost) || 0, color: "#ef4444" },
-    { name: "Nurture", count: Number(lc.nurture) || 0, color: "#f59e0b" },
+    { name: "Raw Lead", count: Number(lc.raw_leads) || 0, color: "#94a3b8", status: "Raw Lead Captured" },
+    { name: "Contacted", count: Number(lc.contacted) || 0, color: "#3b82f6", status: "Contacted" },
+    { name: "Qualified", count: Number(lc.qualified) || 0, color: "#8b5cf6", status: "Qualified" },
+    { name: "Appt Booked", count: Number(lc.appointment_booked) || 0, color: VIROC_ORANGE, status: "Appointment Booked" },
+    { name: "Consulted", count: Number(lc.consultation_done) || 0, color: "#10b981", status: "Consultation Done" },
+    { name: "Won", count: Number(lc.closed_won) || 0, color: "#22c55e", status: "Closed Won" },
+    { name: "Lost", count: Number(lc.closed_lost) || 0, color: "#ef4444", status: "Closed Lost" },
+    { name: "Nurture", count: Number(lc.nurture) || 0, color: "#f59e0b", status: "Nurture" },
   ];
 
   return (
@@ -174,18 +174,18 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
-        <KPICard title="Total Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} />
-        <KPICard title="Active Episodes" value={(Number(ec.active_episodes) || 0).toString()} icon={FileText} trend={`${Number(ec.surgeries) || 0} surgeries`} up />
-        <KPICard title="Pipeline Value" value={`Rs.${formatINR(pipelineValue)}`} icon={IndianRupee} trend={`${Number(ec.total_episodes) || 0} total episodes`} />
-        <KPICard title="Revenue Realized" value={`Rs.${formatINR(realizedRevenue)}`} icon={IndianRupee} trend={`${Number(ec.completed) || 0} completed`} up={realizedRevenue > 0} />
-        <KPICard title="Today Appointments" value={(Number(ac.today_appointments) || 0).toString()} icon={CalendarCheck} trend={`${Number(ac.today_pending) || 0} pending`} />
+        <KPICard title="Total Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} onClick={() => navigate("/leads")} />
+        <KPICard title="Active Episodes" value={(Number(ec.active_episodes) || 0).toString()} icon={FileText} trend={`${Number(ec.surgeries) || 0} surgeries`} up onClick={() => navigate("/leads?view=list")} />
+        <KPICard title="Pipeline Value" value={`Rs.${formatINR(pipelineValue)}`} icon={IndianRupee} trend={`${Number(ec.total_episodes) || 0} total episodes`} onClick={() => navigate("/leads?view=list")} />
+        <KPICard title="Revenue Realized" value={`Rs.${formatINR(realizedRevenue)}`} icon={IndianRupee} trend={`${Number(ec.completed) || 0} completed`} up={realizedRevenue > 0} onClick={() => navigate("/leads?status=Closed Won&view=list")} />
+        <KPICard title="Today Appointments" value={(Number(ac.today_appointments) || 0).toString()} icon={CalendarCheck} trend={`${Number(ac.today_pending) || 0} pending`} onClick={() => navigate("/appointments")} />
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Hot Leads" value={Number(lc.hot_leads) || 0} icon={Flame} color="text-orange-500" />
-        <StatCard label="Dormant Leads" value={Number(lc.dormant_leads) || 0} icon={Snowflake} color="text-blue-400" />
-        <StatCard label="Overdue Actions" value={(Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)} icon={AlertTriangle} color="text-red-500" />
-        <StatCard label="Insurance Cases" value={Number(ec.insurance_cases) || 0} icon={ShieldCheck} color="text-cyan-500" />
+        <StatCard label="Hot Leads" value={Number(lc.hot_leads) || 0} icon={Flame} color="text-orange-500" onClick={() => navigate("/leads?filter=hot&view=list")} />
+        <StatCard label="Dormant Leads" value={Number(lc.dormant_leads) || 0} icon={Snowflake} color="text-blue-400" onClick={() => navigate("/leads?filter=dormant&view=list")} />
+        <StatCard label="Overdue Actions" value={(Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)} icon={AlertTriangle} color="text-red-500" onClick={() => navigate("/leads?filter=overdue&view=list")} />
+        <StatCard label="Insurance Cases" value={Number(ec.insurance_cases) || 0} icon={ShieldCheck} color="text-cyan-500" onClick={() => navigate("/leads?view=list")} />
       </div>
 
       <TasksAndActionsSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />
@@ -213,7 +213,7 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
                 <XAxis type="number" tick={{ fontSize: 11 }} />
                 <YAxis dataKey="name" type="category" width={85} tick={{ fontSize: 11 }} />
                 <Tooltip cursor={{ fill: "transparent" }} />
-                <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={24}>
+                <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={24} className="cursor-pointer" onClick={(_: any, index: number) => navigate(`/leads?status=${encodeURIComponent(pipelineData[index].status)}&view=list`)}>
                   {pipelineData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
@@ -290,17 +290,17 @@ function ManagerDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, userNam
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        <KPICard title="My Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} />
-        <KPICard title="Hot Leads" value={(Number(lc.hot_leads) || 0).toString()} icon={Flame} trend="Needs immediate attention" up />
-        <KPICard title="Active Episodes" value={(Number(ec.active_episodes) || 0).toString()} icon={FileText} trend={`${Number(ec.surgeries) || 0} surgeries`} />
-        <KPICard title="Today Appointments" value={(Number(ac.today_appointments) || 0).toString()} icon={CalendarCheck} trend={`${Number(ac.today_pending) || 0} pending`} />
+        <KPICard title="My Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} onClick={() => navigate("/leads")} />
+        <KPICard title="Hot Leads" value={(Number(lc.hot_leads) || 0).toString()} icon={Flame} trend="Needs immediate attention" up onClick={() => navigate("/leads?filter=hot&view=list")} />
+        <KPICard title="Active Episodes" value={(Number(ec.active_episodes) || 0).toString()} icon={FileText} trend={`${Number(ec.surgeries) || 0} surgeries`} onClick={() => navigate("/leads?view=list")} />
+        <KPICard title="Today Appointments" value={(Number(ac.today_appointments) || 0).toString()} icon={CalendarCheck} trend={`${Number(ac.today_pending) || 0} pending`} onClick={() => navigate("/appointments")} />
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Overdue Actions" value={(Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)} icon={AlertTriangle} color="text-red-500" />
-        <StatCard label="Today's Actions" value={(Number(lc.today_actions) || 0) + (Number(ec.today_ep_actions) || 0)} icon={ListChecks} color="text-primary" />
-        <StatCard label="Dormant Leads" value={Number(lc.dormant_leads) || 0} icon={Snowflake} color="text-blue-400" />
-        <StatCard label="Untouched Leads" value={Number(lc.raw_leads) || 0} icon={Eye} color="text-amber-500" />
+        <StatCard label="Overdue Actions" value={(Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)} icon={AlertTriangle} color="text-red-500" onClick={() => navigate("/leads?filter=overdue&view=list")} />
+        <StatCard label="Today's Actions" value={(Number(lc.today_actions) || 0) + (Number(ec.today_ep_actions) || 0)} icon={ListChecks} color="text-primary" onClick={() => navigate("/leads?view=list")} />
+        <StatCard label="Dormant Leads" value={Number(lc.dormant_leads) || 0} icon={Snowflake} color="text-blue-400" onClick={() => navigate("/leads?filter=dormant&view=list")} />
+        <StatCard label="Untouched Leads" value={Number(lc.raw_leads) || 0} icon={Eye} color="text-amber-500" onClick={() => navigate("/leads?status=Raw Lead Captured&view=list")} />
       </div>
 
       <TasksAndActionsSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />
@@ -334,17 +334,17 @@ function IndividualDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, user
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        <KPICard title="My Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} />
-        <KPICard title="Hot Leads" value={(Number(lc.hot_leads) || 0).toString()} icon={Flame} trend="Priority follow-ups" up />
-        <KPICard title="Today's Actions" value={((Number(lc.today_actions) || 0) + (Number(ec.today_ep_actions) || 0)).toString()} icon={ListChecks} trend="Due today" />
-        <KPICard title="Overdue" value={((Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)).toString()} icon={AlertTriangle} trend="Needs attention" up={false} />
+        <KPICard title="My Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} onClick={() => navigate("/leads?filter=my-leads")} />
+        <KPICard title="Hot Leads" value={(Number(lc.hot_leads) || 0).toString()} icon={Flame} trend="Priority follow-ups" up onClick={() => navigate("/leads?filter=hot&view=list")} />
+        <KPICard title="Today's Actions" value={((Number(lc.today_actions) || 0) + (Number(ec.today_ep_actions) || 0)).toString()} icon={ListChecks} trend="Due today" onClick={() => navigate("/leads?view=list")} />
+        <KPICard title="Overdue" value={((Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)).toString()} icon={AlertTriangle} trend="Needs attention" up={false} onClick={() => navigate("/leads?filter=overdue&view=list")} />
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Untouched Leads" value={Number(lc.raw_leads) || 0} icon={Eye} color="text-amber-500" />
-        <StatCard label="Contacted" value={Number(lc.contacted) || 0} icon={PhoneCall} color="text-blue-500" />
-        <StatCard label="Qualified" value={Number(lc.qualified) || 0} icon={CheckCircle2} color="text-purple-500" />
-        <StatCard label="Appt Booked" value={Number(lc.appointment_booked) || 0} icon={CalendarCheck} color="text-green-500" />
+        <StatCard label="Untouched Leads" value={Number(lc.raw_leads) || 0} icon={Eye} color="text-amber-500" onClick={() => navigate("/leads?status=Raw Lead Captured&view=list")} />
+        <StatCard label="Contacted" value={Number(lc.contacted) || 0} icon={PhoneCall} color="text-blue-500" onClick={() => navigate("/leads?status=Contacted&view=list")} />
+        <StatCard label="Qualified" value={Number(lc.qualified) || 0} icon={CheckCircle2} color="text-purple-500" onClick={() => navigate("/leads?status=Qualified&view=list")} />
+        <StatCard label="Appt Booked" value={Number(lc.appointment_booked) || 0} icon={CalendarCheck} color="text-green-500" onClick={() => navigate("/leads?status=Appointment Booked&view=list")} />
       </div>
 
       <TasksAndActionsSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />
@@ -667,34 +667,34 @@ function IntelligenceOverview({ stats, navigate }: { stats: any; navigate: (path
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
-        <Card data-testid="card-intel-lead-conversion">
+        <Card data-testid="card-intel-lead-conversion" className="cursor-pointer hover:shadow-md hover:border-primary/30 transition-all" onClick={() => navigate("/leads?status=Consultation Done&view=list")}>
           <CardContent className="p-4">
             <span className="text-xs font-medium text-muted-foreground">Lead→Consultation</span>
             <div className="text-xl font-bold text-foreground mt-1">{consultationConvRate}%</div>
             <p className="text-xs text-muted-foreground mt-1">{convertedLeads} of {totalActive}</p>
           </CardContent>
         </Card>
-        <Card data-testid="card-intel-surgery-rate">
+        <Card data-testid="card-intel-surgery-rate" className="cursor-pointer hover:shadow-md hover:border-primary/30 transition-all" onClick={() => navigate("/leads?view=list")}>
           <CardContent className="p-4">
             <span className="text-xs font-medium text-muted-foreground">Consultation→Surgery</span>
             <div className="text-xl font-bold text-foreground mt-1">{consultToSurgeryRate}%</div>
             <p className="text-xs text-muted-foreground mt-1">{surgeryCount} of {totalEpisodes}</p>
           </CardContent>
         </Card>
-        <Card data-testid="card-intel-insurance">
+        <Card data-testid="card-intel-insurance" className="cursor-pointer hover:shadow-md hover:border-primary/30 transition-all" onClick={() => navigate("/leads?view=list")}>
           <CardContent className="p-4">
             <span className="text-xs font-medium text-muted-foreground">Insurance Approval</span>
             <div className="text-xl font-bold text-foreground mt-1">{insuranceApprovalRate}%</div>
             <p className="text-xs text-muted-foreground mt-1">{insuranceApproved} of {insuranceCases}</p>
           </CardContent>
         </Card>
-        <Card data-testid="card-intel-revenue-forecast">
+        <Card data-testid="card-intel-revenue-forecast" className="cursor-pointer hover:shadow-md hover:border-primary/30 transition-all" onClick={() => navigate("/leads?view=list")}>
           <CardContent className="p-4">
             <span className="text-xs font-medium text-muted-foreground">Revenue Forecast</span>
             <div className="text-xl font-bold text-foreground mt-1">Rs.{formatINR(revenueForecast)}</div>
           </CardContent>
         </Card>
-        <Card data-testid="card-intel-drop-off">
+        <Card data-testid="card-intel-drop-off" className="cursor-pointer hover:shadow-md hover:border-primary/30 transition-all" onClick={() => navigate("/leads?status=Closed Lost&view=list")}>
           <CardContent className="p-4">
             <span className="text-xs font-medium text-muted-foreground">Drop-Off</span>
             <div className="text-xl font-bold text-foreground mt-1">{lostCount}</div>
@@ -715,8 +715,14 @@ function IntelligenceOverview({ stats, navigate }: { stats: any; navigate: (path
             <div className="space-y-2">
               {temperatureData.map((t) => {
                 const pct = totalTempLeads > 0 ? (t.count / totalTempLeads) * 100 : 0;
+                const tempFilter = t.name === "Dormant" ? "dormant" : (["Very Hot", "Hot"].includes(t.name) ? "hot" : null);
                 return (
-                  <div key={t.name} className="flex items-center gap-2" data-testid={`temp-bar-${t.name.toLowerCase().replace(/[+ ]/g, "")}`}>
+                  <div
+                    key={t.name}
+                    className={`flex items-center gap-2 ${tempFilter ? "cursor-pointer hover:bg-muted/40 rounded px-1 -mx-1 transition-colors" : ""}`}
+                    data-testid={`temp-bar-${t.name.toLowerCase().replace(/[+ ]/g, "")}`}
+                    onClick={tempFilter ? () => navigate(`/leads?filter=${tempFilter}&view=list`) : undefined}
+                  >
                     <div className="w-16 text-xs text-muted-foreground shrink-0 text-right">{t.name}</div>
                     <div className="flex-1 h-5 bg-muted/30 rounded overflow-hidden relative">
                       <div className="h-full rounded transition-all duration-500" style={{ width: `${Math.max(pct, 1)}%`, backgroundColor: t.color }} />
@@ -844,9 +850,13 @@ function QuickActionsCard({ navigate, totalLeads, role }: { navigate: (path: str
   );
 }
 
-function KPICard({ title, value, icon: Icon, trend, up }: any) {
+function KPICard({ title, value, icon: Icon, trend, up, onClick }: any) {
   return (
-    <Card data-testid={`card-kpi-${title.toLowerCase().replace(/\s/g, "-")}`}>
+    <Card
+      data-testid={`card-kpi-${title.toLowerCase().replace(/\s/g, "-")}`}
+      className={onClick ? "cursor-pointer hover:shadow-md hover:border-primary/30 transition-all" : ""}
+      onClick={onClick}
+    >
       <CardContent className="p-4">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-medium text-muted-foreground">{title}</span>
@@ -856,23 +866,29 @@ function KPICard({ title, value, icon: Icon, trend, up }: any) {
         <div className="flex items-center gap-1 mt-1">
           {up !== undefined && (up ? <ArrowUpRight className="h-3 w-3 text-green-600 dark:text-green-400" /> : <ArrowDownRight className="h-3 w-3 text-red-500 dark:text-red-400" />)}
           <span className={`text-xs ${up ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>{trend}</span>
+          {onClick && <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />}
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function StatCard({ label, value, icon: Icon, color }: { label: string; value: number; icon: any; color: string }) {
+function StatCard({ label, value, icon: Icon, color, onClick }: { label: string; value: number; icon: any; color: string; onClick?: () => void }) {
   return (
-    <Card data-testid={`card-stat-${label.toLowerCase().replace(/\s/g, "-")}`}>
+    <Card
+      data-testid={`card-stat-${label.toLowerCase().replace(/\s/g, "-")}`}
+      className={onClick ? "cursor-pointer hover:shadow-md hover:border-primary/30 transition-all" : ""}
+      onClick={onClick}
+    >
       <CardContent className="p-4 flex items-center gap-3">
         <div className={`w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center shrink-0`}>
           <Icon className={`w-5 h-5 ${color}`} />
         </div>
-        <div>
+        <div className="flex-1">
           <p className="text-xl font-bold text-foreground">{value}</p>
           <p className="text-xs text-muted-foreground">{label}</p>
         </div>
+        {onClick && <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
       </CardContent>
     </Card>
   );

@@ -80,6 +80,24 @@ export default function LeadsWorkspace() {
   const [filterDateTo, setFilterDateTo] = useState("");
   const [, navigate] = useLocation();
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const qf = params.get("filter") as QuickFilter | null;
+    const st = params.get("status");
+    const view = params.get("view");
+    if (qf && ["all", "my-leads", "hot", "dormant", "overdue", "telecalling", "front-office", "doctor", "insurance"].includes(qf)) {
+      setQuickFilter(qf);
+    }
+    if (st) {
+      setFilterStatus(st.split(",").filter(Boolean));
+      setShowFilters(true);
+    }
+    if (view === "list") setViewMode("list");
+    if (qf || st || view) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
   const activeFilterCount = filterStatus.length + (filterDateFrom ? 1 : 0) + (filterDateTo ? 1 : 0);
 
   const filteredLeads = useMemo(() => {
