@@ -40,7 +40,9 @@ export function KanbanBoard({ leads }: KanbanBoardProps) {
   const leadsByStatus = useMemo(() => {
     const map: Record<string, Lead[]> = {};
     COLUMNS.forEach((col) => {
-      map[col.id] = leads.filter((lead) => lead.status === col.id);
+      map[col.id] = leads
+        .filter((lead) => lead.status === col.id)
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     });
     return map;
   }, [leads]);
