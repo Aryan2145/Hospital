@@ -677,7 +677,7 @@ export class DatabaseStorage implements IStorage {
 
   private static CODE_PREFIXES: Record<string, string> = {
     countries: "COUNTRY", states: "STATE", cities: "CITY", areas: "AREA", branchServiceability: "BRSVC",
-    organisations: "ORG", branches: "BRANCH", administrativeDepartments: "ADEPT",
+    organisations: "ORG", branches: "BRANCH", administrativeDepartments: "TEAM",
     designations: "DESG", employmentTypes: "EMPTYPE", systemRoles: "ROLE",
     callingLines: "CLINE", userLineAssignments: "ULA",
     treatmentDepartments: "TDEPT", consultationTypes: "CTYPE",
@@ -725,7 +725,12 @@ export class DatabaseStorage implements IStorage {
 
     const skipAutoCode = ["doctorLeaveExceptions", "opdTimings", "userLineAssignments"];
     if (!skipAutoCode.includes(tableName)) {
-      data.code = await this.generateCode(tableName, pgTable, data.tenantId || data.tenant_id);
+      const existingCode = data.code || data.Code;
+      if (existingCode && typeof existingCode === "string" && existingCode.trim().length > 0) {
+        data.code = existingCode.trim();
+      } else {
+        data.code = await this.generateCode(tableName, pgTable, data.tenantId || data.tenant_id);
+      }
     }
 
     if (!data.approvalStatus && !data.approval_status) {

@@ -6790,6 +6790,7 @@ export async function registerRoutes(
   await fixPendingApprovalStatus();
   await ensureLeadSourcesExist();
   await ensureCrmTeamDepartments();
+  await consolidateDuplicateTeams();
 
   return httpServer;
 }
@@ -7160,6 +7161,63 @@ async function fixPendingApprovalStatus() {
     console.log("Fixed 'Pending Approval' -> 'Pending' in master tables");
   } catch (err) {
     console.error("Error fixing approval status:", err);
+  }
+}
+
+async function consolidateDuplicateTeams() {
+  try {
+    const allTenants = await db.select().from(tenants);
+    const nameMap: Record<string, string> = {
+      "telecaller": "TELECALLING",
+      "telecalling": "TELECALLING",
+      "financial counselling": "FINANCIAL",
+      "financial counseling": "FINANCIAL",
+      "insurance & tpa": "INSURANCE",
+      "insurance": "INSURANCE",
+      "ot / ip desk": "OT_IP",
+      "ot/ip desk": "OT_IP",
+      "post care": "POST_CARE",
+      "referral management": "REFERRAL",
+      "management": "MGMT",
+      "marketing": "MKT",
+      "sales": "SALES",
+      "hr": "HR",
+      "it": "IT",
+      "accounts": "ACCT",
+      "front office": "FO",
+      "opd": "FO",
+    };
+
+    for (const tenant of allTenants) {
+      const allDepts = await db.select().from(administrativeDepartments)
+        .where(eq(administrativeDepartments.tenantId, tenant.id));
+
+      const adptEntries = allDepts.filter(d => d.code?.startsWith("ADPT-"));
+      if (adptEntries.length === 0) continue;
+
+      for (const oldEntry of adptEntries) {
+        const normalizedName = (oldEntry.name || "").toLowerCase().trim();
+        const targetCode = nameMap[normalizedName];
+        if (!targetCode) continue;
+
+        const targetEntry = allDepts.find(d => d.code === targetCode && d.id !== oldEntry.id);
+        if (!targetEntry) continue;
+
+        console.log(`[dedup] Tenant ${tenant.id}: Merging team "${oldEntry.name}" (${oldEntry.code}, id=${oldEntry.id}) → "${targetEntry.name}" (${targetEntry.code}, id=${targetEntry.id})`);
+
+        await pool.query(`UPDATE crm_users SET department_id = $1 WHERE department_id = $2 AND tenant_id = $3`, [targetEntry.id, oldEntry.id, tenant.id]);
+        await pool.query(`UPDATE doctors SET treatment_department_id = $1 WHERE treatment_department_id = $2 AND tenant_id = $3`, [targetEntry.id, oldEntry.id, tenant.id]);
+        await pool.query(`UPDATE leads SET treatment_department_id = $1 WHERE treatment_department_id = $2 AND tenant_id = $3`, [targetEntry.id, oldEntry.id, tenant.id]);
+        await pool.query(`UPDATE episodes SET treatment_department_id = $1 WHERE treatment_department_id = $2 AND tenant_id = $3`, [targetEntry.id, oldEntry.id, tenant.id]);
+
+        await db.update(administrativeDepartments)
+          .set({ status: "Inactive" })
+          .where(eq(administrativeDepartments.id, oldEntry.id));
+      }
+    }
+    console.log("Consolidated duplicate ADPT-* teams");
+  } catch (err) {
+    console.error("Error consolidating duplicate teams:", err);
   }
 }
 
