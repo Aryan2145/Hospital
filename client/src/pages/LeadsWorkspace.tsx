@@ -724,6 +724,11 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
     if (isDuplicateDetected) return;
     createLead.mutate(data, {
       onSuccess: () => onSuccess(),
+      onError: (error: any) => {
+        if (error.status === 409 && error.existingLeadId) {
+          setDuplicateInfo({ isDuplicate: true, existingLead: error.existingLead });
+        }
+      },
     });
   }
 

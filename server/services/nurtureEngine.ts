@@ -256,7 +256,7 @@ export async function processDormantLeadsAndStaleAppointments(tenantId: number):
     `SELECT l.id, l.name, l.assigned_crm_user_id, l.status
      FROM leads l
      WHERE l.tenant_id = $1
-     AND l.status NOT IN ('Closed Won', 'Closed Lost', 'Unqualified', 'Nurture', 'Consultation Done')
+     AND l.status NOT IN ('Closed Won', 'Closed Lost', 'Unqualified', 'Nurture', 'Consultation Done', 'Appointment Booked', 'Reminder Running')
      AND (l.last_activity_at IS NULL OR l.last_activity_at < $2)
      AND (l.last_contact_at IS NULL OR l.last_contact_at < $2)
      AND NOT EXISTS (

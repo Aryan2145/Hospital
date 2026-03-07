@@ -1228,9 +1228,51 @@ export async function registerRoutes(
           });
         }
       }
+      const sessionCrmUserId = (req.session as any)?.crmUserId;
+      if (sessionCrmUserId) {
+        const crmUserResult = await pool.query(
+          `SELECT cu.id, cu.name, sr.code as role_code, cu.branch_id
+           FROM crm_users cu
+           LEFT JOIN system_roles sr ON cu.system_role_id = sr.id
+           WHERE cu.id = $1 AND cu.tenant_id = $2 AND cu.is_active = true
+           LIMIT 1`,
+          [sessionCrmUserId, tid]
+        );
+        const creatingUser = crmUserResult.rows[0];
+        if (creatingUser) {
+          if (!input.assignedCrmUserId) {
+            (input as any).assignedCrmUserId = creatingUser.id;
+          }
+          if (!(input as any).primaryOwnerUserId) {
+            (input as any).primaryOwnerUserId = creatingUser.id;
+          }
+          if (!(input as any).ownerTeam) {
+            const roleTeamMap: Record<string, string> = {
+              AGENT: "Telecalling", COUNSELLOR: "Front Office", MANAGER: "Management", ADMIN: "Management"
+            };
+            (input as any).ownerTeam = roleTeamMap[creatingUser.role_code] || "Telecalling";
+          }
+        }
+      }
+      (input as any).lastActivityAt = new Date();
+
       const lead = await storage.createLead(input);
       res.status(201).json(lead);
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.code === "23505") {
+        const dupResult = await pool.query(
+          `SELECT l.id, l.name, l.status, l.created_at, cu.name as assigned_to_name
+           FROM leads l LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
+           WHERE l.tenant_id = $1 AND l.mobile_normalized = $2 LIMIT 1`,
+          [await getDefaultTenantId(req), normalizePhone(req.body.phoneE164)]
+        );
+        const dup = dupResult.rows[0];
+        return res.status(409).json({
+          message: `A lead with this mobile number already exists${dup ? `: ${dup.name} (${dup.status})` : ""}`,
+          existingLeadId: dup?.id,
+          existingLead: dup ? { id: dup.id, name: dup.name, status: dup.status, assignedTo: dup.assigned_to_name || "Unassigned", createdAt: dup.created_at } : undefined,
+        });
+      }
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join('.') });
       }
@@ -1748,8 +1790,8 @@ export async function registerRoutes(
         `, [leadId, tid, limit, offset]),
 
         pool.query(`
-          SELECT ap.id, ap.appointment_date, ap.appointment_time, ap.status, ap.check_in_time,
-            ap.notes, ap.created_at, ap.appointment_type,
+          SELECT ap.id, ap.appointment_date, ap.start_time, ap.end_time, ap.status, ap.check_in_time,
+            ap.notes, ap.created_at, ap.appointment_type, ap.token_number,
             d.name as doctor_name, b.name as branch_name
           FROM appointments ap
           LEFT JOIN crm_users d ON ap.doctor_id = d.id
@@ -1811,10 +1853,12 @@ export async function registerRoutes(
           id: `apt-${ap.id}`,
           source: "Appointment",
           type: "appointment",
-          description: `${ap.appointment_type || "Appointment"} with ${ap.doctor_name || "doctor"} at ${ap.branch_name || "clinic"}`,
+          description: `${ap.appointment_type || "Appointment"} with ${ap.doctor_name || "doctor"} at ${ap.branch_name || "clinic"}${ap.start_time ? ` — ${ap.start_time}` : ""}${ap.token_number ? ` (Token #${ap.token_number})` : ""}`,
           timestamp: ap.created_at,
           appointmentDate: ap.appointment_date,
-          appointmentTime: ap.appointment_time,
+          appointmentTime: ap.start_time || null,
+          appointmentEndTime: ap.end_time || null,
+          tokenNumber: ap.token_number,
           appointmentStatus: ap.status,
           checkInTime: ap.check_in_time,
           doctorName: ap.doctor_name,
@@ -1934,7 +1978,7 @@ export async function registerRoutes(
           SELECT l.id, l.name, l.phone_e164, l.mobile_normalized, l.email, l.status,
             l.created_at, l.last_activity_at, l.lead_temperature, l.lead_source_id,
             l.assigned_crm_user_id, l.notes, l.tags, l.campaign_id,
-            cu.employee_name as assigned_to_name,
+            cu.name as assigned_to_name,
             ls.name as source_name
           FROM leads l
           LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
@@ -4108,6 +4152,18 @@ export async function registerRoutes(
         const timeStr = parsed.startTime || "";
 
         await storage.updateLead(parsed.leadId, { status: "Appointment Booked" });
+
+        await pool.query(
+          `UPDATE leads SET last_activity_at = NOW(), last_contact_at = NOW() WHERE id = $1 AND tenant_id = $2`,
+          [parsed.leadId, tid]
+        );
+
+        try {
+          const { computeAndUpdateTemperature } = await import("./services/temperatureEngine");
+          await computeAndUpdateTemperature(parsed.leadId, tid, "Appointment Booked", userId);
+        } catch (tempErr) {
+          console.error("[appointment] Temperature update failed:", tempErr);
+        }
 
         await storage.createActivity({
           leadId: parsed.leadId, tenantId: tid, createdBy: userId,

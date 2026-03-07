@@ -211,7 +211,7 @@ export default function CallyzerReportsPage() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3" data-testid="summary-cards">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-3" data-testid="summary-cards">
               <Card className="border-l-4 border-l-blue-500">
                 <CardContent className="p-3">
                   <div className="flex items-center gap-2 mb-1">
@@ -264,6 +264,15 @@ export default function CallyzerReportsPage() {
                     <span className="text-xs text-muted-foreground">Leads Created</span>
                   </div>
                   <p className="text-xl font-bold" data-testid="text-auto-created-calls">{summary.autoCreatedCalls}</p>
+                </CardContent>
+              </Card>
+              <Card className="border-l-4 border-l-amber-500">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <UserX className="w-4 h-4 text-amber-500" />
+                    <span className="text-xs text-muted-foreground">Unmatched</span>
+                  </div>
+                  <p className="text-xl font-bold" data-testid="text-unmatched-calls">{summary.unmatchedCalls}</p>
                 </CardContent>
               </Card>
               <Card className="border-l-4 border-l-purple-500">

@@ -41,7 +41,17 @@ export function useCreateLead() {
         body: JSON.stringify(lead),
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to create lead");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        if (res.status === 409 && errData.existingLeadId) {
+          const err = new Error(errData.message || "Duplicate lead exists") as any;
+          err.status = 409;
+          err.existingLeadId = errData.existingLeadId;
+          err.existingLead = errData.existingLead;
+          throw err;
+        }
+        throw new Error(errData.message || "Failed to create lead");
+      }
       return api.leads.create.responses[201].parse(await res.json());
     },
     onSuccess: () => {
