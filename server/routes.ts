@@ -435,6 +435,8 @@ async function seedDatabase() {
       { code: "CALLYZER", name: "Callyzer" },
       { code: "EMAIL_CAMP", name: "Email Campaign" },
       { code: "REFERRAL", name: "Referral (General)" },
+      { code: "DIRECT_CRM", name: "Direct (CRM Entry)" },
+      { code: "WALK_IN", name: "Walk-In" },
       { code: "OTHER", name: "Other" },
     ].entries()) {
       await db.insert(leadSources).values({ tenantId: tid, ...ls, status: "Active", displayOrder: i + 1 });
@@ -1255,6 +1257,14 @@ export async function registerRoutes(
         }
       }
       (input as any).lastActivityAt = new Date();
+
+      if (!input.leadSourceId) {
+        const [directSource] = await db.select().from(leadSources)
+          .where(and(eq(leadSources.tenantId, tid), eq(leadSources.code, "DIRECT_CRM")));
+        if (directSource) {
+          (input as any).leadSourceId = directSource.id;
+        }
+      }
 
       const lead = await storage.createLead(input);
       res.status(201).json(lead);
@@ -6756,6 +6766,7 @@ export async function registerRoutes(
   await ensureSuperAdmin();
   await clearStaleConnectorMetrics();
   await fixPendingApprovalStatus();
+  await ensureLeadSourcesExist();
 
   return httpServer;
 }
@@ -6819,6 +6830,30 @@ async function ensureSuperAdmin() {
     console.log("Super Admin user created.");
   } catch (err) {
     console.error("Error ensuring super admin:", err);
+  }
+}
+
+async function ensureLeadSourcesExist() {
+  try {
+    const allTenants = await db.select().from(tenants);
+    const newSources = [
+      { code: "DIRECT_CRM", name: "Direct (CRM Entry)" },
+      { code: "WALK_IN", name: "Walk-In" },
+    ];
+    for (const tenant of allTenants) {
+      for (const src of newSources) {
+        const existing = await db.select().from(leadSources)
+          .where(and(eq(leadSources.tenantId, tenant.id), eq(leadSources.code, src.code)));
+        if (existing.length === 0) {
+          await db.insert(leadSources).values({
+            tenantId: tenant.id, code: src.code, name: src.name,
+            status: "Active", displayOrder: 99, approvalStatus: "Approved",
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error ensuring lead sources:", err);
   }
 }
 

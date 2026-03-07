@@ -72,7 +72,8 @@ export default function LeadsWorkspace() {
     setMergeMobile(group.mobileNormalized || "");
     setMergeOpen(true);
   }, []);
-  const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
+  const [viewMode, setViewMode] = useState<"kanban" | "list">("list");
+  const [showDuplicatePanel, setShowDuplicatePanel] = useState<boolean | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [filterStatus, setFilterStatus] = useState<string[]>([]);
@@ -181,6 +182,29 @@ export default function LeadsWorkspace() {
                 </Button>
               </div>
 
+              {canMerge && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 relative border-amber-300 text-amber-700 hover:bg-amber-50"
+                  onClick={() => {
+                    setShowDuplicatePanel(prev => !prev);
+                    setTimeout(() => {
+                      const el = document.getElementById("duplicate-groups-section");
+                      if (el) el.scrollIntoView({ behavior: "smooth" });
+                    }, 100);
+                  }}
+                  data-testid="button-find-duplicates"
+                >
+                  <GitMerge className="w-4 h-4 md:mr-2" />
+                  <span className="hidden md:inline">Find Duplicates</span>
+                  {duplicateGroups?.groups && duplicateGroups.groups.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+                      {duplicateGroups.groups.length}
+                    </span>
+                  )}
+                </Button>
+              )}
               <Button variant="outline" size="sm" className="shrink-0" onClick={() => navigate("/lead-import")} data-testid="button-bulk-import">
                 <FileUp className="w-4 h-4 md:mr-2" />
                 <span className="hidden md:inline">Bulk Import</span>
@@ -287,37 +311,49 @@ export default function LeadsWorkspace() {
           </div>
         )}
 
-        {canMerge && duplicateGroups?.groups && duplicateGroups.groups.length > 0 && (
-          <div className="mx-3 md:mx-6 mt-3 z-10" data-testid="duplicate-groups-banner">
+        {canMerge && showDuplicatePanel && (
+          <div id="duplicate-groups-section" className="mx-3 md:mx-6 mt-3 z-10" data-testid="duplicate-groups-banner">
             <Alert className="border-amber-200 bg-amber-50">
               <GitMerge className="h-4 w-4 text-amber-600" />
-              <AlertTitle className="text-amber-800">
-                {duplicateGroups.groups.length} duplicate group{duplicateGroups.groups.length > 1 ? "s" : ""} found
+              <AlertTitle className="text-amber-800 flex items-center justify-between">
+                <span>
+                  {duplicateGroups?.groups?.length
+                    ? `${duplicateGroups.groups.length} duplicate group${duplicateGroups.groups.length > 1 ? "s" : ""} found (by mobile number)`
+                    : "No duplicate leads found"}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-amber-600 hover:text-amber-800"
+                  onClick={() => setShowDuplicatePanel(false)}
+                  data-testid="button-close-duplicates"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </AlertTitle>
-              <AlertDescription>
-                <div className="mt-2 space-y-2">
-                  {duplicateGroups.groups.slice(0, 5).map((group: any) => (
-                    <div key={group.mobileNormalized} className="flex items-center justify-between bg-white rounded-md p-2 border border-amber-100">
-                      <div className="text-sm">
-                        <span className="font-medium text-amber-900">{group.mobileNormalized}</span>
-                        <span className="text-muted-foreground ml-2">({group.count} leads: {group.leads.map((l: any) => l.name).join(", ")})</span>
+              {duplicateGroups?.groups?.length > 0 && (
+                <AlertDescription>
+                  <div className="mt-2 space-y-2">
+                    {duplicateGroups.groups.map((group: any) => (
+                      <div key={group.mobileNormalized} className="flex items-center justify-between bg-white rounded-md p-2 border border-amber-100">
+                        <div className="text-sm">
+                          <span className="font-medium text-amber-900">{group.mobileNormalized}</span>
+                          <span className="text-muted-foreground ml-2">({group.count} leads: {group.leads.map((l: any) => l.name).join(", ")})</span>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-amber-300 text-amber-700 hover:bg-amber-100"
+                          onClick={() => handleOpenMerge(group)}
+                          data-testid={`button-merge-group-${group.mobileNormalized}`}
+                        >
+                          <GitMerge className="h-3 w-3 mr-1" /> Merge
+                        </Button>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="border-amber-300 text-amber-700 hover:bg-amber-100"
-                        onClick={() => handleOpenMerge(group)}
-                        data-testid={`button-merge-group-${group.mobileNormalized}`}
-                      >
-                        <GitMerge className="h-3 w-3 mr-1" /> Merge
-                      </Button>
-                    </div>
-                  ))}
-                  {duplicateGroups.groups.length > 5 && (
-                    <p className="text-xs text-amber-600">...and {duplicateGroups.groups.length - 5} more groups</p>
-                  )}
-                </div>
-              </AlertDescription>
+                    ))}
+                  </div>
+                </AlertDescription>
+              )}
             </Alert>
           </div>
         )}
