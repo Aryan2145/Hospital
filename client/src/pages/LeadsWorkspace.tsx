@@ -65,7 +65,10 @@ export default function LeadsWorkspace() {
   const { data: mergeRoles } = useQuery<{ allowedRoles: string[] }>({
     queryKey: ["/api/leads/merge-roles"],
   });
-  const canMerge = crmUser?.roleCode != null && (mergeRoles?.allowedRoles || []).includes(crmUser.roleCode);
+  const canMerge = crmUser?.roleCode != null && (
+    (mergeRoles?.allowedRoles || []).includes(crmUser.roleCode) ||
+    ["SYS_ADMIN", "ADMIN", "MANAGER"].includes(crmUser.roleCode)
+  );
 
   const handleOpenMerge = useCallback((group: any) => {
     setMergeDuplicates(group.leads || []);

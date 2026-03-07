@@ -1921,6 +1921,40 @@ export async function registerRoutes(
         });
       }
 
+      unifiedEvents.push({
+        id: `lead-created`,
+        source: "Lead",
+        type: "lead_created",
+        description: `Lead created: ${lead.name}${lead.phoneE164 ? ` (${lead.phoneE164})` : ""}`,
+        timestamp: lead.createdAt,
+        performedBy: null,
+        newStatus: lead.status,
+      });
+
+      if (lead.status && lead.status !== "Raw Lead Captured") {
+        unifiedEvents.push({
+          id: `lead-status-current`,
+          source: "Lead",
+          type: "status_change",
+          description: `Lead status: ${lead.status}`,
+          timestamp: lead.lastActivityAt || lead.updatedAt || lead.createdAt,
+          newStatus: lead.status,
+        });
+      }
+
+      for (const ep of episodes) {
+        unifiedEvents.push({
+          id: `ep-created-${ep.id}`,
+          source: "Episode",
+          type: "episode_created",
+          description: `Episode created: ${ep.episode_name || "New Episode"} — ${ep.doctor_name || ""}`,
+          timestamp: ep.created_at,
+          episodeId: ep.id,
+          episodeName: ep.episode_name,
+          newStatus: ep.status,
+        });
+      }
+
       unifiedEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
       let quickStatus = "Active";
