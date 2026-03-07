@@ -831,26 +831,7 @@ export async function registerRoutes(
         secondaryColor: parsed.secondaryColor || "#f0f7fc",
       }).returning();
 
-      const existingRoles = await storage.getMasterRecords("systemRoles", newTenant.id);
-      if (existingRoles.length === 0) {
-        const defaultRoles = [
-          { code: "SYS_ADMIN", name: "System Admin" },
-          { code: "ADMIN", name: "CRM Admin" },
-          { code: "MANAGER", name: "Manager" },
-          { code: "AGENT", name: "Agent" },
-          { code: "COUNSELLOR", name: "Counsellor" },
-        ];
-        for (const role of defaultRoles) {
-          await storage.createMasterRecord("systemRoles", {
-            tenantId: newTenant.id,
-            code: role.code,
-            name: role.name,
-            status: "Active",
-            displayOrder: 0,
-            approvalStatus: "Approved",
-          });
-        }
-      }
+      await provisionNewTenant(newTenant.id);
 
       res.status(201).json(newTenant);
     } catch (err: any) {
@@ -6811,6 +6792,246 @@ export async function registerRoutes(
   await ensureCrmTeamDepartments();
 
   return httpServer;
+}
+
+async function provisionNewTenant(tid: number) {
+  const safe = async (fn: () => Promise<any>) => { try { await fn(); } catch (_) {} };
+
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "SYS_ADMIN", name: "System Admin", status: "Active", displayOrder: 0 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "ADMIN", name: "CRM Admin", status: "Active", displayOrder: 1 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "MANAGER", name: "Manager", status: "Active", displayOrder: 2 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "AGENT", name: "Agent", status: "Active", displayOrder: 3 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "COUNSELLOR", name: "Counsellor", status: "Active", displayOrder: 4 }));
+
+  const teamList = [
+    { code: "MKT", name: "Marketing", displayOrder: 1 },
+    { code: "SALES", name: "Sales", displayOrder: 2 },
+    { code: "HR", name: "HR", displayOrder: 3 },
+    { code: "IT", name: "IT", displayOrder: 4 },
+    { code: "ACCT", name: "Accounts", displayOrder: 5 },
+    { code: "FO", name: "Front Office", displayOrder: 6 },
+    { code: "TELECALLING", name: "Telecalling", displayOrder: 7 },
+    { code: "FINANCIAL", name: "Financial Counselling", displayOrder: 8 },
+    { code: "INSURANCE", name: "Insurance & TPA", displayOrder: 9 },
+    { code: "OT_IP", name: "OT / IP Desk", displayOrder: 10 },
+    { code: "POST_CARE", name: "Post Care", displayOrder: 11 },
+    { code: "REFERRAL", name: "Referral Management", displayOrder: 12 },
+    { code: "MGMT", name: "Management", displayOrder: 13 },
+  ];
+  for (const t of teamList) {
+    await safe(() => db.insert(administrativeDepartments).values({ tenantId: tid, ...t, status: "Active", approvalStatus: "Approved" }));
+  }
+
+  const desList = [
+    { code: "MD", name: "Managing Director", displayOrder: 1 },
+    { code: "DIR", name: "Director", displayOrder: 2 },
+    { code: "COO", name: "Chief Operating Officer", displayOrder: 3 },
+    { code: "CMO", name: "Chief Medical Officer", displayOrder: 4 },
+    { code: "CRM_MGR", name: "CRM Manager", displayOrder: 5 },
+    { code: "CRM_EXEC", name: "CRM Executive", displayOrder: 6 },
+    { code: "FRONT_DESK", name: "Front Desk Executive", displayOrder: 7 },
+    { code: "NURSE", name: "Nursing Staff", displayOrder: 8 },
+  ];
+  for (const d of desList) {
+    await safe(() => db.insert(designations).values({ tenantId: tid, ...d, status: "Active", approvalStatus: "Approved" }));
+  }
+
+  const empTypes = [
+    { code: "PERM", name: "Permanent", displayOrder: 1 },
+    { code: "CONT", name: "Contract", displayOrder: 2 },
+    { code: "CONS", name: "Consultant", displayOrder: 3 },
+    { code: "INTERN", name: "Intern", displayOrder: 4 },
+  ];
+  for (const e of empTypes) {
+    await safe(() => db.insert(employmentTypes).values({ tenantId: tid, ...e, status: "Active", approvalStatus: "Approved" }));
+  }
+
+  const leadStatusList = [
+    { code: "RAW", name: "Raw Lead Captured", displayOrder: 1, isTerminal: false },
+    { code: "CONT", name: "Contacted", displayOrder: 2, isTerminal: false },
+    { code: "QUAL", name: "Qualified", displayOrder: 3, isTerminal: false },
+    { code: "APPT", name: "Appointment Booked", displayOrder: 4, isTerminal: false },
+    { code: "REM", name: "Reminder Running", displayOrder: 5, isTerminal: false },
+    { code: "CONS", name: "Consultation Done", displayOrder: 6, isTerminal: false },
+    { code: "WON", name: "Closed Won", displayOrder: 7, isTerminal: true },
+    { code: "LOST", name: "Closed Lost", displayOrder: 8, isTerminal: true },
+    { code: "UNQUAL", name: "Unqualified", displayOrder: 9, isTerminal: true },
+    { code: "NURT", name: "Nurture", displayOrder: 10, isTerminal: false },
+  ];
+  for (const ls of leadStatusList) {
+    await safe(() => db.insert(leadStatuses).values({ tenantId: tid, code: ls.code, name: ls.name, displayOrder: ls.displayOrder, isTerminal: ls.isTerminal, status: "Active", approvalStatus: "Approved" }));
+  }
+
+  for (const [i, ls] of [
+    { code: "DIGITAL", name: "Digital" },
+    { code: "OFFLINE", name: "Offline" },
+    { code: "PARTNER", name: "Partner / Referral" },
+  ].entries()) {
+    await safe(() => db.insert(leadSourceCategories).values({ tenantId: tid, ...ls, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  const sourceList = [
+    { code: "FACEBOOK", name: "Facebook" },
+    { code: "INSTAGRAM", name: "Instagram" },
+    { code: "GOOGLE_ADS", name: "Google Ads" },
+    { code: "WEBSITE", name: "Website" },
+    { code: "PATIENT_REF", name: "Patient Referral (Word of Mouth)" },
+    { code: "HOME_COUNSEL", name: "Home Counselling Request" },
+    { code: "WHATSAPP", name: "WhatsApp" },
+    { code: "PHONE", name: "Phone Inquiry" },
+    { code: "GOOGLE_FORMS", name: "Google Forms" },
+    { code: "CALLYZER", name: "Callyzer" },
+    { code: "EMAIL_CAMP", name: "Email Campaign" },
+    { code: "REFERRAL", name: "Referral (General)" },
+    { code: "DIRECT_CRM", name: "Direct (CRM Entry)" },
+    { code: "WALK_IN", name: "Walk-In" },
+    { code: "OTHER", name: "Other" },
+  ];
+  for (const [i, s] of sourceList.entries()) {
+    await safe(() => db.insert(leadSources).values({ tenantId: tid, ...s, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, at] of [
+    { code: "NOTE", name: "Note" },
+    { code: "CALL", name: "Call" },
+    { code: "EMAIL", name: "Email" },
+    { code: "SMS", name: "SMS" },
+    { code: "WHATSAPP", name: "WhatsApp Message" },
+    { code: "MEETING", name: "In-Person Meeting" },
+    { code: "FOLLOW_UP", name: "Follow-Up" },
+  ].entries()) {
+    await safe(() => db.insert(activityTypes).values({ tenantId: tid, ...at, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, nat] of [
+    { code: "CALL_BACK", name: "Call Back" },
+    { code: "FOLLOW_UP", name: "Follow-Up" },
+    { code: "SEND_INFO", name: "Send Information" },
+    { code: "BOOK_APPT", name: "Book Appointment" },
+    { code: "HOME_VISIT", name: "Home Visit" },
+  ].entries()) {
+    await safe(() => db.insert(nextActionTypes).values({ tenantId: tid, ...nat, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, tc] of [
+    { code: "GENERAL", name: "General" },
+    { code: "FOLLOW_UP", name: "Follow-Up" },
+    { code: "CALLBACK", name: "Callback" },
+    { code: "NURTURE", name: "Nurture" },
+    { code: "POST_CARE", name: "Post Care" },
+  ].entries()) {
+    await safe(() => db.insert(taskCategories).values({ tenantId: tid, ...tc, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, apt] of [
+    { code: "FIRST_CONSULT", name: "First Consultation" },
+    { code: "FOLLOW_UP", name: "Follow-Up Consultation" },
+    { code: "PRE_OP", name: "Pre-Operative Assessment" },
+    { code: "POST_OP", name: "Post-Operative Review" },
+  ].entries()) {
+    await safe(() => db.insert(appointmentTypes).values({ tenantId: tid, ...apt, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, as] of [
+    { code: "SCHEDULED", name: "Scheduled" },
+    { code: "CONFIRMED", name: "Confirmed" },
+    { code: "CHECKED_IN", name: "Checked In" },
+    { code: "COMPLETED", name: "Completed" },
+    { code: "CANCELLED", name: "Cancelled" },
+    { code: "NO_SHOW", name: "No Show" },
+    { code: "RESCHEDULED", name: "Rescheduled" },
+  ].entries()) {
+    await safe(() => db.insert(appointmentStatuses).values({ tenantId: tid, ...as, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, cs] of [
+    { code: "CONNECTED", name: "Connected" },
+    { code: "NOT_ANSWERED", name: "Not Answered" },
+    { code: "BUSY", name: "Busy" },
+    { code: "SWITCHED_OFF", name: "Switched Off" },
+    { code: "WRONG_NUMBER", name: "Wrong Number" },
+  ].entries()) {
+    await safe(() => db.insert(callStatuses).values({ tenantId: tid, ...cs, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, cd] of [
+    { code: "INCOMING", name: "Incoming" },
+    { code: "OUTGOING", name: "Outgoing" },
+    { code: "MISSED", name: "Missed" },
+  ].entries()) {
+    await safe(() => db.insert(callDirections).values({ tenantId: tid, ...cd, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, cc] of [
+    { code: "FACEBOOK", name: "Facebook" },
+    { code: "INSTAGRAM", name: "Instagram" },
+    { code: "GOOGLE_ADS", name: "Google Ads" },
+    { code: "WHATSAPP", name: "WhatsApp" },
+    { code: "EMAIL", name: "Email" },
+    { code: "SMS", name: "SMS" },
+  ].entries()) {
+    await safe(() => db.insert(campaignChannels).values({ tenantId: tid, ...cc, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, ct] of [
+    { code: "FIRST", name: "First Consultation" },
+    { code: "FOLLOW_UP", name: "Follow-Up" },
+    { code: "EMERGENCY", name: "Emergency" },
+  ].entries()) {
+    await safe(() => db.insert(consultationTypes).values({ tenantId: tid, ...ct, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, cl] of [
+    { code: "MAIN", name: "Main Reception Line" },
+    { code: "CRM", name: "CRM Outbound Line" },
+  ].entries()) {
+    await safe(() => db.insert(callingLines).values({ tenantId: tid, ...cl, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, lr] of [
+    { code: "COST", name: "Cost Too High" },
+    { code: "COMPETITOR", name: "Chose Another Hospital" },
+    { code: "NOT_READY", name: "Not Ready for Treatment" },
+    { code: "INSURANCE", name: "Insurance Not Covered" },
+    { code: "NO_RESPONSE", name: "No Response / Unreachable" },
+    { code: "OTHER", name: "Other" },
+  ].entries()) {
+    await safe(() => db.insert(lostReasons).values({ tenantId: tid, ...lr, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, ns] of [
+    { code: "FORGOT", name: "Forgot Appointment" },
+    { code: "TRANSPORT", name: "Transportation Issue" },
+    { code: "UNWELL", name: "Felt Unwell" },
+    { code: "RESCHEDULED", name: "Rescheduled Elsewhere" },
+    { code: "OTHER", name: "Other" },
+  ].entries()) {
+    await safe(() => db.insert(noShowReasons).values({ tenantId: tid, ...ns, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, rs] of [
+    { code: "PENDING", name: "Pending" },
+    { code: "CONTACTED", name: "Contacted" },
+    { code: "CONVERTED", name: "Converted" },
+    { code: "LOST", name: "Lost" },
+  ].entries()) {
+    await safe(() => db.insert(referralStatuses).values({ tenantId: tid, ...rs, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  for (const [i, cs] of [
+    { code: "INITIAL", name: "Initial Consultation" },
+    { code: "ESTIMATE_SHARED", name: "Estimate Shared" },
+    { code: "NEGOTIATION", name: "Under Negotiation" },
+    { code: "APPROVED", name: "Patient Approved" },
+    { code: "SURGERY_DONE", name: "Surgery / Procedure Done" },
+    { code: "BILLED", name: "Billed" },
+    { code: "COMPLETED", name: "Completed" },
+    { code: "DISCONTINUED", name: "Discontinued" },
+  ].entries()) {
+    await safe(() => db.insert(conversionStages).values({ tenantId: tid, ...cs, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
+  }
+
+  console.log(`Provisioned new tenant #${tid} with all master data`);
 }
 
 async function ensureSuperAdmin() {
