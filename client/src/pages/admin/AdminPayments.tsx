@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useState } from "react";
-import { format } from "date-fns";
+import { fmtDate, fmtDateRange } from "@/lib/date-utils";
 import {
   Dialog,
   DialogContent,
@@ -209,7 +209,7 @@ export default function AdminPayments() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-600">
-                    {p.paymentDate ? format(new Date(p.paymentDate), "dd MMM yyyy") : "-"}
+                    {p.paymentDate ? fmtDate(p.paymentDate) : "-"}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="font-medium text-slate-900 flex items-center justify-end gap-0.5">
@@ -233,7 +233,7 @@ export default function AdminPayments() {
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-600">
                     {p.periodStart && p.periodEnd ? (
-                      <span>{format(new Date(p.periodStart), "dd MMM")} - {format(new Date(p.periodEnd), "dd MMM yyyy")}</span>
+                      <span>{fmtDateRange(p.periodStart, p.periodEnd)}</span>
                     ) : "-"}
                   </td>
                   <td className="px-4 py-3 text-center">

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { format, formatDistanceToNow, isPast } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { fmtTime } from "@/lib/date-utils";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useLeads } from "@/hooks/use-leads";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -438,7 +439,7 @@ function TasksAndActionsSection({ todayTasks, dashStats, navigate }: any) {
                       <Clock className="w-3 h-3 text-amber-500 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-foreground truncate">{task.title}</p>
-                        <p className="text-[10px] text-muted-foreground">{task.dueDate && format(new Date(task.dueDate), "h:mm a")}</p>
+                        <p className="text-[10px] text-muted-foreground">{task.dueDate && fmtTime(task.dueDate)}</p>
                       </div>
                       <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
                     </div>
@@ -508,7 +509,7 @@ function TasksAndActionsSection({ todayTasks, dashStats, navigate }: any) {
                         {a.action_type_name || "Follow Up"}: {a.entity_name}
                       </p>
                       <p className="text-[10px] text-muted-foreground">
-                        {a.next_action_date && format(new Date(a.next_action_date), "h:mm a")}
+                        {a.next_action_date && fmtTime(a.next_action_date)}
                         {a.assigned_to_name ? ` · ${a.assigned_to_name}` : ""}
                         {a.next_action_notes ? ` · ${a.next_action_notes}` : ""}
                       </p>

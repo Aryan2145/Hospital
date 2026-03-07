@@ -1,7 +1,7 @@
 import { Lead } from "@shared/schema";
 import { X, Phone, Mail, Calendar, Clock, CheckCircle2, AlertCircle, Send, StickyNote } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { format } from "date-fns";
+import { fmtDate, fmtDateTimeShort } from "@/lib/date-utils";
 import { useCreateActivity, useLeadActivities } from "@/hooks/use-leads";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -62,7 +62,7 @@ export function LeadDetailView({ lead, onClose }: LeadDetailViewProps) {
              </div>
              <div className="flex items-center gap-3">
                <Calendar className="w-4 h-4 text-muted-foreground" />
-               <span className="text-sm font-medium">Created: {lead.createdAt ? format(new Date(lead.createdAt), "PPP") : "-"}</span>
+               <span className="text-sm font-medium">Created: {lead.createdAt ? fmtDate(lead.createdAt) : "-"}</span>
              </div>
              <div className="flex items-center gap-3">
                <AlertCircle className="w-4 h-4 text-orange-500" />
@@ -141,7 +141,7 @@ function ActivityFeed({ leadId }: { leadId: number }) {
               <div className="flex justify-between items-start mb-1">
                 <span className="text-xs font-bold uppercase text-foreground/70">{activity.type}</span>
                 <span className="text-xs text-muted-foreground">
-                  {activity.createdAt && format(new Date(activity.createdAt), "MMM d, h:mm a")}
+                  {activity.createdAt && fmtDateTimeShort(activity.createdAt)}
                 </span>
               </div>
               <p className="text-sm text-foreground">{activity.description}</p>

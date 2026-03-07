@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useState } from "react";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/date-utils";
 import {
   Dialog,
   DialogContent,
@@ -197,7 +197,7 @@ export default function AdminSubscriptions() {
                   <td className="px-4 py-3">
                     <div className="text-sm text-slate-600 flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                      {sub.startDate ? format(new Date(sub.startDate), "dd MMM yyyy") : "-"} - {sub.endDate ? format(new Date(sub.endDate), "dd MMM yyyy") : "-"}
+                      {sub.startDate ? fmtDate(sub.startDate) : "-"} - {sub.endDate ? fmtDate(sub.endDate) : "-"}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right">

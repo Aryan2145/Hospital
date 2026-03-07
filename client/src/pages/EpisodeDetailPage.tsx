@@ -16,6 +16,7 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import { cn } from "@/lib/utils";
 import { getStatusColor, getValidEpisodeTransitions } from "@/lib/lead-status";
 import { format, formatDistanceToNow } from "date-fns";
+import { fmtDate, fmtDateTime, fmtTime } from "@/lib/date-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useState, useEffect } from "react";
@@ -389,8 +390,8 @@ export default function EpisodeDetailPage() {
                   <InfoRow label="Episode Name" value={episode.episodeName} />
                   <InfoRow label="Type" value={episode.episodeType} />
                   <InfoRow label="Status" value={episode.status} />
-                  <InfoRow label="Start Date" value={episode.startDate ? format(new Date(episode.startDate), "MMM d, yyyy") : null} />
-                  <InfoRow label="End Date" value={episode.endDate ? format(new Date(episode.endDate), "MMM d, yyyy") : null} />
+                  <InfoRow label="Start Date" value={episode.startDate ? fmtDate(episode.startDate) : null} />
+                  <InfoRow label="End Date" value={episode.endDate ? fmtDate(episode.endDate) : null} />
                   <InfoRow label="Lead ID" value={episode.leadId ? `#${episode.leadId}` : null} link={episode.leadId ? `/leads/${episode.leadId}` : undefined} />
                 </div>
               </Card>
@@ -618,10 +619,10 @@ export default function EpisodeDetailPage() {
                         </div>
                         <div className="text-right flex-shrink-0">
                           <p className="text-[11px] text-muted-foreground whitespace-nowrap">
-                            {format(new Date(event.timestamp), "MMM d, yyyy")}
+                            {fmtDate(event.timestamp)}
                           </p>
                           <p className="text-[10px] text-muted-foreground/70">
-                            {format(new Date(event.timestamp), "h:mm a")}
+                            {fmtTime(event.timestamp)}
                           </p>
                         </div>
                       </div>
@@ -863,7 +864,7 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
         <div className="mt-2 flex items-center gap-2 text-xs flex-wrap">
           <Badge variant="outline" className="text-[10px]" data-testid="badge-current-next-action">
             <CalendarClock className="w-3 h-3 mr-1" />
-            Next: {currentNextActionType || "Action"} on {format(new Date(episode.nextActionDate), "MMM d, yyyy h:mm a")}
+            Next: {currentNextActionType || "Action"} on {fmtDateTime(episode.nextActionDate)}
           </Badge>
           {assigneeName && (
             <Badge variant="secondary" className="text-[10px]" data-testid="badge-next-action-assignee">
@@ -934,7 +935,7 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
             {episode.nextActionDate && (
               <div className="p-2 rounded-md bg-primary/5 border border-primary/10" data-testid="current-next-action-display">
                 <p className="text-xs font-medium text-foreground">
-                  {currentNextActionType || "Next Action"}: {format(new Date(episode.nextActionDate), "MMM d, yyyy h:mm a")}
+                  {currentNextActionType || "Next Action"}: {fmtDateTime(episode.nextActionDate)}
                 </p>
                 {assigneeName && (
                   <p className="text-[11px] text-primary font-medium mt-0.5">Assigned to: {assigneeName}</p>
@@ -1202,7 +1203,7 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
           {isApproved && episode.discountApprovedBy && (
             <p className="text-xs text-green-700 dark:text-green-400 mb-3" data-testid="text-discount-approved-info">
               Approved by {episode.discountApprovedBy}
-              {episode.discountApprovedAt && ` on ${format(new Date(episode.discountApprovedAt), "MMM d, yyyy")}`}
+              {episode.discountApprovedAt && ` on ${fmtDate(episode.discountApprovedAt)}`}
             </p>
           )}
 
@@ -1489,7 +1490,7 @@ function InsuranceTab({
                 />
               </div>
               {episode.preauthSubmittedAt && (
-                <InfoRow label="Submitted At" value={format(new Date(episode.preauthSubmittedAt), "MMM d, yyyy h:mm a")} />
+                <InfoRow label="Submitted At" value={fmtDateTime(episode.preauthSubmittedAt)} />
               )}
               <InfoRow label="Approved Amount" value={episode.preauthApprovedAmount ? `₹${episode.preauthApprovedAmount.toLocaleString()}` : null} />
               <div className="space-y-1.5">

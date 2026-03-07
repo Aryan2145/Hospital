@@ -1,64 +1,38 @@
 # myProSys Hospital CRM Platform
 
 ## Overview
-myProSys Hospital CRM is a multi-tenant, white-labeled platform designed to streamline the patient (Lead) and treatment journey (Episode) lifecycle for hospitals. It manages the entire Lead→Episode→Conversion process, offering features like SLA tracking, telephony integration, role-based access control, and a master data approval workflow. The platform aims to enhance efficiency in patient management and treatment opportunities, with each hospital able to customize branding elements.
+myProSys Hospital CRM is a multi-tenant, white-labeled platform designed to streamline the patient (Lead) and treatment journey (Episode) lifecycle for hospitals. It manages the entire Lead→Episode→Conversion process, offering features like SLA tracking, telephony integration, role-based access control, and master data approval workflows. The platform aims to enhance efficiency in patient management and treatment opportunities, with each hospital able to customize branding elements.
 
 ## User Preferences
 I prefer iterative development with a focus on clear, modular code. I appreciate detailed explanations for complex architectural decisions. Before making any major structural changes or adding new external dependencies, please ask for my approval. I expect the agent to prioritize security and data privacy, especially concerning patient health information (PHI). Do not make changes to files related to deployment configurations or sensitive API keys without explicit instruction.
 
 ## System Architecture
 The platform is built with a modern web stack:
-- **Frontend:** React with Vite, styled using Tailwind CSS and shadcn/ui. The UI/UX emphasizes a clean, medical-professional aesthetic with a light background, Viroc Blue (#0f4c81) as primary, and Orange (#ff8c00) as accent colors.
+- **Frontend:** React with Vite, styled using Tailwind CSS and shadcn/ui. The UI/UX emphasizes a clean, medical-professional aesthetic with a light background, Viroc Blue (#0f4c81) as primary, and Orange (#ff8c00) as accent colors. Dates are formatted as DD/MM/YYYY.
 - **Backend:** Express.js and Node.js.
 - **Database:** PostgreSQL, accessed via Drizzle ORM.
 - **Authentication:** Replit Auth (OpenID Connect).
-- **Multi-Tenancy:** Implemented with `tenantId` in all core tables for strict data isolation.
+- **Multi-Tenancy:** Implemented with `tenantId` in all core tables for strict data isolation, including tenant-specific SMTP configurations and master data provisioning.
 
 **Key Features & Design Patterns:**
-- **Lead and Episode Management:** Differentiates 'Lead' (pre-consultation funnel) from 'Episode' (post-consultation treatment opportunity).
-- **Master Data Management:** Over 50 master data tables with an approval workflow for new entries and bulk import/export.
-- **Role-Based Access Control (RBAC):** 4-tier hierarchy (SYS_ADMIN, ADMIN, MANAGER, AGENT/COUNSELLOR) with granular access scoping and PHI access levels (Full/Masked/None).
-- **Kanban Workspace:** Drag-and-drop interface for managing lead statuses.
-- **Responsive Design:** Fully responsive across all device types.
-- **API Structure:** RESTful approach with generic CRUD endpoints for master data and specific endpoints for core entities.
-- **Branding:** Dynamic per-tenant branding for logos, favicons, display names, and color schemes.
-- **System Admin Panel:** Separate `/admin/*` routes for SYS_ADMINs with Bottle Green (#0a3d2a) and Orange theme, managing hospitals, subscription plans, payments, and tenant suspension. Dedicated admin login page at `/admin/login` with SYS_ADMIN role validation via `POST /api/auth/admin-login`. Admin logout redirects to `/admin/login`.
-- **Check-In & Front Office:** Integrated into the Appointments page, allowing check-in, patient record creation from lead data, and tracking appointment statuses.
-- **Doctor Availability Calendar:** Embedded as a modal overlay within the Appointments page (no separate sidebar menu item). Accessible via "Availability Calendar" button in page header and "Check Availability" link in the booking dialog. Supports Month/Day/Week views with leave display and slot selection that prefills the booking form. Route `/doctor-availability` redirects to `/appointments`.
-- **Episode Intelligence Layer:**
-    - **Temperature Engine:** 7-level lead temperature tracking, auto-computed on trigger events.
-    - **Auto-Handover Engine:** Stage-based team assignment.
-    - **Revenue Probability:** Configurable stage-to-probability mapping for episode revenue forecasting.
-- **Lead List View Redesign:** Enhanced layout with new columns (Name, Stage, Temperature, Owner, Ageing, Next Action, Source) and a quick filter bar.
-- **Duplicate Lead Validation:** Server-side and frontend validation based on normalized mobile numbers, preventing duplicate lead creation.
-- **Episode Clinical Notes with Audit:** Allows editing clinical notes for specific roles with mandatory reason and audit logging.
-- **Negotiation Discount Approval Workflow:** Manages discount submission, approval, and revocation for episodes, with audit logging and role-based access.
-- **Per-Tenant SMTP & Password Reset:** Configurable SMTP settings per tenant for sending branded emails, including password resets, with fallback to global settings.
-- **Duplicate Lead Validation:** `mobileNormalized` field on leads, `GET /api/leads/check-duplicate?mobile=X` endpoint, server-side 409 on duplicate creation, frontend phone-blur check with warning banner.
-- **Episode Clinical Notes Edit with Audit:** `PUT /api/episodes/:id/clinical-notes` with mandatory editReason, role-gated via configurable `clinical_notes_edit_roles` table (per-tenant, fallback to SYS_ADMIN/ADMIN/MANAGER). Config endpoints: `GET/POST /api/episodes/clinical-notes-edit-roles/config`. Frontend query checks allowed roles dynamically. Audit logs written on every edit.
-- **Negotiation Discount Approval Workflow:** `originalQuotedAmount`, `discountPercent`, `discountAmount`, `discountNotes`, `discountStatus` fields. Endpoints: `POST /api/episodes/:id/discount`, `POST /api/episodes/:id/discount/approve`, `POST /api/episodes/:id/discount/revoke`. All with audit logging.
-- **Desktop Wireframe Upgrades:** Leads list redesign (Stage/Temperature/Owner/Ageing/Source columns), quick filter bar (All/My Leads/Hot/Dormant/Overdue/team filters), Intelligence Strip on Lead Detail, Ownership Card in sidebar, Insurance badges on episode cards.
-- **Lead Merge:** `mergedIntoLeadId`, `mergeStatus`, `mergedAt`, `mergedBy` fields on leads; `lead_merge_audits` table; `lead_merge_roles` config table. Endpoints: `GET /api/leads/duplicates` (duplicate groups), `GET /api/leads/:id/merge-preview?with=X,Y` (field comparison + record counts), `POST /api/leads/merge` (transactional merge with FK re-linking), `GET /api/leads/merge-roles` (config). Frontend: duplicate groups banner on Leads Workspace, 4-step merge modal (select primary → select duplicates → review fields → confirm), merged lead banner on Lead Detail with redirect.
-- **Full Patient Journey View:** `GET /api/leads/:id/journey` aggregation endpoint returning leadSummary, episodes, unifiedTimeline (merged lead events + appointments + episode audit logs + tasks). Frontend: Journey Snapshot strip (lead stage, episode stage, episode count, probability, expected revenue, team), Treatment Journey Timeline (episode cards with expand/collapse audit events), Unified Journey Timeline with filter chips (All/Lead/Appointment/Episode/Post Care/Task) and quick-log activity form.
-- **Episode Model Freeze (Level 1):** Simplified episode data model answering 5 CRM questions: (1) Case Owner → `doctorId`, (2) Surgery Doctor → `surgeryDoctorId` (nullable), (3) Post-Care Owner → `postCareOwnerId` (nullable, references crmUsers), (4) Quote → `initialQuote` / `approvedDiscount` / `finalQuote` (auto-calculated), (5) Billing → `actualBill` / `variance` (auto-calculated). Episode Detail Page rewritten with 4-tab layout: Clinical (details + case ownership + clinical notes), Financial (quote & billing + discount request + revenue), Insurance (toggle + insurer/TPA/preauth), Family Status (family discussion, second opinion, decision status/notes). Old columns remain in DB for backward compat. Discount approval/revoke endpoints sync both new simplified fields and legacy fields.
-- **Episode Stage Transition Remarks:** All episode status changes (forward and backward) require mandatory remarks (min 5 characters) via a dialog. Remarks stored in audit log `newValues.stageRemarks`. Backend validates before allowing status update. Remarks displayed in Journey Timeline with italic quote styling.
-- **Lead Journey Funnel:** Mini horizontal funnel strip in Lead Workspace list view Stage column showing progression: Raw → Contacted → Qualified → Appt → Reminder → Consult. Current stage highlighted primary, past green, future muted. Terminal statuses (Closed Won/Lost, Unqualified, Nurture) shown as separate badges.
-- **Episode Log Activity & Next Action:** Collapsible card on Episode Detail Page (after Treatment Journey, before tabs). Log Activity section (type/description/outcome/duration) posts to lead activities. Next Action section sets nextActionTypeId/nextActionDate/nextActionNotes on the episode.
-- **Delegatable Next Actions:** `nextActionAssignedTo` field on both leads and episodes tables (references crmUsers). "Assign To" dropdown in both Lead Detail Next Action panel and Episode Detail Log & Next Action card, defaulting to the current user (self). Assignee name displayed in saved next action card and collapsed summary badge.
-- **Lead Journey Funnel (Detail Page):** Full-width `LeadJourneyFunnel` card on Lead Detail Page, identical to Episode Treatment Journey. Shows 6 stages (Raw Lead Captured → Contacted → Qualified → Appointment Booked → Reminder Running → Consultation Done) with current/past/future coloring. Terminal statuses shown as badges below.
-- **Automated Nurture Engine (Layer 1):** `server/services/nurtureEngine.ts` — When lead moves to "Nurture", auto-creates a task chain at increasing intervals (Day 1, 3, 7, 14, 30, 60). Each task completion prompts outcome selection (Interested/Follow Up/Not Reached/Closed). "Interested" → reactivates to Contacted. "Closed" → moves to Closed Lost. "Follow Up" → creates next task in sequence. After all 6 steps exhausted → escalates to manager. Lead status guard prevents stale task processing.
-- **Automated Nurture Engine (Layer 2):** Background scheduler (`server/services/backgroundScheduler.ts`) runs every 30 minutes across all active tenants. Processes: (1) Dormant leads (5+ days no activity) → creates re-engage tasks + marks temperature as Dormant, (2) **Auto No-Show**: appointments with past date + no check-in are automatically marked "No Show", lead `noShowCount` incremented atomically; 2+ no-shows auto-moves lead to Nurture, (3) Stale appointments → creates high-priority follow-up tasks, (4) Overdue nurture tasks (48+ hours) → escalates to manager (deduplicated).
-- **Lead Ownership & Source Backfill:** Startup function `backfillLeadOwnershipAndSource()` auto-populates missing `assignedCrmUserId`, `primaryOwnerUserId`, `ownerTeam` (fallback to first admin), and `leadSourceId` (Callyzer tag detection → "Callyzer" source, else → "Direct CRM"). Callyzer auto-created leads now include `primaryOwnerUserId` and `ownerTeam`.
-- **Unified Journey Timeline Fixes:** Journey endpoint `/api/leads/:id/journey` fixed SQL column mappings (`checked_in_at`, `appointment_type_id` join, `call_duration_seconds`, `modified_at` for episodes). Returns `upcomingAppointment` in response. Timeline shows richer appointment events with doctor name, date, time, token number, check-in status, booker name.
-- **Lead Detail Page Enhancements:** AppointmentInfoCard component shows upcoming/scheduled appointment details prominently below the lead funnel (date, time, doctor, status, past-date warning). Intelligence Strip metrics have descriptive tooltips (FRT = "First Response Time"). Tasks panel shows task owner name alongside due date with overdue highlighting. Source fallback displays "Callyzer" for leads with callyzer tags when `leadSourceId` is null.
-- **3-Tier Role Dashboard:** `GET /api/dashboard/stats` with role-scoped SQL queries. ManagementDashboard (ADMIN/SYS_ADMIN) shows team stats, ManagerDashboard (MANAGER) shows team performance, IndividualDashboard (AGENT/COUNSELLOR) shows personal metrics and recent activities.
-- **Teams (formerly Administrative Departments):** Renamed from "Administrative Department" to "Team" across UI. Located in Masters → Organisation & Staff → Team. Pre-loaded teams: Marketing, Sales, HR, IT, Accounts, Front Office, Telecalling, Financial Counselling, Insurance & TPA, OT / IP Desk, Post Care, Referral Management, Management. These align with the Auto-Handover Engine's stage-to-team mapping. Startup dedup migration (`consolidateDuplicateTeams`) auto-merges old `ADPT-*` coded entries into properly coded ones, re-pointing all FK references (crm_users, doctors, leads, episodes) and deactivating duplicates. Master data code generation now preserves provided codes instead of always overwriting with auto-generated prefix codes.
-- **Tenant Provisioning:** `provisionNewTenant(tid)` function auto-seeds all essential master data when a new hospital is added: System Roles (5), Teams (13), Designations (8), Employment Types (4), Lead Statuses (10), Lead Source Categories (3), Lead Sources (15), Activity Types (7), Next Action Types (5), Task Categories (5), Appointment Types (4), Appointment Statuses (7), Call Statuses (5), Call Directions (3), Campaign Channels (6), Consultation Types (3), Calling Lines (2), Lost Reasons (6), No-Show Reasons (5), Referral Statuses (4), Conversion Stages (8). Each tenant can then customize these through the Masters page.
+- **Patient Journey Management:** Distinct workflows for Leads (pre-consultation) and Episodes (post-consultation treatment).
+- **Master Data Management:** Over 50 master data tables with approval workflows and bulk import/export.
+- **Role-Based Access Control (RBAC):** 4-tier hierarchy (SYS_ADMIN, ADMIN, MANAGER, AGENT/COUNSELLOR) with granular PHI access levels (Full/Masked/None).
+- **Intuitive UI:** Kanban workspace for lead statuses, responsive design, and a dedicated System Admin Panel for managing hospitals and subscriptions.
+- **Dynamic Branding:** Per-tenant customization of logos, favicons, display names, and color schemes.
+- **Intelligent Automation:**
+    - **Episode Intelligence Layer:** Features a "Temperature Engine" for lead scoring, "Auto-Handover Engine" for stage-based team assignment, and "Revenue Probability" for forecasting.
+    - **Automated Nurture Engine:** Manages lead nurturing with task chains, escalations, and automated status updates (e.g., auto no-show).
+- **Lead & Episode Enhancements:** Includes duplicate lead validation, clinical notes with audit trails, negotiation discount approval workflows, and lead merge functionality.
+- **Workflows:** Check-in and front office integration, doctor availability calendar, and detailed patient journey views including unified timelines.
+- **Dashboards:** 3-Tier Role-based dashboards provide tailored analytics for SYS_ADMIN, ADMIN, MANAGER, and AGENT/COUNSELLOR roles.
+- **Team Management:** Renamed from "Administrative Departments" to "Teams" with pre-loaded categories and a migration process for consolidation.
+- **Next Actions:** Delegatable next actions for both leads and episodes, enhancing task assignment and follow-up.
 
 ## External Dependencies
 - **Replit Auth:** For user authentication leveraging OpenID Connect.
 - **Google Sheets API:** For bulk lead import.
 - **WhatsApp Business API:** For automated communication.
 - **Meta Graph API v21.0:** For Facebook & Instagram ad campaign insights.
-- **Callyzer:** Webhook-based integration for real-time call log capture and auto-lead creation. Rich call card display in Lead Detail timeline (employee, notes, status, recording). Last Call column in Lead Workspace list view. Callyzer Reports page with SQL-aggregated stats (date-filtered), default date range: yesterday→today.
-- **SMTP Services:** For sending transactional emails and notifications.
+- **Callyzer:** Webhook-based integration for real-time call log capture, auto-lead creation, and call reporting.
+- **SMTP Services:** For sending transactional emails and notifications, configurable per tenant.

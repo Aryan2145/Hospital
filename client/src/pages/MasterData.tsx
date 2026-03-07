@@ -46,6 +46,7 @@ import {
   X,
   ShieldCheck,
 } from "lucide-react";
+import { fmtDate, fmtDateTime } from "@/lib/date-utils";
 
 interface MasterRecord {
   id: number;
@@ -621,7 +622,7 @@ export default function MasterData() {
                           <TableCell className="text-xs font-mono">{item.code}</TableCell>
                           <TableCell className="text-xs font-medium">{item.name}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                            {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "—"}
+                            {fmtDate(item.createdAt)}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
@@ -685,7 +686,7 @@ export default function MasterData() {
                           <TableCell className="text-xs">{s.suggestedValue}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{s.suggestedBy || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                            {s.createdAt ? new Date(s.createdAt).toLocaleDateString() : "—"}
+                            {fmtDate(s.createdAt)}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
@@ -879,7 +880,7 @@ export default function MasterData() {
                           <TableRow key={log.id} data-testid={`row-import-log-${log.id}`}>
                             <TableCell className="text-sm">{log.fileName}</TableCell>
                             <TableCell className="text-sm text-muted-foreground">
-                              {new Date(log.startedAt).toLocaleString()}
+                              {fmtDateTime(log.startedAt)}
                             </TableCell>
                             <TableCell>{log.totalRows}</TableCell>
                             <TableCell className="text-green-600">{log.successCount}</TableCell>
@@ -964,7 +965,7 @@ export default function MasterData() {
                               displayVal = refRecord ? refRecord.name : record[f.key];
                             } else if (f.type === "date" && record[f.key]) {
                               try {
-                                displayVal = new Date(record[f.key]).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+                                displayVal = fmtDate(record[f.key]);
                               } catch { displayVal = record[f.key]; }
                             }
                             return (

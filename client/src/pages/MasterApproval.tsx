@@ -10,7 +10,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, XCircle, Clock, Database, ChevronDown, ChevronUp, Eye, Pencil, Save, X } from "lucide-react";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/date-utils";
 
 interface ExtraField {
   key: string;
@@ -190,7 +190,7 @@ function formatFieldValue(value: any): string {
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (value instanceof Date || (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value))) {
     try {
-      return format(new Date(value), "MMM d, yyyy");
+      return fmtDate(new Date(value));
     } catch {
       return String(value);
     }
@@ -691,7 +691,7 @@ export default function MasterApproval() {
                         <div className="flex items-center gap-3 text-xs text-muted-foreground">
                           <span>Code: <span className="font-mono">{item.code}</span></span>
                           {item.createdBy && <span>By: {item.createdBy}</span>}
-                          {item.createdAt && <span>Created {format(new Date(item.createdAt), "MMM d, h:mm a")}</span>}
+                          {item.createdAt && <span>Created {fmtDate(item.createdAt)}</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

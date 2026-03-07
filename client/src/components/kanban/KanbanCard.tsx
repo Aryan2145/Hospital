@@ -1,7 +1,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Lead } from "@shared/schema";
-import { format } from "date-fns";
+import { fmtDateTimeShort } from "@/lib/date-utils";
 import { Clock, Phone, User as UserIcon, Flame, Sun, Snowflake, Globe } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -82,7 +82,7 @@ export function KanbanCard({ lead }: KanbanCardProps) {
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Clock className="w-3 h-3 text-accent" />
-            <span>{lead.createdAt ? format(new Date(lead.createdAt), "MMM d, h:mm a") : "Just now"}</span>
+            <span>{lead.createdAt ? fmtDateTimeShort(lead.createdAt) : "Just now"}</span>
           </div>
 
           {sourceName && (

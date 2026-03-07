@@ -33,7 +33,7 @@ import {
   X,
   ArrowRight,
 } from "lucide-react";
-import { format } from "date-fns";
+import { fmtDateTime } from "@/lib/date-utils";
 
 interface ImportField {
   key: string;
@@ -474,9 +474,7 @@ export default function LeadImportPage() {
                                 {log.fileName}
                               </TableCell>
                               <TableCell className="text-muted-foreground text-sm" data-testid={`text-log-date-${log.id}`}>
-                                {log.startedAt
-                                  ? format(new Date(log.startedAt), "MMM dd, yyyy HH:mm")
-                                  : "—"}
+                                {fmtDateTime(log.startedAt)}
                               </TableCell>
                               <TableCell>
                                 <Badge

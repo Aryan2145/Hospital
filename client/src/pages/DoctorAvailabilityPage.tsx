@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useQuery } from "@tanstack/react-query";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, isSameMonth, isToday } from "date-fns";
+import { fmtDate, fmtMonthYear } from "@/lib/date-utils";
 import { useState, useMemo } from "react";
 import { Calendar, ChevronLeft, ChevronRight, Stethoscope, AlertTriangle, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -103,7 +104,7 @@ export default function DoctorAvailabilityPage() {
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
                 <h2 className="text-base font-semibold" data-testid="text-current-month">
-                  {format(currentMonth, "MMMM yyyy")}
+                  {fmtMonthYear(currentMonth)}
                 </h2>
                 <Button variant="outline" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} data-testid="button-next-month">
                   <ChevronRight className="w-4 h-4" />
@@ -228,8 +229,8 @@ export default function DoctorAvailabilityPage() {
                           <span className="font-medium truncate" data-testid={`text-doctor-name-${leave.id}`}>{leave.doctorName}</span>
                         </div>
                         <div className="text-muted-foreground ml-4" data-testid={`text-leave-dates-${leave.id}`}>
-                          {format(startDate, "dd MMM yyyy")}
-                          {isMultiDay && ` → ${format(endDate, "dd MMM yyyy")}`}
+                          {fmtDate(startDate)}
+                          {isMultiDay && ` → ${fmtDate(endDate)}`}
                         </div>
                         {leave.reason && (
                           <div className="text-muted-foreground ml-4 mt-0.5 italic truncate" data-testid={`text-leave-reason-${leave.id}`}>

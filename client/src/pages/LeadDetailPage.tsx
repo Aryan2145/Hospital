@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { getStatusColor, getPriorityColor, getLeadTemperature, getTemperatureColor } from "@/lib/lead-status";
 import { format, formatDistanceToNow, isPast } from "date-fns";
+import { fmtDate, fmtDateTime, fmtDateTimeShort, fmtDateShort } from "@/lib/date-utils";
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
@@ -144,7 +145,7 @@ export default function LeadDetailPage() {
             <AlertDescription className="mt-2">
               <p className="text-amber-700 mb-3">
                 Lead #{lead.id} ({lead.name}) was merged into another lead on{" "}
-                {lead.mergedAt ? format(new Date(lead.mergedAt), "MMM d, yyyy 'at' h:mm a") : "—"}.
+                {lead.mergedAt ? fmtDateTime(lead.mergedAt) : "—"}.
                 All activities, tasks, episodes, and appointments have been moved to the primary lead.
               </p>
               <div className="flex gap-2">
@@ -523,7 +524,7 @@ function AppointmentInfoCard({ leadId, leadStatus }: { leadId: number; leadStatu
             isApptPast && !isCheckedIn ? "bg-amber-100 text-amber-700 border-amber-300" : "bg-primary/10 text-primary border-primary/30"
           )} data-testid="badge-appointment-date">
             <Calendar className="w-2.5 h-2.5 mr-0.5" />
-            {format(apptDate, "dd MMM yyyy")}
+            {fmtDate(apptDate)}
           </Badge>
         )}
         {appt.startTime && (
@@ -642,7 +643,7 @@ function OwnershipCard({ lead }: { lead: any }) {
           {infoRow("Current Team", lead.ownerTeam || null, "text-owner-team")}
           {infoRow("Primary Owner", primaryOwnerName, "text-primary-owner")}
           {infoRow("Assigned To", assignedToName, "text-assigned-to")}
-          {infoRow("Last Handover", lead.lastHandoverAt ? format(new Date(lead.lastHandoverAt), "MMM d, yyyy h:mm a") : null, "text-last-handover")}
+          {infoRow("Last Handover", lead.lastHandoverAt ? fmtDateTime(lead.lastHandoverAt) : null, "text-last-handover")}
         </div>
       </Card>
     </div>
@@ -716,7 +717,7 @@ function ActivityTimeline({ leadId }: { leadId: number }) {
                         <Badge variant="outline" className="text-[10px]">{activity.outcome}</Badge>
                       )}
                       <span className="text-[11px] text-muted-foreground ml-auto shrink-0">
-                        {activity.createdAt && format(new Date(activity.createdAt), "MMM d, h:mm a")}
+                        {activity.createdAt && fmtDateTimeShort(activity.createdAt)}
                       </span>
                     </div>
                     <p className="text-sm text-foreground">{activity.description}</p>
@@ -758,7 +759,7 @@ function ActivityTimeline({ leadId }: { leadId: number }) {
                             {(activity.metadata as any).callTimestamp && (
                               <p className="text-[11px] text-muted-foreground">
                                 <span className="font-medium text-foreground/80">Call Time:</span>{" "}
-                                {(() => { try { return format(new Date((activity.metadata as any).callTimestamp), "dd MMM yyyy, hh:mm a"); } catch { return (activity.metadata as any).callTimestamp; } })()}
+                                {(() => { try { return fmtDateTime((activity.metadata as any).callTimestamp); } catch { return (activity.metadata as any).callTimestamp; } })()}
                               </p>
                             )}
                             {(activity.metadata as any).notes && (
@@ -768,7 +769,7 @@ function ActivityTimeline({ leadId }: { leadId: number }) {
                             )}
                             {(activity.metadata as any).noteUpdatedAt && (
                               <p className="text-[10px] text-muted-foreground/70">
-                                Note updated: {(() => { try { return format(new Date((activity.metadata as any).noteUpdatedAt), "dd MMM yyyy, hh:mm a"); } catch { return (activity.metadata as any).noteUpdatedAt; } })()}
+                                Note updated: {(() => { try { return fmtDateTime((activity.metadata as any).noteUpdatedAt); } catch { return (activity.metadata as any).noteUpdatedAt; } })()}
                               </p>
                             )}
                             {(activity.metadata as any).callyzerLeadStatus && (
@@ -776,7 +777,7 @@ function ActivityTimeline({ leadId }: { leadId: number }) {
                                 <span className="font-medium text-foreground/80">Callyzer Status:</span>{" "}
                                 {(activity.metadata as any).callyzerLeadStatus}
                                 {(activity.metadata as any).callyzerLeadStatusDate && (
-                                  <span className="text-[10px]"> ({(() => { try { return format(new Date((activity.metadata as any).callyzerLeadStatusDate), "dd MMM yyyy, hh:mm a"); } catch { return (activity.metadata as any).callyzerLeadStatusDate; } })()})</span>
+                                  <span className="text-[10px]"> ({(() => { try { return fmtDateTime((activity.metadata as any).callyzerLeadStatusDate); } catch { return (activity.metadata as any).callyzerLeadStatusDate; } })()})</span>
                                 )}
                               </p>
                             )}
@@ -917,7 +918,7 @@ function NextActionPanel({ lead }: { lead: any }) {
           {lead.nextActionDate && (
             <div className="flex items-center gap-2 text-xs mb-1">
               <Calendar className="w-3 h-3 text-primary" />
-              <span className="font-medium">{format(new Date(lead.nextActionDate), "MMM d, yyyy h:mm a")}</span>
+              <span className="font-medium">{fmtDateTime(lead.nextActionDate)}</span>
               {isPast(new Date(lead.nextActionDate)) && (
                 <Badge variant="outline" className="text-[10px] bg-red-50 text-red-600 border-red-200">Overdue</Badge>
               )}
@@ -1020,7 +1021,7 @@ function TasksPanel({ leadId }: { leadId: number }) {
                   <div className="flex items-center gap-2 flex-wrap">
                     {task.dueDate && (
                       <p className={cn("text-[10px]", isPast(new Date(task.dueDate)) ? "text-red-500 font-medium" : "text-muted-foreground")}>
-                        Due: {format(new Date(task.dueDate), "MMM d")}
+                        Due: {fmtDateShort(task.dueDate)}
                         {isPast(new Date(task.dueDate)) && " (Overdue)"}
                       </p>
                     )}
@@ -1613,7 +1614,7 @@ function DemographicsSection({ lead }: { lead: any }) {
       {expanded && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
           {infoItem("Gender", lead.gender)}
-          {infoItem("Date of Birth", lead.dateOfBirth ? format(new Date(lead.dateOfBirth), "MMM d, yyyy") : null)}
+          {infoItem("Date of Birth", lead.dateOfBirth ? fmtDate(lead.dateOfBirth) : null)}
           {infoItem("Blood Group", lead.bloodGroup)}
           {infoItem("Secondary Phone", lead.secondaryPhone)}
           {infoItem("Address", lead.address)}
@@ -1671,7 +1672,7 @@ function EpisodesSection({ lead }: { lead: any }) {
                   </div>
                   <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
                     {ep.episodeType && <span>{ep.episodeType}</span>}
-                    {ep.startDate && <span>Started {format(new Date(ep.startDate), "MMM d, yyyy")}</span>}
+                    {ep.startDate && <span>Started {fmtDate(ep.startDate)}</span>}
                     {ep.estimatedCost && <span>Est: ₹{ep.estimatedCost.toLocaleString()}</span>}
                   </div>
                 </div>
@@ -1739,7 +1740,7 @@ function TemperatureHistory({ leadId }: { leadId: number }) {
                   </Badge>
                 </div>
                 <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
-                  {log.createdAt && format(new Date(log.createdAt), "MMM d, h:mm a")}
+                  {log.createdAt && fmtDateTimeShort(log.createdAt)}
                 </span>
               </div>
               <p className="text-[11px] text-muted-foreground">
@@ -1777,7 +1778,7 @@ function HandoverHistory({ leadId }: { leadId: number }) {
             <div className="flex items-center gap-2 mb-1">
               <Badge variant="outline" className="text-[10px]">{item.type.replace(/_/g, " ")}</Badge>
               <span className="text-[10px] text-muted-foreground ml-auto">
-                {item.createdAt && format(new Date(item.createdAt), "MMM d, h:mm a")}
+                {item.createdAt && fmtDateTimeShort(item.createdAt)}
               </span>
             </div>
             <p className="text-xs text-foreground">{item.description}</p>

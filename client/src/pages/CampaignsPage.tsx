@@ -18,7 +18,7 @@ import {
   Link2, Copy, Eye, Target, TrendingUp, MousePointerClick,
   ExternalLink, Zap,
 } from "lucide-react";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/date-utils";
 
 interface Campaign {
   id: number;
@@ -562,9 +562,9 @@ export default function CampaignsPage() {
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Calendar className="w-3 h-3" />
                         <span>
-                          {c.startDate ? format(new Date(c.startDate), "MMM dd, yyyy") : "—"}
+                          {c.startDate ? fmtDate(c.startDate) : "—"}
                           {" to "}
-                          {c.endDate ? format(new Date(c.endDate), "MMM dd, yyyy") : "Ongoing"}
+                          {c.endDate ? fmtDate(c.endDate) : "Ongoing"}
                         </span>
                       </div>
                     )}
@@ -620,11 +620,11 @@ export default function CampaignsPage() {
                       />
                       <InfoRow
                         label="Start Date"
-                        value={detailCampaign.startDate ? format(new Date(detailCampaign.startDate), "MMM dd, yyyy") : null}
+                        value={detailCampaign.startDate ? fmtDate(detailCampaign.startDate) : null}
                       />
                       <InfoRow
                         label="End Date"
-                        value={detailCampaign.endDate ? format(new Date(detailCampaign.endDate), "MMM dd, yyyy") : null}
+                        value={detailCampaign.endDate ? fmtDate(detailCampaign.endDate) : null}
                       />
                     </div>
                     {detailCampaign.description && (

@@ -10,7 +10,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { getStatusColor, getTemperatureColor } from "@/lib/lead-status";
-import { format, formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { fmtDate, fmtDateTimeShort, fmtDateShort } from "@/lib/date-utils";
 import {
   Target, Clock, TrendingUp, Users, Activity, Calendar, Send,
   ChevronRight, ChevronDown, ChevronUp, ArrowRightCircle,
@@ -198,7 +199,7 @@ export function TreatmentJourneyTimeline({ leadId }: JourneyViewProps) {
                     <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
                       {ep.doctorName && <span>Dr. {ep.doctorName}</span>}
                       {ep.departmentName && <span>{ep.departmentName}</span>}
-                      {ep.startDate && <span>Started {format(new Date(ep.startDate), "MMM d, yyyy")}</span>}
+                      {ep.startDate && <span>Started {fmtDate(ep.startDate)}</span>}
                       {ep.updatedAt && <span>Updated {formatDistanceToNow(new Date(ep.updatedAt), { addSuffix: true })}</span>}
                     </div>
                   </div>
@@ -227,7 +228,7 @@ export function TreatmentJourneyTimeline({ leadId }: JourneyViewProps) {
                           <span className="text-foreground">{evt.description}</span>
                           <span className="text-muted-foreground ml-2">
                             {evt.performedBy && `by ${evt.performedBy}`}
-                            {evt.timestamp && ` · ${format(new Date(evt.timestamp), "MMM d, h:mm a")}`}
+                            {evt.timestamp && ` · ${fmtDateTimeShort(evt.timestamp)}`}
                           </span>
                         </div>
                       </div>
@@ -419,7 +420,7 @@ function TimelineEvent({ event }: { event: any }) {
             {event.type.replace(/_/g, " ")}
           </span>
           <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
-            {event.timestamp && format(new Date(event.timestamp), "MMM d, h:mm a")}
+            {event.timestamp && fmtDateTimeShort(event.timestamp)}
           </span>
         </div>
         <p className="text-xs text-foreground leading-relaxed">{event.description}</p>
@@ -434,7 +435,7 @@ function TimelineEvent({ event }: { event: any }) {
 
         {event.source === "Appointment" && (
           <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground flex-wrap">
-            {event.appointmentDate && <span>{format(new Date(event.appointmentDate), "MMM d, yyyy")}</span>}
+            {event.appointmentDate && <span>{fmtDate(event.appointmentDate)}</span>}
             {event.appointmentTime && <span>at {event.appointmentTime}</span>}
             {event.doctorName && <span>• Dr. {event.doctorName}</span>}
             {event.appointmentStatus && (
@@ -454,7 +455,7 @@ function TimelineEvent({ event }: { event: any }) {
           <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground">
             {event.taskStatus && <Badge variant="outline" className="text-[9px] h-4">{event.taskStatus}</Badge>}
             {event.assignedToName && <span>Assigned to {event.assignedToName}</span>}
-            {event.dueDate && <span>Due {format(new Date(event.dueDate), "MMM d")}</span>}
+            {event.dueDate && <span>Due {fmtDateShort(event.dueDate)}</span>}
             {event.categoryName && <span>{event.categoryName}</span>}
           </div>
         )}

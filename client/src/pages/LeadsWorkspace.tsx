@@ -21,7 +21,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
 import { getStatusColor, getTemperatureColor, LEAD_STATUSES } from "@/lib/lead-status";
-import { format, formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { fmtDate, fmtDateTimeShort } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
@@ -611,7 +612,7 @@ function LeadsListView({ leads }: { leads: any[] }) {
                           )}
                           {callTime && (
                             <span className="text-[10px] text-muted-foreground/70" data-testid={`text-call-time-${lead.id}`}>
-                              {format(new Date(callTime), "dd MMM, hh:mm a")}
+                              {fmtDateTimeShort(callTime)}
                             </span>
                           )}
                           {notes && (
@@ -630,7 +631,7 @@ function LeadsListView({ leads }: { leads: any[] }) {
                         new Date(lead.nextActionDate) < new Date() ? "text-red-600" : "text-muted-foreground"
                       )} data-testid={`text-lead-next-action-${lead.id}`}>
                         <Calendar className="w-3 h-3" />
-                        <span>{format(new Date(lead.nextActionDate), "MMM d, h:mm a")}</span>
+                        <span>{fmtDateTimeShort(lead.nextActionDate)}</span>
                       </div>
                     ) : (
                       <span className="text-xs text-muted-foreground/50">—</span>
@@ -816,7 +817,7 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
                         <p data-testid="text-duplicate-name"><span className="font-medium">Name:</span> {duplicateInfo.existingLead.name}</p>
                         <p data-testid="text-duplicate-status"><span className="font-medium">Status:</span> {duplicateInfo.existingLead.status}</p>
                         <p data-testid="text-duplicate-assigned"><span className="font-medium">Assigned To:</span> {duplicateInfo.existingLead.assignedTo || "Unassigned"}</p>
-                        <p data-testid="text-duplicate-created"><span className="font-medium">Created:</span> {duplicateInfo.existingLead.createdAt ? format(new Date(duplicateInfo.existingLead.createdAt), "MMM d, yyyy") : "—"}</p>
+                        <p data-testid="text-duplicate-created"><span className="font-medium">Created:</span> {duplicateInfo.existingLead.createdAt ? fmtDate(duplicateInfo.existingLead.createdAt) : "—"}</p>
                       </div>
                       <div className="flex items-center gap-2 mt-3 flex-wrap">
                         <Button

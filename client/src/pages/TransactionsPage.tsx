@@ -15,6 +15,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useDoctors } from "@/hooks/use-leads";
 import { Plus, Pencil, FileText, Calendar, IndianRupee, Loader2, Stethoscope, User, UserCheck, Activity } from "lucide-react";
 import { format } from "date-fns";
+import { fmtDate } from "@/lib/date-utils";
 import { Link } from "wouter";
 
 interface Episode {
@@ -351,8 +352,8 @@ export default function TransactionsPage() {
                           {ep.startDate && (
                             <span className="flex items-center gap-1 text-muted-foreground" data-testid={`text-episode-dates-${ep.id}`}>
                               <Calendar className="w-4 h-4" />
-                              {format(new Date(ep.startDate), "MMM dd, yyyy")}
-                              {ep.endDate && ` → ${format(new Date(ep.endDate), "MMM dd, yyyy")}`}
+                              {fmtDate(ep.startDate)}
+                              {ep.endDate && ` → ${fmtDate(ep.endDate)}`}
                             </span>
                           )}
                         </div>

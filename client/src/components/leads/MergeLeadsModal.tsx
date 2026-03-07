@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { getStatusColor } from "@/lib/lead-status";
-import { format } from "date-fns";
+import { fmtDate } from "@/lib/date-utils";
 import { GitMerge, Check, AlertTriangle, ArrowRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -141,7 +141,7 @@ export function MergeLeadsModal({ open, onOpenChange, duplicateLeads, mobileNumb
                 <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                   <span>{lead.phone_e164 || lead.phoneE164 || lead.phone}</span>
                   {lead.email && <span>{lead.email}</span>}
-                  <span>Created {(lead.created_at || lead.createdAt) ? format(new Date(lead.created_at || lead.createdAt), "MMM d, yyyy") : "—"}</span>
+                  <span>Created {(lead.created_at || lead.createdAt) ? fmtDate(lead.created_at || lead.createdAt) : "—"}</span>
                   {(lead.assigned_to_name || lead.assignedToName) && <span>Assigned to {lead.assigned_to_name || lead.assignedToName}</span>}
                 </div>
               </div>
@@ -181,7 +181,7 @@ export function MergeLeadsModal({ open, onOpenChange, duplicateLeads, mobileNumb
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                       <span>{lead.phone_e164 || lead.phoneE164 || lead.phone}</span>
                       {lead.email && <span>{lead.email}</span>}
-                      <span>Created {(lead.created_at || lead.createdAt) ? format(new Date(lead.created_at || lead.createdAt), "MMM d, yyyy") : "—"}</span>
+                      <span>Created {(lead.created_at || lead.createdAt) ? fmtDate(lead.created_at || lead.createdAt) : "—"}</span>
                     </div>
                   </div>
                 </div>

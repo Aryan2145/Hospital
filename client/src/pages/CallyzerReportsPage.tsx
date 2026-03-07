@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { fmtDateTime } from "@/lib/date-utils";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -333,7 +334,7 @@ export default function CallyzerReportsPage() {
                             {filteredLogs.map((log: any) => (
                               <TableRow key={log.id} data-testid={`row-call-log-${log.id}`}>
                                 <TableCell className="text-xs whitespace-nowrap">
-                                  {log.createdAt ? format(new Date(log.createdAt), "dd MMM yyyy HH:mm") : "—"}
+                                  {fmtDateTime(log.createdAt)}
                                 </TableCell>
                                 <TableCell className="font-mono text-sm" data-testid={`text-client-number-${log.id}`}>
                                   {log.clientNumber || "—"}
@@ -557,7 +558,7 @@ function TelecallingTeamTab() {
                       <TableCell className="text-center text-red-600">{emp.totalMissed || 0}</TableCell>
                       <TableCell className="text-center">{formatDuration(emp.totalDurationSeconds || 0)}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap">
-                        {emp.lastCallAt ? format(new Date(emp.lastCallAt), "dd MMM yyyy HH:mm") : "—"}
+                        {fmtDateTime(emp.lastCallAt)}
                       </TableCell>
                       <TableCell>
                         <Select

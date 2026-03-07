@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, addWeeks, subWeeks, isSameMonth, isSameDay, isToday } from "date-fns";
+import { fmtDate, fmtDayMonthYear, fmtMonthYear, formatDateIn } from "@/lib/date-utils";
 import { useState, useMemo } from "react";
 import { Calendar, Clock, User, Hash, CheckCircle2, XCircle, RotateCcw, AlertTriangle, Stethoscope, Plus, Loader2, ChevronLeft, ChevronRight, Building, ListOrdered, CalendarDays, UserPlus, Phone, Search, ChevronDown, ChevronUp, Users, Filter, FileText, LinkIcon, ExternalLink, CalendarCheck, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -671,7 +672,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
         <Card className={cn("p-2.5 cursor-pointer transition-all border-2", statusFilter === "all" ? "border-[#0f4c81] bg-[#0f4c81]/5" : "border-transparent hover:border-gray-200")} onClick={() => setStatusFilter("all")} data-testid="stat-card-all">
           <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Total</div>
           <div className="text-2xl font-bold text-[#0f4c81]">{statusCounts.all}</div>
-          <div className="text-[10px] text-muted-foreground">{selectedDate ? format(new Date(selectedDate + "T12:00:00"), "MMM d") : "All"}</div>
+          <div className="text-[10px] text-muted-foreground">{selectedDate ? fmtDate(new Date(selectedDate + "T12:00:00")) : "All"}</div>
         </Card>
         <Card className={cn("p-2.5 cursor-pointer transition-all border-2", statusFilter === "scheduled" ? "border-blue-500 bg-blue-50" : "border-transparent hover:border-blue-100")} onClick={() => setStatusFilter("scheduled")} data-testid="stat-card-scheduled">
           <div className="text-[10px] font-medium text-blue-600 uppercase tracking-wider">Waiting</div>
@@ -703,7 +704,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-sm">
         <div className="flex items-center gap-2 flex-wrap">
           <Calendar className="w-4 h-4 text-primary" />
-          <span className="font-semibold">{selectedDate ? format(new Date(selectedDate + "T12:00:00"), "EEEE, MMMM d, yyyy") : "All Dates"}</span>
+          <span className="font-semibold">{selectedDate ? fmtDayMonthYear(new Date(selectedDate + "T12:00:00")) : "All Dates"}</span>
           {isAllDoctors && doctorGroups && (
             <>
               <span className="text-muted-foreground mx-1">|</span>
@@ -963,7 +964,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                               )}
                               {ep.startDate && (
                                 <span className="text-[10px] text-muted-foreground">
-                                  {format(new Date(ep.startDate), "MMM d, yyyy")}
+                                  {fmtDate(new Date(ep.startDate))}
                                 </span>
                               )}
                             </div>
@@ -1444,8 +1445,8 @@ function CalendarView() {
             </Button>
             <h3 className="text-lg font-semibold min-w-[200px] text-center" data-testid="calendar-title">
               {calendarMode === "month"
-                ? format(currentDate, "MMMM yyyy")
-                : `${format(dateRange.start, "MMM d")} - ${format(dateRange.end, "MMM d, yyyy")}`}
+                ? fmtMonthYear(currentDate)
+                : `${fmtDate(dateRange.start)} - ${fmtDate(dateRange.end)}`}
             </h3>
             <Button variant="outline" size="sm" onClick={() => navigate(1)} data-testid="calendar-next">
               <ChevronRight className="w-4 h-4" />
@@ -1567,7 +1568,7 @@ function CalendarView() {
           <div className="flex items-center justify-between mb-3">
             <h4 className="font-semibold text-sm flex items-center gap-2">
               <Calendar className="w-4 h-4 text-primary" />
-              {format(new Date(selectedDay + "T12:00:00"), "EEEE, MMMM d, yyyy")}
+              {fmtDayMonthYear(new Date(selectedDay + "T12:00:00"))}
               <Badge variant="outline">{selectedDayAppts.length} appointments</Badge>
             </h4>
             <Button variant="ghost" size="sm" onClick={() => setSelectedDay(null)}>
@@ -1724,7 +1725,7 @@ function AvailabilityCalendarModal({ open, onOpenChange, selectMode, onSlotSelec
                   <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} data-testid="avail-prev-month">
                     <ChevronLeft className="w-4 h-4" />
                   </Button>
-                  <h2 className="text-base font-semibold">{format(currentMonth, "MMMM yyyy")}</h2>
+                  <h2 className="text-base font-semibold">{fmtMonthYear(currentMonth)}</h2>
                   <Button variant="outline" size="icon" onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} data-testid="avail-next-month">
                     <ChevronRight className="w-4 h-4" />
                   </Button>
@@ -1825,7 +1826,7 @@ function AvailabilityCalendarModal({ open, onOpenChange, selectMode, onSlotSelec
               )}
               {selectedDay && selectedDoctor === "all" && (
                 <Card className="p-4">
-                  <p className="text-xs text-muted-foreground text-center py-4">Select a specific doctor to see available slots for {format(new Date(selectedDay + "T12:00:00"), "MMM d, yyyy")}.</p>
+                  <p className="text-xs text-muted-foreground text-center py-4">Select a specific doctor to see available slots for {fmtDate(new Date(selectedDay + "T12:00:00"))}.</p>
                 </Card>
               )}
               <Card className="p-4" data-testid="avail-upcoming-leaves">
@@ -1850,8 +1851,8 @@ function AvailabilityCalendarModal({ open, onOpenChange, selectMode, onSlotSelec
                             <span className="font-medium truncate">{leave.doctorName}</span>
                           </div>
                           <div className="text-muted-foreground ml-4">
-                            {format(startDate, "dd MMM")}
-                            {isMultiDay && ` → ${format(endDate, "dd MMM")}`}
+                            {fmtDate(startDate)}
+                            {isMultiDay && ` → ${fmtDate(endDate)}`}
                           </div>
                         </div>
                       );
@@ -1919,7 +1920,7 @@ function AvailabilityDaySlots({ date, doctorId, doctorName, availability, select
     <Card className="p-4" data-testid="avail-day-slots">
       <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
         <Clock className="w-4 h-4 text-primary" />
-        {format(new Date(date + "T12:00:00"), "MMM d, yyyy")}
+        {fmtDate(new Date(date + "T12:00:00"))}
       </h3>
       <p className="text-xs text-muted-foreground mb-3">{doctorName}</p>
 
@@ -1990,8 +1991,8 @@ function AvailabilityDayWeekView({ viewMode, selectedDate, onDateChange, doctorI
         </Button>
         <h3 className="font-semibold text-sm">
           {viewMode === "day"
-            ? format(dateObj, "EEEE, MMMM d, yyyy")
-            : `${format(dates[0], "MMM d")} — ${format(dates[dates.length - 1], "MMM d, yyyy")}`}
+            ? fmtDayMonthYear(dateObj)
+            : `${fmtDate(dates[0])} — ${fmtDate(dates[dates.length - 1])}`}
         </h3>
         <Button variant="outline" size="icon" onClick={() => navigateDate(1)} data-testid="avail-nav-next">
           <ChevronRight className="w-4 h-4" />
@@ -2011,7 +2012,7 @@ function AvailabilityDayWeekView({ viewMode, selectedDate, onDateChange, doctorI
           return (
             <div key={key} className={cn("space-y-2", viewMode === "week" && "min-w-0")}>
               <div className={cn("text-xs font-semibold text-center py-1 rounded", isToday(day) ? "bg-primary text-primary-foreground" : "bg-muted")}>
-                {viewMode === "week" ? format(day, "EEE d") : format(day, "EEEE, MMM d")}
+                {viewMode === "week" ? formatDateIn(day, "EEE dd/MM") : fmtDayMonthYear(day)}
               </div>
               {isSunday ? (
                 <div className="text-[10px] text-muted-foreground text-center py-3">Holiday</div>
