@@ -7020,6 +7020,7 @@ export async function registerRoutes(
   await ensureLeadSourcesExist();
   await ensureCrmTeamDepartments();
   await consolidateDuplicateTeams();
+  await autoBulkMergeDuplicates();
   await backfillMobileNormalized();
   await backfillLeadOwnershipAndSource();
 
@@ -7553,6 +7554,135 @@ async function backfillLeadOwnershipAndSource() {
     }
   } catch (err: any) {
     console.error("[backfill] Error backfilling lead ownership/source:", err.message);
+  }
+}
+
+async function autoBulkMergeDuplicates() {
+  try {
+    const tenantsResult = await pool.query(`SELECT DISTINCT tenant_id FROM leads WHERE merge_status = 'ACTIVE'`);
+    for (const { tenant_id: tid } of tenantsResult.rows) {
+      const dupeResult = await pool.query(
+        `WITH dupe_phones AS (
+           SELECT phone_e164, COUNT(*) as cnt
+           FROM leads
+           WHERE phone_e164 IS NOT NULL AND phone_e164 != ''
+             AND tenant_id = $1
+             AND merge_status = 'ACTIVE'
+           GROUP BY phone_e164
+           HAVING COUNT(*) > 1
+         )
+         SELECT l.id, l.name, l.phone_e164, l.status, l.created_at,
+           (SELECT COUNT(*) FROM activities a WHERE a.lead_id = l.id
+            AND a.type NOT IN ('status_change','temperature_change','lead_created')) as real_acts,
+           (SELECT COUNT(*) FROM appointments ap WHERE ap.lead_id = l.id) as appts,
+           (SELECT COUNT(*) FROM episodes e WHERE e.lead_id = l.id) as eps
+         FROM leads l
+         JOIN dupe_phones dp ON l.phone_e164 = dp.phone_e164
+         WHERE l.tenant_id = $1 AND l.merge_status = 'ACTIVE'
+         ORDER BY l.phone_e164, l.created_at ASC`,
+        [tid]
+      );
+
+      if (dupeResult.rows.length === 0) continue;
+
+      const groupedByPhone: Record<string, any[]> = {};
+      for (const row of dupeResult.rows) {
+        if (!groupedByPhone[row.phone_e164]) groupedByPhone[row.phone_e164] = [];
+        groupedByPhone[row.phone_e164].push(row);
+      }
+
+      const STATUS_PRIORITY: Record<string, number> = {
+        "Closed Won": 10, "Consultation Done": 9, "Reminder Running": 8,
+        "Appointment Booked": 7, "Qualified": 6, "Contacted": 5,
+        "Raw Lead Captured": 1, "Nurture": 3, "Closed Lost": 2, "Unqualified": 0,
+      };
+
+      let mergedCount = 0;
+      for (const [phone, leads] of Object.entries(groupedByPhone)) {
+        if (leads.length < 2) continue;
+
+        const sorted = leads.sort((a: any, b: any) => {
+          const aPri = (STATUS_PRIORITY[a.status] || 0);
+          const bPri = (STATUS_PRIORITY[b.status] || 0);
+          if (aPri !== bPri) return bPri - aPri;
+          const aEng = Number(a.real_acts) + Number(a.appts) * 10 + Number(a.eps) * 20;
+          const bEng = Number(b.real_acts) + Number(b.appts) * 10 + Number(b.eps) * 20;
+          if (aEng !== bEng) return bEng - aEng;
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        });
+
+        const primary = sorted[0];
+        const toMerge = sorted.slice(1);
+        const mergedIds = toMerge.map((l: any) => l.id);
+
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+
+          const directFkTables = [
+            { name: "activities", col: "lead_id" },
+            { name: "tasks", col: "lead_id" },
+            { name: "episodes", col: "lead_id" },
+            { name: "appointments", col: "lead_id" },
+            { name: "temperature_logs", col: "lead_id" },
+            { name: "callyzer_webhook_logs", col: "matched_lead_id" },
+          ];
+
+          for (const t of directFkTables) {
+            await client.query(
+              `UPDATE ${t.name} SET ${t.col} = $1 WHERE ${t.col} = ANY($2) AND tenant_id = $3`,
+              [primary.id, mergedIds, tid]
+            );
+          }
+
+          await client.query(
+            `UPDATE handover_logs SET entity_id = $1 WHERE entity_type = 'Lead' AND entity_id = ANY($2) AND tenant_id = $3`,
+            [primary.id, mergedIds, tid]
+          );
+          await client.query(
+            `UPDATE audit_logs SET entity_id = $1 WHERE entity_type = 'lead' AND entity_id = ANY($2) AND tenant_id = $3`,
+            [primary.id, mergedIds, tid]
+          );
+
+          await client.query(
+            `UPDATE leads SET merge_status = 'MERGED', merged_into_lead_id = $1,
+             merged_at = NOW(), merged_by = 'System (Auto-Merge)', updated_at = NOW()
+             WHERE id = ANY($2) AND tenant_id = $3`,
+            [primary.id, mergedIds, tid]
+          );
+
+          await client.query(
+            `INSERT INTO lead_merge_audits (tenant_id, primary_lead_id, merged_lead_ids, merge_strategy,
+             field_decisions, moved_record_counts, merged_by, notes)
+             VALUES ($1, $2, $3, 'BULK_AUTO_STARTUP', '{}', '{}', 'System', $4)`,
+            [tid, primary.id, JSON.stringify(mergedIds),
+             `Auto-merge on startup: ${mergedIds.length} duplicate(s) merged into #${primary.id}`]
+          );
+
+          await client.query(
+            `INSERT INTO activities (tenant_id, lead_id, type, description, created_by)
+             VALUES ($1, $2, 'note', $3, $4)`,
+            [tid, primary.id,
+             `Auto-merge: ${mergedIds.length} duplicate lead(s) [${mergedIds.join(", ")}] merged into this lead.`,
+             "System"]
+          );
+
+          await client.query("COMMIT");
+          mergedCount += mergedIds.length;
+        } catch (txErr: any) {
+          await client.query("ROLLBACK");
+          console.error(`[auto-merge] Error merging phone ${phone}:`, txErr.message);
+        } finally {
+          client.release();
+        }
+      }
+
+      if (mergedCount > 0) {
+        console.log(`[auto-merge] Tenant ${tid}: Merged ${mergedCount} duplicate leads across ${Object.keys(groupedByPhone).length} groups`);
+      }
+    }
+  } catch (err: any) {
+    console.error("[auto-merge] Error:", err.message);
   }
 }
 
