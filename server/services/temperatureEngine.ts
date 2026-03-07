@@ -102,7 +102,14 @@ export async function checkDormantLeads(tenantId: number, dormantDays: number = 
     `SELECT id FROM leads
      WHERE tenant_id = $1
      AND lead_temperature != 'Dormant'
-     AND status NOT IN ('Closed Won', 'Closed Lost', 'Unqualified')
+     AND status NOT IN ('Closed Won', 'Closed Lost', 'Unqualified', 'Nurture',
+                         'Appointment Booked', 'Reminder Running', 'Consultation Done')
+     AND NOT EXISTS (
+       SELECT 1 FROM appointments a
+       WHERE a.lead_id = leads.id AND a.tenant_id = $1
+       AND a.status IN ('Scheduled', 'Confirmed')
+       AND a.appointment_date >= CURRENT_DATE
+     )
      AND (last_activity_at IS NULL OR last_activity_at < $2)
      AND (last_contact_at IS NULL OR last_contact_at < $2)
      AND created_at < $2`,

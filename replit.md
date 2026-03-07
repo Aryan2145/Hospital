@@ -22,7 +22,7 @@ The platform is built with a modern web stack:
 - **Dynamic Branding:** Per-tenant customization of logos, favicons, display names, and color schemes.
 - **Intelligent Automation:**
     - **Episode Intelligence Layer:** Features a "Temperature Engine" for lead scoring, "Auto-Handover Engine" for stage-based team assignment, and "Revenue Probability" for forecasting.
-    - **Automated Nurture Engine:** Manages lead nurturing with task chains, escalations, and automated status updates (e.g., auto no-show).
+    - **Automated Nurture Engine:** Manages lead nurturing with task chains, escalations, and automated status updates (e.g., auto no-show). Dormant detection excludes leads with active engagement statuses (Appointment Booked, Reminder Running, Consultation Done, Nurture) and leads with future scheduled appointments.
 - **Lead & Episode Enhancements:** Includes duplicate lead validation, clinical notes with audit trails, negotiation discount approval workflows, and lead merge functionality.
 - **Workflows:** Check-in and front office integration, doctor availability calendar, and detailed patient journey views including unified timelines.
 - **Dashboards:** 3-Tier Role-based dashboards provide tailored analytics for SYS_ADMIN, ADMIN, MANAGER, and AGENT/COUNSELLOR roles.
