@@ -178,6 +178,7 @@ export default function LeadDetailPage() {
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden lg:border-r border-border">
           <LeadJourneyFunnel status={lead.status} leadId={lead.id} />
+          <AppointmentInfoCard leadId={lead.id} leadStatus={lead.status} />
           <JourneySnapshot leadId={lead.id} />
           <DemographicsSection lead={lead} />
           <TreatmentJourneyTimeline leadId={lead.id} />
@@ -254,7 +255,9 @@ function LeadHeader({ lead, onBack }: { lead: any; onBack: () => void }) {
       return res.json();
     },
   });
-  const sourceName = lead.leadSourceId ? leadSources?.find((s: any) => s.id === lead.leadSourceId)?.name : null;
+  const sourceName = lead.leadSourceId
+    ? leadSources?.find((s: any) => s.id === lead.leadSourceId)?.name
+    : (lead.tags?.toLowerCase().includes("callyzer") ? "Callyzer" : null);
   const allStatuses = (masterLeadStatuses || [])
     .filter((s: any) => s.status === "Active")
     .map((s: any) => s.name);
@@ -484,6 +487,85 @@ function HandoverBanner({ lead }: { lead: any }) {
   );
 }
 
+function AppointmentInfoCard({ leadId, leadStatus }: { leadId: number; leadStatus: string }) {
+  const { data: journeyData } = useQuery<any>({
+    queryKey: ["/api/leads", leadId, "journey"],
+    queryFn: async () => {
+      const res = await fetch(`/api/leads/${leadId}/journey`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  const appt = journeyData?.upcomingAppointment;
+  if (!appt) return null;
+
+  const apptDate = appt.appointmentDate ? new Date(appt.appointmentDate) : null;
+  const isApptPast = apptDate ? isPast(apptDate) : false;
+  const isCheckedIn = !!appt.checkedInAt;
+
+  return (
+    <Card className={cn(
+      "mx-4 mt-2 p-3",
+      isApptPast && !isCheckedIn ? "border-amber-300 bg-amber-50 dark:bg-amber-950/20" : "border-primary/30 bg-primary/5"
+    )} data-testid="appointment-info-card">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Calendar className="w-4 h-4 text-primary shrink-0" />
+        <span className="text-xs font-semibold text-foreground">
+          {appt.appointmentTypeName || "Appointment"}
+        </span>
+        {appt.doctorName && (
+          <span className="text-xs text-muted-foreground">with Dr. {appt.doctorName}</span>
+        )}
+        {apptDate && (
+          <Badge variant="outline" className={cn(
+            "text-[10px]",
+            isApptPast && !isCheckedIn ? "bg-amber-100 text-amber-700 border-amber-300" : "bg-primary/10 text-primary border-primary/30"
+          )} data-testid="badge-appointment-date">
+            <Calendar className="w-2.5 h-2.5 mr-0.5" />
+            {format(apptDate, "dd MMM yyyy")}
+          </Badge>
+        )}
+        {appt.startTime && (
+          <Badge variant="outline" className="text-[10px]" data-testid="badge-appointment-time">
+            <Clock className="w-2.5 h-2.5 mr-0.5" />
+            {appt.startTime}
+          </Badge>
+        )}
+        {appt.tokenNumber && (
+          <Badge variant="outline" className="text-[10px]">Token #{appt.tokenNumber}</Badge>
+        )}
+        <Badge className={cn("text-[10px]",
+          appt.status === "Scheduled" ? "bg-blue-100 text-blue-700" :
+          appt.status === "Confirmed" ? "bg-green-100 text-green-700" :
+          appt.status === "No Show" ? "bg-red-100 text-red-700" :
+          "bg-gray-100 text-gray-700"
+        )} data-testid="badge-appointment-status">
+          {appt.status}
+        </Badge>
+        {isCheckedIn && (
+          <Badge className="text-[10px] bg-green-100 text-green-700" data-testid="badge-checked-in">
+            <CheckCircle2 className="w-2.5 h-2.5 mr-0.5" />
+            Checked In
+          </Badge>
+        )}
+        {isApptPast && !isCheckedIn && (
+          <Badge className="text-[10px] bg-amber-100 text-amber-700" data-testid="badge-appt-past">
+            <AlertTriangle className="w-2.5 h-2.5 mr-0.5" />
+            Date Passed - Possible No Show
+          </Badge>
+        )}
+        {appt.branchName && (
+          <span className="text-[10px] text-muted-foreground ml-auto">
+            <Building className="w-2.5 h-2.5 inline mr-0.5" />
+            {appt.branchName}
+          </span>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function IntelligenceStrip({ lead }: { lead: any }) {
   const { data: episodes } = useEpisodes(lead.id);
 
@@ -500,25 +582,26 @@ function IntelligenceStrip({ lead }: { lead: any }) {
     : null;
 
   const metrics = [
-    { label: "Lead Age", value: `${leadAgeDays}d`, icon: CalendarClock, testId: "metric-lead-age" },
-    { label: "Reschedules", value: String(reschedules), icon: RefreshCw, testId: "metric-reschedules" },
-    { label: "No Shows", value: String(noShows), icon: Ban, testId: "metric-no-shows" },
-    { label: "FRT", value: frtDisplay, icon: Zap, testId: "metric-frt" },
-    { label: "Episodes", value: String(episodesCount), icon: Hash, testId: "metric-episodes-count" },
-    { label: "Avg Prob%", value: avgProbability != null ? `${avgProbability}%` : "-", icon: Percent, testId: "metric-avg-probability" },
+    { label: "Lead Age", value: `${leadAgeDays}d`, icon: CalendarClock, testId: "metric-lead-age", tooltip: "Days since lead was created" },
+    { label: "Reschedules", value: String(reschedules), icon: RefreshCw, testId: "metric-reschedules", tooltip: "Number of appointment reschedules" },
+    { label: "No Shows", value: String(noShows), icon: Ban, testId: "metric-no-shows", tooltip: "Number of missed appointments (no check-in)" },
+    { label: "FRT", value: frtDisplay, icon: Zap, testId: "metric-frt", tooltip: "First Response Time — minutes between lead creation and first contact" },
+    { label: "Episodes", value: String(episodesCount), icon: Hash, testId: "metric-episodes-count", tooltip: "Total treatment episodes linked to this lead" },
+    { label: "Avg Prob%", value: avgProbability != null ? `${avgProbability}%` : "-", icon: Percent, testId: "metric-avg-probability", tooltip: "Average revenue probability across all episodes" },
   ];
 
   return (
     <div className="px-3 md:px-4 py-2 border-b border-border bg-muted/30" data-testid="intelligence-strip">
       <div className="flex items-center gap-2 flex-wrap">
         <Gauge className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Intelligence</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1" title="Key metrics about this lead's journey and engagement">Intelligence</span>
         <div className="flex items-center gap-1.5 flex-wrap">
           {metrics.map((m) => (
             <div
               key={m.testId}
-              className="flex items-center gap-1 px-2 py-1 rounded-md bg-background border border-border text-xs"
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-background border border-border text-xs cursor-default"
               data-testid={m.testId}
+              title={m.tooltip}
             >
               <m.icon className="w-3 h-3 text-muted-foreground" />
               <span className="text-muted-foreground">{m.label}:</span>
@@ -934,11 +1017,20 @@ function TasksPanel({ leadId }: { leadId: number }) {
                   {task.description && isNurtureTask(task) && (
                     <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{task.description}</p>
                   )}
-                  {task.dueDate && (
-                    <p className={cn("text-[10px]", isPast(new Date(task.dueDate)) ? "text-red-500" : "text-muted-foreground")}>
-                      Due: {format(new Date(task.dueDate), "MMM d")}
-                    </p>
-                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {task.dueDate && (
+                      <p className={cn("text-[10px]", isPast(new Date(task.dueDate)) ? "text-red-500 font-medium" : "text-muted-foreground")}>
+                        Due: {format(new Date(task.dueDate), "MMM d")}
+                        {isPast(new Date(task.dueDate)) && " (Overdue)"}
+                      </p>
+                    )}
+                    {(task as any).assignedToName && (
+                      <p className="text-[10px] text-muted-foreground" data-testid={`task-owner-${task.id}`}>
+                        <User className="w-2.5 h-2.5 inline mr-0.5" />
+                        {(task as any).assignedToName}
+                      </p>
+                    )}
+                  </div>
                 </div>
                 {task.priority === "Urgent" && <Badge className="text-[10px] bg-rose-100 text-rose-700 border-rose-200">Urgent</Badge>}
                 {task.priority === "High" && <Badge className="text-[10px] bg-red-100 text-red-700 border-red-200">High</Badge>}

@@ -433,12 +433,20 @@ function TimelineEvent({ event }: { event: any }) {
         )}
 
         {event.source === "Appointment" && (
-          <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground flex-wrap">
             {event.appointmentDate && <span>{format(new Date(event.appointmentDate), "MMM d, yyyy")}</span>}
             {event.appointmentTime && <span>at {event.appointmentTime}</span>}
+            {event.doctorName && <span>• Dr. {event.doctorName}</span>}
             {event.appointmentStatus && (
-              <Badge variant="outline" className="text-[9px] h-4">{event.appointmentStatus}</Badge>
+              <Badge variant="outline" className={cn("text-[9px] h-4",
+                event.appointmentStatus === "No Show" ? "bg-red-50 text-red-700 border-red-200" :
+                event.appointmentStatus === "Checked In" || event.appointmentStatus === "Completed" ? "bg-green-50 text-green-700 border-green-200" :
+                ""
+              )}>{event.appointmentStatus}</Badge>
             )}
+            {event.checkedInAt && <span className="text-green-600">✓ Checked In</span>}
+            {event.tokenNumber && <span>Token #{event.tokenNumber}</span>}
+            {event.bookedByName && <span>Booked by {event.bookedByName}</span>}
           </div>
         )}
 

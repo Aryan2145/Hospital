@@ -638,7 +638,7 @@ function LeadsListView({ leads }: { leads: any[] }) {
                   </TableCell>
                   <TableCell>
                     <span className="text-xs text-muted-foreground" data-testid={`text-lead-source-${lead.id}`}>
-                      {lead.leadSourceId ? sourceMap[lead.leadSourceId] || "—" : "—"}
+                      {lead.leadSourceId ? sourceMap[lead.leadSourceId] || "—" : (lead.tags?.toLowerCase().includes("callyzer") ? "Callyzer" : "—")}
                     </span>
                   </TableCell>
                 </TableRow>

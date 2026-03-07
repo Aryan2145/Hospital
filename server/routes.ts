@@ -103,6 +103,13 @@ function getPhoneVariants(normalized: string): string[] {
   return variants;
 }
 
+function format_date(d: any): string {
+  try {
+    const date = new Date(d);
+    return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  } catch { return String(d); }
+}
+
 function formatCallDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   const mins = Math.floor(seconds / 60);
@@ -1500,7 +1507,24 @@ export async function registerRoutes(
     const tid = await getDefaultTenantId(req);
     const leadId = req.query.leadId ? Number(req.query.leadId) : undefined;
     const allTasks = await storage.getTasks(tid, leadId);
-    res.json(allTasks);
+
+    const taskIds = allTasks.map(t => t.id);
+    if (taskIds.length === 0) return res.json(allTasks);
+
+    const nameResult = await pool.query(
+      `SELECT t.id as task_id, cu.name as assigned_to_name
+       FROM tasks t
+       LEFT JOIN crm_users cu ON t.assigned_crm_user_id = cu.id
+       WHERE t.id = ANY($1)`,
+      [taskIds]
+    );
+    const nameMap = new Map(nameResult.rows.map((r: any) => [r.task_id, r.assigned_to_name]));
+
+    const enriched = allTasks.map(t => ({
+      ...t,
+      assignedToName: nameMap.get(t.id) || null,
+    }));
+    res.json(enriched);
   });
 
   app.post(api.tasks.create.path, isAuthenticated, async (req, res) => {
@@ -1834,7 +1858,7 @@ export async function registerRoutes(
 
       const [episodesResult, activitiesResult, appointmentsResult, episodeAuditResult, tasksResult] = await Promise.all([
         pool.query(`
-          SELECT e.id, e.episode_name, e.status, e.start_date, e.end_date, e.created_at, e.updated_at,
+          SELECT e.id, e.episode_name, e.status, e.start_date, e.end_date, e.created_at, e.modified_at,
             e.estimated_cost, e.final_estimated_amount, e.revenue_probability, e.expected_revenue_amount,
             e.insurance_applicable, e.lost_at_stage, e.lost_notes, e.episode_type, e.priority,
             d.name as doctor_name, td.name as department_name
@@ -1848,7 +1872,7 @@ export async function registerRoutes(
         pool.query(`
           SELECT a.id, a.type, a.description, a.created_at,
             a.old_status, a.new_status, a.outcome, a.metadata,
-            a.call_direction, a.call_duration, a.call_type,
+            a.call_direction, a.call_duration_seconds as call_duration, a.call_status as call_type,
             COALESCE(cu.name, a.created_by) as created_by_name
           FROM activities a
           LEFT JOIN crm_users cu ON a.created_by = cu.id::text AND cu.tenant_id = $2
@@ -1858,14 +1882,18 @@ export async function registerRoutes(
         `, [leadId, tid, limit, offset]),
 
         pool.query(`
-          SELECT ap.id, ap.appointment_date, ap.start_time, ap.end_time, ap.status, ap.check_in_time,
-            ap.notes, ap.created_at, ap.appointment_type, ap.token_number,
-            d.name as doctor_name, b.name as branch_name
+          SELECT ap.id, ap.appointment_date, ap.start_time, ap.end_time, ap.status, ap.checked_in_at,
+            ap.notes, ap.created_at, ap.token_number, ap.reschedule_count, ap.no_show_reason_id,
+            at2.name as appointment_type_name,
+            d.name as doctor_name, b.name as branch_name,
+            ap.booked_by_crm_user_id, bcu.name as booked_by_name
           FROM appointments ap
           LEFT JOIN crm_users d ON ap.doctor_id = d.id
           LEFT JOIN branches b ON ap.branch_id = b.id
+          LEFT JOIN appointment_types at2 ON ap.appointment_type_id = at2.id
+          LEFT JOIN crm_users bcu ON ap.booked_by_crm_user_id = bcu.id
           WHERE ap.lead_id = $1 AND ap.tenant_id = $2
-          ORDER BY ap.created_at DESC
+          ORDER BY ap.appointment_date DESC NULLS LAST, ap.created_at DESC
           LIMIT $3
         `, [leadId, tid, limit]),
 
@@ -1917,20 +1945,32 @@ export async function registerRoutes(
       }
 
       for (const ap of appointmentsResult.rows) {
+        const apptDateStr = ap.appointment_date ? format_date(ap.appointment_date) : null;
+        const apptDesc = [
+          ap.appointment_type_name || "Appointment",
+          ap.doctor_name ? `with Dr. ${ap.doctor_name}` : "",
+          ap.branch_name ? `at ${ap.branch_name}` : "",
+          apptDateStr ? `on ${apptDateStr}` : "",
+          ap.start_time ? `at ${ap.start_time}` : "",
+          ap.token_number ? `(Token #${ap.token_number})` : "",
+        ].filter(Boolean).join(" ");
+
         unifiedEvents.push({
           id: `apt-${ap.id}`,
           source: "Appointment",
           type: "appointment",
-          description: `${ap.appointment_type || "Appointment"} with ${ap.doctor_name || "doctor"} at ${ap.branch_name || "clinic"}${ap.start_time ? ` — ${ap.start_time}` : ""}${ap.token_number ? ` (Token #${ap.token_number})` : ""}`,
+          description: apptDesc,
           timestamp: ap.created_at,
           appointmentDate: ap.appointment_date,
           appointmentTime: ap.start_time || null,
           appointmentEndTime: ap.end_time || null,
           tokenNumber: ap.token_number,
           appointmentStatus: ap.status,
-          checkInTime: ap.check_in_time,
+          checkedInAt: ap.checked_in_at,
           doctorName: ap.doctor_name,
           branchName: ap.branch_name,
+          bookedByName: ap.booked_by_name,
+          rescheduleCount: ap.reschedule_count,
           notes: ap.notes,
         });
       }
@@ -2024,6 +2064,10 @@ export async function registerRoutes(
         else if (lead.status === "Closed Lost") quickStatus = "Discontinued";
       }
 
+      const upcomingAppt = appointmentsResult.rows.find((a: any) =>
+        a.status === "Scheduled" || a.status === "Confirmed"
+      );
+
       res.json({
         leadSummary: {
           id: lead.id,
@@ -2037,6 +2081,18 @@ export async function registerRoutes(
           latestEpisodeRevenueProbability: latestEpisode?.revenue_probability || null,
           latestEpisodeExpectedRevenue: latestEpisode?.expected_revenue_amount || null,
         },
+        upcomingAppointment: upcomingAppt ? {
+          id: upcomingAppt.id,
+          appointmentDate: upcomingAppt.appointment_date,
+          startTime: upcomingAppt.start_time,
+          endTime: upcomingAppt.end_time,
+          status: upcomingAppt.status,
+          doctorName: upcomingAppt.doctor_name,
+          branchName: upcomingAppt.branch_name,
+          tokenNumber: upcomingAppt.token_number,
+          checkedInAt: upcomingAppt.checked_in_at,
+          appointmentTypeName: upcomingAppt.appointment_type_name,
+        } : null,
         episodes: episodes.map((e: any) => ({
           id: e.id,
           episodeName: e.episode_name,
@@ -2044,7 +2100,7 @@ export async function registerRoutes(
           startDate: e.start_date,
           endDate: e.end_date,
           createdAt: e.created_at,
-          updatedAt: e.updated_at,
+          updatedAt: e.modified_at,
           estimatedCost: e.estimated_cost,
           finalEstimatedAmount: e.final_estimated_amount,
           revenueProbability: e.revenue_probability,
@@ -2062,6 +2118,7 @@ export async function registerRoutes(
         hasMore: unifiedEvents.length > limit,
       });
     } catch (err: any) {
+      console.error("[journey] Error for lead", req.params.id, ":", err.message, err.code, err.detail);
       res.status(500).json({ message: humanizeError(err) });
     }
   });
@@ -3171,6 +3228,8 @@ export async function registerRoutes(
               status: "Raw Lead Captured",
               leadSourceId: callyzerLeadSourceId,
               assignedCrmUserId: matchedCrmUser?.id || null,
+              primaryOwnerUserId: matchedCrmUser?.id || null,
+              ownerTeam: matchedCrmUser ? "Telecalling" : null,
               tags: "Callyzer",
               notes: notes || null,
             });
@@ -6795,6 +6854,7 @@ export async function registerRoutes(
   await ensureCrmTeamDepartments();
   await consolidateDuplicateTeams();
   await backfillMobileNormalized();
+  await backfillLeadOwnershipAndSource();
 
   return httpServer;
 }
@@ -7249,6 +7309,83 @@ async function backfillMobileNormalized() {
     if (count > 0) console.log(`[backfill] Set mobile_normalized for ${count} leads`);
   } catch (err) {
     console.error("Error backfilling mobile_normalized:", err);
+  }
+}
+
+async function backfillLeadOwnershipAndSource() {
+  try {
+    const tenantsResult = await pool.query(`SELECT id FROM tenants WHERE subscription_status = 'Active'`);
+    for (const tenant of tenantsResult.rows) {
+      const tid = tenant.id;
+
+      const defaultAdmin = await pool.query(
+        `SELECT cu.id, cu.name
+         FROM crm_users cu 
+         JOIN system_roles sr ON cu.system_role_id = sr.id
+         WHERE cu.tenant_id = $1 AND cu.is_active = true AND sr.code IN ('ADMIN', 'SYS_ADMIN', 'MANAGER')
+         ORDER BY CASE sr.code WHEN 'ADMIN' THEN 1 WHEN 'SYS_ADMIN' THEN 2 WHEN 'MANAGER' THEN 3 END
+         LIMIT 1`,
+        [tid]
+      );
+      const fallbackUser = defaultAdmin.rows[0] || null;
+
+      if (fallbackUser) {
+        const teamName = "Telecalling";
+        const ownerResult = await pool.query(
+          `UPDATE leads SET 
+            assigned_crm_user_id = COALESCE(assigned_crm_user_id, $2),
+            primary_owner_user_id = COALESCE(primary_owner_user_id, $2),
+            owner_team = COALESCE(NULLIF(owner_team, ''), $3)
+          WHERE tenant_id = $1 
+            AND (assigned_crm_user_id IS NULL OR primary_owner_user_id IS NULL OR owner_team IS NULL OR owner_team = '')
+            AND (merge_status IS NULL OR merge_status = 'ACTIVE')`,
+          [tid, fallbackUser.id, teamName]
+        );
+        if (ownerResult.rowCount && ownerResult.rowCount > 0) {
+          console.log(`[backfill] Set ownership for ${ownerResult.rowCount} leads in tenant ${tid} (fallback: ${fallbackUser.name})`);
+        }
+      }
+
+      const callyzerSourceResult = await pool.query(
+        `SELECT id FROM lead_sources WHERE tenant_id = $1 AND LOWER(name) = 'callyzer' LIMIT 1`, [tid]
+      );
+      const callyzerSourceId = callyzerSourceResult.rows[0]?.id;
+
+      if (callyzerSourceId) {
+        const callyzerUpdated = await pool.query(
+          `UPDATE leads SET lead_source_id = $2
+           WHERE tenant_id = $1 AND lead_source_id IS NULL
+           AND (merge_status IS NULL OR merge_status = 'ACTIVE')
+           AND (tags ILIKE '%callyzer%' OR id IN (
+             SELECT DISTINCT lead_id FROM activities 
+             WHERE tenant_id = $1 AND metadata::text ILIKE '%callyzer%' AND lead_id IS NOT NULL
+           ))`,
+          [tid, callyzerSourceId]
+        );
+        if (callyzerUpdated.rowCount && callyzerUpdated.rowCount > 0) {
+          console.log(`[backfill] Set Callyzer source for ${callyzerUpdated.rowCount} leads in tenant ${tid}`);
+        }
+      }
+
+      const directSourceResult = await pool.query(
+        `SELECT id FROM lead_sources WHERE tenant_id = $1 AND code = 'DIRECT_CRM' LIMIT 1`, [tid]
+      );
+      const directSourceId = directSourceResult.rows[0]?.id;
+
+      if (directSourceId) {
+        const directUpdated = await pool.query(
+          `UPDATE leads SET lead_source_id = $2
+           WHERE tenant_id = $1 AND lead_source_id IS NULL
+           AND (merge_status IS NULL OR merge_status = 'ACTIVE')`,
+          [tid, directSourceId]
+        );
+        if (directUpdated.rowCount && directUpdated.rowCount > 0) {
+          console.log(`[backfill] Set Direct CRM source for ${directUpdated.rowCount} remaining leads in tenant ${tid}`);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error("[backfill] Error backfilling lead ownership/source:", err.message);
   }
 }
 
