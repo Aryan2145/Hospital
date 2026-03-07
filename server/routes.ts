@@ -152,6 +152,13 @@ async function seedDatabase() {
     await db.insert(administrativeDepartments).values({ tenantId: tid, code: "IT", name: "IT", status: "Active", displayOrder: 4 });
     await db.insert(administrativeDepartments).values({ tenantId: tid, code: "ACCT", name: "Accounts", status: "Active", displayOrder: 5 });
     await db.insert(administrativeDepartments).values({ tenantId: tid, code: "FO", name: "Front Office", status: "Active", displayOrder: 6 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "TELECALLING", name: "Telecalling", status: "Active", displayOrder: 7 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "FINANCIAL", name: "Financial Counselling", status: "Active", displayOrder: 8 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "INSURANCE", name: "Insurance & TPA", status: "Active", displayOrder: 9 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "OT_IP", name: "OT / IP Desk", status: "Active", displayOrder: 10 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "POST_CARE", name: "Post Care", status: "Active", displayOrder: 11 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "REFERRAL", name: "Referral Management", status: "Active", displayOrder: 12 });
+    await db.insert(administrativeDepartments).values({ tenantId: tid, code: "MGMT", name: "Management", status: "Active", displayOrder: 13 });
 
     // Designations
     await db.insert(designations).values({ tenantId: tid, code: "MD", name: "Managing Director", status: "Active", displayOrder: 1 });
@@ -6801,6 +6808,7 @@ export async function registerRoutes(
   await clearStaleConnectorMetrics();
   await fixPendingApprovalStatus();
   await ensureLeadSourcesExist();
+  await ensureCrmTeamDepartments();
 
   return httpServer;
 }
@@ -6888,6 +6896,35 @@ async function ensureLeadSourcesExist() {
     }
   } catch (err) {
     console.error("Error ensuring lead sources:", err);
+  }
+}
+
+async function ensureCrmTeamDepartments() {
+  try {
+    const allTenants = await db.select().from(tenants);
+    const teamDepts = [
+      { code: "TELECALLING", name: "Telecalling", displayOrder: 7 },
+      { code: "FINANCIAL", name: "Financial Counselling", displayOrder: 8 },
+      { code: "INSURANCE", name: "Insurance & TPA", displayOrder: 9 },
+      { code: "OT_IP", name: "OT / IP Desk", displayOrder: 10 },
+      { code: "POST_CARE", name: "Post Care", displayOrder: 11 },
+      { code: "REFERRAL", name: "Referral Management", displayOrder: 12 },
+      { code: "MGMT", name: "Management", displayOrder: 13 },
+    ];
+    for (const tenant of allTenants) {
+      for (const dept of teamDepts) {
+        const existing = await db.select().from(administrativeDepartments)
+          .where(and(eq(administrativeDepartments.tenantId, tenant.id), eq(administrativeDepartments.code, dept.code)));
+        if (existing.length === 0) {
+          await db.insert(administrativeDepartments).values({
+            tenantId: tenant.id, code: dept.code, name: dept.name,
+            status: "Active", displayOrder: dept.displayOrder, approvalStatus: "Approved",
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error ensuring CRM team departments:", err);
   }
 }
 
