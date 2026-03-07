@@ -53,7 +53,7 @@ const HIDDEN_ROLE_CODES = ["SYS_ADMIN"];
 const ACCESS_SCOPE_OPTIONS = [
   { value: "All", label: "All (Full Access)", description: "Can view all data across all branches" },
   { value: "Branch", label: "Branch", description: "Can view data within assigned branch" },
-  { value: "Department", label: "Department", description: "Can view data within assigned department" },
+  { value: "Department", label: "Team", description: "Can view data within assigned team" },
   { value: "Self", label: "Self Only", description: "Can only view own data" },
 ];
 
@@ -590,15 +590,15 @@ export default function TeamManagement() {
                 />
               </div>
               <div>
-                <Label>Department</Label>
+                <Label>Team</Label>
                 <SearchableSelect
                   value={formData.departmentId?.toString() || "none"}
                   onValueChange={v => setFormData(p => ({ ...p, departmentId: v === "none" ? null : Number(v) }))}
                   options={[
-                    { value: "none", label: "-- No Department --" },
+                    { value: "none", label: "-- No Team --" },
                     ...departments.filter((d: any) => d.status === "Active").map((d: any) => ({ value: d.id.toString(), label: d.name }))
                   ]}
-                  placeholder="Select department"
+                  placeholder="Select team"
                   data-testid="select-department"
                 />
               </div>

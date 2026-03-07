@@ -145,7 +145,7 @@ async function seedDatabase() {
     const [org] = await db.insert(organisations).values({ tenantId: tid, code: "VIROC", name: "VIROC Super Speciality Orthopaedic Hospital", status: "Active", displayOrder: 1 }).returning();
     const [mainBranch] = await db.insert(branches).values({ tenantId: tid, organisationId: org.id, code: "VIROC-HQ", name: "VIROC Karelibaug (Main)", address: "Society No. 5 B, Nivruti Colony, Opp. Lohana Lewa Samaj Wadi, Aryakanya Vidyalaya Road, Karelibaug, Vadodara - 390018", phone: "+916356300400", status: "Active", displayOrder: 1 }).returning();
 
-    // Administrative Departments (office/staff departments)
+    // Teams (CRM user groups / organizational teams)
     await db.insert(administrativeDepartments).values({ tenantId: tid, code: "MKT", name: "Marketing", status: "Active", displayOrder: 1 });
     await db.insert(administrativeDepartments).values({ tenantId: tid, code: "SALES", name: "Sales", status: "Active", displayOrder: 2 });
     await db.insert(administrativeDepartments).values({ tenantId: tid, code: "HR", name: "HR", status: "Active", displayOrder: 3 });
