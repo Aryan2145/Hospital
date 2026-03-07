@@ -1177,6 +1177,76 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/leads/duplicates", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const mobile = req.query.mobile as string | undefined;
+
+      let query: string;
+      let params: any[];
+
+      if (mobile) {
+        const normalized = normalizePhone(mobile);
+        query = `
+          SELECT l.id, l.name, l.phone_e164, l.mobile_normalized, l.email, l.status,
+            l.created_at, l.last_activity_at, l.lead_temperature, l.lead_source_id,
+            l.assigned_crm_user_id, l.notes, l.tags, l.campaign_id,
+            cu.name as assigned_to_name,
+            ls.name as source_name
+          FROM leads l
+          LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
+          LEFT JOIN lead_sources ls ON l.lead_source_id = ls.id
+          WHERE l.tenant_id = $1 AND (l.mobile_normalized = $2 OR l.phone_e164 = $2) AND l.merge_status = 'ACTIVE'
+          ORDER BY l.last_activity_at DESC NULLS LAST, l.created_at DESC
+        `;
+        params = [tid, normalized];
+      } else {
+        query = `
+          SELECT COALESCE(l.mobile_normalized, l.phone_e164) as mobile_normalized, 
+            json_agg(json_build_object(
+              'id', l.id, 'name', l.name, 'phone', l.phone_e164, 'email', l.email,
+              'status', l.status, 'createdAt', l.created_at, 'lastActivityAt', l.last_activity_at,
+              'temperature', l.lead_temperature
+            ) ORDER BY l.created_at DESC) as leads, count(*) as lead_count
+          FROM leads l
+          WHERE l.tenant_id = $1 AND l.merge_status = 'ACTIVE' 
+            AND COALESCE(l.mobile_normalized, l.phone_e164) IS NOT NULL
+          GROUP BY COALESCE(l.mobile_normalized, l.phone_e164)
+          HAVING count(*) > 1
+          ORDER BY count(*) DESC
+          LIMIT 100
+        `;
+        params = [tid];
+      }
+
+      const result = await pool.query(query, params);
+
+      if (mobile) {
+        res.json({ leads: result.rows, count: result.rows.length });
+      } else {
+        res.json({
+          groups: result.rows.map((r: any) => ({
+            mobileNormalized: r.mobile_normalized,
+            leads: r.leads,
+            count: Number(r.lead_count),
+          })),
+        });
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/leads/merge-roles", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const allowedRoles = await getMergeAllowedRoles(tid);
+      res.json({ allowedRoles });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.get(api.leads.get.path, isAuthenticated, async (req, res) => {
     const lead = await storage.getLead(Number(req.params.id));
     if (!lead) return res.status(404).json({ message: "Lead not found" });
@@ -1996,64 +2066,6 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/leads/duplicates", isAuthenticated, async (req: any, res) => {
-    try {
-      const tid = await getDefaultTenantId(req);
-      const mobile = req.query.mobile as string | undefined;
-
-      let query: string;
-      let params: any[];
-
-      if (mobile) {
-        const normalized = normalizePhone(mobile);
-        query = `
-          SELECT l.id, l.name, l.phone_e164, l.mobile_normalized, l.email, l.status,
-            l.created_at, l.last_activity_at, l.lead_temperature, l.lead_source_id,
-            l.assigned_crm_user_id, l.notes, l.tags, l.campaign_id,
-            cu.name as assigned_to_name,
-            ls.name as source_name
-          FROM leads l
-          LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
-          LEFT JOIN lead_sources ls ON l.lead_source_id = ls.id
-          WHERE l.tenant_id = $1 AND l.mobile_normalized = $2 AND l.merge_status = 'ACTIVE'
-          ORDER BY l.last_activity_at DESC NULLS LAST, l.created_at DESC
-        `;
-        params = [tid, normalized];
-      } else {
-        query = `
-          SELECT l.mobile_normalized, json_agg(json_build_object(
-            'id', l.id, 'name', l.name, 'phone', l.phone_e164, 'email', l.email,
-            'status', l.status, 'createdAt', l.created_at, 'lastActivityAt', l.last_activity_at,
-            'temperature', l.lead_temperature
-          ) ORDER BY l.created_at DESC) as leads, count(*) as lead_count
-          FROM leads l
-          WHERE l.tenant_id = $1 AND l.merge_status = 'ACTIVE' AND l.mobile_normalized IS NOT NULL
-          GROUP BY l.mobile_normalized
-          HAVING count(*) > 1
-          ORDER BY count(*) DESC
-          LIMIT 100
-        `;
-        params = [tid];
-      }
-
-      const result = await pool.query(query, params);
-
-      if (mobile) {
-        res.json({ leads: result.rows, count: result.rows.length });
-      } else {
-        res.json({
-          groups: result.rows.map((r: any) => ({
-            mobileNormalized: r.mobile_normalized,
-            leads: r.leads,
-            count: Number(r.lead_count),
-          })),
-        });
-      }
-    } catch (err: any) {
-      res.status(500).json({ message: humanizeError(err) });
-    }
-  });
-
   app.get("/api/leads/:id/merge-preview", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId(req);
@@ -2324,16 +2336,6 @@ export async function registerRoutes(
       } finally {
         client.release();
       }
-    } catch (err: any) {
-      res.status(500).json({ message: humanizeError(err) });
-    }
-  });
-
-  app.get("/api/leads/merge-roles", isAuthenticated, async (req: any, res) => {
-    try {
-      const tid = await getDefaultTenantId(req);
-      const allowedRoles = await getMergeAllowedRoles(tid);
-      res.json({ allowedRoles });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -3431,7 +3433,8 @@ export async function registerRoutes(
 
   // Helper: get the default tenant ID
   async function getDefaultTenantId(req?: any): Promise<number> {
-    if (req?.session?.tenantId) return req.session.tenantId;
+    const sessionTid = req?.session?.tenantId;
+    if (sessionTid && !isNaN(Number(sessionTid))) return Number(sessionTid);
     const [t] = await db.select({ id: tenants.id }).from(tenants).limit(1);
     return t?.id ?? 1;
   }
@@ -6791,6 +6794,7 @@ export async function registerRoutes(
   await ensureLeadSourcesExist();
   await ensureCrmTeamDepartments();
   await consolidateDuplicateTeams();
+  await backfillMobileNormalized();
 
   return httpServer;
 }
@@ -7218,6 +7222,33 @@ async function consolidateDuplicateTeams() {
     console.log("Consolidated duplicate ADPT-* teams");
   } catch (err) {
     console.error("Error consolidating duplicate teams:", err);
+  }
+}
+
+async function backfillMobileNormalized() {
+  try {
+    const result = await pool.query(`
+      SELECT id, phone_e164 FROM leads 
+      WHERE phone_e164 IS NOT NULL AND phone_e164 != '' 
+      AND (mobile_normalized IS NULL OR mobile_normalized = '')
+    `);
+    if (result.rows.length === 0) return;
+    
+    let count = 0;
+    for (const row of result.rows) {
+      let cleaned = row.phone_e164.replace(/[\s\-\(\)\.]/g, "");
+      if (cleaned.startsWith("00")) cleaned = "+" + cleaned.slice(2);
+      if (!cleaned.startsWith("+")) {
+        if (cleaned.length === 10) cleaned = "+91" + cleaned;
+        else if (cleaned.startsWith("91") && cleaned.length === 12) cleaned = "+" + cleaned;
+        else cleaned = "+91" + cleaned;
+      }
+      await pool.query(`UPDATE leads SET mobile_normalized = $1 WHERE id = $2`, [cleaned, row.id]);
+      count++;
+    }
+    if (count > 0) console.log(`[backfill] Set mobile_normalized for ${count} leads`);
+  } catch (err) {
+    console.error("Error backfilling mobile_normalized:", err);
   }
 }
 
