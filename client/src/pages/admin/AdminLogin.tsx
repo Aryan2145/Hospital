@@ -42,51 +42,53 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4" data-testid="admin-login-page">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#072e1e' }} data-testid="admin-login-page">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-500/30">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-500/30">
             <Shield className="w-9 h-9 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight" data-testid="text-admin-login-title">System Admin Portal</h1>
-          <p className="text-slate-400 mt-2 text-sm">myProSys Platform Administration</p>
+          <p className="mt-2 text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>myProSys Platform Administration</p>
         </div>
 
-        <Card className="border-slate-700 bg-slate-800/50 backdrop-blur shadow-2xl">
+        <Card className="border shadow-2xl" style={{ borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.06)' }}>
           <CardContent className="p-6">
             <form onSubmit={handleSubmit} className="space-y-5">
               {error && (
-                <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-300" data-testid="text-admin-login-error">
+                <div className="flex items-center gap-2 rounded-lg p-3 text-sm" style={{ backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)', borderWidth: '1px', color: '#fca5a5' }} data-testid="text-admin-login-error">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                   {error}
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label className="text-slate-300 text-sm font-medium">Mobile Number</Label>
+                <Label className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.7)' }}>Mobile Number</Label>
                 <div className="relative">
-                  <Phone className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+                  <Phone className="absolute left-3 top-3 h-4 w-4" style={{ color: 'rgba(255,255,255,0.35)' }} />
                   <Input
                     type="tel"
                     value={mobile}
                     onChange={(e) => setMobile(e.target.value)}
                     placeholder="e.g. 9033050100"
-                    className="pl-10 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500 focus:border-orange-500 focus:ring-orange-500/20"
+                    className="pl-10 text-white placeholder:text-white/30 focus:ring-orange-500/20"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.15)' }}
                     data-testid="input-admin-mobile"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label className="text-slate-300 text-sm font-medium">Password</Label>
+                <Label className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.7)' }}>Password</Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+                  <Lock className="absolute left-3 top-3 h-4 w-4" style={{ color: 'rgba(255,255,255,0.35)' }} />
                   <Input
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter your password"
-                    className="pl-10 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500 focus:border-orange-500 focus:ring-orange-500/20"
+                    className="pl-10 text-white placeholder:text-white/30 focus:ring-orange-500/20"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.15)' }}
                     data-testid="input-admin-password"
                   />
                 </div>
@@ -102,8 +104,8 @@ export default function AdminLogin() {
               </Button>
             </form>
 
-            <div className="mt-6 pt-4 border-t border-slate-700 text-center">
-              <p className="text-xs text-slate-500">
+            <div className="mt-6 pt-4 text-center" style={{ borderTopColor: 'rgba(255,255,255,0.1)', borderTopWidth: '1px' }}>
+              <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
                 Only authorized System Administrators can access this portal.
               </p>
             </div>

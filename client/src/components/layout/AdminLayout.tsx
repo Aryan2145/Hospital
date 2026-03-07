@@ -37,21 +37,21 @@ function AdminSidebar() {
   const displayName = crmUser?.name || `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User";
 
   return (
-    <div className="h-screen w-64 bg-slate-900 text-white flex flex-col z-20">
-      <div className="p-6 border-b border-slate-700">
+    <div className="h-screen w-64 text-white flex flex-col z-20" style={{ backgroundColor: '#0a3d2a' }}>
+      <div className="p-6" style={{ borderBottomColor: 'rgba(255,255,255,0.12)', borderBottomWidth: '1px' }}>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-lg">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg">
             <Shield className="w-6 h-6 text-white" />
           </div>
           <div>
             <h1 className="font-bold text-lg tracking-tight leading-tight text-white" data-testid="text-admin-brand">myProSys</h1>
-            <p className="text-xs text-slate-400 font-medium">System Admin</p>
+            <p className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.5)' }}>System Admin</p>
           </div>
         </div>
       </div>
 
       <div className="flex-1 py-4 px-4 overflow-y-auto">
-        <div className="text-xs font-semibold text-slate-500 mb-3 px-2 uppercase tracking-wider">
+        <div className="text-xs font-semibold mb-3 px-2 uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.4)' }}>
           Platform Management
         </div>
         <div className="space-y-0.5">
@@ -64,11 +64,14 @@ function AdminSidebar() {
                     "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium cursor-pointer transition-colors",
                     isActive
                       ? "bg-orange-600 text-white"
-                      : "text-slate-400 hover:text-white hover:bg-slate-800"
+                      : "hover:text-white"
                   )}
+                  style={!isActive ? { color: 'rgba(255,255,255,0.6)' } : undefined}
+                  onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'; }}
+                  onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'; }}
                   data-testid={`admin-nav-${item.label.toLowerCase().replace(/\s/g, "-")}`}
                 >
-                  <item.icon className={cn("w-5 h-5", isActive ? "text-white" : "text-slate-500")} />
+                  <item.icon className={cn("w-5 h-5", isActive ? "text-white" : "")} style={!isActive ? { color: 'rgba(255,255,255,0.4)' } : undefined} />
                   {item.label}
                 </div>
               </Link>
@@ -78,20 +81,27 @@ function AdminSidebar() {
 
         <div className="mt-8">
           <Link href="/">
-            <div className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium cursor-pointer text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" data-testid="admin-nav-back-crm">
-              <ArrowLeft className="w-5 h-5 text-slate-500" />
+            <div
+              className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium cursor-pointer transition-colors hover:text-white"
+              style={{ color: 'rgba(255,255,255,0.6)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+              data-testid="admin-nav-back-crm"
+            >
+              <ArrowLeft className="w-5 h-5" style={{ color: 'rgba(255,255,255,0.4)' }} />
               Back to CRM
             </div>
           </Link>
         </div>
       </div>
 
-      <div className="p-4 border-t border-slate-700 bg-slate-800/50">
+      <div className="p-4" style={{ borderTopColor: 'rgba(255,255,255,0.12)', borderTopWidth: '1px', backgroundColor: 'rgba(0,0,0,0.15)' }}>
         <div className="flex items-center gap-3 mb-3">
           <img
             src={user?.profileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=ea580c&color=fff`}
             alt="User"
-            className="w-10 h-10 rounded-full border-2 border-slate-600"
+            className="w-10 h-10 rounded-full"
+            style={{ borderWidth: '2px', borderColor: 'rgba(255,255,255,0.2)', borderStyle: 'solid' }}
             data-testid="img-admin-avatar"
           />
           <div className="flex-1 min-w-0">
@@ -115,7 +125,10 @@ function AdminSidebar() {
             queryClient.setQueryData(["/api/me"], null);
             window.location.href = "/admin/login";
           }}
-          className="w-full border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
+          className="w-full text-white/80 hover:text-white"
+          style={{ borderColor: 'rgba(255,255,255,0.2)', backgroundColor: 'transparent' }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
           data-testid="button-admin-logout"
         >
           <LogOut className="w-3.5 h-3.5 mr-2" />
@@ -133,10 +146,10 @@ export function AdminLayout({ children, className }: { children: React.ReactNode
   if (isMobile) {
     return (
       <div className="flex flex-col h-screen bg-slate-50">
-        <header className="flex items-center gap-2 px-4 py-2 border-b border-slate-200 bg-slate-900 shrink-0 z-30">
+        <header className="flex items-center gap-2 px-4 py-2 shrink-0 z-30" style={{ backgroundColor: '#0a3d2a', borderBottomColor: 'rgba(255,255,255,0.1)', borderBottomWidth: '1px' }}>
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="shrink-0 text-white hover:bg-slate-800" data-testid="button-admin-mobile-menu">
+              <Button variant="ghost" size="icon" className="shrink-0 text-white hover:bg-white/10" data-testid="button-admin-mobile-menu">
                 <Menu className="w-5 h-5" />
               </Button>
             </SheetTrigger>
@@ -149,7 +162,7 @@ export function AdminLayout({ children, className }: { children: React.ReactNode
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-orange-500" />
             <span className="font-bold text-lg tracking-tight text-white">myProSys</span>
-            <span className="text-xs text-slate-400 font-medium">Admin</span>
+            <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.5)' }}>Admin</span>
           </div>
         </header>
         <main className={className || "flex-1 overflow-auto bg-slate-50"}>
