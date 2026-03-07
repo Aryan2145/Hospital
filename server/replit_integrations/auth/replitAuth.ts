@@ -4,7 +4,7 @@ import connectPg from "connect-pg-simple";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { db } from "../../db";
-import { crmUsers, tenants, tenantSettings } from "@shared/schema";
+import { crmUsers, tenants, tenantSettings, systemRoles } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { sendPasswordResetEmail, TenantSmtpConfig } from "../../email";
 
@@ -63,6 +63,69 @@ export async function setupAuth(app: Express) {
       return await tryLogin(user, password, req, res);
     } catch (error) {
       console.error("Login error:", error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  app.post("/api/auth/admin-login", async (req, res) => {
+    try {
+      const { mobile, password } = req.body;
+      if (!mobile || !password) {
+        return res.status(400).json({ message: "Mobile number and password are required" });
+      }
+
+      const normalizedMobile = mobile.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
+
+      let user: any = null;
+      const [found] = await db.select().from(crmUsers).where(eq(crmUsers.phone, normalizedMobile));
+      user = found;
+
+      if (!user && normalizedMobile.length === 10) {
+        const [userWithPrefix] = await db.select().from(crmUsers).where(eq(crmUsers.phone, `+91${normalizedMobile}`));
+        user = userWithPrefix;
+      }
+
+      if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      if (!user.isActive || user.status !== "Active") {
+        return res.status(403).json({ message: "Your account is inactive." });
+      }
+
+      if (!user.passwordHash) {
+        return res.status(401).json({ message: "Password not set. Contact your administrator." });
+      }
+
+      const isValid = await bcrypt.compare(password, user.passwordHash);
+      if (!isValid) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      if (!user.systemRoleId) {
+        return res.status(403).json({ message: "Access denied. System Administrator role required." });
+      }
+
+      const [role] = await db.select().from(systemRoles).where(eq(systemRoles.id, user.systemRoleId));
+      if (!role || role.code !== "SYS_ADMIN") {
+        return res.status(403).json({ message: "Access denied. System Administrator role required." });
+      }
+
+      (req.session as any).crmUserId = user.id;
+      (req.session as any).tenantId = user.tenantId;
+
+      req.session.save((err: any) => {
+        if (err) {
+          console.error("Admin login session save error:", err);
+          return res.status(500).json({ message: "Login failed" });
+        }
+        res.json({
+          success: true,
+          user: { id: String(user.id), name: user.name },
+        });
+      });
+    } catch (error) {
+      console.error("Admin login error:", error);
       res.status(500).json({ message: "Login failed" });
     }
   });

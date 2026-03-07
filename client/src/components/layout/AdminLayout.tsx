@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { queryClient } from "@/lib/queryClient";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -106,7 +107,14 @@ function AdminSidebar() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => logout()}
+          onClick={async () => {
+            try {
+              await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+            } catch (e) {}
+            queryClient.setQueryData(["/api/auth/user"], null);
+            queryClient.setQueryData(["/api/me"], null);
+            window.location.href = "/admin/login";
+          }}
           className="w-full border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
           data-testid="button-admin-logout"
         >

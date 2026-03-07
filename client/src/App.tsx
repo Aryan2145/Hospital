@@ -39,6 +39,7 @@ import AdminSubscriptions from "@/pages/admin/AdminSubscriptions";
 import AdminPayments from "@/pages/admin/AdminPayments";
 import CallyzerReportsPage from "@/pages/CallyzerReportsPage";
 import IntelligenceConfigPage from "@/pages/IntelligenceConfigPage";
+import AdminLogin from "@/pages/admin/AdminLogin";
 
 function TenantSuspended() {
   return (
@@ -220,20 +221,23 @@ function Router() {
         {isAuthenticated ? <Redirect to="/" /> : <ResetPassword />}
       </Route>
 
+      <Route path="/admin/login">
+        {isAuthenticated ? <SysAdminGate><Redirect to="/admin" /></SysAdminGate> : <AdminLogin />}
+      </Route>
       <Route path="/admin">
-        {isAuthenticated ? <SysAdminGate><AdminDashboard /></SysAdminGate> : <Landing />}
+        {isAuthenticated ? <SysAdminGate><AdminDashboard /></SysAdminGate> : <AdminLogin />}
       </Route>
       <Route path="/admin/hospitals">
-        {isAuthenticated ? <SysAdminGate><AdminHospitals /></SysAdminGate> : <Landing />}
+        {isAuthenticated ? <SysAdminGate><AdminHospitals /></SysAdminGate> : <AdminLogin />}
       </Route>
       <Route path="/admin/plans">
-        {isAuthenticated ? <SysAdminGate><AdminPlans /></SysAdminGate> : <Landing />}
+        {isAuthenticated ? <SysAdminGate><AdminPlans /></SysAdminGate> : <AdminLogin />}
       </Route>
       <Route path="/admin/subscriptions">
-        {isAuthenticated ? <SysAdminGate><AdminSubscriptions /></SysAdminGate> : <Landing />}
+        {isAuthenticated ? <SysAdminGate><AdminSubscriptions /></SysAdminGate> : <AdminLogin />}
       </Route>
       <Route path="/admin/payments">
-        {isAuthenticated ? <SysAdminGate><AdminPayments /></SysAdminGate> : <Landing />}
+        {isAuthenticated ? <SysAdminGate><AdminPayments /></SysAdminGate> : <AdminLogin />}
       </Route>
 
       <Route component={NotFound} />
