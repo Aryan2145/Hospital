@@ -7020,10 +7020,6 @@ export async function registerRoutes(
   await ensureLeadSourcesExist();
   await ensureCrmTeamDepartments();
   await consolidateDuplicateTeams();
-  await autoBulkMergeDuplicates();
-  await backfillMobileNormalized();
-  await backfillLeadOwnershipAndSource();
-
   return httpServer;
 }
 
@@ -7554,6 +7550,16 @@ async function backfillLeadOwnershipAndSource() {
     }
   } catch (err: any) {
     console.error("[backfill] Error backfilling lead ownership/source:", err.message);
+  }
+}
+
+export async function runDeferredStartupTasks() {
+  try {
+    await autoBulkMergeDuplicates();
+    await backfillMobileNormalized();
+    await backfillLeadOwnershipAndSource();
+  } catch (err: any) {
+    console.error("[deferred-startup] Error in deferred tasks:", err.message);
   }
 }
 
