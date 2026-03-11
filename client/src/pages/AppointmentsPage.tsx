@@ -268,7 +268,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
         const leadRes = await apiRequest("POST", "/api/leads", {
           name: toTitleCase(newPatientName.trim()),
           phoneE164: normalizePhone(newPatientPhone.trim()),
-          status: "Appointment Booked",
+          status: "Qualified",
           doctorId: Number(bookDoctorId),
           consultationTypeId: newPatientConsultationType ? Number(newPatientConsultationType) : undefined,
           notes: [

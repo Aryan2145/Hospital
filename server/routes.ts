@@ -4364,6 +4364,13 @@ export async function registerRoutes(
 
         const leaves = await storage.getDoctorLeaveExceptions(parsed.doctorId, tid, dateStr);
         if (leaves.length > 0) {
+          if (parsed.leadId) {
+            await storage.createActivity({
+              leadId: parsed.leadId, tenantId: tid, createdBy: userId,
+              type: "note",
+              description: "Doctor slot unavailable — lead interested.",
+            });
+          }
           return res.status(400).json({ message: "Doctor is on leave on this date" });
         }
 
@@ -4380,6 +4387,13 @@ export async function registerRoutes(
         });
 
         if (!matchingSlot) {
+          if (parsed.leadId) {
+            await storage.createActivity({
+              leadId: parsed.leadId, tenantId: tid, createdBy: userId,
+              type: "note",
+              description: "Doctor slot unavailable — lead interested.",
+            });
+          }
           const availableSlots = dayTimings.map((t: any) => `${t.startTime}-${t.endTime}`).join(", ");
           return res.status(400).json({
             message: availableSlots
@@ -4397,6 +4411,13 @@ export async function registerRoutes(
         }).length;
         const maxP = matchingSlot.maxPatients || 20;
         if (bookedInSlot >= maxP) {
+          if (parsed.leadId) {
+            await storage.createActivity({
+              leadId: parsed.leadId, tenantId: tid, createdBy: userId,
+              type: "note",
+              description: "Doctor slot unavailable — lead interested.",
+            });
+          }
           return res.status(409).json({ message: `Slot ${matchingSlot.startTime}-${matchingSlot.endTime} is fully booked (${bookedInSlot}/${maxP})` });
         }
       }
