@@ -814,23 +814,27 @@ export default function MasterData() {
                   <Plus className="h-4 w-4 mr-2" />
                   Add {selectedTableLabel}
                 </Button>
-                <input
-                  type="file"
-                  accept=".csv"
-                  ref={fileInputRef}
-                  className="hidden"
-                  onChange={handleFileUpload}
-                  data-testid="input-file-upload"
-                />
-                <Button
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={importMutation.isPending}
-                  data-testid="button-import-csv"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  <span className="hidden md:inline">{importMutation.isPending ? "Importing..." : "Import CSV"}</span>
-                </Button>
+                {selectedTable !== "opdTimings" && (
+                  <>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      ref={fileInputRef}
+                      className="hidden"
+                      onChange={handleFileUpload}
+                      data-testid="input-file-upload"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={importMutation.isPending}
+                      data-testid="button-import-csv"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      <span className="hidden md:inline">{importMutation.isPending ? "Importing..." : "Import CSV"}</span>
+                    </Button>
+                  </>
+                )}
                 <Button
                   variant="outline"
                   onClick={handleExport}
