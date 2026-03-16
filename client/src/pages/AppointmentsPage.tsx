@@ -1186,140 +1186,92 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                 <User className="w-3.5 h-3.5" />
                 Patient
               </p>
-              <div className="flex gap-2 p-1 bg-muted/50 rounded-lg">
-                <Button
-                  variant={bookMode === "existing" ? "default" : "ghost"}
-                  size="sm"
-                  className="flex-1 text-xs"
-                  onClick={() => setBookMode("existing")}
-                  data-testid="book-mode-existing"
-                >
-                  <User className="w-3.5 h-3.5 mr-1.5" />
-                  Existing Patient
-                </Button>
-                <Button
-                  variant={bookMode === "new" ? "default" : "ghost"}
-                  size="sm"
-                  className="flex-1 text-xs"
-                  onClick={() => setBookMode("new")}
-                  data-testid="book-mode-new"
-                >
-                  <UserPlus className="w-3.5 h-3.5 mr-1.5" />
-                  New Patient
-                </Button>
-              </div>
-
-              {bookMode === "existing" && (() => {
-                const unifiedList: { value: string; label: string }[] = [];
-                const seenPhones = new Set<string>();
-
-                (patientsList || []).forEach((p: any) => {
-                  const name = [p.firstName, p.lastName].filter(Boolean).join(" ");
-                  const phone = p.primaryPhone || "";
-                  const matchingLead = (leadsList || []).find((l: any) => {
-                    const lPhone = (l.phoneE164 || l.phone || "").replace(/\D/g, "").slice(-10);
-                    const pPhone = phone.replace(/\D/g, "").slice(-10);
-                    return pPhone && lPhone === pPhone;
-                  });
-                  const key = matchingLead ? `lead:${matchingLead.id}` : `patient:${p.id}`;
-                  unifiedList.push({
-                    value: key,
-                    label: `${name}${phone ? ` (${phone.slice(-10)})` : ""}${p.uhid ? ` [${p.uhid}]` : ""}`,
-                  });
-                  if (phone) seenPhones.add(phone.replace(/\D/g, "").slice(-10));
-                });
-
-                (leadsList || []).forEach((l: any) => {
-                  const phone = (l.phoneE164 || l.phone || "").replace(/\D/g, "").slice(-10);
-                  if (phone && seenPhones.has(phone)) return;
-                  unifiedList.push({
-                    value: `lead:${l.id}`,
-                    label: `${l.name}${phone ? ` (${phone})` : ""}`,
-                  });
-                });
-
-                const selectedUnified = bookLeadId && bookLeadId !== "none"
-                  ? `lead:${bookLeadId}`
-                  : bookPatientId && bookPatientId !== "none"
-                    ? `patient:${bookPatientId}`
-                    : "";
-
-                return (
-                  <div>
-                    <Label className="text-xs font-medium text-muted-foreground">Search Patient *</Label>
-                    <SearchableSelect
-                      value={selectedUnified}
-                      onValueChange={(v) => {
-                        if (!v || v === "none") {
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Phone Number *</Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground font-medium">+91</span>
+                  <Input
+                    value={newPatientPhone}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                      setNewPatientPhone(val);
+                      if (val.length === 10) {
+                        const matchedLead = (leadsList || []).find((l: any) => {
+                          const lPhone = (l.phoneE164 || l.phone || "").replace(/\D/g, "").slice(-10);
+                          return lPhone === val;
+                        });
+                        const matchedPatient = (patientsList || []).find((p: any) => {
+                          const pPhone = (p.primaryPhone || "").replace(/\D/g, "").slice(-10);
+                          return pPhone === val;
+                        });
+                        if (matchedLead) {
+                          setBookLeadId(String(matchedLead.id));
+                          setNewPatientName(matchedLead.name || "");
+                          setBookMode("existing");
+                          if (matchedLead.patientId) {
+                            setBookPatientId(String(matchedLead.patientId));
+                          } else if (matchedPatient) {
+                            setBookPatientId(String(matchedPatient.id));
+                          } else {
+                            setBookPatientId("");
+                          }
+                        } else if (matchedPatient) {
+                          setBookPatientId(String(matchedPatient.id));
+                          setNewPatientName([matchedPatient.firstName, matchedPatient.lastName].filter(Boolean).join(" "));
+                          setBookMode("existing");
+                          setBookLeadId("");
+                        } else {
                           setBookLeadId("");
                           setBookPatientId("");
-                          return;
+                          setNewPatientName("");
+                          setBookMode("new");
                         }
-                        const [type, id] = v.split(":");
-                        if (type === "lead") {
-                          setBookLeadId(id);
-                          const lead = (leadsList || []).find((l: any) => String(l.id) === id);
-                          if (lead?.patientId) {
-                            setBookPatientId(String(lead.patientId));
-                          } else {
-                            const phone = (lead?.phoneE164 || lead?.phone || "").replace(/\D/g, "").slice(-10);
-                            const matchingPatient = (patientsList || []).find((p: any) => {
-                              const pPhone = (p.primaryPhone || "").replace(/\D/g, "").slice(-10);
-                              return phone && pPhone === phone;
-                            });
-                            setBookPatientId(matchingPatient ? String(matchingPatient.id) : "");
-                          }
-                        } else {
-                          setBookPatientId(id);
-                          const patient = (patientsList || []).find((p: any) => String(p.id) === id);
-                          const phone = (patient?.primaryPhone || "").replace(/\D/g, "").slice(-10);
-                          const matchingLead = (leadsList || []).find((l: any) => {
-                            const lPhone = (l.phoneE164 || l.phone || "").replace(/\D/g, "").slice(-10);
-                            return phone && lPhone === phone;
-                          });
-                          setBookLeadId(matchingLead ? String(matchingLead.id) : "");
-                        }
-                      }}
-                      options={[
-                        { value: "none", label: "-- Select --" },
-                        ...unifiedList,
-                      ]}
-                      placeholder="Search by name or phone..."
-                      data-testid="book-select-patient-unified"
-                    />
-                    {(bookLeadId || bookPatientId) && (
-                      <p className="text-[10px] text-muted-foreground mt-1">
-                        {bookLeadId && bookPatientId ? "Patient record linked" : bookPatientId ? "Patient record" : "Enquiry record"}
-                      </p>
-                    )}
-                  </div>
-                );
-              })()}
+                      } else {
+                        setBookLeadId("");
+                        setBookPatientId("");
+                      }
+                    }}
+                    placeholder="10-digit mobile number"
+                    maxLength={10}
+                    data-testid="book-input-patient-phone"
+                  />
+                </div>
+              </div>
+
+              {newPatientPhone.length === 10 && (bookLeadId || bookPatientId) && (
+                <div className="p-2.5 bg-green-100/60 border border-green-200 rounded-md">
+                  <p className="text-xs font-medium text-green-800 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Patient found: {newPatientName}
+                  </p>
+                  {bookPatientId && (
+                    <p className="text-[10px] text-green-600 mt-0.5">Registered patient record linked</p>
+                  )}
+                </div>
+              )}
+
+              {newPatientPhone.length === 10 && !bookLeadId && !bookPatientId && (
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-md">
+                  <p className="text-xs font-medium text-amber-700 flex items-center gap-1.5">
+                    <UserPlus className="w-3.5 h-3.5" />
+                    New patient — fill details below
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">Patient Name {bookMode === "new" ? "*" : ""}</Label>
+                <Input
+                  value={newPatientName}
+                  onChange={(e) => setNewPatientName(e.target.value)}
+                  placeholder="Full name"
+                  disabled={bookMode === "existing" && !!(bookLeadId || bookPatientId)}
+                  data-testid="book-input-patient-name"
+                />
+              </div>
 
               {bookMode === "new" && (
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
-                    <Label className="text-xs font-medium text-muted-foreground">Patient Name *</Label>
-                    <Input
-                      value={newPatientName}
-                      onChange={(e) => setNewPatientName(e.target.value)}
-                      placeholder="Full name"
-                      data-testid="book-input-patient-name"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <Label className="text-xs font-medium text-muted-foreground">Phone Number *</Label>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground font-medium">+91</span>
-                      <Input
-                        value={newPatientPhone}
-                        onChange={(e) => setNewPatientPhone(e.target.value)}
-                        placeholder="10-digit mobile"
-                        maxLength={10}
-                        data-testid="book-input-patient-phone"
-                      />
-                    </div>
-                  </div>
                   <div>
                     <Label className="text-xs font-medium text-muted-foreground">Age</Label>
                     <Input
@@ -1409,7 +1361,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
             <Button
               onClick={handleBookAppointment}
               className="w-full"
-              disabled={createAppointment.isPending || isCreatingLead || !bookDoctorId || !bookDate || !effectiveStartTime || (bookMode === "new" && (!newPatientName || !newPatientPhone))}
+              disabled={createAppointment.isPending || isCreatingLead || !bookDoctorId || !bookDate || !effectiveStartTime || !newPatientPhone || newPatientPhone.length < 10 || (bookMode === "new" && !newPatientName) || (bookMode === "existing" && !bookLeadId && !bookPatientId)}
               data-testid="button-confirm-book"
             >
               {(createAppointment.isPending || isCreatingLead) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calendar className="w-4 h-4 mr-2" />}
