@@ -179,7 +179,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
   const [bookBranchId, setBookBranchId] = useState("");
   const [bookEpisodeId, setBookEpisodeId] = useState("");
   const [bookNotes, setBookNotes] = useState("");
-  const [bookMode, setBookMode] = useState<"existing" | "new">("new");
+  const [bookMode, setBookMode] = useState<"existing" | "new">("existing");
 
   const [newPatientName, setNewPatientName] = useState("");
   const [newPatientPhone, setNewPatientPhone] = useState("");
@@ -206,7 +206,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
     setBookBranchId("");
     setBookEpisodeId("");
     setBookNotes("");
-    setBookMode("new");
+    setBookMode("existing");
     setNewPatientName("");
     setNewPatientPhone("");
     setNewPatientAge("");
@@ -1082,18 +1082,30 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
           <div className="space-y-4">
             <div className="space-y-3 p-3 border rounded-lg bg-blue-50/30">
               <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
-                <Stethoscope className="w-3.5 h-3.5" />
-                Doctor & Schedule
+                <Building className="w-3.5 h-3.5" />
+                Branch & Doctor
               </p>
-              <div>
-                <Label className="text-xs font-medium text-muted-foreground">Doctor *</Label>
-                <SearchableSelect
-                  value={bookDoctorId}
-                  onValueChange={(v) => { setBookDoctorId(v); setBookSlot(""); }}
-                  options={doctorsList?.map((d: any) => ({ value: String(d.id), label: d.name })) || []}
-                  placeholder="Select doctor"
-                  data-testid="book-select-doctor"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground">Branch *</Label>
+                  <SearchableSelect
+                    value={bookBranchId || defaultBranchId}
+                    onValueChange={setBookBranchId}
+                    options={activeBranches.map((b: any) => ({ value: String(b.id), label: b.name }))}
+                    placeholder="Select branch"
+                    data-testid="book-select-branch"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground">Doctor *</Label>
+                  <SearchableSelect
+                    value={bookDoctorId}
+                    onValueChange={(v) => { setBookDoctorId(v); setBookSlot(""); }}
+                    options={doctorsList?.map((d: any) => ({ value: String(d.id), label: d.name })) || []}
+                    placeholder="Select doctor"
+                    data-testid="book-select-doctor"
+                  />
+                </div>
               </div>
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Date *</Label>
@@ -1169,35 +1181,122 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
               </div>
             </div>
 
-            <div className="flex gap-2 p-1 bg-muted/50 rounded-lg">
-              <Button
-                variant={bookMode === "new" ? "default" : "ghost"}
-                size="sm"
-                className="flex-1 text-xs"
-                onClick={() => setBookMode("new")}
-                data-testid="book-mode-new"
-              >
-                <UserPlus className="w-3.5 h-3.5 mr-1.5" />
-                New Patient
-              </Button>
-              <Button
-                variant={bookMode === "existing" ? "default" : "ghost"}
-                size="sm"
-                className="flex-1 text-xs"
-                onClick={() => setBookMode("existing")}
-                data-testid="book-mode-existing"
-              >
-                <User className="w-3.5 h-3.5 mr-1.5" />
-                Existing Lead / Follow-up
-              </Button>
-            </div>
+            <div className="space-y-3 p-3 border rounded-lg bg-green-50/30">
+              <p className="text-xs font-semibold text-green-700 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5" />
+                Patient
+              </p>
+              <div className="flex gap-2 p-1 bg-muted/50 rounded-lg">
+                <Button
+                  variant={bookMode === "existing" ? "default" : "ghost"}
+                  size="sm"
+                  className="flex-1 text-xs"
+                  onClick={() => setBookMode("existing")}
+                  data-testid="book-mode-existing"
+                >
+                  <User className="w-3.5 h-3.5 mr-1.5" />
+                  Existing Patient
+                </Button>
+                <Button
+                  variant={bookMode === "new" ? "default" : "ghost"}
+                  size="sm"
+                  className="flex-1 text-xs"
+                  onClick={() => setBookMode("new")}
+                  data-testid="book-mode-new"
+                >
+                  <UserPlus className="w-3.5 h-3.5 mr-1.5" />
+                  New Patient
+                </Button>
+              </div>
 
-            {bookMode === "new" && (
-              <div className="space-y-3 p-3 border rounded-lg bg-green-50/30">
-                <p className="text-xs font-semibold text-green-700 flex items-center gap-1.5">
-                  <UserPlus className="w-3.5 h-3.5" />
-                  New Patient Details
-                </p>
+              {bookMode === "existing" && (() => {
+                const unifiedList: { value: string; label: string }[] = [];
+                const seenPhones = new Set<string>();
+
+                (patientsList || []).forEach((p: any) => {
+                  const name = [p.firstName, p.lastName].filter(Boolean).join(" ");
+                  const phone = p.primaryPhone || "";
+                  const matchingLead = (leadsList || []).find((l: any) => {
+                    const lPhone = (l.phoneE164 || l.phone || "").replace(/\D/g, "").slice(-10);
+                    const pPhone = phone.replace(/\D/g, "").slice(-10);
+                    return pPhone && lPhone === pPhone;
+                  });
+                  const key = matchingLead ? `lead:${matchingLead.id}` : `patient:${p.id}`;
+                  unifiedList.push({
+                    value: key,
+                    label: `${name}${phone ? ` (${phone.slice(-10)})` : ""}${p.uhid ? ` [${p.uhid}]` : ""}`,
+                  });
+                  if (phone) seenPhones.add(phone.replace(/\D/g, "").slice(-10));
+                });
+
+                (leadsList || []).forEach((l: any) => {
+                  const phone = (l.phoneE164 || l.phone || "").replace(/\D/g, "").slice(-10);
+                  if (phone && seenPhones.has(phone)) return;
+                  unifiedList.push({
+                    value: `lead:${l.id}`,
+                    label: `${l.name}${phone ? ` (${phone})` : ""}`,
+                  });
+                });
+
+                const selectedUnified = bookLeadId && bookLeadId !== "none"
+                  ? `lead:${bookLeadId}`
+                  : bookPatientId && bookPatientId !== "none"
+                    ? `patient:${bookPatientId}`
+                    : "";
+
+                return (
+                  <div>
+                    <Label className="text-xs font-medium text-muted-foreground">Search Patient *</Label>
+                    <SearchableSelect
+                      value={selectedUnified}
+                      onValueChange={(v) => {
+                        if (!v || v === "none") {
+                          setBookLeadId("");
+                          setBookPatientId("");
+                          return;
+                        }
+                        const [type, id] = v.split(":");
+                        if (type === "lead") {
+                          setBookLeadId(id);
+                          const lead = (leadsList || []).find((l: any) => String(l.id) === id);
+                          if (lead?.patientId) {
+                            setBookPatientId(String(lead.patientId));
+                          } else {
+                            const phone = (lead?.phoneE164 || lead?.phone || "").replace(/\D/g, "").slice(-10);
+                            const matchingPatient = (patientsList || []).find((p: any) => {
+                              const pPhone = (p.primaryPhone || "").replace(/\D/g, "").slice(-10);
+                              return phone && pPhone === phone;
+                            });
+                            setBookPatientId(matchingPatient ? String(matchingPatient.id) : "");
+                          }
+                        } else {
+                          setBookPatientId(id);
+                          const patient = (patientsList || []).find((p: any) => String(p.id) === id);
+                          const phone = (patient?.primaryPhone || "").replace(/\D/g, "").slice(-10);
+                          const matchingLead = (leadsList || []).find((l: any) => {
+                            const lPhone = (l.phoneE164 || l.phone || "").replace(/\D/g, "").slice(-10);
+                            return phone && lPhone === phone;
+                          });
+                          setBookLeadId(matchingLead ? String(matchingLead.id) : "");
+                        }
+                      }}
+                      options={[
+                        { value: "none", label: "-- Select --" },
+                        ...unifiedList,
+                      ]}
+                      placeholder="Search by name or phone..."
+                      data-testid="book-select-patient-unified"
+                    />
+                    {(bookLeadId || bookPatientId) && (
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        {bookLeadId && bookPatientId ? "Patient record linked" : bookPatientId ? "Patient record" : "Enquiry record"}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {bookMode === "new" && (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
                     <Label className="text-xs font-medium text-muted-foreground">Patient Name *</Label>
@@ -1262,69 +1361,22 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                     />
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
-            {bookMode === "existing" && (
-              <div className="space-y-3 p-3 border rounded-lg bg-green-50/30">
-                <p className="text-xs font-semibold text-green-700 flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5" />
-                  Link to Existing Lead / Patient
-                </p>
-                <div>
-                  <Label className="text-xs font-medium text-muted-foreground">Link to Lead (for follow-up)</Label>
-                  <SearchableSelect
-                    value={bookLeadId}
-                    onValueChange={setBookLeadId}
-                    options={[
-                      { value: "none", label: "No lead" },
-                      ...(leadsList?.map((l: any) => ({ value: String(l.id), label: `${l.name}${l.phone ? ` (${l.phone})` : ""}` })) || []),
-                    ]}
-                    placeholder="Search lead by name or phone..."
-                    data-testid="book-select-lead"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs font-medium text-muted-foreground">Link to Patient (optional)</Label>
-                  <SearchableSelect
-                    value={bookPatientId}
-                    onValueChange={setBookPatientId}
-                    options={[
-                      { value: "none", label: "No patient" },
-                      ...(patientsList?.map((p: any) => ({ value: String(p.id), label: `${p.firstName} ${p.lastName}${p.phone ? ` (${p.phone})` : ""}` })) || []),
-                    ]}
-                    placeholder="Search patient..."
-                    data-testid="book-select-patient"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs font-medium text-muted-foreground">Branch</Label>
-                <SearchableSelect
-                  value={bookBranchId || defaultBranchId}
-                  onValueChange={setBookBranchId}
-                  options={activeBranches.map((b: any) => ({ value: String(b.id), label: b.name }))}
-                  placeholder="Select branch"
-                  data-testid="book-select-branch"
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-muted-foreground">Service Location</Label>
-                <SearchableSelect
-                  value={bookServiceLocation}
-                  onValueChange={setBookServiceLocation}
-                  options={[
-                    { value: "At Hospital", label: "At Hospital" },
-                    { value: "Home Visit", label: "Home Visit" },
-                    { value: "Tele-Consultation", label: "Tele-Consultation" },
-                  ]}
-                  placeholder="Where will this happen?"
-                  data-testid="book-select-service-location"
-                />
-              </div>
+            <div>
+              <Label className="text-xs font-medium text-muted-foreground">Service Location</Label>
+              <SearchableSelect
+                value={bookServiceLocation}
+                onValueChange={setBookServiceLocation}
+                options={[
+                  { value: "At Hospital", label: "At Hospital" },
+                  { value: "Home Visit", label: "Home Visit" },
+                  { value: "Tele-Consultation", label: "Tele-Consultation" },
+                ]}
+                placeholder="Where will this happen?"
+                data-testid="book-select-service-location"
+              />
             </div>
             {bookServiceLocation === "Home Visit" && (
               <div>
@@ -1361,7 +1413,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
               data-testid="button-confirm-book"
             >
               {(createAppointment.isPending || isCreatingLead) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calendar className="w-4 h-4 mr-2" />}
-              {bookMode === "new" ? "Create Lead & Book Appointment" : "Book Appointment"}
+              {bookMode === "new" ? "Create & Book Appointment" : "Book Appointment"}
             </Button>
           </div>
         </DialogContent>
