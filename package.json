@@ -113,18 +113,6 @@
     "@types/ws": "^8.5.13"
   },
   "devDependencies": {
-    "@replit/vite-plugin-cartographer": "^0.4.4",
-    "@replit/vite-plugin-dev-banner": "^0.1.1",
-    "@tailwindcss/typography": "^0.5.15",
-    "@types/connect-pg-simple": "^7.0.3",
-    "@types/express": "^5.0.0",
-    "@types/express-session": "^1.18.2",
-    "@types/node": "20.19.27",
-    "@types/passport": "^1.0.17",
-    "@types/passport-local": "^1.0.38",
-    "@types/react": "^18.3.11",
-    "@types/react-dom": "^18.3.1",
-    "@types/ws": "^8.5.13"
   },
   "overrides": {
     "drizzle-kit": {
