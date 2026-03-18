@@ -5101,29 +5101,37 @@ export async function registerRoutes(
 
       if (c.platform === "meta") {
         try {
-          const { testMetaConnection, fetchAccountInsights } = await import("./services/metaAds");
-          const testResult = await testMetaConnection();
-          if (testResult.success) {
-            const insights = await fetchAccountInsights("last_30d");
-            const metricsCache = insights ? {
-              impressions: insights.impressions,
-              clicks: insights.clicks,
-              spend: insights.spend,
-              ctr: insights.ctr,
-              cpc: insights.cpc,
-              conversions: insights.conversions,
-              reach: insights.reach,
-            } : null;
-            await storage.updatePlatformConnector(c.id, tid, {
-              status: "connected",
-              syncStatus: "synced",
-              lastSyncAt: new Date(),
-              ...(metricsCache ? { metricsCache, metricsCachedAt: new Date() } : {}),
-            });
-            res.json({ message: `Connected to Meta Ads (${testResult.accountName})`, accountName: testResult.accountName });
-          } else {
-            await storage.updatePlatformConnector(c.id, tid, { status: "error", syncStatus: null });
-            res.status(400).json({ message: `Meta connection failed: ${testResult.error}` });
+          const { testMetaConnection, fetchAccountInsights, setTenantCredentials, clearTenantCredentials } = await import("./services/metaAds");
+          const creds = c.credentials as any;
+          if (creds?.accessToken && creds?.adAccountId) {
+            setTenantCredentials({ accessToken: creds.accessToken, adAccountId: creds.adAccountId, appId: creds.appId });
+          }
+          try {
+            const testResult = await testMetaConnection();
+            if (testResult.success) {
+              const insights = await fetchAccountInsights("last_30d");
+              const metricsCache = insights ? {
+                impressions: insights.impressions,
+                clicks: insights.clicks,
+                spend: insights.spend,
+                ctr: insights.ctr,
+                cpc: insights.cpc,
+                conversions: insights.conversions,
+                reach: insights.reach,
+              } : null;
+              await storage.updatePlatformConnector(c.id, tid, {
+                status: "connected",
+                syncStatus: "synced",
+                lastSyncAt: new Date(),
+                ...(metricsCache ? { metricsCache, metricsCachedAt: new Date() } : {}),
+              });
+              res.json({ message: `Connected to Meta Ads (${testResult.accountName})`, accountName: testResult.accountName });
+            } else {
+              await storage.updatePlatformConnector(c.id, tid, { status: "error", syncStatus: null });
+              res.status(400).json({ message: `Meta connection failed: ${testResult.error}` });
+            }
+          } finally {
+            clearTenantCredentials();
           }
         } catch (e: any) {
           await storage.updatePlatformConnector(c.id, tid, { status: "error", syncStatus: null });
@@ -5154,23 +5162,31 @@ export async function registerRoutes(
 
       if (c.platform === "meta") {
         try {
-          const { fetchAccountInsights } = await import("./services/metaAds");
-          const insights = await fetchAccountInsights("last_30d");
-          const metricsCache = insights ? {
-            impressions: insights.impressions,
-            clicks: insights.clicks,
-            spend: insights.spend,
-            ctr: insights.ctr,
-            cpc: insights.cpc,
-            conversions: insights.conversions,
-            reach: insights.reach,
-          } : null;
-          await storage.updatePlatformConnector(c.id, tid, {
-            syncStatus: "synced",
-            lastSyncAt: new Date(),
-            ...(metricsCache ? { metricsCache, metricsCachedAt: new Date() } : {}),
-          });
-          res.json({ message: "Meta insights synced successfully", metrics: metricsCache });
+          const { fetchAccountInsights, setTenantCredentials, clearTenantCredentials } = await import("./services/metaAds");
+          const creds = c.credentials as any;
+          if (creds?.accessToken && creds?.adAccountId) {
+            setTenantCredentials({ accessToken: creds.accessToken, adAccountId: creds.adAccountId, appId: creds.appId });
+          }
+          try {
+            const insights = await fetchAccountInsights("last_30d");
+            const metricsCache = insights ? {
+              impressions: insights.impressions,
+              clicks: insights.clicks,
+              spend: insights.spend,
+              ctr: insights.ctr,
+              cpc: insights.cpc,
+              conversions: insights.conversions,
+              reach: insights.reach,
+            } : null;
+            await storage.updatePlatformConnector(c.id, tid, {
+              syncStatus: "synced",
+              lastSyncAt: new Date(),
+              ...(metricsCache ? { metricsCache, metricsCachedAt: new Date() } : {}),
+            });
+            res.json({ message: "Meta insights synced successfully", metrics: metricsCache });
+          } finally {
+            clearTenantCredentials();
+          }
         } catch (e: any) {
           await storage.updatePlatformConnector(c.id, tid, { syncStatus: "error" });
           res.status(400).json({ message: "Unable to sync data from Meta Ads. Please check your connection and try again." });
@@ -5190,10 +5206,23 @@ export async function registerRoutes(
   app.get("/api/connectors/meta/insights", isAuthenticated, async (req: any, res: any) => {
     try {
       if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+      const tid = await getDefaultTenantId(req);
       const datePreset = (req.query.datePreset as string) || "last_30d";
-      const { fetchAccountInsights } = await import("./services/metaAds");
-      const insights = await fetchAccountInsights(datePreset);
-      res.json(insights || {});
+      const { fetchAccountInsights, setTenantCredentials, clearTenantCredentials } = await import("./services/metaAds");
+      const connectors = await storage.getPlatformConnectors(tid);
+      const metaConn = connectors.find((cn: any) => cn.platform === "meta" && cn.status === "connected");
+      if (metaConn) {
+        const creds = metaConn.credentials as any;
+        if (creds?.accessToken && creds?.adAccountId) {
+          setTenantCredentials({ accessToken: creds.accessToken, adAccountId: creds.adAccountId, appId: creds.appId });
+        }
+      }
+      try {
+        const insights = await fetchAccountInsights(datePreset);
+        res.json(insights || {});
+      } finally {
+        clearTenantCredentials();
+      }
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -5202,10 +5231,23 @@ export async function registerRoutes(
   app.get("/api/connectors/meta/campaigns", isAuthenticated, async (req: any, res: any) => {
     try {
       if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+      const tid = await getDefaultTenantId(req);
       const datePreset = (req.query.datePreset as string) || "last_30d";
-      const { fetchCampaignInsights } = await import("./services/metaAds");
-      const campaigns = await fetchCampaignInsights(datePreset);
-      res.json(campaigns);
+      const { fetchCampaignInsights, setTenantCredentials, clearTenantCredentials } = await import("./services/metaAds");
+      const connectors = await storage.getPlatformConnectors(tid);
+      const metaConn = connectors.find((cn: any) => cn.platform === "meta" && cn.status === "connected");
+      if (metaConn) {
+        const creds = metaConn.credentials as any;
+        if (creds?.accessToken && creds?.adAccountId) {
+          setTenantCredentials({ accessToken: creds.accessToken, adAccountId: creds.adAccountId, appId: creds.appId });
+        }
+      }
+      try {
+        const campaigns = await fetchCampaignInsights(datePreset);
+        res.json(campaigns);
+      } finally {
+        clearTenantCredentials();
+      }
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -5214,10 +5256,23 @@ export async function registerRoutes(
   app.get("/api/connectors/meta/daily-insights", isAuthenticated, async (req: any, res: any) => {
     try {
       if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+      const tid = await getDefaultTenantId(req);
       const days = parseInt(req.query.days as string) || 7;
-      const { fetchDailyInsights } = await import("./services/metaAds");
-      const daily = await fetchDailyInsights(days);
-      res.json(daily);
+      const { fetchDailyInsights, setTenantCredentials, clearTenantCredentials } = await import("./services/metaAds");
+      const connectors = await storage.getPlatformConnectors(tid);
+      const metaConn = connectors.find((cn: any) => cn.platform === "meta" && cn.status === "connected");
+      if (metaConn) {
+        const creds = metaConn.credentials as any;
+        if (creds?.accessToken && creds?.adAccountId) {
+          setTenantCredentials({ accessToken: creds.accessToken, adAccountId: creds.adAccountId, appId: creds.appId });
+        }
+      }
+      try {
+        const daily = await fetchDailyInsights(days);
+        res.json(daily);
+      } finally {
+        clearTenantCredentials();
+      }
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

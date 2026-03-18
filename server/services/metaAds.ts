@@ -67,13 +67,27 @@ export interface MetaCampaignSummary {
   conversions: number;
 }
 
+let _tenantCredentials: { accessToken: string; adAccountId: string; appId?: string } | null = null;
+
+export function setTenantCredentials(creds: { accessToken: string; adAccountId: string; appId?: string }) {
+  _tenantCredentials = creds;
+}
+
+export function clearTenantCredentials() {
+  _tenantCredentials = null;
+}
+
 function getCredentials() {
+  if (_tenantCredentials) {
+    return _tenantCredentials;
+  }
+
   const accessToken = process.env.META_ACCESS_TOKEN;
   const adAccountId = process.env.META_AD_ACCOUNT_ID;
   const appId = process.env.META_APP_ID;
 
   if (!accessToken || !adAccountId) {
-    throw new Error("Meta API credentials not configured. Set META_ACCESS_TOKEN and META_AD_ACCOUNT_ID environment variables.");
+    throw new Error("Meta API credentials not configured. Please configure your Meta connector in Configurations → Connectors.");
   }
 
   return { accessToken, adAccountId, appId };

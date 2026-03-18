@@ -166,35 +166,45 @@ export default function MetaHelpGuide() {
             </Section>
 
             <Section id="what-gets-connected" title="What Gets Connected" icon={Link2}>
-              <p className="text-sm text-muted-foreground leading-relaxed mb-4">When you connect Meta, the following assets from your hospital's Meta Business Manager are linked:</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="p-3 border rounded-lg bg-white">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <SiFacebook className="w-4 h-4 text-blue-600" />
-                    <span className="font-medium text-sm">Facebook Page</span>
+              <p className="text-sm text-muted-foreground leading-relaxed mb-4">The Meta integration involves two separate connections that work together:</p>
+              <div className="space-y-4">
+                <div>
+                  <h3 className="font-medium text-foreground mb-2 flex items-center gap-2">
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">1</Badge>
+                    Connector (Ad Account) — for Campaign Insights
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="p-3 border rounded-lg bg-white">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <BarChart3 className="w-4 h-4 text-orange-600" />
+                        <span className="font-medium text-sm">Ad Account</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Your advertising account (act_XXXXXX) is connected via the Connectors page. This pulls campaign performance data — impressions, clicks, spend, CTR, CPC, reach, and conversions.</p>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground">Your hospital's Facebook Page where ads are published and lead forms are hosted</p>
+                  <p className="text-xs text-muted-foreground mt-2">The connector does <strong>not</strong> select specific Pages or Forms. It reads aggregate performance data from the entire Ad Account.</p>
                 </div>
-                <div className="p-3 border rounded-lg bg-white">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <SiInstagram className="w-4 h-4 text-pink-600" />
-                    <span className="font-medium text-sm">Instagram Account</span>
+                <div>
+                  <h3 className="font-medium text-foreground mb-2 flex items-center gap-2">
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">2</Badge>
+                    Lead Capture Rule (Webhook) — for Incoming Leads
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="p-3 border rounded-lg bg-white">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Users className="w-4 h-4 text-green-600" />
+                        <span className="font-medium text-sm">Lead Forms → Webhook</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">A Lead Capture Rule generates a unique Webhook URL. You configure Meta (or Zapier/Make) to send lead form submissions to this URL. Leads arrive in real time.</p>
+                    </div>
+                    <div className="p-3 border rounded-lg bg-white">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <SiFacebook className="w-4 h-4 text-blue-600" />
+                        <span className="font-medium text-sm">Facebook & Instagram Pages</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Pages are not explicitly selected in the CRM. The webhook captures leads from whichever Page or Form is configured to send data to it.</p>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground">If linked to your Facebook Page, Instagram lead ads are also captured</p>
-                </div>
-                <div className="p-3 border rounded-lg bg-white">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <Users className="w-4 h-4 text-green-600" />
-                    <span className="font-medium text-sm">Lead Forms</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Instant Forms (Lead Ads) where patients fill in their name, phone, and inquiry details</p>
-                </div>
-                <div className="p-3 border rounded-lg bg-white">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <BarChart3 className="w-4 h-4 text-orange-600" />
-                    <span className="font-medium text-sm">Ad Account</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">The advertising account used to run campaigns — this is where spend and performance data comes from</p>
                 </div>
               </div>
             </Section>
@@ -313,7 +323,7 @@ export default function MetaHelpGuide() {
                   <ul className="list-disc list-inside ml-4 mt-1 space-y-0.5">
                     <li><code className="bg-slate-100 px-1 rounded text-xs">ads_read</code> — Read campaign and ad performance data</li>
                     <li><code className="bg-slate-100 px-1 rounded text-xs">ads_management</code> — Access campaign structure and metadata</li>
-                    <li><code className="bg-slate-100 px-1 rounded text-xs">leads_read</code> — Retrieve lead form submissions</li>
+                    <li><code className="bg-slate-100 px-1 rounded text-xs">leads_retrieval</code> — Retrieve lead form submissions from your pages</li>
                     <li><code className="bg-slate-100 px-1 rounded text-xs">pages_read_engagement</code> — Access page-level data</li>
                     <li><code className="bg-slate-100 px-1 rounded text-xs">pages_manage_ads</code> — Access ad-related page data</li>
                   </ul>
@@ -367,7 +377,19 @@ export default function MetaHelpGuide() {
                 <p>If your Meta lead form uses custom field names, use the <strong>Field Mapping</strong> section to map them to the correct CRM fields (Name, Phone, Email, etc.).</p>
               </Step>
               <Step number={6} title='Click "Create Rule"'>
-                <p>The rule is now active. All future lead form submissions matching this rule will be processed automatically.</p>
+                <p>Once the rule is created, the system generates a unique <strong>Webhook URL</strong>. This URL is shown on the rule card. Copy it — you will need it in the next step.</p>
+              </Step>
+              <Step number={7} title="Configure Meta to send leads to the CRM">
+                <p>This is a critical step. You need to tell Meta where to send lead data. There are two common approaches:</p>
+                <ul className="list-disc list-inside mt-1 space-y-1.5">
+                  <li><strong>Option A — Direct Webhook:</strong> In the Meta Developer Portal, go to your app &rarr; Webhooks &rarr; subscribe to the "leadgen" topic on your Facebook Page. Set the callback URL to the Webhook URL copied from the CRM.</li>
+                  <li><strong>Option B — Integration Platform:</strong> Use a tool like <strong>Zapier</strong> or <strong>Make (Integromat)</strong> to connect your Meta Lead Ads as a trigger, and set the action to send a POST request to the CRM's Webhook URL with the lead data mapped.</li>
+                </ul>
+                <div className="mt-2">
+                  <InfoBox type="warning">
+                    <strong>Without this step, leads will NOT flow into the CRM.</strong> The CRM provides the webhook endpoint, but Meta must be configured to push data to it. This is a one-time setup per lead form source.
+                  </InfoBox>
+                </div>
               </Step>
             </Section>
 
@@ -379,7 +401,7 @@ export default function MetaHelpGuide() {
                 </div>
                 <div className="flex items-start gap-2.5 text-sm">
                   <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-muted-foreground"><strong>Leads</strong> from your Facebook and Instagram lead forms start arriving in the <strong>Leads Workspace</strong> automatically, tagged with the source</span>
+                  <span className="text-muted-foreground"><strong>Leads</strong> from your Facebook and Instagram lead forms arrive in the <strong>Leads Workspace</strong> in real time (once Meta webhook is configured), tagged with the source</span>
                 </div>
                 <div className="flex items-start gap-2.5 text-sm">
                   <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
@@ -542,7 +564,7 @@ export default function MetaHelpGuide() {
                 {[
                   { perm: "ads_read", why: "Allows the CRM to read your campaign performance data — impressions, clicks, spend, and conversion metrics" },
                   { perm: "ads_management", why: "Allows access to your campaign structure — campaign names, ad sets, ad creatives, budgets, and scheduling" },
-                  { perm: "leads_read", why: "Allows the CRM to retrieve lead form submissions — the patient's name, phone, and other details they filled in" },
+                  { perm: "leads_retrieval", why: "Allows the CRM to retrieve lead form submissions — the patient's name, phone, and other details they filled in" },
                   { perm: "pages_read_engagement", why: "Allows reading data from your Facebook Page, which is required since lead forms are hosted on your Page" },
                   { perm: "pages_manage_ads", why: "Allows access to ad-related data on your Page, needed to link lead forms to campaigns" },
                 ].map(p => (
@@ -590,7 +612,7 @@ export default function MetaHelpGuide() {
                   },
                   {
                     issue: "Leads are not coming into the CRM",
-                    fixes: ["Confirm a Lead Capture Rule exists with Source Type set to \"Meta Lead Ads\" and Active set to \"Yes\"", "Check that the lead form is published and the ad is running", "Verify the webhook URL is correctly configured in Meta's Webhooks settings", "Test by submitting a test lead through Meta's Lead Ads Testing Tool"],
+                    fixes: ["Confirm a Lead Capture Rule exists with Source Type set to \"Meta Lead Ads\" and Active set to \"Yes\"", "Verify the webhook URL from the Lead Capture Rule has been configured in Meta (Developer Portal → Webhooks → leadgen subscription, or via Zapier/Make)", "Check that the lead form is published and the ad is running", "Test by submitting a test lead through Meta's Lead Ads Testing Tool"],
                   },
                   {
                     issue: "Insights are not updating or showing zeros",
@@ -625,7 +647,7 @@ export default function MetaHelpGuide() {
                   "Meta Developer App created at developers.facebook.com",
                   "App ID and App Secret noted from App Settings",
                   "System User created in Meta Business Manager",
-                  "Access Token generated with all 5 required permissions",
+                  "Access Token generated with all 5 required permissions (ads_read, ads_management, leads_retrieval, pages_read_engagement, pages_manage_ads)",
                   "System User added to Ad Account with View Performance access",
                   "Ad Account ID noted (with act_ prefix)",
                   "All four fields entered in CRM Connectors → Meta card",
@@ -633,7 +655,7 @@ export default function MetaHelpGuide() {
                   "Lead Capture Rule created with Source Type = Meta Lead Ads",
                   "Assignment strategy configured (Round Robin or Specific Employees)",
                   "Duplicate handling preference set",
-                  "Meta Webhook configured to send lead data to CRM webhook URL",
+                  "Webhook URL from Lead Capture Rule configured in Meta (via Developer Portal Webhooks or Zapier/Make)",
                   "UTM parameters added to ad campaigns for attribution tracking",
                   "Test lead submitted to verify end-to-end flow",
                 ].map((item, i) => (
@@ -660,10 +682,13 @@ export default function MetaHelpGuide() {
                   <p>Click <strong>Insights</strong> on the Meta connector card (under Configurations → Connectors) to see account-level metrics. The Campaigns page shows campaign records with UTM attribution. The Dashboard shows aggregated lead pipeline and conversion KPIs that include Meta-sourced leads.</p>
                 </FAQ>
                 <FAQ question="I connected successfully but I'm not seeing leads — why?">
-                  <p>Most likely a Lead Capture Rule hasn't been set up yet, or the Meta Webhook hasn't been configured to send data to the CRM's webhook URL. Check both configurations. Also verify the lead form is published and the ad campaign is active.</p>
+                  <p>There are two things to check: (1) A Lead Capture Rule must exist with Source Type "Meta Lead Ads" and Active = Yes. (2) The webhook URL generated by that rule must be configured in Meta — either via Meta Developer Portal Webhooks (subscribe to "leadgen" on your Page) or through an integration tool like Zapier/Make. The CRM connector handles <em>insights</em> (campaign metrics). Lead delivery requires the separate webhook setup.</p>
                 </FAQ>
                 <FAQ question="How do I track which specific ad creative brought in a lead?">
                   <p>Use the <code className="bg-slate-100 px-1 rounded text-xs">utm_content</code> parameter. In Meta Ads Manager, add <code className="bg-slate-100 px-1 rounded text-xs">utm_content={"{{ad.name}}"}</code> to your ad's URL parameters. This will record the ad/creative name on each lead in the CRM, allowing you to compare creative performance.</p>
+                </FAQ>
+                <FAQ question="Does campaign data sync automatically?">
+                  <p>No. Campaign insights (impressions, clicks, spend, etc.) are fetched on demand — when you click <strong>Sync</strong> or <strong>Insights</strong> on the Meta connector card. There is no automatic background sync. We recommend clicking Sync once daily or before reviewing your marketing reports to get the latest data.</p>
                 </FAQ>
                 <FAQ question="Does another hospital on the platform see my leads or campaign data?">
                   <p>No, absolutely not. Each hospital operates in a completely isolated tenant. Your Meta credentials, leads, insights, and all CRM data are visible only to your hospital's users. There is no cross-tenant data access.</p>
