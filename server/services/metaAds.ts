@@ -77,9 +77,18 @@ export function clearTenantCredentials() {
   _tenantCredentials = null;
 }
 
+function normalizeAdAccountId(id: string): string {
+  const trimmed = id.trim();
+  if (trimmed.startsWith("act_")) return trimmed;
+  return `act_${trimmed}`;
+}
+
 function getCredentials() {
   if (_tenantCredentials) {
-    return _tenantCredentials;
+    return {
+      ...(_tenantCredentials),
+      adAccountId: normalizeAdAccountId(_tenantCredentials.adAccountId),
+    };
   }
 
   const accessToken = process.env.META_ACCESS_TOKEN;
@@ -90,7 +99,7 @@ function getCredentials() {
     throw new Error("Meta API credentials not configured. Please configure your Meta connector in Configurations → Connectors.");
   }
 
-  return { accessToken, adAccountId, appId };
+  return { accessToken, adAccountId: normalizeAdAccountId(adAccountId), appId };
 }
 
 async function metaApiGet<T>(endpoint: string, params: Record<string, string> = {}): Promise<T> {

@@ -5130,14 +5130,28 @@ export async function registerRoutes(
               res.json({ message: `Connected to Meta Ads (${testResult.accountName})`, accountName: testResult.accountName });
             } else {
               await storage.updatePlatformConnector(c.id, tid, { status: "error", syncStatus: null });
-              res.status(400).json({ message: `Meta connection failed: ${testResult.error}` });
+              let userMsg = testResult.error || "Unknown error";
+              if (userMsg.includes("does not exist") || userMsg.includes("(10)")) {
+                userMsg = "Ad Account ID not found. Please verify the ID is correct (format: act_XXXXXXXX). Also ensure the System User has been granted access to this Ad Account in Meta Business Settings.";
+              } else if (userMsg.includes("could not be decrypted") || userMsg.includes("(190)")) {
+                userMsg = "Access Token is invalid or expired. Please generate a new token from Meta Business Manager (System Users → Generate New Token) and update it in the connector configuration.";
+              } else if (userMsg.includes("permission") || userMsg.includes("(200)")) {
+                userMsg = "Insufficient permissions. Please ensure the access token has these permissions: ads_read, ads_management, leads_retrieval, pages_read_engagement, pages_manage_ads.";
+              }
+              res.status(400).json({ message: `Meta connection failed: ${userMsg}` });
             }
           } finally {
             clearTenantCredentials();
           }
         } catch (e: any) {
           await storage.updatePlatformConnector(c.id, tid, { status: "error", syncStatus: null });
-          res.status(400).json({ message: "Unable to connect to Meta Ads. Please check your credentials and try again." });
+          let errMsg = e?.message || "Unknown error";
+          if (errMsg.includes("does not exist") || errMsg.includes("(10)")) {
+            errMsg = "Ad Account ID not found. Please verify the ID is correct (format: act_XXXXXXXX) and that the System User has access to it.";
+          } else if (errMsg.includes("could not be decrypted") || errMsg.includes("(190)")) {
+            errMsg = "Access Token is invalid or expired. Please generate a new token and update the configuration.";
+          }
+          res.status(400).json({ message: errMsg });
         }
       } else {
         await storage.updatePlatformConnector(c.id, tid, {
