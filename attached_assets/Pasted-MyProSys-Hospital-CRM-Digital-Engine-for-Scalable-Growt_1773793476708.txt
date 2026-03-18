@@ -1,0 +1,220 @@
+MyProSys Hospital CRM
+Digital Engine for Scalable Growth
+Client:
+VIROC Super Speciality Orthopedic Hospital
+Platform:
+MyProSys Hospital CRM
+Engagement Type:
+CRM Development, Deployment, Implementation Support, and Operational Enablement
+Duration:
+1 Months (Stabilization, Rollout, and Adoption Phase) 
+1. Background and Context
+Over the past several months, RGB and the VIROC leadership team have worked closely to understand the hospital’s growth vision, operational model, and patient journey.
+During this process, multiple CRM solutions were evaluated. However:
+• Some systems were too complex for hospital teams to adopt
+• Some were very expensive for long-term use
+• Others lacked the maturity required for a specialty hospital
+Hospitals operate on a continuous patient journey that spans from inquiry to consultation, treatment, surgery, post-care, and referrals.
+Since no single solution supported this complete journey effectively, RGB designed and built a dedicated system.
+The result is the MyProSys Hospital CRM — a structured platform that tracks and manages the entire patient journey from first contact to long-term engagement and referrals.
+The system is already operational and under testing with the VIROC team.
+The current phase focuses on stabilization, refinement, and full-scale implementation.
+2. Vision Behind the CRM
+The core idea is simple:
+Every patient interaction should be visible, trackable, and actionable.
+Hospitals receive inquiries from multiple channels:
+Digital Campaigns
+Referrals
+Webinars and Education Programs
+Camps and Outreach Activities
+Telecalling and Inbound Calls
+Without a structured system:
+Follow-Ups Get Missed
+Visibility Is Lost
+Conversion Opportunities Reduce
+The MyProSys Hospital CRM creates a single structured system connecting:
+Marketing → Patient Engagement → Clinical Journey → Post-Care → Referral Growth
+This ensures consistency, accountability, and measurable growth.
+3. Platform Architecture
+The CRM is designed keeping hospital expansion in mind.
+Hub and Spoke Model
+The system supports a structure where a central hospital (Hub) connects with multiple satellite centers (Spokes).
+Central Hub
+ │
+ ├ Spoke 1
+ ├ Spoke 2
+ ├ Spoke 3
+
+Multiple Hubs and Multiple Spokes
+As the organization grows, the system supports expansion across regions.
+Hub 1
+ ├ Spoke A
+ ├ Spoke B
+Hub 2
+ ├ Spoke C
+ ├ Spoke D
+Why This Matters
+Centralized Visibility Across Locations
+Consistent Processes Across Centers
+Scalable Growth Without Changing Systems
+Cloud-Based Access
+The system is hosted on secure cloud infrastructure, allowing controlled access from anywhere while maintaining data consistency.
+
+
+
+4. Scope of the CRM
+This is a Patient Journey CRM.
+It does not replace:
+• Hospital Management Systems (HMS)
+• Billing or inventory systems
+• Clinical treatment software
+It focuses on a critical layer:
+Patient acquisition, engagement, and conversion
+Patient Journey Covered
+Lead
+ ↓
+ Contact
+ ↓
+ Appointment
+ ↓
+ Consultation
+ ↓
+ Treatment Planning
+ ↓
+ Surgery
+ ↓
+ Post-Surgery Care
+ ↓
+ Referral
+
+
+5. Core System Workspaces (Aligned with Hospital Roles)
+The system is designed based on how teams actually work inside the hospital.
+Patient Acquisition & Lead Management
+Lead by:
+• Telecalling Team
+• Inbound Call Team
+Responsibilities:
+Responding to Inquiries
+Qualifying Patients
+Scheduling Appointments
+Managing Follow-Ups
+The system ensures no inquiry is missed and every lead is tracked.
+
+OPD Walk-ins, Appointment & Front Office Management
+Handled By:
+ • Front Office Team
+Responsibilities:
+ • Patient Check-Ins
+ • No-Shows
+ • Reschedules
+ • Cancellations
+This Ensures Proper Management of Patient Visits on the Ground.
+
+Clinical Episode Management
+Handled By:
+ • Clinical Team
+Responsibilities:
+ • Consultation Outcomes
+ • Treatment Planning
+ • Surgery Tracking
+ • Insurance Coordination
+Each Patient Case Is Tracked From Consultation to Treatment Completion.
+Post-Surgery Care & Follow-Up
+The System Supports:
+ • Recovery Tracking
+ • Scheduled Follow-Ups
+ • Long-Term Engagement
+This Strengthens Patient Relationships Beyond Treatment.
+Referral Development
+The System Enables Tracking Of:
+ • Patient Referrals
+ • Referral Sources
+ • Referral Outcomes
+This Helps Build a Structured Referral Engine.
+
+6. Campaign and Lead Source Tracking
+The CRM Captures and Tracks All Lead Sources Including:
+ • Digital Campaigns
+ • Inbound Calls
+ • Webinars
+ • Camps
+ • Seminars
+ • Roadshows
+ • Referral Programs
+This Allows the Hospital to Understand:
+ • Which Activities Generate Leads
+ • Which Sources Convert Into Patients
+ • Which Campaigns Deliver Results
+7. Configurations and Master Data
+The System Includes Structured Configuration For:
+ • Lead Sources
+ • Campaign Types
+ • Doctors
+ • Departments
+ • Insurance Providers
+ • Teams and Roles
+This Ensures Consistency and Scalability.
+8. Integrations
+The CRM Integrates With Key Systems Such As:
+ • Telephony (Callyzer)
+ • Marketing Platforms (Meta, Google, LinkedIn, etc.)
+ • Messaging Tools (WhatsApp)
+ • Data Import Systems (Google Sheets, etc.)
+This Ensures Seamless Flow of Information.
+9. Dashboards and Reporting
+The system provides dashboards at three levels.
+Management Dashboards
+For Leadership Visibility:
+Lead Sources
+Conversions
+Campaign Performance etc
+Manager Dashboards
+For Department Heads:
+Team Performance
+Follow-Up Tracking
+Operational Efficiency
+Individual Dashboards
+For team members:
+• Assigned leads
+• Pending actions
+• Daily tasks
+
+10. Implementation and Adoption
+The current phase focuses on making the system fully operational.
+This includes:
+• System stabilization
+• Workflow refinement
+• Data setup and migration
+• Team training
+• Dashboard configuration
+The objective is to integrate the CRM into daily operations.
+11. Ownership and Data Governance
+The MyProSys Hospital CRM platform is owned by RGB.
+The hospital receives access through a subscription model.
+All data within the system remains the property of the hospital.
+12. Long-Term Value
+The CRM enables:
+• Better tracking of patient journey
+• Improved conversion from inquiry to treatment
+• Stronger patient relationships
+• Structured referral growth
+It creates a foundation for consistent and scalable growth.
+
+
+13. Commercials
+The commercial structure for the MyProSys Hospital CRM is outlined below:
+Platform Subscription (Annual):
+ ₹ 1,50,000/- + GST
+Provides access to the MyProSys Hospital CRM platform, including ongoing updates, system enhancements, and standard support.
+Implementation, Training & Deployment Support:
+ ₹ 1,00,000/- + GST
+
+Covers system setup, workflow alignment, data configuration, and team onboarding to ensure smooth adoption across all functions.
+Total Engagement Value:
+ ₹ 2,50,000/-
+14. Closing Note
+The MyProSys Hospital CRM is the result of the last eight months of focused work carried out jointly since August. Every aspect of the digital transformation scope has been carefully understood, structured, and incorporated into the system.
+Each element has been thoughtfully designed to ensure that the entire patient journey—from first inquiry to long-term engagement—is clearly tracked, managed, and actionable.
+The platform brings structure, clarity, and discipline into hospital operations, enabling consistent growth while maintaining a strong focus on patient care.
+At the same time, the system remains open to continuous refinement, with scope to incorporate new ideas and improvements that further simplify and strengthen the overall patient journey.
