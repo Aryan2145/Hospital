@@ -40,6 +40,7 @@ import AdminPayments from "@/pages/admin/AdminPayments";
 import CallyzerReportsPage from "@/pages/CallyzerReportsPage";
 import IntelligenceConfigPage from "@/pages/IntelligenceConfigPage";
 import AdminLogin from "@/pages/admin/AdminLogin";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
 
 function TenantSuspended() {
   return (
@@ -211,6 +212,10 @@ function Router() {
         {isAuthenticated ? (
           <RoleGate page="testing"><TestingInterface /></RoleGate>
         ) : <Landing />}
+      </Route>
+
+      <Route path="/privacy-policy">
+        <PrivacyPolicy />
       </Route>
 
       <Route path="/forgot-password">
