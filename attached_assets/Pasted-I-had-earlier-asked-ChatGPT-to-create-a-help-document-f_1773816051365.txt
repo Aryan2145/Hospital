@@ -1,0 +1,168 @@
+I had earlier asked ChatGPT to create a help document for connecting MyProSys Hospital CRM to Meta so that each tenant (hospital) can connect its own Meta assets such as Facebook Page, Instagram account, lead forms, and ad account. The core requirement is:
+
+1. Meta leads must come into the existing Leads Workspace
+2. Meta insights and campaign performance data must go into the Dashboards workspace
+3. The setup must support multi-tenant architecture, where each hospital connects only its own assets and sees only its own data
+
+Now I want you to evaluate the earlier content and create a fresh, polished, product-ready Help Document inside MyProSys Hospital CRM.
+
+Important context:
+- You already understand the software structure, schema, tenant model, existing modules, and navigation from previous prompts and development work
+- Do not treat this as a greenfield system design task
+- Do not create generic documentation disconnected from our product
+- Use the actual module names, tenant logic, and workspace naming already used inside MyProSys Hospital CRM
+- Keep the content aligned with the existing CRM connector experience
+- The final output should be a proper in-product help document, not raw technical notes
+
+Objective of the help document:
+Explain clearly to a tenant admin or hospital admin how to connect their hospital’s Meta account to MyProSys Hospital CRM using the CRM connector, what permissions are required, what data will sync, where that data will appear inside the software, and what common issues can occur.
+
+The help document should explain this business flow clearly:
+- Leads from Meta Lead Ads / Instagram Lead Ads should land in Leads Workspace
+- Campaign insights and ad performance should sync into Dashboards
+- Analytics should support reporting and KPI visibility
+- All data must remain tenant-specific and isolated
+
+Please create the help document in a clean, user-friendly, non-technical style, but still grounded in how the system actually works.
+
+The help document must include the following sections:
+
+1. Title
+A clear title such as:
+“Connecting Meta to MyProSys Hospital CRM”
+
+2. Purpose / Why this integration matters
+Explain in simple language that connecting Meta allows hospitals to capture leads directly into CRM and monitor campaign performance inside dashboards.
+
+3. Before you begin
+List all prerequisites, such as:
+- The user should have admin-level access to the relevant Meta assets
+- The hospital should have access to the Facebook Page / Instagram account / Ad Account being connected
+- Required permissions should be granted during connection
+- The connector works tenant-wise, so each hospital connects only its own assets
+
+4. What gets connected
+Clearly explain the assets involved:
+- Facebook Page
+- Instagram account if applicable
+- Lead forms
+- Meta Ad Account
+
+5. What data comes into MyProSys
+Split clearly into:
+A. Leads data
+- New lead records created from Meta lead forms
+- Source attribution retained
+- Campaign / ad / ad set details stored if available
+- Leads appear in the Leads Workspace
+
+B. Insights / performance data
+- Spend
+- Impressions
+- Reach
+- Clicks
+- CTR
+- Leads
+- Cost per lead
+- These appear in Dashboards / marketing performance reporting
+
+6. Step-by-step connection process
+Write the user journey clearly from inside the CRM.
+Use the existing likely navigation pattern of MyProSys and keep it aligned to our product language.
+For example:
+- Go to Settings or Integrations
+- Open CRM Connectors
+- Select Meta / Facebook connector
+- Click Connect
+- Login to Meta
+- Grant permissions
+- Select the correct assets
+- Confirm connection
+- Save / Finish setup
+
+Do not hardcode navigation labels unless they match the product’s existing structure. Use the most appropriate names based on the current software.
+
+7. What happens after successful connection
+Explain clearly:
+- Lead forms start sending leads into the Leads Workspace
+- Dashboard begins receiving campaign insight data
+- There may be a sync interval for dashboards, while leads may appear faster
+- Tenant isolation is maintained
+
+8. Where users can see the synced data
+Mention separately:
+- Leads Workspace
+- Dashboards / Reports / KPIs
+Use the actual module names that exist in MyProSys Hospital CRM
+
+9. Permissions required from Meta
+Include the required permissions in a simple way, such as:
+- leads retrieval
+- ads read
+- ads management
+- page engagement read
+Explain why they matter in simple language
+
+10. Troubleshooting / common issues
+Include issues like:
+- Leads not coming
+- Insights not updating
+- Wrong page or ad account selected
+- Permissions not fully granted
+- Token expired / connection expired
+- User does not have sufficient Meta access
+- Data belonging to another tenant should never appear
+
+11. Important notes on multi-tenant behavior
+This must clearly explain:
+- Each tenant connects separately
+- Tokens and connected assets are stored tenant-wise
+- One hospital cannot see another hospital’s leads or dashboard data
+- Reconnection should update only that tenant’s integration
+
+12. FAQ section
+Include practical questions such as:
+- Can one hospital connect multiple pages?
+- Can we reconnect if token expires?
+- Will old leads also sync or only new ones?
+- Where will I see campaign performance?
+- Why am I able to connect but not seeing leads?
+
+13. Tone and writing style
+- Professional
+- Clear
+- Non-technical
+- Helpful
+- Suitable for admins and end users
+- Avoid unnecessary engineering jargon unless needed
+- Explain the result of each step, not just the step itself
+
+14. Output format
+Please generate:
+A. Final help document copy
+B. Suggested heading/subheading structure
+C. If useful, a concise version for a side panel / modal help widget
+D. If useful, a checklist version for tenant onboarding
+
+Very important constraints:
+- Do not rewrite this as a backend architecture note
+- Do not dump raw API endpoints unless absolutely necessary
+- Do not include developer-only JSON examples in the main help document
+- Do not invent schema if it already exists in the project
+- Respect the actual Leads Workspace and Dashboards structure already present in MyProSys
+- Keep the document implementation-ready for placement inside the CRM help section
+
+For evaluation of the earlier draft:
+- Improve structure
+- Remove over-technical sections that do not belong in a help document
+- Preserve the important business logic
+- Preserve the multi-tenant requirement
+- Preserve the mapping of leads to Leads Workspace and insights to Dashboards
+- Make the final version polished and product-ready
+
+Reference business logic to preserve:
+- Meta Lead Ads / Instagram Lead Ads → Leads Workspace
+- Meta Insights API / campaign performance → Dashboards
+- KPIs and reporting should use this data downstream
+- Multi-tenant isolation is mandatory
+- Token management and reconnection should be accounted for in user guidance, but described in a user-friendly way

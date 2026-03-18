@@ -41,6 +41,7 @@ import CallyzerReportsPage from "@/pages/CallyzerReportsPage";
 import IntelligenceConfigPage from "@/pages/IntelligenceConfigPage";
 import AdminLogin from "@/pages/admin/AdminLogin";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
+import MetaHelpGuide from "@/pages/MetaHelpGuide";
 
 function TenantSuspended() {
   return (
@@ -216,6 +217,10 @@ function Router() {
 
       <Route path="/privacy-policy">
         <PrivacyPolicy />
+      </Route>
+
+      <Route path="/help/meta-integration">
+        <MetaHelpGuide />
       </Route>
 
       <Route path="/forgot-password">
