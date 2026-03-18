@@ -5101,11 +5101,13 @@ export async function registerRoutes(
 
       if (c.platform === "meta") {
         try {
-          const { testMetaConnection, fetchAccountInsights, setTenantCredentials, clearTenantCredentials } = await import("./services/metaAds");
           const creds = c.credentials as any;
-          if (creds?.accessToken && creds?.adAccountId) {
-            setTenantCredentials({ accessToken: creds.accessToken, adAccountId: creds.adAccountId, appId: creds.appId });
+          if (!creds?.accessToken || !creds?.adAccountId) {
+            await storage.updatePlatformConnector(c.id, tid, { status: "error", syncStatus: null });
+            return res.status(400).json({ message: "Meta credentials are missing. Please click Configure, enter your Access Token and Ad Account ID, then Save before testing." });
           }
+          const { testMetaConnection, fetchAccountInsights, setTenantCredentials, clearTenantCredentials } = await import("./services/metaAds");
+          setTenantCredentials({ accessToken: creds.accessToken, adAccountId: creds.adAccountId, appId: creds.appId });
           try {
             const testResult = await testMetaConnection();
             if (testResult.success) {

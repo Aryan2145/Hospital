@@ -415,12 +415,16 @@ export default function ConnectorsPage() {
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      await apiRequest("POST", "/api/connectors", data);
+      const res = await apiRequest("POST", "/api/connectors", data);
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
       toast({ title: "Connector configured successfully" });
       closeDialog();
+      if (result?.id && selectedPlatform?.id === "meta") {
+        setTimeout(() => testMutation.mutate(result.id), 500);
+      }
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -430,11 +434,15 @@ export default function ConnectorsPage() {
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
       await apiRequest("PATCH", `/api/connectors/${id}`, data);
+      return id;
     },
-    onSuccess: () => {
+    onSuccess: (connectorId: number) => {
       queryClient.invalidateQueries({ queryKey: ["/api/connectors"] });
       toast({ title: "Connector updated" });
       closeDialog();
+      if (selectedPlatform?.id === "meta") {
+        setTimeout(() => testMutation.mutate(connectorId), 500);
+      }
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -1107,7 +1115,7 @@ export default function ConnectorsPage() {
               {createMutation.isPending || updateMutation.isPending ? (
                 <><Loader2 className="h-4 w-4 animate-spin mr-1.5" /> Saving...</>
               ) : (
-                editingConnector ? "Update Configuration" : "Save & Connect"
+                editingConnector ? "Save & Test Connection" : "Save & Connect"
               )}
             </Button>
           </DialogFooter>
