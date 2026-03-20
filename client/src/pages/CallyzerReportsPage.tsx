@@ -213,87 +213,42 @@ export default function CallyzerReportsPage() {
         ) : (
           <>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-3" data-testid="summary-cards">
-              <Card className="border-l-4 border-l-blue-500">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Phone className="w-4 h-4 text-blue-500" />
-                    <span className="text-xs text-muted-foreground">Total Calls</span>
-                  </div>
-                  <p className="text-xl font-bold" data-testid="text-total-calls">{summary.totalCalls}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-l-4 border-l-sky-500">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <PhoneIncoming className="w-4 h-4 text-sky-500" />
-                    <span className="text-xs text-muted-foreground">Incoming</span>
-                  </div>
-                  <p className="text-xl font-bold" data-testid="text-incoming-calls">{summary.incomingCalls}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-l-4 border-l-green-500">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <PhoneOutgoing className="w-4 h-4 text-green-500" />
-                    <span className="text-xs text-muted-foreground">Outgoing</span>
-                  </div>
-                  <p className="text-xl font-bold" data-testid="text-outgoing-calls">{summary.outgoingCalls}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-l-4 border-l-red-500">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <PhoneMissed className="w-4 h-4 text-red-500" />
-                    <span className="text-xs text-muted-foreground">Missed</span>
-                  </div>
-                  <p className="text-xl font-bold" data-testid="text-missed-calls">{summary.missedCalls}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-l-4 border-l-emerald-500">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <UserCheck className="w-4 h-4 text-emerald-500" />
-                    <span className="text-xs text-muted-foreground">Matched</span>
-                  </div>
-                  <p className="text-xl font-bold" data-testid="text-matched-calls">{summary.matchedCalls}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-l-4 border-l-blue-400">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Users className="w-4 h-4 text-blue-400" />
-                    <span className="text-xs text-muted-foreground">Leads Created</span>
-                  </div>
-                  <p className="text-xl font-bold" data-testid="text-auto-created-calls">{summary.autoCreatedCalls}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-l-4 border-l-amber-500">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <UserX className="w-4 h-4 text-amber-500" />
-                    <span className="text-xs text-muted-foreground">Unmatched</span>
-                  </div>
-                  <p className="text-xl font-bold" data-testid="text-unmatched-calls">{summary.unmatchedCalls}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-l-4 border-l-purple-500">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Clock className="w-4 h-4 text-purple-500" />
-                    <span className="text-xs text-muted-foreground">Total Duration</span>
-                  </div>
-                  <p className="text-xl font-bold" data-testid="text-total-duration">{formatDuration(summary.totalDuration)}</p>
-                </CardContent>
-              </Card>
-              <Card className="border-l-4 border-l-indigo-500">
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <BarChart3 className="w-4 h-4 text-indigo-500" />
-                    <span className="text-xs text-muted-foreground">Avg Duration</span>
-                  </div>
-                  <p className="text-xl font-bold" data-testid="text-avg-duration">{formatDuration(summary.avgDuration)}</p>
-                </CardContent>
-              </Card>
+              {[
+                { key: "total", label: "Total Calls", value: summary.totalCalls, icon: Phone, borderClass: "border-l-blue-500", iconClass: "text-blue-500", filter: () => { setCallTypeFilter("all"); setStatusFilter("all"); } },
+                { key: "incoming", label: "Incoming", value: summary.incomingCalls, icon: PhoneIncoming, borderClass: "border-l-sky-500", iconClass: "text-sky-500", filter: () => { setCallTypeFilter("incoming"); setStatusFilter("all"); } },
+                { key: "outgoing", label: "Outgoing", value: summary.outgoingCalls, icon: PhoneOutgoing, borderClass: "border-l-green-500", iconClass: "text-green-500", filter: () => { setCallTypeFilter("outgoing"); setStatusFilter("all"); } },
+                { key: "missed", label: "Missed", value: summary.missedCalls, icon: PhoneMissed, borderClass: "border-l-red-500", iconClass: "text-red-500", filter: () => { setCallTypeFilter("missed"); setStatusFilter("all"); } },
+                { key: "matched", label: "Matched", value: summary.matchedCalls, icon: UserCheck, borderClass: "border-l-emerald-500", iconClass: "text-emerald-500", filter: () => { setCallTypeFilter("all"); setStatusFilter("matched"); } },
+                { key: "auto_created", label: "Leads Created", value: summary.autoCreatedCalls, icon: Users, borderClass: "border-l-blue-400", iconClass: "text-blue-400", filter: () => { setCallTypeFilter("all"); setStatusFilter("auto_created"); } },
+                { key: "unmatched", label: "Unmatched", value: summary.unmatchedCalls, icon: UserX, borderClass: "border-l-amber-500", iconClass: "text-amber-500", filter: () => { setCallTypeFilter("all"); setStatusFilter("unmatched"); } },
+                { key: "duration", label: "Total Duration", value: formatDuration(summary.totalDuration), icon: Clock, borderClass: "border-l-purple-500", iconClass: "text-purple-500", filter: null },
+                { key: "avg_duration", label: "Avg Duration", value: formatDuration(summary.avgDuration), icon: BarChart3, borderClass: "border-l-indigo-500", iconClass: "text-indigo-500", filter: null },
+              ].map((item) => {
+                const Icon = item.icon;
+                const isActive = (item.key === "total" && callTypeFilter === "all" && statusFilter === "all") ||
+                  (item.key === "incoming" && callTypeFilter === "incoming") ||
+                  (item.key === "outgoing" && callTypeFilter === "outgoing") ||
+                  (item.key === "missed" && callTypeFilter === "missed") ||
+                  (item.key === "matched" && statusFilter === "matched") ||
+                  (item.key === "auto_created" && statusFilter === "auto_created") ||
+                  (item.key === "unmatched" && statusFilter === "unmatched");
+                return (
+                  <Card
+                    key={item.key}
+                    className={`border-l-4 ${item.borderClass} ${item.filter ? "cursor-pointer hover:shadow-md transition-shadow" : ""} ${isActive && item.filter ? "ring-2 ring-primary/30 bg-primary/5" : ""}`}
+                    onClick={item.filter || undefined}
+                    data-testid={`summary-card-${item.key}`}
+                  >
+                    <CardContent className="p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Icon className={`w-4 h-4 ${item.iconClass}`} />
+                        <span className="text-xs text-muted-foreground">{item.label}</span>
+                      </div>
+                      <p className="text-xl font-bold" data-testid={`text-${item.key}-calls`}>{item.value}</p>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>

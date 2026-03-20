@@ -3486,9 +3486,23 @@ export async function registerRoutes(
       const conditions: any[] = [eq(callyzerWebhookLogs.tenantId, tid)];
       if (from) conditions.push(gte(callyzerWebhookLogs.createdAt, new Date(from)));
       if (to) conditions.push(lte(callyzerWebhookLogs.createdAt, new Date(to + "T23:59:59")));
-      if (callType) conditions.push(eq(callyzerWebhookLogs.callType, callType));
-      if (status) conditions.push(eq(callyzerWebhookLogs.processingStatus, status));
+      if (callType) conditions.push(sql`LOWER(${callyzerWebhookLogs.callType}) LIKE ${'%' + callType.toLowerCase() + '%'}`);
+      if (status) {
+        if (status === "matched") {
+          conditions.push(eq(callyzerWebhookLogs.processingStatus, "matched"));
+        } else if (status === "unmatched") {
+          conditions.push(eq(callyzerWebhookLogs.processingStatus, "unmatched"));
+        } else if (status === "auto_created") {
+          conditions.push(eq(callyzerWebhookLogs.processingStatus, "auto_created"));
+        } else {
+          conditions.push(eq(callyzerWebhookLogs.processingStatus, status));
+        }
+      }
       if (employeeNumber) conditions.push(eq(callyzerWebhookLogs.employeeNumber, employeeNumber));
+
+      const baseDateConditions: any[] = [eq(callyzerWebhookLogs.tenantId, tid)];
+      if (from) baseDateConditions.push(gte(callyzerWebhookLogs.createdAt, new Date(from)));
+      if (to) baseDateConditions.push(lte(callyzerWebhookLogs.createdAt, new Date(to + "T23:59:59")));
 
       const summaryResult = await db.select({
         totalCalls: sql<number>`COUNT(*)::int`,
@@ -3499,7 +3513,7 @@ export async function registerRoutes(
         autoCreatedCalls: sql<number>`COUNT(*) FILTER (WHERE ${callyzerWebhookLogs.processingStatus} = 'auto_created')::int`,
         unmatchedCalls: sql<number>`COUNT(*) FILTER (WHERE ${callyzerWebhookLogs.processingStatus} = 'unmatched')::int`,
         totalDuration: sql<number>`COALESCE(SUM(${callyzerWebhookLogs.callDuration}), 0)::int`,
-      }).from(callyzerWebhookLogs).where(and(...conditions));
+      }).from(callyzerWebhookLogs).where(and(...baseDateConditions));
 
       const stats = summaryResult[0] || { totalCalls: 0, incomingCalls: 0, outgoingCalls: 0, missedCalls: 0, matchedCalls: 0, autoCreatedCalls: 0, unmatchedCalls: 0, totalDuration: 0 };
       const avgDuration = stats.totalCalls > 0 ? Math.round(stats.totalDuration / stats.totalCalls) : 0;
