@@ -19,7 +19,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { fmtDate, fmtDateTime, fmtTime } from "@/lib/date-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -56,6 +56,7 @@ import {
   MessageSquare,
   CalendarClock,
   StickyNote,
+  AlertTriangle,
 } from "lucide-react";
 
 interface AuditLogEntry {
@@ -743,18 +744,18 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
   const { crmUser } = useCurrentUser();
   const [expanded, setExpanded] = useState(false);
 
-  const [activityType, setActivityType] = useState("Call");
-  const [activityDescription, setActivityDescription] = useState("");
-  const [activityOutcome, setActivityOutcome] = useState("Interested");
-  const [callDuration, setCallDuration] = useState("");
+  const [selectedOutcome, setSelectedOutcome] = useState("");
+  const [selectedRemarkCode, setSelectedRemarkCode] = useState("");
+  const [remarkText, setRemarkText] = useState("");
+  const [additionalNotes, setAdditionalNotes] = useState("");
 
+  const [nextActionTypeId, setNextActionTypeId] = useState(
+    episode.nextActionTypeId ? String(episode.nextActionTypeId) : ""
+  );
   const [nextActionDate, setNextActionDate] = useState(
     episode.nextActionDate ? format(new Date(episode.nextActionDate), "yyyy-MM-dd'T'HH:mm") : ""
   );
   const [nextActionNotes, setNextActionNotes] = useState(episode.nextActionNotes || "");
-  const [nextActionTypeId, setNextActionTypeId] = useState(
-    episode.nextActionTypeId ? String(episode.nextActionTypeId) : ""
-  );
   const [nextActionAssignedTo, setNextActionAssignedTo] = useState(
     episode.nextActionAssignedTo ? String(episode.nextActionAssignedTo) : (crmUser?.id ? String(crmUser.id) : "")
   );
@@ -764,6 +765,29 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
       setNextActionAssignedTo(String(crmUser.id));
     }
   }, [crmUser?.id]);
+
+  const { data: outcomesData = [] } = useQuery<any[]>({
+    queryKey: ["/api/masters/consultationOutcomes"],
+    enabled: expanded,
+  });
+  const activeOutcomes = (outcomesData || []).filter((o: any) => o.status === "Active");
+
+  const { data: remarksData = [] } = useQuery<any[]>({
+    queryKey: ["/api/masters/consultationOutcomeRemarks"],
+    enabled: expanded,
+  });
+  const activeRemarks = (remarksData || []).filter((r: any) => r.status === "Active");
+
+  const filteredRemarks = useMemo(() => {
+    if (!selectedOutcome) return [];
+    const outcome = activeOutcomes.find((o: any) => String(o.id) === selectedOutcome);
+    if (!outcome) return [];
+    return activeRemarks.filter((r: any) => r.outcomeCode === outcome.code);
+  }, [selectedOutcome, activeOutcomes, activeRemarks]);
+
+  const selectedOutcomeObj = activeOutcomes.find((o: any) => String(o.id) === selectedOutcome);
+  const closesEpisode = selectedOutcomeObj?.closesEpisode === true;
+  const showNextAction = selectedOutcome && !closesEpisode;
 
   const { data: nextActionTypesData = [] } = useQuery<any[]>({
     queryKey: ["/api/masters/nextActionTypes"],
@@ -789,62 +813,80 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Activity logged" });
       queryClient.invalidateQueries({ queryKey: ["/api/leads", episode.leadId, "activities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/audit-logs"] });
-      setActivityDescription("");
-      setCallDuration("");
     },
     onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Error logging activity", description: err.message, variant: "destructive" });
     },
   });
 
-  const handleLogActivity = () => {
-    if (!activityDescription.trim()) return;
-    const payload: any = {
+  const handleSubmit = async () => {
+    if (!selectedOutcome) return;
+
+    const outcomeName = selectedOutcomeObj?.name || "";
+    const remarkLabel = selectedRemarkCode
+      ? filteredRemarks.find((r: any) => r.code === selectedRemarkCode)?.name || ""
+      : "";
+    const fullDescription = [
+      `Outcome: ${outcomeName}`,
+      remarkLabel ? remarkLabel : null,
+      remarkText.trim() && remarkText.trim() !== remarkLabel ? remarkText.trim() : null,
+      additionalNotes.trim() ? additionalNotes.trim() : null,
+    ].filter(Boolean).join(" — ");
+
+    logActivityMutation.mutate({
       leadId: episode.leadId,
       tenantId: episode.tenantId,
-      type: activityType.toLowerCase(),
-      description: activityDescription.trim(),
-      outcome: activityOutcome,
-    };
-    if (activityType === "Call" && callDuration) {
-      payload.callDuration = Number(callDuration);
+      type: "consultation_outcome",
+      description: fullDescription,
+      outcome: outcomeName,
+    });
+
+    const episodeFields: Record<string, any> = {};
+
+    if (closesEpisode) {
+      const closesAs = selectedOutcomeObj?.closesAs || "Closed Won";
+      episodeFields.status = closesAs;
+      episodeFields.endDate = new Date().toISOString();
+      episodeFields.decisionStatus = closesAs === "Closed Lost" ? "Declined" : "Completed";
+      if (additionalNotes.trim()) episodeFields.decisionNotes = additionalNotes.trim();
+    } else {
+      if (nextActionTypeId) episodeFields.nextActionTypeId = Number(nextActionTypeId);
+      if (nextActionDate) episodeFields.nextActionDate = new Date(nextActionDate).toISOString();
+      if (nextActionNotes.trim()) episodeFields.nextActionNotes = nextActionNotes.trim();
+      episodeFields.nextActionAssignedTo = nextActionAssignedTo ? Number(nextActionAssignedTo) : (crmUser?.id || null);
     }
-    logActivityMutation.mutate(payload);
+
+    if (Object.keys(episodeFields).length > 0) {
+      updateEpisode.mutate(
+        { id: episode.id, ...episodeFields },
+        {
+          onSuccess: () => {
+            const msg = closesEpisode ? "Consultation logged & episode closed" : "Consultation logged & next action set";
+            toast({ title: msg });
+            queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id] });
+            setSelectedOutcome("");
+            setSelectedRemarkCode("");
+            setRemarkText("");
+            setAdditionalNotes("");
+            setNextActionTypeId("");
+            setNextActionDate("");
+            setNextActionNotes("");
+          },
+          onError: (err: any) => {
+            toast({ title: "Error", description: err.message, variant: "destructive" });
+          },
+        }
+      );
+    } else {
+      toast({ title: "Activity logged" });
+      setSelectedOutcome("");
+      setSelectedRemarkCode("");
+      setRemarkText("");
+      setAdditionalNotes("");
+    }
   };
-
-  const handleSetNextAction = () => {
-    const fields: Record<string, any> = {};
-    if (nextActionTypeId) fields.nextActionTypeId = Number(nextActionTypeId);
-    if (nextActionDate) fields.nextActionDate = new Date(nextActionDate).toISOString();
-    if (nextActionNotes.trim()) fields.nextActionNotes = nextActionNotes.trim();
-    fields.nextActionAssignedTo = nextActionAssignedTo ? Number(nextActionAssignedTo) : (crmUser?.id || null);
-    if (Object.keys(fields).length === 0) return;
-    updateEpisode.mutate(
-      { id: episode.id, ...fields },
-      {
-        onSuccess: () => {
-          toast({ title: "Next action updated" });
-          queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id] });
-        },
-        onError: (err: any) => {
-          toast({ title: "Error", description: err.message, variant: "destructive" });
-        },
-      }
-    );
-  };
-
-  const ACTIVITY_TYPE_OPTIONS = [
-    { value: "Call", label: "Call", icon: Phone },
-    { value: "Note", label: "Note", icon: StickyNote },
-    { value: "WhatsApp", label: "WhatsApp", icon: MessageCircle },
-    { value: "Email", label: "Email", icon: Mail },
-    { value: "SMS", label: "SMS", icon: MessageSquare },
-  ];
-
-  const OUTCOME_OPTIONS = ["Interested", "Follow Up", "Not Interested", "Callback", "Other"];
 
   const currentNextActionType = episode.nextActionTypeId
     ? nextActionTypesData.find((t: any) => t.id === episode.nextActionTypeId)?.name
@@ -853,6 +895,8 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
   const assigneeName = episode.nextActionAssignedTo
     ? activeCrmUsers.find((u: any) => u.id === episode.nextActionAssignedTo)?.name
     : null;
+
+  const isClosed = episode.status === "Closed Won" || episode.status === "Closed Lost";
 
   return (
     <Card className="p-4" data-testid="card-log-next-action">
@@ -863,7 +907,7 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
       >
         <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <CalendarClock className="w-4 h-4 text-primary" />
-          Log & Next Action
+          Consultation Log
         </h3>
         <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", expanded && "rotate-90")} />
       </button>
@@ -886,116 +930,175 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
       )}
 
       {expanded && (
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Log Activity</h4>
-            <div className="space-y-2">
-              <SearchableSelect
-                value={activityType}
-                onValueChange={setActivityType}
-                options={ACTIVITY_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-                placeholder="Activity Type"
-                triggerClassName="text-xs"
-                data-testid="input-activity-type"
-              />
-              <Textarea
-                value={activityDescription}
-                onChange={(e) => setActivityDescription(e.target.value)}
-                placeholder="Description..."
-                rows={2}
-                className="text-xs resize-none"
-                data-testid="input-activity-description"
-              />
-              <SearchableSelect
-                value={activityOutcome}
-                onValueChange={setActivityOutcome}
-                options={OUTCOME_OPTIONS.map((o) => ({ value: o, label: o }))}
-                placeholder="Outcome"
-                triggerClassName="text-xs"
-                data-testid="input-activity-outcome"
-              />
-              {activityType === "Call" && (
-                <Input
-                  type="number"
-                  value={callDuration}
-                  onChange={(e) => setCallDuration(e.target.value)}
-                  placeholder="Call duration (minutes)"
-                  className="text-xs"
-                  min={0}
-                  data-testid="input-call-duration"
-                />
-              )}
-              <Button
-                size="sm"
-                onClick={handleLogActivity}
-                disabled={!activityDescription.trim() || logActivityMutation.isPending}
-                className="w-full"
-                data-testid="button-log-activity"
-              >
-                {logActivityMutation.isPending ? "Logging..." : "Log Activity"}
-              </Button>
+        <div className="mt-4 space-y-4">
+          {isClosed && (
+            <div className="p-3 rounded-md bg-muted/50 border text-center">
+              <p className="text-xs text-muted-foreground">This episode is <span className="font-semibold">{episode.status}</span>. No further actions required.</p>
             </div>
-          </div>
+          )}
 
-          <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Next Action</h4>
+          {!isClosed && (
+            <>
+              <div className="space-y-3">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Step 1: Consultation Outcome
+                </h4>
+                <SearchableSelect
+                  value={selectedOutcome}
+                  onValueChange={(val) => {
+                    setSelectedOutcome(val);
+                    setSelectedRemarkCode("");
+                    setRemarkText("");
+                  }}
+                  options={activeOutcomes.map((o: any) => ({ value: String(o.id), label: o.name }))}
+                  placeholder="What was the outcome of this consultation?"
+                  triggerClassName="text-xs"
+                  data-testid="select-consultation-outcome"
+                />
 
-            {episode.nextActionDate && (
-              <div className="p-2 rounded-md bg-primary/5 border border-primary/10" data-testid="current-next-action-display">
-                <p className="text-xs font-medium text-foreground">
-                  {currentNextActionType || "Next Action"}: {fmtDateTime(episode.nextActionDate)}
-                </p>
-                {assigneeName && (
-                  <p className="text-[11px] text-primary font-medium mt-0.5">Assigned to: {assigneeName}</p>
-                )}
-                {episode.nextActionNotes && (
-                  <p className="text-[11px] text-muted-foreground mt-0.5">{episode.nextActionNotes}</p>
+                {selectedOutcome && closesEpisode && (
+                  <div className="flex items-center gap-1.5 p-2 rounded-md bg-amber-50 border border-amber-200">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <p className="text-[11px] text-amber-700">
+                      This will close the episode as <span className="font-semibold">{selectedOutcomeObj?.closesAs}</span>
+                    </p>
+                  </div>
                 )}
               </div>
-            )}
 
-            <div className="space-y-2">
-              <SearchableSelect
-                value={nextActionTypeId}
-                onValueChange={setNextActionTypeId}
-                options={activeNextActionTypes.map((t: any) => ({ value: String(t.id), label: t.name }))}
-                placeholder="Next Action Type"
-                triggerClassName="text-xs"
-                data-testid="select-next-action-type"
-              />
-              <SearchableSelect
-                value={nextActionAssignedTo}
-                onValueChange={setNextActionAssignedTo}
-                options={activeCrmUsers.map((u: any) => ({ value: String(u.id), label: u.name }))}
-                placeholder="Assign To (default: self)"
-                triggerClassName="text-xs"
-                data-testid="select-next-action-assigned-to"
-              />
-              <Input
-                type="datetime-local"
-                value={nextActionDate}
-                onChange={(e) => setNextActionDate(e.target.value)}
-                className="text-xs"
-                data-testid="input-next-action-date"
-              />
-              <Input
-                value={nextActionNotes}
-                onChange={(e) => setNextActionNotes(e.target.value)}
-                placeholder="Next action notes..."
-                className="text-xs"
-                data-testid="input-next-action-notes"
-              />
-              <Button
-                size="sm"
-                onClick={handleSetNextAction}
-                disabled={(!nextActionTypeId && !nextActionDate && !nextActionNotes.trim()) || updateEpisode.isPending}
-                className="w-full"
-                data-testid="button-set-next-action"
-              >
-                {updateEpisode.isPending ? "Saving..." : "Set Next Action"}
-              </Button>
-            </div>
-          </div>
+              {selectedOutcome && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Step 2: Remarks
+                  </h4>
+
+                  {filteredRemarks.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5" data-testid="remark-chips">
+                      {filteredRemarks.map((r: any) => (
+                        <button
+                          key={r.code}
+                          onClick={() => {
+                            if (selectedRemarkCode === r.code) {
+                              setSelectedRemarkCode("");
+                              setRemarkText("");
+                            } else {
+                              setSelectedRemarkCode(r.code);
+                              setRemarkText(r.name);
+                            }
+                          }}
+                          className={cn(
+                            "px-2.5 py-1 rounded-full text-[11px] border transition-colors",
+                            selectedRemarkCode === r.code
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-background hover:bg-muted border-border text-foreground"
+                          )}
+                          data-testid={`remark-chip-${r.code}`}
+                        >
+                          {r.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <Textarea
+                    value={remarkText}
+                    onChange={(e) => {
+                      setRemarkText(e.target.value);
+                      if (selectedRemarkCode && e.target.value !== filteredRemarks.find((r: any) => r.code === selectedRemarkCode)?.name) {
+                        setSelectedRemarkCode("");
+                      }
+                    }}
+                    placeholder="Type or edit remark..."
+                    rows={2}
+                    className="text-xs resize-none"
+                    data-testid="input-remark-text"
+                  />
+
+                  <Textarea
+                    value={additionalNotes}
+                    onChange={(e) => setAdditionalNotes(e.target.value)}
+                    placeholder="Additional notes (optional)..."
+                    rows={2}
+                    className="text-xs resize-none"
+                    data-testid="input-additional-notes"
+                  />
+                </div>
+              )}
+
+              {showNextAction && (
+                <div className="space-y-3 pt-2 border-t">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Step 3: Next Action
+                  </h4>
+
+                  {episode.nextActionDate && (
+                    <div className="p-2 rounded-md bg-primary/5 border border-primary/10" data-testid="current-next-action-display">
+                      <p className="text-xs font-medium text-foreground">
+                        Current: {currentNextActionType || "Action"} on {fmtDateTime(episode.nextActionDate)}
+                      </p>
+                      {assigneeName && (
+                        <p className="text-[11px] text-primary font-medium mt-0.5">Assigned to: {assigneeName}</p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <SearchableSelect
+                      value={nextActionTypeId}
+                      onValueChange={setNextActionTypeId}
+                      options={activeNextActionTypes.map((t: any) => ({ value: String(t.id), label: t.name }))}
+                      placeholder="Action Type"
+                      triggerClassName="text-xs"
+                      data-testid="select-next-action-type"
+                    />
+                    <SearchableSelect
+                      value={nextActionAssignedTo}
+                      onValueChange={setNextActionAssignedTo}
+                      options={activeCrmUsers.map((u: any) => ({ value: String(u.id), label: u.name }))}
+                      placeholder="Assign To"
+                      triggerClassName="text-xs"
+                      data-testid="select-next-action-assigned-to"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <Input
+                      type="datetime-local"
+                      value={nextActionDate}
+                      onChange={(e) => setNextActionDate(e.target.value)}
+                      className="text-xs"
+                      data-testid="input-next-action-date"
+                    />
+                    <Input
+                      value={nextActionNotes}
+                      onChange={(e) => setNextActionNotes(e.target.value)}
+                      placeholder="Action notes..."
+                      className="text-xs"
+                      data-testid="input-next-action-notes"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {selectedOutcome && (
+                <Button
+                  size="sm"
+                  onClick={handleSubmit}
+                  disabled={!selectedOutcome || logActivityMutation.isPending || updateEpisode.isPending}
+                  className="w-full"
+                  data-testid="button-submit-consultation-log"
+                >
+                  {logActivityMutation.isPending || updateEpisode.isPending
+                    ? "Saving..."
+                    : closesEpisode
+                      ? `Log & Close Episode (${selectedOutcomeObj?.closesAs})`
+                      : showNextAction && nextActionTypeId
+                        ? "Log & Set Next Action"
+                        : "Log Consultation"
+                  }
+                </Button>
+              )}
+            </>
+          )}
         </div>
       )}
     </Card>

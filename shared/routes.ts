@@ -270,6 +270,8 @@ export const MASTER_CATEGORIES = [
     tables: [
       { key: "appointmentTypes", label: "Appointment Type" },
       { key: "conversionStages", label: "Conversion Stage" },
+      { key: "consultationOutcomes", label: "Consultation Outcome" },
+      { key: "consultationOutcomeRemarks", label: "Outcome Remark" },
       { key: "lostReasons", label: "Lost Reason" },
       { key: "noShowReasons", label: "No-Show Reason" },
     ]

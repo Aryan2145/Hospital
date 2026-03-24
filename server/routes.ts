@@ -7693,6 +7693,7 @@ export async function runDeferredStartupTasks() {
     await backfillMobileNormalized();
     await backfillLeadOwnershipAndSource();
     await linkUnlinkedEpisodePatients();
+    await seedConsultationOutcomes();
     await seedDummyAppointments();
   } catch (err: any) {
     console.error("[deferred-startup] Error in deferred tasks:", err.message);
@@ -7893,6 +7894,71 @@ async function clearStaleConnectorMetrics() {
     console.log("Cleared stale connector metrics cache (pre-integration)");
   } catch (err) {
     console.error("Error clearing connector metrics:", err);
+  }
+}
+
+async function seedConsultationOutcomes() {
+  try {
+    const existing = await pool.query(`SELECT COUNT(*) as cnt FROM consultation_outcomes`);
+    if (parseInt(existing.rows[0].cnt, 10) > 0) return;
+
+    const tenants = await pool.query(`SELECT id FROM tenants ORDER BY id`);
+    for (const tenant of tenants.rows) {
+      const tid = tenant.id;
+
+      await pool.query(`
+        INSERT INTO consultation_outcomes (tenant_id, code, name, closes_episode, closes_as, display_order)
+        VALUES 
+          ($1, 'TREATMENT_RECOMMENDED', 'Treatment Recommended', false, NULL, 1),
+          ($1, 'FOLLOWUP_REQUIRED', 'Follow-up Required', false, NULL, 2),
+          ($1, 'CONSERVATIVE_TREATMENT', 'Conservative Treatment', true, 'Closed Won', 3),
+          ($1, 'REFERRED', 'Referred to Another Doctor', false, NULL, 4),
+          ($1, 'NO_TREATMENT_REQUIRED', 'No Treatment Required', true, 'Closed Won', 5),
+          ($1, 'PATIENT_DID_NOT_PROCEED', 'Patient Did Not Proceed', true, 'Closed Lost', 6)
+        ON CONFLICT DO NOTHING
+      `, [tid]);
+
+      const remarksData = [
+        ['TREATMENT_RECOMMENDED', 'TR_CONSIDERING', 'Treatment discussed, patient considering', 1],
+        ['TREATMENT_RECOMMENDED', 'TR_ESTIMATE', 'Treatment plan explained, estimate to be shared', 2],
+        ['TREATMENT_RECOMMENDED', 'TR_AGREED', 'Patient agreed, booking to be done', 3],
+        ['TREATMENT_RECOMMENDED', 'TR_FAMILY', 'Patient wants family consultation first', 4],
+        ['TREATMENT_RECOMMENDED', 'TR_COST_CONCERN', 'Cost concern, exploring insurance/payment options', 5],
+        ['TREATMENT_RECOMMENDED', 'TR_SECOND_OPINION', 'Patient wants a second opinion', 6],
+        ['FOLLOWUP_REQUIRED', 'FU_REPORTS', 'Awaiting investigation/test reports', 1],
+        ['FOLLOWUP_REQUIRED', 'FU_MEDICATION', 'Review after medication course', 2],
+        ['FOLLOWUP_REQUIRED', 'FU_POSTOP', 'Post-procedure/surgery follow-up', 3],
+        ['FOLLOWUP_REQUIRED', 'FU_PROGRESS', 'Review to assess treatment progress', 4],
+        ['FOLLOWUP_REQUIRED', 'FU_ADDITIONAL', 'Additional investigations needed', 5],
+        ['CONSERVATIVE_TREATMENT', 'CT_MEDICATION', 'Medication prescribed, rest advised', 1],
+        ['CONSERVATIVE_TREATMENT', 'CT_PHYSIO', 'Physiotherapy/rehabilitation recommended', 2],
+        ['CONSERVATIVE_TREATMENT', 'CT_MANAGEMENT', 'Pain/symptom management plan given', 3],
+        ['CONSERVATIVE_TREATMENT', 'CT_SUPPORT', 'Support/brace/aid advised', 4],
+        ['CONSERVATIVE_TREATMENT', 'CT_LIFESTYLE', 'Lifestyle/diet changes recommended', 5],
+        ['REFERRED', 'REF_SPECIALIST', 'Referred to specialist within hospital', 1],
+        ['REFERRED', 'REF_EXTERNAL', 'Referred to external specialist/hospital', 2],
+        ['REFERRED', 'REF_DIAGNOSTICS', 'Referred for advanced diagnostics', 3],
+        ['NO_TREATMENT_REQUIRED', 'NTR_CLEAR', 'Routine check-up, all clear', 1],
+        ['NO_TREATMENT_REQUIRED', 'NTR_MINOR', 'Minor issue, self-resolving', 2],
+        ['NO_TREATMENT_REQUIRED', 'NTR_CONFIRMED', 'Second opinion — confirmed no intervention needed', 3],
+        ['NO_TREATMENT_REQUIRED', 'NTR_RESOLVED', 'Previously treated condition fully resolved', 4],
+        ['PATIENT_DID_NOT_PROCEED', 'DNP_DECLINED', 'Patient declined recommended treatment', 1],
+        ['PATIENT_DID_NOT_PROCEED', 'DNP_COST', 'Unable to afford treatment', 2],
+        ['PATIENT_DID_NOT_PROCEED', 'DNP_ELSEWHERE', 'Chose treatment at another facility', 3],
+        ['PATIENT_DID_NOT_PROCEED', 'DNP_WALKAWAY', 'Patient left without decision', 4],
+        ['PATIENT_DID_NOT_PROCEED', 'DNP_PERSONAL', 'Personal/family reasons', 5],
+      ];
+
+      for (const [outcomeCode, code, name, order] of remarksData) {
+        await pool.query(`
+          INSERT INTO consultation_outcome_remarks (tenant_id, outcome_code, code, name, display_order)
+          VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING
+        `, [tid, outcomeCode, code, name, order]);
+      }
+    }
+    console.log("[seed] Consultation outcomes & remarks seeded for all tenants");
+  } catch (err: any) {
+    console.error("[seed] Error seeding consultation outcomes:", err.message);
   }
 }
 

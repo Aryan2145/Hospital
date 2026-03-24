@@ -1230,6 +1230,37 @@ export const episodes = pgTable("episodes", {
   modifiedBy: varchar("modified_by"),
 });
 
+export const consultationOutcomes = pgTable("consultation_outcomes", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  closesEpisode: boolean("closes_episode").default(false),
+  closesAs: text("closes_as"),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  approvalStatus: text("approval_status").default("Approved"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const consultationOutcomeRemarks = pgTable("consultation_outcome_remarks", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  outcomeCode: text("outcome_code").notNull(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  approvalStatus: text("approval_status").default("Approved"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
 // --- Clinical Notes Edit Roles Config ---
 export const clinicalNotesEditRoles = pgTable("clinical_notes_edit_roles", {
   id: serial("id").primaryKey(),
@@ -1741,4 +1772,6 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   policyTypes: "policy_types",
   preauthStatuses: "preauth_statuses",
   rejectionReasons: "rejection_reasons",
+  consultationOutcomes: "consultation_outcomes",
+  consultationOutcomeRemarks: "consultation_outcome_remarks",
 };
