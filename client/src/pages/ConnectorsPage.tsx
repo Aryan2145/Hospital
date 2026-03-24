@@ -87,7 +87,7 @@ interface ImportField {
 const SOURCE_TYPE_OPTIONS = [
   { value: "meta_lead_ads", label: "Meta Lead Ads" },
   { value: "google_forms", label: "Google Forms" },
-  { value: "callyzer", label: "Callyzer" },
+  { value: "callyzer", label: "Telephony (Callyzer)" },
   { value: "whatsapp_business", label: "WhatsApp Business" },
   { value: "google_sheets", label: "Google Sheets" },
   { value: "custom_webhook", label: "Custom Webhook" },
@@ -216,13 +216,13 @@ const PLATFORM_TEMPLATES: PlatformTemplate[] = [
   },
   {
     id: "callyzer",
-    name: "Callyzer",
+    name: "Telephony Connector",
     icon: Phone,
     color: "text-emerald-600",
     bgColor: "bg-emerald-50 dark:bg-emerald-950/30",
-    description: "Connect to Callyzer for real-time call tracking, employee call analytics, call recordings, and team performance monitoring.",
+    description: "Connect your telephony system for real-time call tracking, employee call analytics, call recordings, and team performance monitoring.",
     credentialFields: [
-      { key: "apiKey", label: "API Access Key", type: "password", placeholder: "Your Callyzer API Key (from Connectors > API Config)" },
+      { key: "apiKey", label: "API Access Key", type: "password", placeholder: "Your Telephony API Key" },
       { key: "webhookUrl", label: "Webhook URL (Optional)", type: "text", placeholder: "https://your-domain.com/api/webhook/callyzer" },
     ],
   },
@@ -288,7 +288,7 @@ function CallyzerWebhookPanel({ connector }: { connector: PlatformConnector }) {
         <span className="font-medium text-sm">Webhook Configuration</span>
       </div>
       <p className="text-xs text-muted-foreground">
-        Configure this in Callyzer: Connectors → API & Webhook → Webhook Config. Copy the full URL below (it includes the secret) and paste it in Callyzer.
+        Configure this in your telephony system (e.g., Callyzer: Connectors → API & Webhook → Webhook Config). Copy the full URL below and paste it in your telephony webhook settings.
       </p>
 
       <div className="space-y-1.5">
@@ -343,7 +343,7 @@ function CallyzerWebhookPanel({ connector }: { connector: PlatformConnector }) {
             {webhookSecret && (
               <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
                 <Shield className="h-3 w-3" />
-                New secret generated. Copy the Webhook URL above (it includes the secret as a query parameter) and update it in Callyzer's Webhook Config.
+                New secret generated. Copy the Webhook URL above (it includes the secret as a query parameter) and update it in your telephony system's webhook config.
               </p>
             )}
             <Button
@@ -375,7 +375,7 @@ function CallyzerWebhookPanel({ connector }: { connector: PlatformConnector }) {
       <div className="text-[11px] text-muted-foreground space-y-1 pt-1">
         <p className="font-medium">How it works:</p>
         <ul className="list-disc list-inside space-y-0.5">
-          <li>Callyzer pushes call data to this URL in real-time</li>
+          <li>Your telephony system pushes call data to this URL in real-time</li>
           <li>Calls are matched to leads by patient phone number</li>
           <li>Employee is matched by CRM user phone number</li>
           <li>Matched calls appear as activities on the lead timeline</li>

@@ -258,7 +258,7 @@ function LeadHeader({ lead, onBack }: { lead: any; onBack: () => void }) {
   });
   const sourceName = lead.leadSourceId
     ? leadSources?.find((s: any) => s.id === lead.leadSourceId)?.name
-    : (lead.tags?.toLowerCase().includes("callyzer") ? "Callyzer" : null);
+    : (lead.tags?.toLowerCase().includes("callyzer") ? "Telephony" : null);
   const allStatuses = (masterLeadStatuses || [])
     .filter((s: any) => s.status === "Active")
     .map((s: any) => s.name);
@@ -774,7 +774,7 @@ function ActivityTimeline({ leadId }: { leadId: number }) {
                             )}
                             {(activity.metadata as any).callyzerLeadStatus && (
                               <p className="text-[11px] text-muted-foreground">
-                                <span className="font-medium text-foreground/80">Callyzer Status:</span>{" "}
+                                <span className="font-medium text-foreground/80">Telephony Status:</span>{" "}
                                 {(activity.metadata as any).callyzerLeadStatus}
                                 {(activity.metadata as any).callyzerLeadStatusDate && (
                                   <span className="text-[10px]"> ({(() => { try { return fmtDateTime((activity.metadata as any).callyzerLeadStatusDate); } catch { return (activity.metadata as any).callyzerLeadStatusDate; } })()})</span>

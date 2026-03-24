@@ -30,7 +30,7 @@ const sections: { label: string; items: NavItem[] }[] = [
     label: "Reports & Dashboards",
     items: [
       { icon: LayoutDashboard, label: "Dashboard", href: "/", page: "dashboard" },
-      { icon: Phone, label: "Callyzer Reports", href: "/callyzer-reports", page: "connectors" },
+      { icon: Phone, label: "Telephony Reports", href: "/callyzer-reports", page: "connectors" },
     ],
   },
   {

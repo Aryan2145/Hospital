@@ -425,12 +425,12 @@ export default function EpisodeDetailPage() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Post-Care Owner</Label>
+                    <Label className="text-xs text-muted-foreground">Post-Care Doctor</Label>
                     <SearchableSelect
                       value={episode.postCareOwnerId ? String(episode.postCareOwnerId) : ""}
                       onValueChange={(val) => handleFieldUpdate({ postCareOwnerId: val ? Number(val) : null })}
-                      options={[{ value: "", label: "None" }, ...crmUsers.map((u: any) => ({ value: String(u.id), label: u.name }))]}
-                      placeholder="Select post-care owner"
+                      options={[{ value: "", label: "None" }, ...activeItems(doctors).map((d: any) => ({ value: String(d.id), label: d.name }))]}
+                      placeholder="Select post-care doctor"
                       triggerClassName="text-xs"
                       data-testid="select-post-care-owner"
                     />

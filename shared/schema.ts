@@ -1214,7 +1214,7 @@ export const episodes = pgTable("episodes", {
   decisionStatus: text("decision_status").default("Pending"),
   decisionNotes: text("decision_notes"),
   surgeryDoctorId: integer("surgery_doctor_id").references(() => doctors.id),
-  postCareOwnerId: integer("post_care_owner_id").references(() => crmUsers.id),
+  postCareOwnerId: integer("post_care_owner_id").references(() => doctors.id),
   initialQuote: integer("initial_quote"),
   approvedDiscount: integer("approved_discount").default(0),
   finalQuote: integer("final_quote"),

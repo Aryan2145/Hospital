@@ -446,7 +446,7 @@ async function seedDatabase() {
       { code: "WHATSAPP", name: "WhatsApp" },
       { code: "PHONE", name: "Phone Inquiry" },
       { code: "GOOGLE_FORMS", name: "Google Forms" },
-      { code: "CALLYZER", name: "Callyzer" },
+      { code: "CALLYZER", name: "Telephony Connector" },
       { code: "EMAIL_CAMP", name: "Email Campaign" },
       { code: "REFERRAL", name: "Referral (General)" },
       { code: "DIRECT_CRM", name: "Direct (CRM Entry)" },
@@ -1472,7 +1472,7 @@ export async function registerRoutes(
         { code: "WHATSAPP", name: "WhatsApp", displayOrder: 14 },
         { code: "PHONE", name: "Phone Inquiry", displayOrder: 15 },
         { code: "GOOGLE_FORMS", name: "Google Forms", displayOrder: 16 },
-        { code: "CALLYZER", name: "Callyzer", displayOrder: 17 },
+        { code: "CALLYZER", name: "Telephony", displayOrder: 17 },
         { code: "EMAIL_CAMP", name: "Email Campaign", displayOrder: 18 },
         { code: "REFERRAL", name: "Referral (General)", displayOrder: 19 },
         { code: "OTHER", name: "Other", displayOrder: 20 },
@@ -3133,7 +3133,7 @@ export async function registerRoutes(
         ));
 
       if (!connector) {
-        return res.status(404).json({ message: "Callyzer connector not found or inactive" });
+        return res.status(404).json({ message: "Telephony connector not found or inactive" });
       }
 
       const creds = (connector.credentials || {}) as Record<string, any>;
@@ -7215,7 +7215,7 @@ async function provisionNewTenant(tid: number) {
     { code: "WHATSAPP", name: "WhatsApp" },
     { code: "PHONE", name: "Phone Inquiry" },
     { code: "GOOGLE_FORMS", name: "Google Forms" },
-    { code: "CALLYZER", name: "Callyzer" },
+    { code: "CALLYZER", name: "Telephony Connector" },
     { code: "EMAIL_CAMP", name: "Email Campaign" },
     { code: "REFERRAL", name: "Referral (General)" },
     { code: "DIRECT_CRM", name: "Direct (CRM Entry)" },

@@ -325,6 +325,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
   const [cancelReason, setCancelReason] = useState("");
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleSlot, setRescheduleSlot] = useState("");
+  const [rescheduleReason, setRescheduleReason] = useState("");
 
   const [checkInPending, setCheckInPending] = useState(false);
   const [episodePrompt, setEpisodePrompt] = useState<{ appt: any } | null>(null);
@@ -444,7 +445,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
     else if (actionType === "cancel") data = { cancelReason };
     else if (actionType === "reschedule") {
       if (!rescheduleDate) { toast({ title: "Date required", variant: "destructive" }); return; }
-      data = { appointmentDate: rescheduleDate, startTime: rescheduleSlot || undefined };
+      data = { appointmentDate: rescheduleDate, startTime: rescheduleSlot || undefined, reason: rescheduleReason || undefined };
     } else if (actionType === "no-show") data = {};
 
     appointmentAction.mutate(
@@ -452,8 +453,11 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
       {
         onSuccess: () => {
           toast({ title: `Appointment ${actionType.replace("-", " ")} successfully` });
+          if (actionType === "reschedule" && rescheduleDate) {
+            setSelectedDate(rescheduleDate);
+          }
           setActionDialog(null);
-          setConsultNotes(""); setCancelReason(""); setRescheduleDate(""); setRescheduleSlot("");
+          setConsultNotes(""); setCancelReason(""); setRescheduleDate(""); setRescheduleSlot(""); setRescheduleReason("");
         },
         onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
       }
@@ -849,6 +853,16 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
             <div>
               <label className="text-xs font-medium text-muted-foreground">New Time Slot (optional)</label>
               <Input type="time" value={rescheduleSlot} onChange={(e) => setRescheduleSlot(e.target.value)} data-testid="input-reschedule-time" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Reason for Reschedule</label>
+              <Textarea
+                value={rescheduleReason}
+                onChange={(e) => setRescheduleReason(e.target.value)}
+                placeholder="Enter reason for rescheduling..."
+                className="text-xs min-h-[60px]"
+                data-testid="input-reschedule-reason"
+              />
             </div>
             <Button onClick={() => handleAction("reschedule")} className="w-full" disabled={appointmentAction.isPending || !rescheduleDate} data-testid="button-confirm-reschedule">
               <RotateCcw className="w-4 h-4 mr-2" />Confirm Reschedule

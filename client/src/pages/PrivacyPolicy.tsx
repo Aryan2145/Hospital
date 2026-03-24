@@ -96,7 +96,7 @@ export default function PrivacyPolicy() {
             <p className="text-muted-foreground leading-relaxed mb-3">We do not sell your personal information. We may share data in the following circumstances:</p>
             <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2">
               <li><strong>Within the Hospital Organization:</strong> Data is accessible to authorized hospital staff based on their role and access level (Full, Masked, or None for sensitive patient health information).</li>
-              <li><strong>Third-Party Integrations:</strong> When enabled by the hospital, data may be shared with integrated services including Meta (Facebook/Instagram) for lead capture, Callyzer for telephony services, and WhatsApp Business API for messaging.</li>
+              <li><strong>Third-Party Integrations:</strong> When enabled by the hospital, data may be shared with integrated services including Meta (Facebook/Instagram) for lead capture, telephony services for call tracking, and WhatsApp Business API for messaging.</li>
               <li><strong>Service Providers:</strong> We use cloud hosting and infrastructure providers to operate the platform. These providers are contractually obligated to protect your data.</li>
               <li><strong>Legal Compliance:</strong> We may disclose information when required by law, regulation, or legal proceedings.</li>
             </ul>
@@ -151,7 +151,7 @@ export default function PrivacyPolicy() {
             <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2">
               <li><strong>Meta Platforms (Facebook/Instagram):</strong> For lead generation and campaign analytics</li>
               <li><strong>WhatsApp Business API:</strong> For patient communication and notifications</li>
-              <li><strong>Callyzer:</strong> For telephony integration and call tracking</li>
+              <li><strong>Telephony Services:</strong> For telephony integration and call tracking</li>
               <li><strong>Google Services:</strong> For data import capabilities</li>
             </ul>
           </section>

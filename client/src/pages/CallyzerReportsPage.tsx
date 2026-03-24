@@ -147,8 +147,8 @@ export default function CallyzerReportsPage() {
       <div className="space-y-6" data-testid="callyzer-reports-page">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold" style={{ color: VIROC_BLUE }} data-testid="text-page-title">Callyzer Reports</h1>
-            <p className="text-sm text-muted-foreground mt-1">Call tracking analytics from Callyzer integration</p>
+            <h1 className="text-2xl font-bold" style={{ color: VIROC_BLUE }} data-testid="text-page-title">Telephony Reports</h1>
+            <p className="text-sm text-muted-foreground mt-1">Call tracking analytics from telephony integration</p>
           </div>
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={filteredLogs.length === 0} data-testid="button-export-csv">
             <Download className="w-4 h-4 mr-2" />Export CSV
@@ -268,7 +268,7 @@ export default function CallyzerReportsPage() {
                       <div className="text-center py-16 text-muted-foreground" data-testid="empty-logs">
                         <Phone className="w-12 h-12 mx-auto mb-3 opacity-30" />
                         <p className="font-medium">No call logs found</p>
-                        <p className="text-sm mt-1">Call logs will appear here once Callyzer starts sending data via webhook.</p>
+                        <p className="text-sm mt-1">Call logs will appear here once your telephony system starts sending data via webhook.</p>
                       </div>
                     ) : (
                       <div className="overflow-x-auto">
@@ -326,7 +326,7 @@ export default function CallyzerReportsPage() {
                       <div className="text-center py-16 text-muted-foreground" data-testid="empty-employees">
                         <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
                         <p className="font-medium">No employee data available</p>
-                        <p className="text-sm mt-1">Employee performance stats appear once Callyzer sends call data.</p>
+                        <p className="text-sm mt-1">Employee performance stats appear once your telephony system sends call data.</p>
                       </div>
                     ) : (
                       <div className="overflow-x-auto">
@@ -464,10 +464,10 @@ function TelecallingTeamTab() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Headphones className="w-5 h-5" />
-            Telecalling Employees from Callyzer
+            Telecalling Employees
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Employees are auto-detected from Callyzer webhook data. Map them to CRM users to link call activities to the right team members.
+            Employees are auto-detected from telephony webhook data. Map them to CRM users to link call activities to the right team members.
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -475,7 +475,7 @@ function TelecallingTeamTab() {
             <div className="text-center py-16 text-muted-foreground" data-testid="empty-team">
               <Headphones className="w-12 h-12 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No telecalling employees found</p>
-              <p className="text-sm mt-1">Employees will appear here automatically once Callyzer starts sending call data.</p>
+              <p className="text-sm mt-1">Employees will appear here automatically once your telephony system starts sending call data.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">

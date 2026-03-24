@@ -5,7 +5,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Calendar, ArrowUpDown, ChevronUp, ChevronDown, ChevronRight, X, Clock, Users, Flame, Moon, AlertCircle, Headphones, Building2, Stethoscope, Shield, GitMerge } from "lucide-react";
+import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Calendar, ArrowUpDown, ChevronUp, ChevronDown, ChevronRight, X, Clock, Users, Flame, Moon, AlertCircle, Headphones, Building2, Stethoscope, Shield, GitMerge, ChevronDown as ChevronDownIcon } from "lucide-react";
 import { MergeLeadsModal } from "@/components/leads/MergeLeadsModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
@@ -150,6 +150,27 @@ export default function LeadsWorkspace() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+              </div>
+              <div className="relative shrink-0">
+                <select
+                  value={filterStatus.length === 1 ? filterStatus[0] : ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "") {
+                      setFilterStatus([]);
+                    } else {
+                      setFilterStatus([val]);
+                    }
+                  }}
+                  className="h-9 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring appearance-none pr-8 w-[160px]"
+                  data-testid="select-lead-status-filter"
+                >
+                  <option value="">All Statuses</option>
+                  {LEAD_STATUSES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
               </div>
               <Button
                 variant={showFilters ? "default" : "outline"}
@@ -639,7 +660,7 @@ function LeadsListView({ leads }: { leads: any[] }) {
                   </TableCell>
                   <TableCell>
                     <span className="text-xs text-muted-foreground" data-testid={`text-lead-source-${lead.id}`}>
-                      {lead.leadSourceId ? sourceMap[lead.leadSourceId] || "—" : (lead.tags?.toLowerCase().includes("callyzer") ? "Callyzer" : "—")}
+                      {lead.leadSourceId ? sourceMap[lead.leadSourceId] || "—" : (lead.tags?.toLowerCase().includes("callyzer") ? "Telephony" : "—")}
                     </span>
                   </TableCell>
                 </TableRow>
