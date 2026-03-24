@@ -173,7 +173,15 @@ export default function EpisodeDetailPage() {
   const { data: policyTypes = [] } = useQuery<any[]>({ queryKey: ["/api/masters/policyTypes"], enabled: !!episodeId });
   const { data: preauthStatuses = [] } = useQuery<any[]>({ queryKey: ["/api/masters/preauthStatuses"], enabled: !!episodeId });
   const { data: rejectionReasons = [] } = useQuery<any[]>({ queryKey: ["/api/masters/rejectionReasons"], enabled: !!episodeId });
-  const { data: doctors = [] } = useQuery<any[]>({ queryKey: ["/api/doctors"], enabled: !!episodeId });
+  const { data: doctors = [] } = useQuery<any[]>({
+    queryKey: ["/api/doctors-list"],
+    queryFn: async () => {
+      const res = await fetch("/api/doctors-list", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!episodeId,
+  });
   const { data: crmUsers = [] } = useQuery<any[]>({
     queryKey: ["/api/crm-users/active"],
     queryFn: async () => {
