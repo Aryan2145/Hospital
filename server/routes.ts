@@ -5371,7 +5371,35 @@ export async function registerRoutes(
         if (deptRows.rows.length > 0) treatmentDeptName = deptRows.rows[0].name;
       }
 
-      const patientId = body.patientId || lead.patientId;
+      let patientId = body.patientId || lead.patientId;
+
+      if (!patientId && lead) {
+        const nameParts = lead.name.trim().split(/\s+/);
+        const firstName = nameParts[0] || "Patient";
+        const lastName = nameParts.slice(1).join(" ") || "";
+
+        const existingPatients = await pool.query(
+          `SELECT id FROM patients WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1`, [tid]
+        );
+        const nextNum = (existingPatients.rows[0]?.id || 0) + 1;
+        const uhid = `PAT_${String(nextNum).padStart(4, "0")}`;
+
+        const userId = String((req as any).session?.crmUserId || "system");
+        const newPatient = await storage.createPatient({
+          tenantId: tid,
+          uhid,
+          firstName,
+          lastName: lastName || null,
+          primaryPhone: lead.phoneE164,
+          email: lead.email || null,
+          status: "Active",
+          createdBy: userId,
+        } as any);
+        patientId = newPatient.id;
+
+        await storage.updateLead(lead.id, { patientId });
+      }
+
       const existingCount = patientId
         ? await storage.getEpisodeCountForPatient(patientId, treatmentDeptName)
         : await storage.getEpisodeCountForLead(lead.id, treatmentDeptName);
@@ -7664,8 +7692,67 @@ export async function runDeferredStartupTasks() {
     await autoBulkMergeDuplicates();
     await backfillMobileNormalized();
     await backfillLeadOwnershipAndSource();
+    await linkUnlinkedEpisodePatients();
   } catch (err: any) {
     console.error("[deferred-startup] Error in deferred tasks:", err.message);
+  }
+}
+
+async function linkUnlinkedEpisodePatients() {
+  try {
+    const unlinkedResult = await pool.query(`
+      SELECT e.id AS episode_id, e.lead_id, e.tenant_id, e.patient_id AS ep_patient_id,
+             l.patient_id AS lead_patient_id, l.name AS lead_name, l.phone_e164
+      FROM episodes e
+      JOIN leads l ON e.lead_id = l.id AND e.tenant_id = l.tenant_id
+      WHERE e.patient_id IS NULL
+    `);
+    if (unlinkedResult.rows.length === 0) return;
+
+    let linked = 0;
+    let created = 0;
+    for (const row of unlinkedResult.rows) {
+      let patientId = row.lead_patient_id;
+
+      if (!patientId) {
+        const existingPatient = await pool.query(
+          `SELECT id FROM patients WHERE primary_phone = $1 AND tenant_id = $2 LIMIT 1`,
+          [row.phone_e164, row.tenant_id]
+        );
+        if (existingPatient.rows.length > 0) {
+          patientId = existingPatient.rows[0].id;
+        } else {
+          const nameParts = (row.lead_name || "Patient").trim().split(/\s+/);
+          const firstName = nameParts[0] || "Patient";
+          const lastName = nameParts.slice(1).join(" ") || "";
+
+          const lastPatient = await pool.query(
+            `SELECT id FROM patients WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1`, [row.tenant_id]
+          );
+          const nextNum = (lastPatient.rows[0]?.id || 0) + 1;
+          const uhid = `PAT_${String(nextNum).padStart(4, "0")}`;
+
+          const newPatient = await pool.query(
+            `INSERT INTO patients (tenant_id, uhid, first_name, last_name, primary_phone, status, created_by)
+             VALUES ($1, $2, $3, $4, $5, 'Active', 'system') RETURNING id`,
+            [row.tenant_id, uhid, firstName, lastName || null, row.phone_e164]
+          );
+          patientId = newPatient.rows[0].id;
+          created++;
+        }
+
+        await pool.query(`UPDATE leads SET patient_id = $1 WHERE id = $2`, [patientId, row.lead_id]);
+      }
+
+      await pool.query(`UPDATE episodes SET patient_id = $1 WHERE id = $2`, [patientId, row.episode_id]);
+      linked++;
+    }
+
+    if (linked > 0) {
+      console.log(`Linked ${linked} episodes to patients (${created} new patients created)`);
+    }
+  } catch (err: any) {
+    console.error("Error linking unlinked episode patients:", err.message);
   }
 }
 
