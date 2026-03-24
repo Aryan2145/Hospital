@@ -7907,7 +7907,7 @@ async function seedDummyAppointments() {
       return;
     }
 
-    const tenants = await pool.query(`SELECT id FROM tenants WHERE status = 'Active' ORDER BY id`);
+    const tenants = await pool.query(`SELECT id FROM tenants ORDER BY id`);
 
     for (const tenant of tenants.rows) {
       const tid = tenant.id;
