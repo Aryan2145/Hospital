@@ -7693,6 +7693,7 @@ export async function runDeferredStartupTasks() {
     await backfillMobileNormalized();
     await backfillLeadOwnershipAndSource();
     await linkUnlinkedEpisodePatients();
+    await seedDummyAppointments();
   } catch (err: any) {
     console.error("[deferred-startup] Error in deferred tasks:", err.message);
   }
@@ -7892,5 +7893,198 @@ async function clearStaleConnectorMetrics() {
     console.log("Cleared stale connector metrics cache (pre-integration)");
   } catch (err) {
     console.error("Error clearing connector metrics:", err);
+  }
+}
+
+async function seedDummyAppointments() {
+  try {
+    const existingCheck = await pool.query(`
+      SELECT COUNT(*) as cnt FROM appointments
+      WHERE appointment_date >= CURRENT_DATE AND appointment_date < CURRENT_DATE + 7
+    `);
+    const existingCount = parseInt(existingCheck.rows[0].cnt, 10);
+    if (existingCount >= 100) {
+      return;
+    }
+
+    const tenants = await pool.query(`SELECT id FROM tenants WHERE status = 'Active' ORDER BY id`);
+
+    for (const tenant of tenants.rows) {
+      const tid = tenant.id;
+
+      const doctorSlots = await pool.query(`
+        SELECT ot.doctor_id, d.name AS doctor_name, ot.day_of_week, ot.start_time, ot.end_time, ot.max_patients
+        FROM opd_timings ot
+        JOIN doctors d ON ot.doctor_id = d.id AND d.tenant_id = $1
+        WHERE ot.status = 'Active' AND ot.tenant_id = $1 AND d.status = 'Active'
+        ORDER BY ot.doctor_id, ot.start_time
+      `, [tid]);
+
+      if (doctorSlots.rows.length === 0) continue;
+
+      const leadsResult = await pool.query(`
+        SELECT id, name, phone_e164 FROM leads WHERE tenant_id = $1 ORDER BY id
+      `, [tid]);
+
+      let allLeadIds = leadsResult.rows.map((r: any) => r.id);
+
+      const firstNames = ['Aarav','Vivaan','Aditya','Vihaan','Arjun','Sai','Reyansh','Ayaan','Krishna','Ishaan',
+        'Ananya','Diya','Myra','Sara','Aanya','Riya','Priya','Meera','Nisha','Tara',
+        'Rohan','Karan','Nikhil','Amit','Vikram','Anil','Sunil','Mohan','Ravi','Ajay',
+        'Neeta','Seema','Rekha','Sonal','Hetal','Janvi','Swati','Preeti','Komal','Vaishali',
+        'Bharat','Hardik','Chirag','Jayesh','Mehul','Nilesh','Paresh','Tushar','Umesh','Yogesh',
+        'Divya','Gauri','Isha','Jaya','Lata','Manju','Nandini','Padma','Radha','Savita',
+        'Alpesh','Bhavin','Dhruv','Gaurav','Hitesh','Jigar','Ketan','Lalit','Mukesh','Naresh',
+        'Bharti','Chetna','Deepa','Ekta','Falguni','Gita','Harsha','Ila','Jigna','Kamini',
+        'Ashwin','Biren','Chetan','Dinesh','Falgun','Girish','Hemant','Inder','Janak','Kamlesh',
+        'Leena','Madhuri','Nirmala','Parul','Pushpa','Rupa','Shanti','Usha','Vandana','Yamuna',
+        'Akash','Darshan','Eshan','Farhan','Gopal','Hari','Ishwar','Jagdish','Kishor','Sudhir',
+        'Laxmi','Mamta','Nita','Pallavi','Rita','Sapna','Taruna','Uma','Vijaya','Anjana',
+        'Ashok','Baldev','Chandresh','Devang','Firoz','Gautam','Harish','Ishan','Jiten','Kirit',
+        'Ankur','Bimal','Dipak','Gagan','Hiren','Jayant','Kundan','Laxman','Manan','Nayan',
+        'Om','Pravin','Rajat','Sachin','Tarun','Utpal','Varun','Yash','Arun','Bipin',
+        'Chandra','Dev','Gorav','Hemang','Jai','Kuntal','Lakhan','Mayur','Naval','Ojas',
+        'Prem','Ritesh','Sagar','Tejas','Uday','Mala','Nidhi','Pankaj','Rajni','Saroj',
+        'Trupti','Urvi','Zarna','Alka','Bindu','Chhaya','Damini','Esha','Garima','Heena',
+        'Indira','Juhi','Kruti','Latika','Mansi','Neha','Payal','Riddhi','Siddhi','Tanvi',
+        'Urvashi','Vidya','Zeel','Aasha'];
+      const lastNames = ['Patel','Shah','Mehta','Desai','Joshi','Parikh','Trivedi','Chauhan','Solanki','Modi',
+        'Rathod','Vaghela','Parmar','Thakor','Pandya','Dave','Bhatt','Sharma','Thakkar','Amin',
+        'Raval','Soni','Mistry','Gajjar','Kadia','Prajapati','Makwana','Dabhi','Barot','Nagar'];
+
+      const neededLeads = 320;
+      if (allLeadIds.length < neededLeads) {
+        const toCreate = neededLeads - allLeadIds.length;
+        for (let i = 0; i < toCreate; i++) {
+          const fn = firstNames[i % firstNames.length];
+          const ln = lastNames[(i * 7) % lastNames.length];
+          const phone = `+91${7000000000 + i * 13 + (i % 97)}`;
+          try {
+            const insertResult = await pool.query(`
+              INSERT INTO leads (tenant_id, name, phone_e164, mobile_normalized, status, created_at)
+              VALUES ($1, $2, $3, $3, 'Appointment Booked', NOW() - ($4 || ' days')::interval)
+              RETURNING id
+            `, [tid, `${fn} ${ln}`, phone, (i % 30).toString()]);
+            allLeadIds.push(insertResult.rows[0].id);
+          } catch {
+          }
+        }
+        console.log(`[seed] Created ${allLeadIds.length - leadsResult.rows.length} new leads for tenant ${tid}`);
+      }
+
+      const apptTypeResult = await pool.query(`
+        SELECT id, name FROM appointment_types WHERE tenant_id = $1 AND status = 'Active' ORDER BY id LIMIT 5
+      `, [tid]);
+      const firstConsultId = apptTypeResult.rows.find((r: any) => r.name.includes('First'))?.id || apptTypeResult.rows[0]?.id;
+      const followUpId = apptTypeResult.rows.find((r: any) => r.name.includes('Follow'))?.id || firstConsultId;
+
+      const branchResult = await pool.query(`SELECT id FROM branches WHERE tenant_id = $1 AND status = 'Active' ORDER BY id LIMIT 1`, [tid]);
+      const branchId = branchResult.rows[0]?.id || 1;
+
+      const dayMap: Record<string, number> = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 6 };
+      const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+      let leadIdx = 0;
+      let totalCreated = 0;
+
+      for (let d = 0; d < 7; d++) {
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() + d);
+        const dayName = dayNames[targetDate.getDay()];
+        const dateStr = targetDate.toISOString().split('T')[0];
+
+        const daySlots = doctorSlots.rows.filter((s: any) => s.day_of_week === dayName);
+        for (const slot of daySlots) {
+          const leaveCheck = await pool.query(`
+            SELECT 1 FROM doctor_leave_exceptions
+            WHERE doctor_id = $1 AND status = 'Active'
+              AND leave_date <= $2::date AND (leave_end_date IS NULL OR leave_end_date >= $2::date)
+            LIMIT 1
+          `, [slot.doctor_id, dateStr]);
+          if (leaveCheck.rows.length > 0) continue;
+
+          const targetTokens = Math.max(1, Math.floor(slot.max_patients * 0.6));
+
+          const startParts = slot.start_time.split(':');
+          const endParts = slot.end_time.split(':');
+          const startMinutes = parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
+          const endMinutes = parseInt(endParts[0]) * 60 + parseInt(endParts[1]);
+          const slotDuration = endMinutes - startMinutes;
+          const timeInterval = Math.max(5, Math.floor(slotDuration / targetTokens));
+
+          for (let t = 0; t < targetTokens; t++) {
+            leadIdx = (leadIdx + 1) % allLeadIds.length;
+            const apptMinutes = startMinutes + t * timeInterval;
+            const hours = Math.floor(apptMinutes / 60).toString().padStart(2, '0');
+            const mins = (apptMinutes % 60).toString().padStart(2, '0');
+            const startTime = `${hours}:${mins}`;
+            const typeId = Math.random() < 0.7 ? firstConsultId : followUpId;
+
+            try {
+              await pool.query(`
+                INSERT INTO appointments (tenant_id, lead_id, doctor_id, branch_id, appointment_type_id,
+                  appointment_date, start_time, token_number, status, booked_by, created_at, notes)
+                VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8, 'Scheduled', 'system', NOW(),
+                  $9)
+              `, [tid, allLeadIds[leadIdx], slot.doctor_id, branchId, typeId,
+                  dateStr, startTime, t + 1,
+                  `Test appointment - ${slot.doctor_name}`]);
+              totalCreated++;
+            } catch {
+            }
+          }
+        }
+      }
+
+      if (totalCreated > 0) {
+        await pool.query(`
+          UPDATE leads SET status = 'Appointment Booked', last_activity_at = NOW()
+          WHERE id IN (
+            SELECT DISTINCT lead_id FROM appointments
+            WHERE tenant_id = $1 AND status = 'Scheduled'
+              AND appointment_date >= CURRENT_DATE
+          ) AND tenant_id = $1
+          AND status NOT IN ('Appointment Booked', 'Consultation Done', 'Closed Won', 'Closed Lost')
+        `, [tid]);
+
+        const unlinked = await pool.query(`
+          SELECT DISTINCT l.id, l.name, l.phone_e164
+          FROM leads l
+          JOIN appointments a ON a.lead_id = l.id AND a.tenant_id = l.tenant_id
+          WHERE l.tenant_id = $1 AND l.patient_id IS NULL AND a.appointment_date >= CURRENT_DATE
+        `, [tid]);
+
+        for (const row of unlinked.rows) {
+          try {
+            let patientId: number | null = null;
+            const existing = await pool.query(
+              `SELECT id FROM patients WHERE primary_phone = $1 AND tenant_id = $2 LIMIT 1`,
+              [row.phone_e164, tid]
+            );
+            if (existing.rows.length > 0) {
+              patientId = existing.rows[0].id;
+            } else {
+              const nameParts = (row.name || 'Patient').trim().split(/\s+/);
+              const lastPat = await pool.query(`SELECT id FROM patients WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1`, [tid]);
+              const nextNum = (lastPat.rows[0]?.id || 0) + 1;
+              const uhid = `PAT_${String(nextNum).padStart(4, '0')}`;
+              const insertPat = await pool.query(`
+                INSERT INTO patients (tenant_id, uhid, first_name, last_name, primary_phone, status)
+                VALUES ($1, $2, $3, $4, $5, 'Active') RETURNING id
+              `, [tid, uhid, nameParts[0], nameParts.slice(1).join(' ') || '', row.phone_e164]);
+              patientId = insertPat.rows[0].id;
+            }
+            await pool.query(`UPDATE leads SET patient_id = $1 WHERE id = $2`, [patientId, row.id]);
+            await pool.query(`UPDATE appointments SET patient_id = $1 WHERE lead_id = $2 AND tenant_id = $3 AND patient_id IS NULL`,
+              [patientId, row.id, tid]);
+          } catch {
+          }
+        }
+
+        console.log(`[seed] Created ${totalCreated} dummy appointments for tenant ${tid} (next 7 days, ~60% fill)`);
+      }
+    }
+  } catch (err: any) {
+    console.error("[seed] Error seeding dummy appointments:", err.message);
   }
 }
