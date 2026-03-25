@@ -1,0 +1,276 @@
+I want you to act as a hospital CRM compliance and data protection reviewer.
+
+We are building a Hospital CRM that handles patient leads, appointments, consultations, treatment journeys, surgery workflows, follow-ups, call records, campaign source data, and internal team activities.
+
+I want you to assess the current product from the perspective of:
+
+PHI protection
+HIPAA-aligned safeguards
+India data privacy readiness
+Sensitive health data handling
+Role-based access and audit readiness
+Security of integrations and storage
+
+Do this in a question-answer diagnostic mode.
+
+Your role is to help me understand:
+
+What protections already exist in the current CRM
+What is missing
+What is risky
+What should be improved immediately
+What should be improved before selling to larger hospitals
+How close or far we are from a strong healthcare-grade compliance posture
+Important instruction for your response
+
+Please do not give only generic compliance theory.
+
+Instead, review the app practically and ask / answer based on the actual product architecture, database design, permissions, forms, APIs, logs, storage, authentication, and integrations.
+
+Wherever possible:
+
+inspect the actual codebase
+inspect auth flows
+inspect database schema
+inspect API endpoints
+inspect file uploads
+inspect logs
+inspect environment variable handling
+inspect integrations
+inspect user roles and access control
+inspect whether sensitive patient data is exposed in frontend, API, or reports
+
+I want a practical compliance audit conversation, not just legal explanation.
+
+Phase 1: First understand the product
+
+Start by telling me, based on the codebase, your understanding of:
+
+what modules exist
+what patient-related data is being captured
+what data appears to be personally identifiable
+what data appears to be health-related or medically sensitive
+what integrations exist
+what user roles exist
+what reports or dashboards may expose patient data
+
+Then tell me:
+
+“Based on current code inspection, these are the likely PHI / sensitive data elements in your CRM.”
+
+Phase 2: Ask and answer compliance review questions
+
+Then evaluate the CRM against the following questions one by one.
+
+For each question, respond in this format:
+
+Question
+What I found in the code/system
+Current status: Good / Partial / Weak / Missing
+Risk level: Low / Medium / High / Critical
+What should be done
+Section A: Data Identification and Classification
+What data fields in the CRM qualify as:
+personal data
+sensitive personal data
+health data / PHI-like data
+Is there any formal classification of data in the system such as:
+public
+internal
+confidential
+sensitive health data
+Are patient medical details mixed with normal lead or marketing data without separation?
+Is there any unnecessary collection of sensitive data too early in the journey?
+Is the system capturing only minimum required data at each stage?
+Section B: Access Control and Permissions
+Does the system have role-based access control?
+Are permissions defined clearly by module, action, and field level?
+Can telecallers or marketing users see medical or treatment-related fields that they should not see?
+Can doctors see only relevant patients, or can everyone see everything?
+Can admin users export or access excessive patient data?
+Is there any department-wise or branch-wise restriction?
+Are access rights enforced only on frontend, or also on backend/API level?
+Can unauthorized users access data by manually calling an API?
+Section C: Authentication and Session Security
+How is login handled?
+Are passwords securely hashed?
+Is session handling secure?
+Are there inactivity timeouts?
+Is multi-factor authentication available or missing?
+Are there shared logins or role misuse risks?
+Are environment secrets protected properly?
+Section D: Audit Trail and Monitoring
+Does the system log who viewed patient data?
+Does the system log who edited patient data?
+Does the system log who exported data?
+Are audit trails tamper-resistant or easy to alter?
+Can we reconstruct what happened if there is a breach or data misuse?
+Are failed login attempts and suspicious activities tracked?
+Section E: Data Storage and Encryption
+Is patient data encrypted at rest?
+Is patient data encrypted in transit?
+Are uploaded medical files/documents stored securely?
+Are backups encrypted?
+Are sensitive fields masked where appropriate?
+Is any PHI or health data stored in plain text in logs, frontend state, debug output, or third-party services?
+Are database dumps, exports, or backups exposing raw patient data?
+Section F: API and Frontend Exposure
+Which API endpoints expose patient data?
+Are API responses returning more fields than needed?
+Is there any overexposure of patient data in list views, reports, or dashboards?
+Is patient data visible in browser console, network payloads, or local storage?
+Is frontend caching sensitive information unsafely?
+Are file URLs protected, or can anyone with link access documents?
+Section G: Consent and Purpose Limitation
+Does the CRM capture consent for collecting patient data?
+Does it capture consent for WhatsApp, calls, email, or marketing follow-up?
+Is consent timestamped and stored?
+Is the purpose of data collection clearly tied to lead handling, consultation, treatment, or follow-up?
+Is marketing use mixed with medical use without proper separation?
+Can the system show whether a patient opted in or opted out?
+Section H: Integrations and External Exposure
+What external integrations exist in the CRM?
+Are Meta, Google, Callyzer, WhatsApp, calling systems, or any other connectors exposing sensitive patient data?
+Are access tokens stored securely?
+Are third-party APIs receiving health data unnecessarily?
+Are webhook endpoints secured?
+Are API credentials rotated or permanent?
+Is there logging of integration failures that may accidentally expose patient data?
+Section I: Reports, Exports, and Internal Leakage
+Can users export patient lists, treatment details, or reports freely?
+Are exports role-controlled?
+Are downloaded files watermarked, logged, or restricted?
+Do dashboards reveal more than necessary to non-clinical users?
+Can marketing or management users see identifiable patient-level clinical data when only aggregate reporting is needed?
+Section J: Retention, Deletion, and Data Lifecycle
+Is there any data retention policy implemented in the system?
+Are old leads, inactive patients, or obsolete files archived or deleted?
+Can patient data be corrected?
+Can patient data be deleted or anonymized where required?
+Is there soft delete, hard delete, and audit preservation logic?
+Are backup retention timelines defined?
+Section K: India Readiness
+From an India perspective, how ready is this CRM for handling sensitive health data under current privacy expectations?
+Does the product reflect:
+consent-based collection
+purpose limitation
+data minimization
+access control
+security safeguards
+correction / deletion readiness
+What gaps would make this risky for Indian hospitals today?
+What documents or product policies are missing from an India compliance perspective?
+Section L: HIPAA-Aligned Readiness
+Even if this is not a US product, how far is the CRM from being HIPAA-aligned in spirit?
+What parts of HIPAA-style expectations are already present?
+What parts are missing:
+privacy safeguards
+security safeguards
+access logging
+breach readiness
+minimum necessary access
+role segregation
+What would be required to move from current state to “HIPAA-aligned architecture mindset”?
+Phase 3: Output format I want
+
+After reviewing the above, give me the output in the following format:
+
+1. Executive Summary
+
+A simple summary of where we stand today.
+
+2. Compliance Scorecard
+
+Create a table with columns:
+
+Area
+Status
+Risk
+Remarks
+Priority
+
+Areas should include:
+
+Data classification
+Access control
+Authentication
+Audit trail
+Encryption
+API security
+Consent management
+Integrations
+Reporting/export control
+Retention/deletion
+India privacy readiness
+HIPAA-aligned readiness
+3. Top 10 Immediate Gaps
+
+Tell me the top 10 most important gaps that require action now.
+
+4. Top 10 Quick Wins
+
+Tell me the improvements that can be implemented quickly with high impact.
+
+5. High-Risk Findings
+
+List any issue that could create:
+
+unauthorized access
+data leakage
+privacy breach
+weak auditability
+unsafe integration exposure
+6. Recommended Action Plan
+
+Split recommendations into:
+
+Immediate
+Next 30 days
+Next 90 days
+Before enterprise-scale rollout
+7. Developer Task List
+
+Convert your findings into technical action items for implementation, such as:
+
+backend changes
+DB changes
+auth changes
+audit log changes
+encryption changes
+export controls
+consent capture fields
+role permission matrix changes
+Phase 4: Important working style
+
+Please be practical and opinionated.
+
+Do not stay vague.
+
+If something cannot be verified from code, explicitly say:
+
+“I could not verify this from the current codebase. This needs manual confirmation.”
+
+Where possible, point to:
+
+relevant files
+modules
+schema tables
+endpoints
+components
+services
+middleware
+auth logic
+upload handling
+logging logic
+
+If you see weaknesses, say so clearly.
+
+If there are strengths, mention them clearly too.
+
+Do not assume we are compliant just because some security basics exist.
+
+I want a real gap assessment.
+
+Start now with:
+
+Step 1: Explain your understanding of the CRM and identify likely PHI / sensitive health data handled by the product. Then proceed section by section.

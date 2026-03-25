@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "bBy6Ppvwdc8z7XfutF-PC"
+uri = "file://myProSys_Compliance_Audit_Report.md"
+type = "text"
+title = "myProSys Hospital CRM — Compliance & Data Protection Audit Report"
