@@ -2182,7 +2182,7 @@ export async function registerRoutes(
 
       const allIds = [primaryId, ...withIds];
       const leadsResult = await pool.query(
-        `SELECT l.*, cu.employee_name as assigned_to_name, ls.name as source_name
+        `SELECT l.*, cu.name as assigned_to_name, ls.name as source_name
          FROM leads l
          LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
          LEFT JOIN lead_sources ls ON l.lead_source_id = ls.id
@@ -6011,7 +6011,7 @@ export async function registerRoutes(
       const entityId = req.query.entityId ? Number(req.query.entityId) : undefined;
 
       let query = `SELECT hl.*, 
-        fu.employee_name as from_user_name, tu.employee_name as to_user_name
+        fu.name as from_user_name, tu.name as to_user_name
         FROM handover_logs hl
         LEFT JOIN crm_users fu ON hl.from_user_id = fu.id
         LEFT JOIN crm_users tu ON hl.to_user_id = tu.id
