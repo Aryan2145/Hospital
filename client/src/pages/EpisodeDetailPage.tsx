@@ -853,6 +853,9 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
     if (closesEpisode) {
       const closesAs = selectedOutcomeObj?.closesAs || "Closed Won";
       episodeFields.status = closesAs;
+      episodeFields.stageRemarks = remarkText
+        ? `${outcomeName} — ${remarkText}`
+        : `Episode closed — ${outcomeName}`;
       episodeFields.endDate = new Date().toISOString();
       episodeFields.decisionStatus = closesAs === "Closed Lost" ? "Declined" : "Completed";
       if (additionalNotes.trim()) episodeFields.decisionNotes = additionalNotes.trim();
