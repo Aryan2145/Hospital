@@ -1186,6 +1186,20 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
           )}
         />
 
+        <div className="border border-border rounded-lg p-3 bg-muted/30">
+          <label className="flex items-start gap-2 cursor-pointer" data-testid="label-consent-checkbox">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+              {...form.register("consentGiven")}
+              data-testid="checkbox-consent"
+            />
+            <span className="text-xs text-muted-foreground leading-snug">
+              I confirm that the patient has been informed about data collection and processing, and has given consent for the hospital to store and use their personal information for treatment coordination, communication, and follow-up purposes.
+            </span>
+          </label>
+        </div>
+
         <Button type="submit" className="w-full" disabled={createLead.isPending || isDuplicateDetected} data-testid="button-create-lead">
           {createLead.isPending ? "Creating..." : isDuplicateDetected ? "Duplicate Detected — Cannot Submit" : "Create Lead"}
         </Button>

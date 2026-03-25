@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { getStatusColor, getPriorityColor, getLeadTemperature, getTemperatureColor } from "@/lib/lead-status";
 import { format, formatDistanceToNow, isPast } from "date-fns";
@@ -57,6 +58,9 @@ import {
   Zap,
   Hash,
   Percent,
+  ShieldCheck,
+  Bell,
+  BellOff,
 } from "lucide-react";
 
 const LEAD_FUNNEL_STAGES = [
@@ -206,6 +210,8 @@ export default function LeadDetailPage() {
           <QuickActions lead={lead} />
           <TemperatureHistory leadId={lead.id} />
           <HandoverHistory leadId={lead.id} />
+          <CommunicationPreferencesPanel leadId={lead.id} />
+          <ConsentBadge lead={lead} />
         </div>
       </div>
     </AppLayout>
@@ -1810,6 +1816,124 @@ function HandoverHistory({ leadId }: { leadId: number }) {
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+const CHANNELS = ["WhatsApp", "SMS", "Email", "Phone Call"];
+
+function CommunicationPreferencesPanel({ leadId }: { leadId: number }) {
+  const { data: prefs = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/communication-preferences", "lead", leadId],
+    queryFn: async () => {
+      const res = await fetch(`/api/communication-preferences/lead/${leadId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const [saving, setSaving] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const getOptedIn = (channel: string) => {
+    const pref = prefs.find((p: any) => p.channel === channel);
+    return pref ? pref.opted_in : true;
+  };
+
+  const toggleChannel = async (channel: string) => {
+    setSaving(channel);
+    try {
+      const res = await fetch("/api/communication-preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ leadId, channel, optedIn: !getOptedIn(channel) }),
+      });
+      if (res.ok) {
+        queryClient.invalidateQueries({ queryKey: ["/api/communication-preferences", "lead", leadId] });
+      } else {
+        toast({ title: "Error", description: "Failed to update preference", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to update preference", variant: "destructive" });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <div className="p-4 border-b border-border" data-testid="communication-preferences-panel">
+      <h3 className="font-semibold text-sm text-foreground flex items-center gap-2 mb-3">
+        <Bell className="w-4 h-4 text-primary" />
+        Communication Preferences
+      </h3>
+      <Card className="p-3">
+        {isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading...</p>
+        ) : (
+          <div className="space-y-2">
+            {CHANNELS.map((ch) => {
+              const opted = getOptedIn(ch);
+              return (
+                <div key={ch} className="flex items-center justify-between py-1">
+                  <span className="text-xs text-foreground">{ch}</span>
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors",
+                      opted
+                        ? "bg-green-50 text-green-700 border-green-200"
+                        : "bg-red-50 text-red-700 border-red-200"
+                    )}
+                    onClick={() => toggleChannel(ch)}
+                    disabled={saving === ch}
+                    data-testid={`toggle-pref-${ch.toLowerCase().replace(/\s+/g, "-")}`}
+                  >
+                    {opted ? <Bell className="w-3 h-3" /> : <BellOff className="w-3 h-3" />}
+                    {saving === ch ? "..." : opted ? "Opted In" : "Opted Out"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function ConsentBadge({ lead }: { lead: any }) {
+  return (
+    <div className="p-4 border-b border-border" data-testid="consent-badge-panel">
+      <h3 className="font-semibold text-sm text-foreground flex items-center gap-2 mb-3">
+        <ShieldCheck className="w-4 h-4 text-primary" />
+        Data Consent
+      </h3>
+      <Card className="p-3">
+        <div className="flex items-center gap-2">
+          {lead.consentGiven ? (
+            <>
+              <Badge className="bg-green-100 text-green-800 border-green-200 text-[10px]" data-testid="badge-consent-given">
+                Consent Given
+              </Badge>
+              {lead.consentTimestamp && (
+                <span className="text-[10px] text-muted-foreground" data-testid="text-consent-date">
+                  {fmtDateTime(lead.consentTimestamp)}
+                </span>
+              )}
+            </>
+          ) : (
+            <Badge variant="outline" className="text-orange-600 border-orange-300 text-[10px]" data-testid="badge-consent-pending">
+              Consent Pending
+            </Badge>
+          )}
+        </div>
+        {lead.consentMethod && (
+          <p className="text-[10px] text-muted-foreground mt-1" data-testid="text-consent-method">
+            Method: {lead.consentMethod}
+          </p>
+        )}
+      </Card>
     </div>
   );
 }

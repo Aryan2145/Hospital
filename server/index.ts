@@ -4,6 +4,39 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { startBackgroundScheduler } from "./services/backgroundScheduler";
 
+const PHI_FIELDS = new Set([
+  "phoneE164", "phone_e164", "mobileNormalized", "mobile_normalized",
+  "email", "phone", "primaryPhone", "primary_phone", "secondaryPhone", "secondary_phone",
+  "diagnosis", "treatmentPlan", "treatment_plan", "consultationNotes", "consultation_notes",
+  "insuranceProvider", "insurance_provider", "insurancePolicyNumber", "insurance_policy_number",
+  "bloodGroup", "blood_group", "dateOfBirth", "date_of_birth",
+  "address", "pinCode", "pin_code", "emergencyContactName", "emergency_contact_name",
+  "emergencyContactPhone", "emergency_contact_phone", "passwordHash", "password_hash",
+  "resetToken", "reset_token", "notes",
+]);
+
+function sanitizeForLog(obj: any, depth = 0): any {
+  if (depth > 3 || obj == null) return obj;
+  if (Array.isArray(obj)) {
+    if (obj.length > 3) return `[Array(${obj.length})]`;
+    return obj.map(item => sanitizeForLog(item, depth + 1));
+  }
+  if (typeof obj === "object") {
+    const result: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (PHI_FIELDS.has(key) && value) {
+        result[key] = "[REDACTED]";
+      } else if (typeof value === "object" && value !== null) {
+        result[key] = sanitizeForLog(value, depth + 1);
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+  return obj;
+}
+
 const app = express();
 const httpServer = createServer(app);
 
@@ -54,7 +87,8 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        const responseStr = JSON.stringify(capturedJsonResponse);
+        const sanitized = sanitizeForLog(capturedJsonResponse);
+        const responseStr = JSON.stringify(sanitized);
         logLine += ` :: ${responseStr.length > 200 ? responseStr.substring(0, 200) + '...' : responseStr}`;
       }
 

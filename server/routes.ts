@@ -1,8 +1,8 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -13,6 +13,76 @@ import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { desc, eq, and, sql, count, gte, lte, isNull, inArray } from "drizzle-orm";
+import { encryptValue, decryptValue, isEncrypted } from "./crypto";
+
+const PHI_FIELDS_TO_MASK = [
+  "phoneE164", "phone_e164", "mobileNormalized", "mobile_normalized",
+  "email", "primaryPhone", "primary_phone", "secondaryPhone", "secondary_phone",
+  "emergencyContactName", "emergency_contact_name", "emergencyContactPhone", "emergency_contact_phone",
+];
+const PHI_FIELDS_TO_HIDE = [
+  "diagnosis", "treatmentPlan", "treatment_plan", "consultationNotes", "consultation_notes",
+  "insuranceProvider", "insurance_provider", "insurancePolicyNumber", "insurance_policy_number",
+  "bloodGroup", "blood_group",
+];
+
+function maskValue(val: string): string {
+  if (!val) return val;
+  if (val.includes("@")) return val[0] + "***@" + val.split("@")[1];
+  if (val.length > 4) return val.slice(0, 2) + "****" + val.slice(-2);
+  return "****";
+}
+
+function applyPhiMasking(data: any, level: string): any {
+  if (!data || level === "Full") return data;
+  if (Array.isArray(data)) return data.map(item => applyPhiMasking(item, level));
+  if (typeof data !== "object") return data;
+  const result = { ...data };
+  for (const field of PHI_FIELDS_TO_MASK) {
+    if (result[field]) {
+      result[field] = level === "Masked" ? maskValue(result[field]) : "[RESTRICTED]";
+    }
+  }
+  if (level === "None") {
+    for (const field of PHI_FIELDS_TO_HIDE) {
+      if (result[field]) result[field] = "[RESTRICTED]";
+    }
+  }
+  return result;
+}
+
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+function rateLimit(windowMs: number, maxRequests: number) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const key = (req.ip || "unknown") + ":" + req.path;
+    const now = Date.now();
+    const entry = rateLimitMap.get(key);
+    if (!entry || now > entry.resetAt) {
+      rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+    entry.count++;
+    if (entry.count > maxRequests) {
+      return res.status(429).json({ message: "Too many requests. Please try again later." });
+    }
+    next();
+  };
+}
+
+async function logAccess(tenantId: number, crmUserId: number, action: string, entityType: string, entityId: number | null, details: string | null, req: any) {
+  try {
+    await db.insert(accessLogs).values({
+      tenantId,
+      crmUserId,
+      action,
+      entityType,
+      entityId: entityId || 0,
+      details,
+      ipAddress: req.ip || req.connection?.remoteAddress || null,
+      userAgent: req.headers?.["user-agent"]?.substring(0, 200) || null,
+    });
+  } catch {}
+}
 import { computeAndUpdateTemperature, checkDormantLeads } from "./services/temperatureEngine";
 import { processAutoHandover } from "./services/handoverEngine";
 import { createNurtureTaskChain, processNurtureTaskCompletion, processAutoNurtureOnNoShow } from "./services/nurtureEngine";
@@ -1024,7 +1094,8 @@ export async function registerRoutes(
       latestEpisodeId: episodeMap[l.id]?.episodeId || null,
     }));
 
-    res.json(enriched);
+    const phiLevel = crmUser?.phiAccessLevel || "None";
+    res.json(applyPhiMasking(enriched, phiLevel));
   });
 
   app.get("/api/leads/last-calls", isAuthenticated, async (req: any, res) => {
@@ -1301,9 +1372,17 @@ export async function registerRoutes(
     }
   });
 
-  app.get(api.leads.get.path, isAuthenticated, async (req, res) => {
+  app.get(api.leads.get.path, isAuthenticated, async (req: any, res) => {
     const lead = await storage.getLead(Number(req.params.id));
     if (!lead) return res.status(404).json({ message: "Lead not found" });
+    const reqTid = req.session?.tenantId;
+    const sessionCrmUserId = req.session?.crmUserId;
+    if (sessionCrmUserId && reqTid) {
+      const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId));
+      const phiLevel = crmUser?.phiAccessLevel || "None";
+      logAccess(reqTid, sessionCrmUserId, "VIEW", "lead", lead.id, null, req);
+      return res.json(applyPhiMasking(lead, phiLevel));
+    }
     res.json(lead);
   });
 
@@ -3746,7 +3825,7 @@ export async function registerRoutes(
   });
 
   // --- CSV Export (Download) --- must be before /:tableName/:id to avoid conflict
-  app.get("/api/masters/:tableName/export", isAuthenticated, async (req, res) => {
+  app.get("/api/masters/:tableName/export", isAuthenticated, async (req: any, res) => {
     const tableName = req.params.tableName as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
@@ -3760,6 +3839,10 @@ export async function registerRoutes(
         status: r.status,
         displayOrder: r.displayOrder ?? 0,
       })), { header: true, columns: ["code", "name", "status", "displayOrder"] });
+      const sessionCrmUserId = req.session?.crmUserId;
+      if (sessionCrmUserId) {
+        logAccess(tid, sessionCrmUserId, "EXPORT", "master_data", 0, `table=${tableName}, records=${records.length}`, req);
+      }
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="${tableName}_export.csv"`);
       res.send(csvData);
@@ -4163,11 +4246,18 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/patients/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/patients/:id", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId(req);
       const patient = await storage.getPatient(Number(req.params.id), tid);
       if (!patient) return res.status(404).json({ message: "Patient not found" });
+      const sessionCrmUserId = req.session?.crmUserId;
+      if (sessionCrmUserId) {
+        const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId));
+        const phiLevel = crmUser?.phiAccessLevel || "None";
+        logAccess(tid, sessionCrmUserId, "VIEW", "patient", patient.id, null, req);
+        return res.json(applyPhiMasking(patient, phiLevel));
+      }
       res.json(patient);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
@@ -7221,6 +7311,123 @@ export async function registerRoutes(
         userCount: userCount.count,
         leadCount: leadCount.count,
       });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/communication-preferences/:entityType/:entityId", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const { entityType, entityId } = req.params;
+      const col = entityType === "patient" ? "patient_id" : "lead_id";
+      const result = await pool.query(
+        `SELECT * FROM communication_preferences WHERE tenant_id = $1 AND ${col} = $2 ORDER BY channel`,
+        [tid, Number(entityId)]
+      );
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/communication-preferences", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const { leadId, patientId, channel, optedIn } = req.body;
+      if (!channel) return res.status(400).json({ message: "Channel is required" });
+      if (leadId) {
+        const [ownerCheck] = (await pool.query(`SELECT id FROM leads WHERE id = $1 AND tenant_id = $2`, [leadId, tid])).rows;
+        if (!ownerCheck) return res.status(403).json({ message: "Lead not found or access denied" });
+      }
+      if (patientId) {
+        const [ownerCheck] = (await pool.query(`SELECT id FROM patients WHERE id = $1 AND tenant_id = $2`, [patientId, tid])).rows;
+        if (!ownerCheck) return res.status(403).json({ message: "Patient not found or access denied" });
+      }
+      const existing = await pool.query(
+        `SELECT id FROM communication_preferences
+         WHERE tenant_id = $1 AND channel = $2
+         AND (lead_id = $3 OR patient_id = $4)`,
+        [tid, channel, leadId || null, patientId || null]
+      );
+      if (existing.rows.length > 0) {
+        await pool.query(
+          `UPDATE communication_preferences SET opted_in = $1 WHERE id = $2`,
+          [optedIn ?? true, existing.rows[0].id]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO communication_preferences (tenant_id, lead_id, patient_id, channel, opted_in)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [tid, leadId || null, patientId || null, channel, optedIn ?? true]
+        );
+      }
+      const sessionCrmUserId = req.session?.crmUserId;
+      if (sessionCrmUserId) {
+        logAccess(tid, sessionCrmUserId, "UPDATE", "communication_preferences", leadId || patientId || 0, `channel=${channel}, optedIn=${optedIn}`, req);
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/access-logs", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const sessionCrmUserId = req.session?.crmUserId;
+      const allCrmUsers = await storage.getCrmUsers(tid);
+      const crmUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
+      if (!crmUser) return res.status(403).json({ message: "Forbidden" });
+      const [role] = crmUser.systemRoleId ? await db.select().from(systemRoles).where(eq(systemRoles.id, crmUser.systemRoleId)) : [null];
+      if (!role || !["SYS_ADMIN", "ADMIN"].includes(role.code)) {
+        return res.status(403).json({ message: "Only admins can view access logs" });
+      }
+      const limit = Math.min(Number(req.query.limit) || 100, 500);
+      const result = await pool.query(
+        `SELECT al.*, cu.name as user_name FROM access_logs al
+         LEFT JOIN crm_users cu ON cu.id = al.crm_user_id
+         WHERE al.tenant_id = $1
+         ORDER BY al.created_at DESC LIMIT $2`,
+        [tid, limit]
+      );
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/leads/:id/consent", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const leadId = Number(req.params.id);
+      const { consentGiven, consentMethod, consentPurpose } = req.body;
+      await pool.query(
+        `UPDATE leads SET consent_given = $1, consent_timestamp = NOW(), consent_method = $2, consent_purpose = $3
+         WHERE id = $4 AND tenant_id = $5`,
+        [consentGiven ?? true, consentMethod || "form", consentPurpose || "data_processing", leadId, tid]
+      );
+      const sessionCrmUserId = req.session?.crmUserId;
+      if (sessionCrmUserId) {
+        logAccess(tid, sessionCrmUserId, "UPDATE", "consent", leadId, `consentGiven=${consentGiven}`, req);
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/patients/:id/consent", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const patientId = Number(req.params.id);
+      const { consentGiven, consentMethod, consentPurpose } = req.body;
+      await pool.query(
+        `UPDATE patients SET consent_given = $1, consent_timestamp = NOW(), consent_method = $2, consent_purpose = $3
+         WHERE id = $4 AND tenant_id = $5`,
+        [consentGiven ?? true, consentMethod || "form", consentPurpose || "data_processing", patientId, tid]
+      );
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

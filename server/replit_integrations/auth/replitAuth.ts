@@ -9,7 +9,7 @@ import { eq, and } from "drizzle-orm";
 import { sendPasswordResetEmail, TenantSmtpConfig } from "../../email";
 
 export function getSession() {
-  const sessionTtl = 7 * 24 * 60 * 60 * 1000;
+  const sessionTtl = 24 * 60 * 60 * 1000;
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
@@ -89,16 +89,27 @@ export async function setupAuth(app: Express) {
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
+      if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+        const remainingMin = Math.ceil((new Date(user.lockedUntil).getTime() - Date.now()) / 60000);
+        return res.status(423).json({ message: `Account locked. Try again in ${remainingMin} minute(s).` });
+      }
+
       if (!user.isActive || user.status !== "Active") {
-        return res.status(403).json({ message: "Your account is inactive." });
+        return res.status(401).json({ message: "Invalid credentials" });
       }
 
       if (!user.passwordHash) {
-        return res.status(401).json({ message: "Password not set. Contact your administrator." });
+        return res.status(401).json({ message: "Invalid credentials" });
       }
 
       const isValid = await bcrypt.compare(password, user.passwordHash);
       if (!isValid) {
+        const attempts = (user.failedLoginAttempts || 0) + 1;
+        const updateFields: any = { failedLoginAttempts: attempts };
+        if (attempts >= MAX_LOGIN_ATTEMPTS) {
+          updateFields.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+        }
+        await db.update(crmUsers).set(updateFields).where(eq(crmUsers.id, user.id));
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
@@ -110,6 +121,12 @@ export async function setupAuth(app: Express) {
       if (!role || role.code !== "SYS_ADMIN") {
         return res.status(403).json({ message: "Access denied. System Administrator role required." });
       }
+
+      await db.update(crmUsers).set({
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        lastLoginAt: new Date(),
+      }).where(eq(crmUsers.id, user.id));
 
       (req.session as any).crmUserId = user.id;
       (req.session as any).tenantId = user.tenantId;
@@ -333,19 +350,54 @@ export async function setupAuth(app: Express) {
   });
 }
 
+const LOGIN_RATE_LIMIT = new Map<string, { count: number; resetAt: number }>();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+
 async function tryLogin(user: any, password: string, req: any, res: any) {
   if (!user.isActive || user.status !== "Active") {
     return res.status(403).json({ message: "Your account is inactive. Contact your administrator." });
+  }
+
+  if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+    const remainingMin = Math.ceil((new Date(user.lockedUntil).getTime() - Date.now()) / 60000);
+    return res.status(423).json({ message: `Account locked due to too many failed attempts. Try again in ${remainingMin} minute(s).` });
   }
 
   if (!user.passwordHash) {
     return res.status(401).json({ message: "Password not set. Contact your administrator to set your password." });
   }
 
+  const ipKey = req.ip || "unknown";
+  const ratEntry = LOGIN_RATE_LIMIT.get(ipKey);
+  if (ratEntry && Date.now() < ratEntry.resetAt && ratEntry.count > 20) {
+    return res.status(429).json({ message: "Too many login attempts from this IP. Please try again later." });
+  }
+  if (!ratEntry || Date.now() > ratEntry.resetAt) {
+    LOGIN_RATE_LIMIT.set(ipKey, { count: 1, resetAt: Date.now() + 900000 });
+  } else {
+    ratEntry.count++;
+  }
+
   const isValid = await bcrypt.compare(password, user.passwordHash);
   if (!isValid) {
+    const attempts = (user.failedLoginAttempts || 0) + 1;
+    const updateFields: any = { failedLoginAttempts: attempts };
+    if (attempts >= MAX_LOGIN_ATTEMPTS) {
+      updateFields.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+    }
+    await db.update(crmUsers).set(updateFields).where(eq(crmUsers.id, user.id));
+    if (attempts >= MAX_LOGIN_ATTEMPTS) {
+      return res.status(423).json({ message: "Account locked due to too many failed attempts. Try again in 15 minutes." });
+    }
     return res.status(401).json({ message: "Invalid mobile number or password" });
   }
+
+  await db.update(crmUsers).set({
+    failedLoginAttempts: 0,
+    lockedUntil: null,
+    lastLoginAt: new Date(),
+  }).where(eq(crmUsers.id, user.id));
 
   (req.session as any).crmUserId = user.id;
   (req.session as any).tenantId = user.tenantId;

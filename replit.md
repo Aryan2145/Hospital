@@ -31,6 +31,16 @@ The platform is built with a modern web stack:
 - **Next Actions:** Delegatable next actions for both leads and episodes, enhancing task assignment and follow-up.
 - **Unified Patient Journey Funnel:** Compact horizontal bar design across Lead Workspace (list view), Lead Detail, and Kanban cards. Lead-only leads show 5 stages (Raw → Contact → Qual → Appt → Consult ✓). Leads with episodes show the full 12-stage unified path. Past stages in green, current in primary blue (lead phase) or violet (episode phase), future in gray. "Reminder Running" maps to "Appointment Booked" stage; "Consultation In Progress" maps to "Consultation Done" stage in the funnel. The `/api/leads` endpoint enriches each lead with `latestEpisodeStatus`, `latestConversionStage`, and `latestEpisodeId`.
 - **Episode Status Flow:** Episodes now start as "Consultation In Progress" (created during check-in). Status auto-transitions to "Consultation Done" when the doctor submits the consultation log and next actions. The "Consultation Done" button on appointments page requires an episode to exist before allowing the action. EPISODE_STATUSES: Consultation In Progress → Consultation Done → Treatment Planning → Surgery Scheduled → Surgery Done → In Treatment → Post Care → Follow Up → Completed | Discontinued.
+- **Security & Compliance Hardening:**
+    - **PHI Masking:** Server-side middleware (`applyPhiMasking`) on lead/patient API responses. Respects user's `phiAccessLevel` (Full/Masked/None). Contact fields masked, clinical fields hidden at "None" level.
+    - **Failed Login Tracking:** Both standard and admin login track failed attempts in `crm_users.failedLoginAttempts`. Account locks for 15 min after 5 failures (`lockedUntil`). Admin login uses generic error messages to prevent user enumeration.
+    - **Session Security:** 24-hour session TTL, PHI sanitized from server logs via `sanitizeForLog()`, IP-based rate limiting on login endpoints.
+    - **Inactivity Timeout:** Frontend `IdleTimeout.tsx` component with 30-min idle detection and 5-min warning modal with countdown timer.
+    - **Audit Access Logging:** `access_logs` table records lead/patient views, data exports. Admin-only API at `/api/access-logs`.
+    - **Encryption:** `server/crypto.ts` provides AES-256-GCM `encryptValue`/`decryptValue`/`isEncrypted` for integration credentials. Key derived from SESSION_SECRET.
+    - **Communication Preferences:** Per-lead/patient opt-in/opt-out for WhatsApp, SMS, Email, Phone Call channels. UI panel in Lead Detail sidebar with toggle buttons. Tenant ownership validated.
+    - **Consent Capture:** Consent checkbox in New Lead form (`consentGiven` field). Consent badge in Lead Detail sidebar. API endpoints for updating consent on leads and patients.
+    - **DB Tables:** `access_logs` (crmUserId, action, entityType, entityId, ipAddress, userAgent), `communication_preferences` (leadId/patientId, channel, optedIn). New fields on `leads`/`patients`: `consent_given`, `consent_timestamp`, `consent_method`, `consent_purpose`. New fields on `crm_users`: `failed_login_attempts`, `locked_until`, `last_login_at`.
 
 ## External Dependencies
 - **Replit Auth:** For user authentication leveraging OpenID Connect.

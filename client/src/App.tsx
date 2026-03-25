@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DynamicFavicon } from "@/components/DynamicFavicon";
+import { IdleTimeout } from "@/components/IdleTimeout";
 import NotFound from "@/pages/not-found";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -261,6 +262,7 @@ function App() {
       <TooltipProvider>
         <DynamicFavicon />
         <Toaster />
+        <IdleTimeout />
         <Router />
       </TooltipProvider>
     </QueryClientProvider>

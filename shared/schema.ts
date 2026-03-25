@@ -260,6 +260,9 @@ export const crmUsers = pgTable("crm_users", {
   reportingTo: integer("reporting_to"),
   accessScopeType: text("access_scope_type").notNull().default("Self"),
   phiAccessLevel: text("phi_access_level").notNull().default("None"),
+  failedLoginAttempts: integer("failed_login_attempts").default(0),
+  lockedUntil: timestamp("locked_until"),
+  lastLoginAt: timestamp("last_login_at"),
   joiningDate: timestamp("joining_date"),
   isActive: boolean("is_active").notNull().default(true),
   status: text("status").notNull().default("Active"),
@@ -874,6 +877,10 @@ export const patients = pgTable("patients", {
   hmsPatientId: text("hms_patient_id"),
   notes: text("notes"),
   status: text("status").notNull().default("Active"),
+  consentGiven: boolean("consent_given").default(false),
+  consentTimestamp: timestamp("consent_timestamp"),
+  consentMethod: text("consent_method"),
+  consentPurpose: text("consent_purpose"),
   createdAt: timestamp("created_at").defaultNow(),
   createdBy: varchar("created_by"),
   modifiedAt: timestamp("modified_at").defaultNow(),
@@ -1037,6 +1044,10 @@ export const leads = pgTable("leads", {
   mergeStatus: text("merge_status").default("ACTIVE"),
   mergedAt: timestamp("merged_at"),
   mergedBy: varchar("merged_by"),
+  consentGiven: boolean("consent_given").default(false),
+  consentTimestamp: timestamp("consent_timestamp"),
+  consentMethod: text("consent_method"),
+  consentPurpose: text("consent_purpose"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1775,3 +1786,29 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   consultationOutcomes: "consultation_outcomes",
   consultationOutcomeRemarks: "consultation_outcome_remarks",
 };
+
+export const accessLogs = pgTable("access_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  crmUserId: integer("crm_user_id").notNull().references(() => crmUsers.id),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: integer("entity_id"),
+  details: text("details"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const communicationPreferences = pgTable("communication_preferences", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  leadId: integer("lead_id").references(() => leads.id),
+  patientId: integer("patient_id").references(() => patients.id),
+  channel: text("channel").notNull(),
+  optedIn: boolean("opted_in").notNull().default(true),
+  optedInAt: timestamp("opted_in_at"),
+  optedOutAt: timestamp("opted_out_at"),
+  updatedBy: integer("updated_by").references(() => crmUsers.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
