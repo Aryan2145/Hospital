@@ -191,7 +191,7 @@ export default function LeadDetailPage() {
       <IntelligenceStrip lead={lead} />
       {lead.handoverStatus === "Pending" && <HandoverBanner lead={lead} />}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        <div className="flex-1 flex flex-col overflow-hidden lg:border-r border-border">
+        <div className="flex-1 flex flex-col overflow-y-auto lg:border-r border-border">
           <LeadJourneyFunnel status={lead.status} leadId={lead.id} />
           <AppointmentInfoCard leadId={lead.id} leadStatus={lead.status} />
           <JourneySnapshot leadId={lead.id} />
@@ -238,7 +238,7 @@ function LeadJourneyFunnel({ status, leadId }: { status: string; leadId: number 
           const isPast = currentStageIndex >= 0 && idx < currentStageIndex;
           const isEpisodePhase = idx > leadPhaseEnd;
           return (
-            <div key={stage} className="flex items-center">
+            <div key={stage} className="flex items-center shrink-0">
               <div
                 className={cn(
                   "px-2.5 py-1.5 rounded text-[10px] font-medium whitespace-nowrap border transition-colors",
