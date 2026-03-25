@@ -190,8 +190,8 @@ export default function LeadDetailPage() {
       <LeadHeader lead={lead} onBack={() => setLocation("/leads")} />
       <IntelligenceStrip lead={lead} />
       {lead.handoverStatus === "Pending" && <HandoverBanner lead={lead} />}
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        <div className="flex-1 flex flex-col overflow-y-auto lg:border-r border-border">
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0">
+        <div className="flex-1 min-h-0 overflow-y-auto lg:border-r border-border">
           <LeadJourneyFunnel status={lead.status} leadId={lead.id} />
           <AppointmentInfoCard leadId={lead.id} leadStatus={lead.status} />
           <JourneySnapshot leadId={lead.id} />
@@ -199,7 +199,7 @@ export default function LeadDetailPage() {
           <TreatmentJourneyTimeline leadId={lead.id} />
           <UnifiedJourneyTimeline leadId={lead.id} />
         </div>
-        <div className="w-full lg:w-80 flex flex-col overflow-y-auto bg-muted/20 border-t lg:border-t-0">
+        <div className="w-full lg:w-80 min-h-0 flex flex-col overflow-y-auto bg-muted/20 border-t lg:border-t-0 shrink-0">
           <NextActionPanel lead={lead} />
           <TasksPanel leadId={lead.id} />
           <OwnershipCard lead={lead} />
