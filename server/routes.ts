@@ -945,7 +945,7 @@ export async function registerRoutes(
     }
   });
 
-  // --- Leads (with access scope filtering) ---
+  // --- Leads (with access scope filtering + unified journey status) ---
   app.get(api.leads.list.path, isAuthenticated, async (req: any, res) => {
     const reqTid = req.session?.tenantId || tid;
     const allLeads = await storage.getLeads(reqTid);
@@ -977,7 +977,38 @@ export async function registerRoutes(
       filtered = filtered.filter(l => l.status === status);
     }
 
-    res.json(filtered);
+    const leadIds = filtered.map(l => l.id);
+    let episodeMap: Record<number, { episodeStatus: string; conversionStage: string | null; episodeId: number }> = {};
+    if (leadIds.length > 0) {
+      try {
+        const episodeResult = await pool.query(`
+          SELECT DISTINCT ON (e.lead_id)
+            e.lead_id, e.id as episode_id, e.status as episode_status, cs.name as conversion_stage
+          FROM episodes e
+          LEFT JOIN conversion_stages cs ON cs.id = e.conversion_stage_id
+          WHERE e.lead_id = ANY($1) AND e.tenant_id = $2
+          ORDER BY e.lead_id, e.id DESC
+        `, [leadIds, reqTid]);
+        for (const row of episodeResult.rows) {
+          episodeMap[row.lead_id] = {
+            episodeStatus: row.episode_status,
+            conversionStage: row.conversion_stage,
+            episodeId: row.episode_id,
+          };
+        }
+      } catch (err) {
+        console.error("[leads] Error fetching episode statuses:", err);
+      }
+    }
+
+    const enriched = filtered.map(l => ({
+      ...l,
+      latestEpisodeStatus: episodeMap[l.id]?.episodeStatus || null,
+      latestConversionStage: episodeMap[l.id]?.conversionStage || null,
+      latestEpisodeId: episodeMap[l.id]?.episodeId || null,
+    }));
+
+    res.json(enriched);
   });
 
   app.get("/api/leads/last-calls", isAuthenticated, async (req: any, res) => {

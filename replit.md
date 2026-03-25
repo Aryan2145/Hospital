@@ -29,6 +29,7 @@ The platform is built with a modern web stack:
 - **Dashboards:** 3-Tier Role-based dashboards provide tailored analytics for SYS_ADMIN, ADMIN, MANAGER, and AGENT/COUNSELLOR roles.
 - **Team Management:** Renamed from "Administrative Departments" to "Teams" with pre-loaded categories and a migration process for consolidation.
 - **Next Actions:** Delegatable next actions for both leads and episodes, enhancing task assignment and follow-up.
+- **Unified Patient Journey Funnel:** The funnel strip across Lead Workspace, Lead Detail, and Kanban cards shows the complete journey from lead capture through episode completion. Leads with episodes show the full unified path (Raw → Contacted → Qualified → Appt → Consult → Treatment Planning → Surgery → Post Care → Completed). Episode-phase stages are highlighted in violet. The `/api/leads` endpoint enriches each lead with `latestEpisodeStatus`, `latestConversionStage`, and `latestEpisodeId`.
 
 ## External Dependencies
 - **Replit Auth:** For user authentication leveraging OpenID Connect.

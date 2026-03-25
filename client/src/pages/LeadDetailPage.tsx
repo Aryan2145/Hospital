@@ -68,7 +68,23 @@ const LEAD_FUNNEL_STAGES = [
   "Consultation Done",
 ] as const;
 
-const LEAD_TERMINAL_STATUSES = ["Closed Won", "Closed Lost", "Unqualified", "Nurture"];
+const UNIFIED_JOURNEY_STAGES = [
+  "Raw Lead Captured",
+  "Contacted",
+  "Qualified",
+  "Appointment Booked",
+  "Reminder Running",
+  "Consultation Done",
+  "Treatment Planning",
+  "Surgery Scheduled",
+  "Surgery Done",
+  "In Treatment",
+  "Post Care",
+  "Follow Up",
+  "Completed",
+];
+
+const LEAD_TERMINAL_STATUSES = ["Closed Won", "Closed Lost", "Unqualified", "Nurture", "Discontinued"];
 
 const ACTIVITY_ICONS: Record<string, typeof Phone> = {
   call: Phone,
@@ -199,35 +215,44 @@ export default function LeadDetailPage() {
 }
 
 function LeadJourneyFunnel({ status, leadId }: { status: string; leadId: number }) {
-  const currentStageIndex = LEAD_FUNNEL_STAGES.indexOf(status as any);
-  const isTerminal = LEAD_TERMINAL_STATUSES.includes(status);
+  const { data: episodes } = useEpisodes(leadId);
+  const latestEpisode = episodes && episodes.length > 0 ? episodes[episodes.length - 1] : null;
+  const episodeStatus = latestEpisode?.status || null;
+
+  const furthestStatus = episodeStatus || status;
+  const hasEpisode = !!episodeStatus;
+  const stages = hasEpisode ? UNIFIED_JOURNEY_STAGES : LEAD_FUNNEL_STAGES as unknown as string[];
+  const currentStageIndex = stages.indexOf(furthestStatus);
+  const isTerminal = LEAD_TERMINAL_STATUSES.includes(status) || LEAD_TERMINAL_STATUSES.includes(episodeStatus || "");
+  const leadPhaseEnd = stages.indexOf("Consultation Done");
 
   return (
     <Card className="mx-4 mt-4 p-4" data-testid={`card-lead-funnel-${leadId}`}>
       <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
         <Target className="w-4 h-4 text-primary" />
-        Lead Journey
+        Patient Journey
       </h3>
       <div className="flex items-center gap-1 overflow-x-auto pb-2">
-        {LEAD_FUNNEL_STAGES.map((stage, idx) => {
-          const isCurrent = stage === status;
+        {stages.map((stage, idx) => {
+          const isCurrent = stage === furthestStatus;
           const isPast = currentStageIndex >= 0 && idx < currentStageIndex;
+          const isEpisodePhase = idx > leadPhaseEnd;
           return (
             <div key={stage} className="flex items-center">
               <div
                 className={cn(
-                  "px-3 py-1.5 rounded text-[11px] font-medium whitespace-nowrap border transition-colors",
-                  isCurrent && "bg-primary text-primary-foreground border-primary",
+                  "px-2.5 py-1.5 rounded text-[10px] font-medium whitespace-nowrap border transition-colors",
+                  isCurrent && !isEpisodePhase && "bg-primary text-primary-foreground border-primary",
+                  isCurrent && isEpisodePhase && "bg-violet-600 text-white border-violet-600",
                   isPast && !isCurrent && "bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300 border-green-200 dark:border-green-800",
-                  !isCurrent && !isPast && !isTerminal && "bg-muted text-muted-foreground border-border",
-                  isTerminal && !isCurrent && "bg-muted text-muted-foreground border-border",
+                  !isCurrent && !isPast && "bg-muted text-muted-foreground border-border",
                 )}
                 data-testid={`funnel-stage-${stage.toLowerCase().replace(/\s+/g, "-")}-${leadId}`}
               >
                 {stage}
               </div>
-              {idx < LEAD_FUNNEL_STAGES.length - 1 && (
-                <ChevronRight className="w-4 h-4 text-muted-foreground mx-0.5 shrink-0" />
+              {idx < stages.length - 1 && (
+                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground mx-0.5 shrink-0" />
               )}
             </div>
           );
@@ -235,8 +260,8 @@ function LeadJourneyFunnel({ status, leadId }: { status: string; leadId: number 
       </div>
       {isTerminal && (
         <div className="mt-2">
-          <Badge className={cn("text-xs", getStatusColor(status))} data-testid={`badge-terminal-status-${leadId}`}>
-            {status}
+          <Badge className={cn("text-xs", getStatusColor(episodeStatus || status))} data-testid={`badge-terminal-status-${leadId}`}>
+            {episodeStatus || status}
           </Badge>
         </div>
       )}

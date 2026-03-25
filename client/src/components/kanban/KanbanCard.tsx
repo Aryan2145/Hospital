@@ -2,7 +2,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Lead } from "@shared/schema";
 import { fmtDateTimeShort } from "@/lib/date-utils";
-import { Clock, Phone, User as UserIcon, Flame, Sun, Snowflake, Globe } from "lucide-react";
+import { Clock, Phone, User as UserIcon, Flame, Sun, Snowflake, Globe, Stethoscope } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { getStatusColor, getPriorityColor, getLeadTemperature, getTemperatureColor } from "@/lib/lead-status";
@@ -92,6 +92,15 @@ export function KanbanCard({ lead }: KanbanCardProps) {
             </div>
           )}
         </div>
+
+        {(lead as any).latestEpisodeStatus && (
+          <div className="mt-2 flex items-center gap-1.5">
+            <Stethoscope className="w-3 h-3 text-violet-600 shrink-0" />
+            <Badge className={cn("text-[9px]", getStatusColor((lead as any).latestEpisodeStatus))} data-testid={`badge-episode-status-${lead.id}`}>
+              {(lead as any).latestEpisodeStatus}
+            </Badge>
+          </div>
+        )}
 
         <div className="mt-3 flex items-center justify-between gap-1 flex-wrap">
           <div className="flex -space-x-2">

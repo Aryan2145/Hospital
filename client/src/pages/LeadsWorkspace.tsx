@@ -429,41 +429,95 @@ const LEAD_FUNNEL_STAGES = [
   "Consultation Done",
 ];
 
-const TERMINAL_STATUSES = ["Closed Won", "Closed Lost", "Unqualified", "Nurture"];
+const EPISODE_FUNNEL_STAGES = [
+  "Consultation Done",
+  "Treatment Planning",
+  "Surgery Scheduled",
+  "Surgery Done",
+  "In Treatment",
+  "Post Care",
+  "Follow Up",
+  "Completed",
+];
 
-function LeadFunnelStrip({ leadId, status }: { leadId: number; status: string }) {
-  const isTerminal = TERMINAL_STATUSES.includes(status);
-  const currentStageIndex = LEAD_FUNNEL_STAGES.indexOf(status);
+const UNIFIED_STAGES = [
+  "Raw Lead Captured",
+  "Contacted",
+  "Qualified",
+  "Appointment Booked",
+  "Reminder Running",
+  "Consultation Done",
+  "Treatment Planning",
+  "Surgery Scheduled",
+  "Surgery Done",
+  "In Treatment",
+  "Post Care",
+  "Follow Up",
+  "Completed",
+];
+
+const SHORT_LABELS: Record<string, string> = {
+  "Raw Lead Captured": "Raw",
+  "Contacted": "Contact",
+  "Qualified": "Qual",
+  "Appointment Booked": "Appt",
+  "Reminder Running": "Remind",
+  "Consultation Done": "Consult",
+  "Treatment Planning": "Plan",
+  "Surgery Scheduled": "Surg Sched",
+  "Surgery Done": "Surg Done",
+  "In Treatment": "Treating",
+  "Post Care": "Post Care",
+  "Follow Up": "Follow Up",
+  "Completed": "Complete",
+};
+
+const TERMINAL_STATUSES = ["Closed Won", "Closed Lost", "Unqualified", "Nurture", "Discontinued"];
+
+function LeadFunnelStrip({ leadId, status, episodeStatus, conversionStage }: { leadId: number; status: string; episodeStatus?: string | null; conversionStage?: string | null }) {
+  const isTerminal = TERMINAL_STATUSES.includes(status) || TERMINAL_STATUSES.includes(episodeStatus || "");
+
+  const furthestStatus = episodeStatus || status;
+  const currentStageIndex = UNIFIED_STAGES.indexOf(furthestStatus);
+  const hasEpisode = !!episodeStatus;
+  const leadPhaseEnd = UNIFIED_STAGES.indexOf("Consultation Done");
 
   return (
     <div className="flex flex-col gap-1" data-testid={`funnel-lead-${leadId}`}>
-      <div className="flex items-center gap-0.5">
-        {LEAD_FUNNEL_STAGES.map((stage, idx) => {
-          const isCurrent = stage === status;
+      <div className="flex items-center gap-0.5 flex-wrap">
+        {UNIFIED_STAGES.map((stage, idx) => {
+          const isCurrent = stage === furthestStatus;
           const isPast = currentStageIndex >= 0 && idx < currentStageIndex;
+          const isEpisodePhase = idx > leadPhaseEnd;
+          const showStage = !hasEpisode ? idx <= leadPhaseEnd : true;
+
+          if (!showStage) return null;
+
           return (
             <div key={stage} className="flex items-center">
               <div
                 className={cn(
-                  "px-1.5 py-0.5 rounded text-[9px] font-medium whitespace-nowrap border transition-colors",
-                  isCurrent && "bg-primary text-primary-foreground border-primary",
+                  "px-1 py-0.5 rounded text-[8px] font-medium whitespace-nowrap border transition-colors",
+                  isCurrent && !isEpisodePhase && "bg-primary text-primary-foreground border-primary",
+                  isCurrent && isEpisodePhase && "bg-violet-600 text-white border-violet-600",
                   isPast && !isCurrent && "bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300 border-green-200 dark:border-green-800",
                   !isCurrent && !isPast && "bg-muted text-muted-foreground border-border",
                 )}
+                title={stage + (conversionStage && isCurrent ? ` (${conversionStage})` : "")}
                 data-testid={`funnel-stage-${stage.toLowerCase().replace(/\s+/g, "-")}-${leadId}`}
               >
-                {stage.replace("Raw Lead Captured", "Raw").replace("Appointment Booked", "Appt").replace("Reminder Running", "Reminder").replace("Consultation Done", "Consult")}
+                {SHORT_LABELS[stage] || stage}
               </div>
-              {idx < LEAD_FUNNEL_STAGES.length - 1 && (
-                <ChevronRight className="w-2.5 h-2.5 text-muted-foreground mx-0.5 shrink-0" />
+              {idx < (hasEpisode ? UNIFIED_STAGES.length - 1 : leadPhaseEnd) && showStage && (
+                <ChevronRight className="w-2 h-2 text-muted-foreground mx-0.5 shrink-0" />
               )}
             </div>
           );
         })}
       </div>
       {isTerminal && (
-        <Badge className={cn("text-[9px] w-fit", getStatusColor(status))} data-testid={`badge-status-${leadId}`}>
-          {status}
+        <Badge className={cn("text-[9px] w-fit", getStatusColor(episodeStatus || status))} data-testid={`badge-status-${leadId}`}>
+          {episodeStatus || status}
         </Badge>
       )}
     </div>
@@ -572,7 +626,7 @@ function LeadsListView({ leads }: { leads: any[] }) {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <LeadFunnelStrip leadId={lead.id} status={lead.status} />
+                    <LeadFunnelStrip leadId={lead.id} status={lead.status} episodeStatus={lead.latestEpisodeStatus} conversionStage={lead.latestConversionStage} />
                   </TableCell>
                   <TableCell>
                     {temp ? (
