@@ -43,6 +43,7 @@ import IntelligenceConfigPage from "@/pages/IntelligenceConfigPage";
 import AdminLogin from "@/pages/admin/AdminLogin";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import MetaHelpGuide from "@/pages/MetaHelpGuide";
+import HelpCenter from "@/pages/HelpCenter";
 
 function TenantSuspended() {
   return (
@@ -222,6 +223,14 @@ function Router() {
 
       <Route path="/help/meta-integration">
         <MetaHelpGuide />
+      </Route>
+
+      <Route path="/help/data-security">
+        {isAuthenticated ? <HelpCenter /> : <Landing />}
+      </Route>
+
+      <Route path="/help">
+        {isAuthenticated ? <HelpCenter /> : <Landing />}
       </Route>
 
       <Route path="/forgot-password">
