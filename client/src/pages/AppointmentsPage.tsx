@@ -329,7 +329,6 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
 
   const [checkInPending, setCheckInPending] = useState(false);
   const [episodePrompt, setEpisodePrompt] = useState<{ appt: any } | null>(null);
-  const [episodeSearchQuery, setEpisodeSearchQuery] = useState("");
   const [episodeCreateMode, setEpisodeCreateMode] = useState(false);
   const [newEpisodeNotes, setNewEpisodeNotes] = useState("");
   const [newEpisodeTreatmentDeptId, setNewEpisodeTreatmentDeptId] = useState("");
@@ -355,16 +354,6 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
     enabled: !!episodePrompt,
   });
 
-  const filteredPatientEpisodes = useMemo(() => {
-    if (!patientEpisodes) return [];
-    if (!episodeSearchQuery.trim()) return patientEpisodes;
-    const q = episodeSearchQuery.toLowerCase();
-    return patientEpisodes.filter((ep: any) =>
-      (ep.episodeName || "").toLowerCase().includes(q) ||
-      (ep.status || "").toLowerCase().includes(q) ||
-      (ep.diagnosis || "").toLowerCase().includes(q)
-    );
-  }, [patientEpisodes, episodeSearchQuery]);
 
   const handleCheckIn = async (apptId: number) => {
     setCheckInPending(true);
@@ -417,7 +406,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
         patientId: appt.patientId ? Number(appt.patientId) : undefined,
         doctorId: appt.doctorId ? Number(appt.doctorId) : undefined,
         branchId: appt.branchId ? Number(appt.branchId) : undefined,
-        status: "Consultation Done",
+        status: "Treatment Planning",
         notes: newEpisodeNotes || undefined,
       };
       if (newEpisodeTreatmentDeptId) body.treatmentDepartmentId = Number(newEpisodeTreatmentDeptId);
@@ -941,66 +930,60 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
 
             {!episodeCreateMode && (
               <>
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={episodeSearchQuery}
-                    onChange={(e) => setEpisodeSearchQuery(e.target.value)}
-                    placeholder="Search existing episodes..."
-                    className="pl-8"
-                    data-testid="input-episode-search"
-                  />
-                </div>
-
                 {episodesLoading ? (
                   <div className="py-4 text-center text-sm text-muted-foreground">Loading episodes...</div>
-                ) : filteredPatientEpisodes.length > 0 ? (
-                  <div className="space-y-2 max-h-[240px] overflow-y-auto">
-                    {filteredPatientEpisodes.map((ep: any) => (
-                      <Card
-                        key={ep.id}
-                        className="p-3 hover-elevate cursor-pointer"
-                        data-testid={`episode-option-${ep.id}`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate">{ep.episodeName}</div>
-                            <div className="flex items-center gap-2 mt-1 flex-wrap">
-                              <Badge className={cn("text-[10px]", 
-                                ep.status === "Completed" ? "bg-green-100 text-green-700" :
-                                ep.status === "Consultation Done" ? "bg-blue-100 text-blue-700" :
-                                "bg-amber-100 text-amber-700"
-                              )}>
-                                {ep.status}
-                              </Badge>
-                              {ep.diagnosis && (
-                                <span className="text-[10px] text-muted-foreground truncate max-w-[150px]">{ep.diagnosis}</span>
-                              )}
-                              {ep.startDate && (
-                                <span className="text-[10px] text-muted-foreground">
-                                  {fmtDate(new Date(ep.startDate))}
-                                </span>
-                              )}
+                ) : patientEpisodes && patientEpisodes.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Existing episodes for this patient ({patientEpisodes.length}):
+                    </p>
+                    <div className="space-y-2 max-h-[240px] overflow-y-auto">
+                      {patientEpisodes.map((ep: any) => (
+                        <Card
+                          key={ep.id}
+                          className="p-3 hover-elevate cursor-pointer"
+                          data-testid={`episode-option-${ep.id}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium truncate">{ep.episodeName}</div>
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                <Badge className={cn("text-[10px]", 
+                                  ep.status === "Completed" ? "bg-green-100 text-green-700" :
+                                  ep.status === "Consultation Done" ? "bg-blue-100 text-blue-700" :
+                                  "bg-amber-100 text-amber-700"
+                                )}>
+                                  {ep.status}
+                                </Badge>
+                                {ep.diagnosis && (
+                                  <span className="text-[10px] text-muted-foreground truncate max-w-[150px]">{ep.diagnosis}</span>
+                                )}
+                                {ep.startDate && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {fmtDate(new Date(ep.startDate))}
+                                  </span>
+                                )}
+                              </div>
                             </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs shrink-0"
+                              disabled={isLinkingEpisode}
+                              onClick={() => handleLinkEpisode(ep.id)}
+                              data-testid={`button-link-episode-${ep.id}`}
+                            >
+                              {isLinkingEpisode ? <Loader2 className="w-3 h-3 animate-spin" /> : <LinkIcon className="w-3 h-3 mr-1" />}
+                              Link
+                            </Button>
                           </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs shrink-0"
-                            disabled={isLinkingEpisode}
-                            onClick={() => handleLinkEpisode(ep.id)}
-                            data-testid={`button-link-episode-${ep.id}`}
-                          >
-                            {isLinkingEpisode ? <Loader2 className="w-3 h-3 animate-spin" /> : <LinkIcon className="w-3 h-3 mr-1" />}
-                            Link
-                          </Button>
-                        </div>
-                      </Card>
-                    ))}
+                        </Card>
+                      ))}
+                    </div>
                   </div>
                 ) : (
-                  <div className="py-4 text-center text-sm text-muted-foreground">
-                    {episodeSearchQuery ? "No matching episodes found." : "No existing episodes found for this patient."}
+                  <div className="py-3 text-center text-sm text-muted-foreground">
+                    No existing episodes for this patient.
                   </div>
                 )}
 

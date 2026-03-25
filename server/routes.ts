@@ -4570,6 +4570,29 @@ export async function registerRoutes(
       const appt = await storage.getAppointment(apptId, tid);
       if (!appt) return res.status(404).json({ message: "Appointment not found" });
 
+      if (appt.episodeId) {
+        const [linkedEpisode] = await db.select().from(episodes).where(
+          and(eq(episodes.id, appt.episodeId), eq(episodes.tenantId, tid))
+        );
+        if (!linkedEpisode) {
+          return res.status(400).json({ message: "The linked episode could not be found. Please verify the episode exists." });
+        }
+      } else if (appt.leadId) {
+        const [existingEpisode] = await db.select().from(episodes).where(
+          and(eq(episodes.leadId, appt.leadId), eq(episodes.tenantId, tid))
+        ).limit(1);
+        if (!existingEpisode) {
+          return res.status(400).json({ message: "An episode must be created for this patient before marking consultation as done. Please create an episode first." });
+        }
+      } else if (appt.patientId) {
+        const [existingEpisode] = await db.select().from(episodes).where(
+          and(eq(episodes.patientId, appt.patientId), eq(episodes.tenantId, tid))
+        ).limit(1);
+        if (!existingEpisode) {
+          return res.status(400).json({ message: "An episode must be created for this patient before marking consultation as done. Please create an episode first." });
+        }
+      }
+
       const updated = await storage.updateAppointment(apptId, tid, {
         status: "Consultation Done",
         consultationNotes: consultationNotes || null,
@@ -4584,7 +4607,7 @@ export async function registerRoutes(
           leadId: appt.leadId, tenantId: tid, createdBy: userId,
           type: "status_change",
           description: `Consultation completed${consultationNotes ? `: ${consultationNotes}` : ""}`,
-          oldStatus: "Appointment Booked",
+          oldStatus: lead?.status || "Appointment Booked",
           newStatus: "Consultation Done",
         });
 

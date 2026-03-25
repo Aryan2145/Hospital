@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useDoctors } from "@/hooks/use-leads";
-import { Plus, Pencil, FileText, Calendar, IndianRupee, Loader2, Stethoscope, User, UserCheck, Activity } from "lucide-react";
+import { Plus, Pencil, FileText, Calendar, IndianRupee, Loader2, Stethoscope, User, UserCheck, Activity, Search, AlertTriangle, Phone } from "lucide-react";
 import { format } from "date-fns";
 import { fmtDate } from "@/lib/date-utils";
 import { Link } from "wouter";
@@ -72,6 +73,7 @@ export default function TransactionsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Episode | null>(null);
   const [filterStatus, setFilterStatus] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [formPatientId, setFormPatientId] = useState("");
   const [formDoctorId, setFormDoctorId] = useState("");
@@ -79,7 +81,7 @@ export default function TransactionsPage() {
   const [formEpisodeType, setFormEpisodeType] = useState("OPD");
   const [formVisitType, setFormVisitType] = useState("New");
   const [formParentEpisodeId, setFormParentEpisodeId] = useState("");
-  const [formStatus, setFormStatus] = useState("Consultation Done");
+  const [formStatus, setFormStatus] = useState("Treatment Planning");
   const [formDiagnosis, setFormDiagnosis] = useState("");
   const [formTreatmentPlan, setFormTreatmentPlan] = useState("");
   const [formEstimatedCost, setFormEstimatedCost] = useState("");
@@ -160,9 +162,31 @@ export default function TransactionsPage() {
 
   const filteredEpisodes = useMemo(() => {
     if (!episodes) return [];
-    if (!filterStatus || filterStatus === "all") return episodes;
-    return episodes.filter((e) => e.status === filterStatus);
-  }, [episodes, filterStatus]);
+    let result = episodes;
+    if (filterStatus && filterStatus !== "all") {
+      result = result.filter((e) => e.status === filterStatus);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      result = result.filter((ep) => {
+        const patient = ep.patientId ? patientMap[ep.patientId] : null;
+        const patientName = patient?.name || "";
+        const patientPhone = patient?.phone || patient?.primaryPhone || "";
+        const lead = ep.leadId ? leadMap[ep.leadId] : null;
+        const leadName = lead?.name || "";
+        const leadPhone = lead?.phoneE164 || "";
+        return (
+          patientName.toLowerCase().includes(q) ||
+          patientPhone.toLowerCase().includes(q) ||
+          leadName.toLowerCase().includes(q) ||
+          leadPhone.toLowerCase().includes(q) ||
+          (ep.episodeName || "").toLowerCase().includes(q) ||
+          (ep.diagnosis || "").toLowerCase().includes(q)
+        );
+      });
+    }
+    return result;
+  }, [episodes, filterStatus, searchQuery, patientMap, leadMap]);
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -193,6 +217,11 @@ export default function TransactionsPage() {
 
   const selectedPatientLead = formPatientId ? patientToLeadMap[Number(formPatientId)] : null;
 
+  const selectedPatientExistingEpisodes = useMemo(() => {
+    if (!formPatientId || !episodes) return [];
+    return episodes.filter((ep) => ep.patientId === Number(formPatientId));
+  }, [formPatientId, episodes]);
+
   const openCreate = () => {
     setEditing(null);
     setFormPatientId("");
@@ -201,7 +230,7 @@ export default function TransactionsPage() {
     setFormEpisodeType("OPD");
     setFormVisitType("New");
     setFormParentEpisodeId("");
-    setFormStatus("Consultation Done");
+    setFormStatus("Treatment Planning");
     setFormDiagnosis("");
     setFormTreatmentPlan("");
     setFormEstimatedCost("");
@@ -287,6 +316,19 @@ export default function TransactionsPage() {
 
           <Card className="p-4">
             <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[220px] flex-1 max-w-xs">
+                <Label className="text-xs font-medium text-muted-foreground mb-1 block">Search</Label>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search by patient name, mobile, or episode..."
+                    className="pl-8"
+                    data-testid="input-episode-search"
+                  />
+                </div>
+              </div>
               <div className="min-w-[140px]">
                 <Label className="text-xs font-medium text-muted-foreground mb-1 block">Status</Label>
                 <SearchableSelect
@@ -300,7 +342,7 @@ export default function TransactionsPage() {
                   data-testid="filter-episode-status"
                 />
               </div>
-              <Button variant="outline" size="sm" onClick={() => setFilterStatus("")} data-testid="button-clear-episode-filters">
+              <Button variant="outline" size="sm" onClick={() => { setFilterStatus(""); setSearchQuery(""); }} data-testid="button-clear-episode-filters">
                 Clear
               </Button>
             </div>
@@ -434,6 +476,23 @@ export default function TransactionsPage() {
                 {formPatientId && !selectedPatientLead && !editing && (
                   <div className="mt-1.5 p-2 rounded-md bg-destructive/5 border border-destructive/10 text-xs text-destructive">
                     No lead record linked to this patient. A lead must be converted to a patient first.
+                  </div>
+                )}
+                {formPatientId && !editing && selectedPatientExistingEpisodes.length > 0 && (
+                  <div className="mt-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 space-y-2">
+                    <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>This patient has {selectedPatientExistingEpisodes.length} existing episode{selectedPatientExistingEpisodes.length > 1 ? "s" : ""}:</span>
+                    </div>
+                    <div className="space-y-1.5 max-h-[120px] overflow-y-auto">
+                      {selectedPatientExistingEpisodes.map((ep) => (
+                        <div key={ep.id} className="flex items-center gap-2 text-xs p-1.5 rounded bg-white dark:bg-background border">
+                          <span className="font-medium truncate flex-1">{ep.episodeName || `Episode #${ep.id}`}</span>
+                          <Badge className={cn("text-[9px]", STATUS_COLORS[ep.status] || "bg-gray-100 text-gray-700")}>{ep.status}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-amber-600 dark:text-amber-500">Verify this is not a duplicate before creating a new episode.</p>
                   </div>
                 )}
               </div>
