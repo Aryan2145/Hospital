@@ -641,6 +641,22 @@ export async function registerRoutes(
   }
   const tid = defaultTid;
 
+  async function getSessionCrmUserWithRole(req: any): Promise<{ id: number; name: string; roleCode: string; employeeName?: string } | null> {
+    const sessionCrmUserId = (req as any).session?.crmUserId;
+    if (!sessionCrmUserId) return null;
+    const sessionTid = (req as any).session?.tenantId || defaultTid;
+    const allCrmUsers = await storage.getCrmUsers(sessionTid);
+    const crmUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
+    if (!crmUser) return null;
+    let roleCode = "";
+    if (crmUser.systemRoleId) {
+      const allRoles = await storage.getMasterRecords("systemRoles", sessionTid);
+      const role = allRoles.find((r: any) => r.id === crmUser.systemRoleId);
+      if (role) roleCode = (role as any).code || "";
+    }
+    return { id: crmUser.id, name: (crmUser as any).name || "", roleCode, employeeName: (crmUser as any).name || "" };
+  }
+
   // --- /api/me: Get current user's CRM profile with role ---
   app.get("/api/me", isAuthenticated, async (req, res) => {
     try {
@@ -2246,7 +2262,7 @@ export async function registerRoutes(
   app.post("/api/leads/merge", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      const crmUser = req.session?.crmUser;
+      const crmUser = await getSessionCrmUserWithRole(req);
       const allowedRoles = await getMergeAllowedRoles(tid);
       if (!crmUser || !allowedRoles.includes(crmUser.roleCode)) {
         return res.status(403).json({ message: "You don't have permission to merge leads." });
@@ -2262,7 +2278,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Primary lead cannot be in merged list." });
       }
 
-      const userName = crmUser.employeeName || req.user?.email || "System";
+      const userName = crmUser.name || crmUser.employeeName || "System";
       const allIds = [primaryLeadId, ...mergedLeadIds];
 
       const client = await pool.connect();
@@ -4600,6 +4616,17 @@ export async function registerRoutes(
         consultationDoneBy: userId,
       });
 
+      if (appt.episodeId) {
+        const [linkedEp] = await db.select().from(episodes).where(
+          and(eq(episodes.id, appt.episodeId), eq(episodes.tenantId, tid))
+        );
+        if (linkedEp && linkedEp.status === "Consultation In Progress") {
+          await storage.updateEpisode(appt.episodeId, tid, {
+            status: "Consultation Done",
+          });
+        }
+      }
+
       if (appt.leadId) {
         const lead = await storage.getLead(appt.leadId);
         await storage.updateLead(appt.leadId, { status: "Consultation Done" });
@@ -5670,7 +5697,7 @@ export async function registerRoutes(
   app.get("/api/episodes/clinical-notes-edit-roles/config", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      const crmUser = req.session?.crmUser;
+      const crmUser = await getSessionCrmUserWithRole(req);
       if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
         return res.status(403).json({ message: "Only Admins can manage clinical notes edit roles" });
       }
@@ -5687,7 +5714,7 @@ export async function registerRoutes(
   app.post("/api/episodes/clinical-notes-edit-roles/config", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      const crmUser = req.session?.crmUser;
+      const crmUser = await getSessionCrmUserWithRole(req);
       if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
         return res.status(403).json({ message: "Only Admins can manage clinical notes edit roles" });
       }
@@ -5727,7 +5754,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Reason for edit is required" });
       }
 
-      const crmUser = req.session?.crmUser;
+      const crmUser = await getSessionCrmUserWithRole(req);
       const allowedRoles = await getClinicalNotesAllowedRoles(tid);
       if (!crmUser || !allowedRoles.includes(crmUser.roleCode)) {
         const roleNames = allowedRoles.map(r => ROLE_DISPLAY_NAMES[r] || r).join(" / ");
@@ -5842,8 +5869,8 @@ export async function registerRoutes(
 
       const ep = await storage.updateEpisode(episodeId, tid, updates);
 
-      const crmUser = req.session?.crmUser;
-      const userName = crmUser?.employeeName || req.user?.email || "System";
+      const crmUser = await getSessionCrmUserWithRole(req);
+      const userName = crmUser?.employeeName || crmUser?.name || "System";
       await storage.createAuditLog({
         tenantId: tid,
         entityType: "episode",
@@ -5867,7 +5894,7 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const episodeId = Number(req.params.id);
 
-      const crmUser = req.session?.crmUser;
+      const crmUser = await getSessionCrmUserWithRole(req);
       const allowedRoles = ["SYS_ADMIN", "ADMIN"];
       if (!crmUser || !allowedRoles.includes(crmUser.roleCode)) {
         return res.status(403).json({ message: "Only Admins and System Admins can approve discounts" });
@@ -5926,7 +5953,7 @@ export async function registerRoutes(
       const episodeId = Number(req.params.id);
       const { reason } = req.body;
 
-      const crmUser = req.session?.crmUser;
+      const crmUser = await getSessionCrmUserWithRole(req);
       const allowedRoles = ["SYS_ADMIN", "ADMIN"];
       if (!crmUser || !allowedRoles.includes(crmUser.roleCode)) {
         return res.status(403).json({ message: "Only Admins and System Admins can revoke discounts" });

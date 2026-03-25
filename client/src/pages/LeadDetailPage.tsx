@@ -64,7 +64,6 @@ const LEAD_FUNNEL_STAGES = [
   "Contacted",
   "Qualified",
   "Appointment Booked",
-  "Reminder Running",
   "Consultation Done",
 ] as const;
 
@@ -73,7 +72,6 @@ const UNIFIED_JOURNEY_STAGES = [
   "Contacted",
   "Qualified",
   "Appointment Booked",
-  "Reminder Running",
   "Consultation Done",
   "Treatment Planning",
   "Surgery Scheduled",
@@ -219,7 +217,9 @@ function LeadJourneyFunnel({ status, leadId }: { status: string; leadId: number 
   const latestEpisode = episodes && episodes.length > 0 ? episodes[episodes.length - 1] : null;
   const episodeStatus = latestEpisode?.status || null;
 
-  const furthestStatus = episodeStatus || status;
+  const rawFurthest = episodeStatus || status;
+  const STATUS_MAP: Record<string, string> = { "Reminder Running": "Appointment Booked", "Consultation In Progress": "Consultation Done" };
+  const furthestStatus = STATUS_MAP[rawFurthest] || rawFurthest;
   const hasEpisode = !!episodeStatus;
   const stages = hasEpisode ? UNIFIED_JOURNEY_STAGES : LEAD_FUNNEL_STAGES as unknown as string[];
   const currentStageIndex = stages.indexOf(furthestStatus);

@@ -14,6 +14,7 @@ export const LEAD_STATUSES = [
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
 
 export const EPISODE_STATUSES = [
+  "Consultation In Progress",
   "Consultation Done",
   "Treatment Planning",
   "Surgery Scheduled",
@@ -41,6 +42,7 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
 };
 
 const EPISODE_TRANSITIONS: Record<string, string[]> = {
+  "Consultation In Progress": ["Consultation Done", "Discontinued"],
   "Consultation Done": ["Treatment Planning", "Surgery Scheduled", "In Treatment", "Discontinued"],
   "Treatment Planning": ["Surgery Scheduled", "In Treatment", "Discontinued"],
   "Surgery Scheduled": ["Surgery Done", "Discontinued"],
@@ -49,7 +51,7 @@ const EPISODE_TRANSITIONS: Record<string, string[]> = {
   "Post Care": ["Follow Up", "Completed"],
   "Follow Up": ["Post Care", "Completed", "Discontinued"],
   "Completed": [],
-  "Discontinued": ["Consultation Done"],
+  "Discontinued": ["Consultation In Progress"],
 };
 
 export function getValidTransitions(currentStatus: string): string[] {
@@ -79,6 +81,7 @@ export function getStatusColor(status: string): string {
     case "Qualified": return "bg-indigo-100 text-indigo-800 border-indigo-200";
     case "Appointment Booked": return "bg-purple-100 text-purple-800 border-purple-200";
     case "Reminder Running": return "bg-orange-100 text-orange-800 border-orange-200";
+    case "Consultation In Progress": return "bg-amber-100 text-amber-800 border-amber-200";
     case "Consultation Done": return "bg-green-100 text-green-800 border-green-200";
     case "Treatment Planning": return "bg-teal-100 text-teal-800 border-teal-200";
     case "Surgery Scheduled": return "bg-violet-100 text-violet-800 border-violet-200";

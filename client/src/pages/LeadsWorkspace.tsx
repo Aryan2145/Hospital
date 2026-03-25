@@ -440,13 +440,15 @@ const EPISODE_FUNNEL_STAGES = [
   "Completed",
 ];
 
-const UNIFIED_STAGES = [
+const LEAD_STAGES = [
   "Raw Lead Captured",
   "Contacted",
   "Qualified",
   "Appointment Booked",
-  "Reminder Running",
   "Consultation Done",
+];
+
+const EPISODE_STAGES = [
   "Treatment Planning",
   "Surgery Scheduled",
   "Surgery Done",
@@ -456,13 +458,15 @@ const UNIFIED_STAGES = [
   "Completed",
 ];
 
+const UNIFIED_STAGES = [...LEAD_STAGES, ...EPISODE_STAGES];
+
 const SHORT_LABELS: Record<string, string> = {
   "Raw Lead Captured": "Raw",
   "Contacted": "Contact",
   "Qualified": "Qual",
   "Appointment Booked": "Appt",
-  "Reminder Running": "Remind",
-  "Consultation Done": "Consult",
+  "Consultation In Progress": "In Consult",
+  "Consultation Done": "Consult ✓",
   "Treatment Planning": "Plan",
   "Surgery Scheduled": "Surg Sched",
   "Surgery Done": "Surg Done",
@@ -474,49 +478,54 @@ const SHORT_LABELS: Record<string, string> = {
 
 const TERMINAL_STATUSES = ["Closed Won", "Closed Lost", "Unqualified", "Nurture", "Discontinued"];
 
+const STATUS_TO_STAGE: Record<string, string> = {
+  "Reminder Running": "Appointment Booked",
+  "Consultation In Progress": "Consultation Done",
+};
+
 function LeadFunnelStrip({ leadId, status, episodeStatus, conversionStage }: { leadId: number; status: string; episodeStatus?: string | null; conversionStage?: string | null }) {
   const isTerminal = TERMINAL_STATUSES.includes(status) || TERMINAL_STATUSES.includes(episodeStatus || "");
-
-  const furthestStatus = episodeStatus || status;
-  const currentStageIndex = UNIFIED_STAGES.indexOf(furthestStatus);
+  const rawStatus = episodeStatus || status;
+  const furthestStatus = STATUS_TO_STAGE[rawStatus] || rawStatus;
   const hasEpisode = !!episodeStatus;
-  const leadPhaseEnd = UNIFIED_STAGES.indexOf("Consultation Done");
+  const stages = hasEpisode ? UNIFIED_STAGES : LEAD_STAGES;
+  const currentIdx = stages.indexOf(furthestStatus);
+  const leadPhaseEnd = LEAD_STAGES.length - 1;
 
   return (
-    <div className="flex flex-col gap-1" data-testid={`funnel-lead-${leadId}`}>
-      <div className="flex items-center gap-0.5 flex-wrap">
-        {UNIFIED_STAGES.map((stage, idx) => {
+    <div className="flex flex-col gap-0.5" data-testid={`funnel-lead-${leadId}`}>
+      <div className="flex items-center h-5">
+        {stages.map((stage, idx) => {
           const isCurrent = stage === furthestStatus;
-          const isPast = currentStageIndex >= 0 && idx < currentStageIndex;
+          const isPast = currentIdx >= 0 && idx < currentIdx;
           const isEpisodePhase = idx > leadPhaseEnd;
-          const showStage = !hasEpisode ? idx <= leadPhaseEnd : true;
-
-          if (!showStage) return null;
+          const isFirst = idx === 0;
+          const isLast = idx === stages.length - 1;
 
           return (
-            <div key={stage} className="flex items-center">
-              <div
-                className={cn(
-                  "px-1 py-0.5 rounded text-[8px] font-medium whitespace-nowrap border transition-colors",
-                  isCurrent && !isEpisodePhase && "bg-primary text-primary-foreground border-primary",
-                  isCurrent && isEpisodePhase && "bg-violet-600 text-white border-violet-600",
-                  isPast && !isCurrent && "bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300 border-green-200 dark:border-green-800",
-                  !isCurrent && !isPast && "bg-muted text-muted-foreground border-border",
-                )}
-                title={stage + (conversionStage && isCurrent ? ` (${conversionStage})` : "")}
-                data-testid={`funnel-stage-${stage.toLowerCase().replace(/\s+/g, "-")}-${leadId}`}
-              >
-                {SHORT_LABELS[stage] || stage}
-              </div>
-              {idx < (hasEpisode ? UNIFIED_STAGES.length - 1 : leadPhaseEnd) && showStage && (
-                <ChevronRight className="w-2 h-2 text-muted-foreground mx-0.5 shrink-0" />
+            <div
+              key={stage}
+              className={cn(
+                "h-full flex items-center justify-center text-[7px] font-semibold tracking-tight leading-none px-1.5 min-w-0 relative whitespace-nowrap",
+                isFirst && "rounded-l",
+                isLast && "rounded-r",
+                !isFirst && !isLast && "rounded-none",
+                isCurrent && !isEpisodePhase && "bg-[#0f4c81] text-white",
+                isCurrent && isEpisodePhase && "bg-violet-600 text-white",
+                isPast && "bg-emerald-500 text-white",
+                !isCurrent && !isPast && "bg-gray-100 dark:bg-muted text-gray-400 dark:text-muted-foreground",
               )}
+              style={{ flex: isCurrent ? "1.3" : "1" }}
+              title={stage + (conversionStage && isCurrent ? ` (${conversionStage})` : "")}
+              data-testid={`funnel-stage-${stage.toLowerCase().replace(/\s+/g, "-")}-${leadId}`}
+            >
+              <span className="truncate">{SHORT_LABELS[stage] || stage}</span>
             </div>
           );
         })}
       </div>
       {isTerminal && (
-        <Badge className={cn("text-[9px] w-fit", getStatusColor(episodeStatus || status))} data-testid={`badge-status-${leadId}`}>
+        <Badge className={cn("text-[8px] h-4 w-fit px-1.5", getStatusColor(episodeStatus || status))} data-testid={`badge-status-${leadId}`}>
           {episodeStatus || status}
         </Badge>
       )}

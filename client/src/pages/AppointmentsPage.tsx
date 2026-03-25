@@ -406,7 +406,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
         patientId: appt.patientId ? Number(appt.patientId) : undefined,
         doctorId: appt.doctorId ? Number(appt.doctorId) : undefined,
         branchId: appt.branchId ? Number(appt.branchId) : undefined,
-        status: "Treatment Planning",
+        status: "Consultation In Progress",
         notes: newEpisodeNotes || undefined,
       };
       if (newEpisodeTreatmentDeptId) body.treatmentDepartmentId = Number(newEpisodeTreatmentDeptId);

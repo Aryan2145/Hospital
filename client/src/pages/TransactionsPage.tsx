@@ -45,6 +45,7 @@ interface Episode {
 }
 
 const STATUS_COLORS: Record<string, string> = {
+  "Consultation In Progress": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
   "Consultation Done": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
   "Treatment Planning": "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
   "Surgery Scheduled": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
@@ -57,6 +58,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const EPISODE_STATUSES = [
+  "Consultation In Progress",
   "Consultation Done",
   "Treatment Planning",
   "Surgery Scheduled",
@@ -81,7 +83,7 @@ export default function TransactionsPage() {
   const [formEpisodeType, setFormEpisodeType] = useState("OPD");
   const [formVisitType, setFormVisitType] = useState("New");
   const [formParentEpisodeId, setFormParentEpisodeId] = useState("");
-  const [formStatus, setFormStatus] = useState("Treatment Planning");
+  const [formStatus, setFormStatus] = useState("Consultation In Progress");
   const [formDiagnosis, setFormDiagnosis] = useState("");
   const [formTreatmentPlan, setFormTreatmentPlan] = useState("");
   const [formEstimatedCost, setFormEstimatedCost] = useState("");
@@ -230,7 +232,7 @@ export default function TransactionsPage() {
     setFormEpisodeType("OPD");
     setFormVisitType("New");
     setFormParentEpisodeId("");
-    setFormStatus("Treatment Planning");
+    setFormStatus("Consultation In Progress");
     setFormDiagnosis("");
     setFormTreatmentPlan("");
     setFormEstimatedCost("");

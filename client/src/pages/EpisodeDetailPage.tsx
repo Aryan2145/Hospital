@@ -845,6 +845,11 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
 
     const episodeFields: Record<string, any> = {};
 
+    if (episode.status === "Consultation In Progress") {
+      episodeFields.status = "Consultation Done";
+      episodeFields.stageRemarks = `Consultation completed — ${outcomeName}`;
+    }
+
     if (closesEpisode) {
       const closesAs = selectedOutcomeObj?.closesAs || "Closed Won";
       episodeFields.status = closesAs;
@@ -1778,13 +1783,15 @@ function getStatusChangeTitle(toStatus: string): string {
     case "Follow Up": return "Follow Up Initiated";
     case "Completed": return "Episode Completed";
     case "Discontinued": return "Episode Discontinued";
-    case "Consultation Done": return "Returned to Consultation Done";
+    case "Consultation In Progress": return "Consultation In Progress";
+    case "Consultation Done": return "Consultation Completed";
     default: return `Status changed to ${toStatus}`;
   }
 }
 
 function getStatusChangeDescription(from: string, to: string): string {
   switch (to) {
+    case "Consultation In Progress": return "Patient is currently in consultation with the doctor";
     case "Treatment Planning": return "Patient's treatment plan is being prepared by the clinical team";
     case "Surgery Scheduled": return "Surgery date and logistics have been confirmed";
     case "Surgery Done": return "Surgical procedure has been completed successfully";
