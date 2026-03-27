@@ -8,7 +8,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db, pool } from "./db";
-import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks, doctorLeaveExceptions } from "@shared/schema";
+import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks, doctorLeaveExceptions, slaRules, reminderPolicies, dataRetentionPolicies } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -7982,6 +7982,7 @@ export async function runDeferredStartupTasks() {
     await backfillLeadOwnershipAndSource();
     await linkUnlinkedEpisodePatients();
     await seedConsultationOutcomes();
+    await seedGovernanceMasterData();
     await seedDummyAppointments();
   } catch (err: any) {
     console.error("[deferred-startup] Error in deferred tasks:", err.message);
@@ -8247,6 +8248,51 @@ async function seedConsultationOutcomes() {
     console.log("[seed] Consultation outcomes & remarks seeded for all tenants");
   } catch (err: any) {
     console.error("[seed] Error seeding consultation outcomes:", err.message);
+  }
+}
+
+async function seedGovernanceMasterData() {
+  try {
+    const allTenants = await pool.query(`SELECT id FROM tenants ORDER BY id`);
+    for (const t of allTenants.rows) {
+      const tid = t.id;
+
+      const existing = await pool.query(`SELECT COUNT(*) as cnt FROM sla_rules WHERE tenant_id = $1`, [tid]);
+      if (parseInt(existing.rows[0].cnt, 10) > 0) continue;
+
+      await db.insert(slaRules).values([
+        { tenantId: tid, code: "SLA-LEAD-CONTACT", name: "Lead First Contact SLA", triggerEvent: "Lead Created → First Contact Attempt", timeLimitMinutes: 30, appliesToRole: "AGENT", escalationRole: "MANAGER", status: "Active", displayOrder: 1 },
+        { tenantId: tid, code: "SLA-LEAD-QUALIFY", name: "Lead Qualification SLA", triggerEvent: "Lead Contacted → Qualified", timeLimitMinutes: 1440, appliesToRole: "COUNSELLOR", escalationRole: "MANAGER", status: "Active", displayOrder: 2 },
+        { tenantId: tid, code: "SLA-APPT-BOOK", name: "Appointment Booking SLA", triggerEvent: "Lead Qualified → Appointment Booked", timeLimitMinutes: 2880, appliesToRole: "COUNSELLOR", escalationRole: "MANAGER", status: "Active", displayOrder: 3 },
+        { tenantId: tid, code: "SLA-HANDOVER-ACK", name: "Handover Acknowledgement SLA", triggerEvent: "Episode Handover → Acknowledged by Takeover Team", timeLimitMinutes: 120, appliesToRole: "All", escalationRole: "ADMIN", status: "Active", displayOrder: 4 },
+        { tenantId: tid, code: "SLA-CONSULT-LOG", name: "Consultation Log SLA", triggerEvent: "Consultation Done → Log Submitted by Doctor", timeLimitMinutes: 480, appliesToRole: "All", escalationRole: "ADMIN", status: "Active", displayOrder: 5 },
+        { tenantId: tid, code: "SLA-TREAT-PLAN", name: "Treatment Plan SLA", triggerEvent: "Consultation Done → Treatment Plan Created", timeLimitMinutes: 1440, appliesToRole: "COUNSELLOR", escalationRole: "MANAGER", status: "Active", displayOrder: 6 },
+        { tenantId: tid, code: "SLA-NOSHOW-FOLLOW", name: "No-Show Follow-up SLA", triggerEvent: "Appointment No-Show → Follow-up Call", timeLimitMinutes: 240, appliesToRole: "AGENT", escalationRole: "MANAGER", status: "Active", displayOrder: 7 },
+        { tenantId: tid, code: "SLA-DORMANT-REACT", name: "Dormant Lead Reactivation SLA", triggerEvent: "Lead Marked Dormant → Reactivation Attempt", timeLimitMinutes: 10080, appliesToRole: "AGENT", escalationRole: "MANAGER", status: "Active", displayOrder: 8 },
+      ]);
+
+      await db.insert(reminderPolicies).values([
+        { tenantId: tid, code: "REM-APPT-24H", name: "Appointment Reminder – 24 Hours Before", offsetMinutes: 1440, channel: "WhatsApp", fallbackChannel: "SMS", status: "Active", displayOrder: 1 },
+        { tenantId: tid, code: "REM-APPT-2H", name: "Appointment Reminder – 2 Hours Before", offsetMinutes: 120, channel: "SMS", fallbackChannel: "WhatsApp", status: "Active", displayOrder: 2 },
+        { tenantId: tid, code: "REM-FOLLOWUP-48H", name: "Follow-up Reminder – 48 Hours Before", offsetMinutes: 2880, channel: "WhatsApp", fallbackChannel: "Email", status: "Active", displayOrder: 3 },
+        { tenantId: tid, code: "REM-SURGERY-72H", name: "Surgery Prep Reminder – 72 Hours Before", offsetMinutes: 4320, channel: "WhatsApp", fallbackChannel: "SMS", status: "Active", displayOrder: 4 },
+        { tenantId: tid, code: "REM-SURGERY-DAY", name: "Surgery Day Reminder – Morning", offsetMinutes: 180, channel: "SMS", fallbackChannel: "WhatsApp", status: "Active", displayOrder: 5 },
+        { tenantId: tid, code: "REM-POSTCARE-7D", name: "Post-Care Check-in – 7 Days After", offsetMinutes: 10080, channel: "WhatsApp", fallbackChannel: "Email", status: "Active", displayOrder: 6 },
+        { tenantId: tid, code: "REM-POSTCARE-30D", name: "Post-Care Follow-up – 30 Days After", offsetMinutes: 43200, channel: "Email", fallbackChannel: "WhatsApp", status: "Active", displayOrder: 7 },
+      ]);
+
+      await db.insert(dataRetentionPolicies).values([
+        { tenantId: tid, code: "DRP-LEAD-36M", name: "Lead Data – 36 Months (DPDP Act)", entityType: "Lead", retentionMonths: 36, action: "anonymize", status: "Active", displayOrder: 1 },
+        { tenantId: tid, code: "DRP-PATIENT-120M", name: "Patient Records – 10 Years (MCI Guidelines)", entityType: "Patient", retentionMonths: 120, action: "archive", status: "Active", displayOrder: 2 },
+        { tenantId: tid, code: "DRP-EPISODE-120M", name: "Episode/Treatment Records – 10 Years", entityType: "Episode", retentionMonths: 120, action: "archive", status: "Active", displayOrder: 3 },
+        { tenantId: tid, code: "DRP-ACTIVITY-24M", name: "Activity Logs – 24 Months", entityType: "Activity", retentionMonths: 24, action: "archive", status: "Active", displayOrder: 4 },
+        { tenantId: tid, code: "DRP-TASK-12M", name: "Task Records – 12 Months", entityType: "Task", retentionMonths: 12, action: "delete", status: "Active", displayOrder: 5 },
+        { tenantId: tid, code: "DRP-APPT-36M", name: "Appointment Records – 36 Months", entityType: "Appointment", retentionMonths: 36, action: "archive", status: "Active", displayOrder: 6 },
+      ]);
+    }
+    console.log("[seed] Governance master data (SLA Rules, Reminder Policies, Data Retention) seeded for all tenants");
+  } catch (err: any) {
+    console.error("[seed] Error seeding governance data:", err.message);
   }
 }
 

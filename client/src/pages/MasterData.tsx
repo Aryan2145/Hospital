@@ -557,11 +557,42 @@ export default function MasterData() {
     window.open(`/api/masters/${selectedTable}/template`, "_blank");
   }
 
-  const filteredRecords = records.filter(
-    (r) =>
-      (r.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (r.code || "").toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const DAY_ORDER: Record<string, number> = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6, Sunday: 7 };
+
+  const getOpdSearchText = (r: MasterRecord): string => {
+    const doctorRecords = refDataMap["doctors"] || [];
+    const branchRecords = refDataMap["branches"] || [];
+    const doctor = doctorRecords.find((d: any) => d.id === r.doctorId);
+    const branch = branchRecords.find((b: any) => b.id === r.branchId);
+    return [
+      doctor?.name || "",
+      branch?.name || "",
+      r.dayOfWeek || "",
+      r.startTime || "",
+      r.endTime || "",
+    ].join(" ").toLowerCase();
+  };
+
+  const sortedRecords = selectedTable === "opdTimings"
+    ? [...records].sort((a, b) => {
+        const dayA = DAY_ORDER[a.dayOfWeek as string] ?? 8;
+        const dayB = DAY_ORDER[b.dayOfWeek as string] ?? 8;
+        if (dayA !== dayB) return dayA - dayB;
+        return (a.startTime as string || "").localeCompare(b.startTime as string || "");
+      })
+    : records;
+
+  const filteredRecords = sortedRecords.filter((r) => {
+    const term = searchTerm.toLowerCase();
+    if (!term) return true;
+    if (selectedTable === "opdTimings") {
+      return getOpdSearchText(r).includes(term);
+    }
+    return (
+      (r.name || "").toLowerCase().includes(term) ||
+      (r.code || "").toLowerCase().includes(term)
+    );
+  });
 
   const selectedCategoryData = MASTER_CATEGORIES.find((c) => c.category === selectedCategory);
 

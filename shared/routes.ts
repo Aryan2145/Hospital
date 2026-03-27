@@ -225,7 +225,7 @@ export const MASTER_CATEGORIES = [
     tables: [
       { key: "organisations", label: "Organisation" },
       { key: "branches", label: "Branch" },
-      { key: "administrativeDepartments", label: "Team" },
+      { key: "administrativeDepartments", label: "Department" },
       { key: "designations", label: "Designation" },
       { key: "employmentTypes", label: "Employment Type" },
       { key: "systemRoles", label: "System Role" },
