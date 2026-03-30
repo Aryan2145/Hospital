@@ -764,6 +764,10 @@ export class DatabaseStorage implements IStorage {
     delete snakeData.id;
     delete snakeData.created_at;
 
+    for (const [k, v] of Object.entries(snakeData)) {
+      if (v === "" || v === undefined) snakeData[k] = null;
+    }
+
     const colResult = await pool.query(
       `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
       [pgTable]

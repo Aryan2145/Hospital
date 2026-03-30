@@ -126,7 +126,7 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "email", label: "Email", type: "text" },
     { key: "phone", label: "Phone", type: "text" },
     { key: "branchId", label: "Branch", type: "ref", refTable: "branches" },
-    { key: "departmentId", label: "Team", type: "ref", refTable: "administrativeDepartments" },
+    { key: "departmentId", label: "Department", type: "ref", refTable: "administrativeDepartments" },
     { key: "designationId", label: "Designation", type: "ref", refTable: "designations" },
     { key: "employmentTypeId", label: "Employment Type", type: "ref", refTable: "employmentTypes" },
     { key: "systemRoleId", label: "System Role", type: "ref", refTable: "systemRoles" },
@@ -456,7 +456,7 @@ export default function MasterData() {
       displayOrder: record.displayOrder ?? 0,
     };
     extraFields.forEach((f) => {
-      let val = record[f.key] ?? (f.type === "number" ? 0 : f.type === "boolean" ? false : "");
+      let val = record[f.key] ?? (f.type === "number" ? 0 : f.type === "boolean" ? false : f.type === "ref" ? "" : "");
       if (f.type === "date" && val) {
         try {
           val = new Date(val).toISOString().split("T")[0];
