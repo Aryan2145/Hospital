@@ -6,3 +6,9 @@ id = "bBy6Ppvwdc8z7XfutF-PC"
 uri = "file://myProSys_Compliance_Audit_Report.md"
 type = "text"
 title = "myProSys Hospital CRM — Compliance & Data Protection Audit Report"
+
+[[outputs]]
+id = "SOfKcXJwY-9m12JGtrO9_"
+uri = "file://attached_assets/Scope_vs_Delivery_Report.md"
+type = "text"
+title = "Scope vs. Delivery Report - myProSys Hospital CRM"
