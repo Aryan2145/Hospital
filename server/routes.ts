@@ -7697,6 +7697,46 @@ async function ensureSuperAdmin() {
     if (allTenantRows.length === 0) return;
     const tid = allTenantRows[0].id;
 
+    const virocTenant = allTenantRows.find(t => t.id === 4);
+    if (virocTenant && virocTenant.name !== "Demo Hospital") {
+      await db.update(tenants).set({ name: "Demo Hospital", displayName: "Demo Hospital" }).where(eq(tenants.id, 4));
+      console.log("Renamed tenant #4 to Demo Hospital");
+    }
+
+    if (virocTenant) {
+      const virocBranch = await db.select().from(branches).where(and(eq(branches.id, 1), eq(branches.tenantId, 4)));
+      if (virocBranch.length > 0 && virocBranch[0].name !== "Demo Hospital Main Branch") {
+        await db.update(branches).set({ name: "Demo Hospital Main Branch" }).where(eq(branches.id, 1));
+      }
+    }
+
+    const demoUsers = [
+      { code: "DEMO-ADM", name: "Dr. Anil Mehta", email: "admin@demohospital.com", phone: "+919876500001", roleCode: "ADMIN" },
+      { code: "DEMO-MGR", name: "Neha Kapoor", email: "manager@demohospital.com", phone: "+919876500002", roleCode: "MANAGER" },
+      { code: "DEMO-AGT", name: "Ravi Joshi", email: "agent@demohospital.com", phone: "+919876500003", roleCode: "AGENT" },
+      { code: "DEMO-CNS", name: "Priya Desai", email: "counsellor@demohospital.com", phone: "+919876500004", roleCode: "COUNSELLOR" },
+    ];
+    if (virocTenant) {
+      const virocRoles = await db.select().from(systemRoles).where(eq(systemRoles.tenantId, 4));
+      const roleMap: Record<string, number> = {};
+      for (const r of virocRoles) roleMap[(r as any).code] = r.id;
+      const existingDemoUsers = await db.select().from(crmUsers).where(eq(crmUsers.tenantId, 4));
+      for (const du of demoUsers) {
+        const exists = existingDemoUsers.find(u => u.code === du.code || u.phone === du.phone);
+        if (!exists && roleMap[du.roleCode]) {
+          const hash = await hashPassword("RGBTech@123");
+          await db.insert(crmUsers).values({
+            tenantId: 4, code: du.code, name: du.name, email: du.email, phone: du.phone,
+            systemRoleId: roleMap[du.roleCode], branchId: 1, isActive: true, status: "Active",
+            accessScopeType: ["ADMIN", "MANAGER"].includes(du.roleCode) ? "All" : "Branch",
+            phiAccessLevel: ["ADMIN"].includes(du.roleCode) ? "Full" : "Masked",
+            passwordHash: hash, displayOrder: 0,
+          });
+          console.log(`Created demo user: ${du.name} (${du.roleCode})`);
+        }
+      }
+    }
+
     const phone = "+919033050100";
     const defaultPassword = "RGBTech@123";
     const existingUsers = await db.select().from(crmUsers).where(
