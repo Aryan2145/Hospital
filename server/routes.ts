@@ -6406,6 +6406,7 @@ export async function registerRoutes(
       )).rows;
 
       let teamStats = null;
+      let teamOverdueActions = null;
       if (isManagement || isManager) {
         const teamLeadCounts = (await pool.query(
           `SELECT cu.id, cu.name, sr.code as role_code,
@@ -6423,6 +6424,29 @@ export async function registerRoutes(
           [tid, todayISO]
         )).rows;
         teamStats = teamLeadCounts;
+
+        teamOverdueActions = (await pool.query(
+          `(SELECT 'lead' as entity_type, l.id as entity_id, l.name as entity_name, l.next_action_date, l.next_action_notes,
+              nat.name as action_type_name, cu.name as assigned_to_name, cu.id as assigned_to_id
+            FROM leads l
+            LEFT JOIN next_action_types nat ON l.next_action_type_id = nat.id
+            LEFT JOIN crm_users cu ON l.next_action_assigned_to = cu.id
+            WHERE l.tenant_id = $1 AND l.next_action_date IS NOT NULL AND l.next_action_date < $2
+              AND l.next_action_assigned_to IS NOT NULL AND l.next_action_assigned_to != $3
+            ORDER BY l.next_action_date DESC LIMIT 15)
+          UNION ALL
+          (SELECT 'episode' as entity_type, e.id as entity_id, e.episode_name as entity_name, e.next_action_date, e.next_action_notes,
+              nat.name as action_type_name, cu.name as assigned_to_name, cu.id as assigned_to_id
+            FROM episodes e
+            LEFT JOIN next_action_types nat ON e.next_action_type_id = nat.id
+            LEFT JOIN crm_users cu ON e.next_action_assigned_to = cu.id
+            WHERE e.tenant_id = $1 AND e.next_action_date IS NOT NULL AND e.next_action_date < $2
+              AND e.next_action_assigned_to IS NOT NULL AND e.next_action_assigned_to != $3
+            ORDER BY e.next_action_date DESC LIMIT 15)
+          ORDER BY next_action_date
+          LIMIT 20`,
+          [tid, todayISO, crmUserId]
+        )).rows;
       }
 
       let recentActivities = null;
@@ -6446,6 +6470,7 @@ export async function registerRoutes(
         nextActions,
         overdueActions,
         teamStats,
+        teamOverdueActions,
         recentActivities,
       });
     } catch (err: any) {

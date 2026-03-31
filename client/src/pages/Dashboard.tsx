@@ -189,7 +189,7 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
         <StatCard label="Insurance Cases" value={Number(ec.insurance_cases) || 0} icon={ShieldCheck} color="text-cyan-500" onClick={() => navigate("/leads?view=list")} />
       </div>
 
-      <TasksAndActionsSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />
+      <MyTodayAndOverdueSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />
 
       {(dormantLeads?.length || 0) > 0 && (
         <DormantLeadsCard dormantLeads={dormantLeads} navigate={navigate} />
@@ -274,6 +274,7 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
 
 function ManagerDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, userName }: any) {
   const totalLeads = Number(lc.total_leads) || 0;
+  const teamOverdue = dashStats.teamOverdueActions || [];
 
   return (
     <>
@@ -304,7 +305,44 @@ function ManagerDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, userNam
         <StatCard label="Untouched Leads" value={Number(lc.raw_leads) || 0} icon={Eye} color="text-amber-500" onClick={() => navigate("/leads?status=Raw Lead Captured&view=list")} />
       </div>
 
-      <TasksAndActionsSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />
+      <MyTodayAndOverdueSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />
+
+      {teamOverdue.length > 0 && (
+        <Card data-testid="card-team-overdue-tasks">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+              <AlertTriangle className="h-4 w-4 text-red-500" />
+              Team Overdue Tasks
+              <Badge variant="destructive" className="text-xs ml-auto">{teamOverdue.length} overdue</Badge>
+            </CardTitle>
+            <CardDescription className="text-xs">Overdue actions assigned to your team members</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1.5">
+              {teamOverdue.slice(0, 10).map((a: any, i: number) => (
+                <div
+                  key={`team-overdue-${i}`}
+                  className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-950/20 rounded-md cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/30 transition-colors"
+                  onClick={() => navigate(a.entity_type === "lead" ? `/leads/${a.entity_id}` : `/episodes/${a.entity_id}`)}
+                  data-testid={`team-overdue-action-${i}`}
+                >
+                  <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-foreground truncate">
+                      {a.action_type_name || "Follow Up"}: {a.entity_name}
+                    </p>
+                    <p className="text-[10px] text-red-500">
+                      {a.next_action_date && formatDistanceToNow(new Date(a.next_action_date), { addSuffix: true })}
+                      {a.assigned_to_name ? ` · Assigned to: ${a.assigned_to_name}` : ""}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] shrink-0">{a.entity_type}</Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {dashStats.teamStats && dashStats.teamStats.length > 0 && (
         <TeamPerformanceCard teamStats={dashStats.teamStats} navigate={navigate} />
@@ -348,7 +386,7 @@ function IndividualDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, user
         <StatCard label="Appt Booked" value={Number(lc.appointment_booked) || 0} icon={CalendarCheck} color="text-green-500" onClick={() => navigate("/leads?status=Appointment Booked&view=list")} />
       </div>
 
-      <TasksAndActionsSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />
+      <MyTodayAndOverdueSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />
 
       {dashStats.recentActivities && dashStats.recentActivities.length > 0 && (
         <Card data-testid="card-recent-activities">
@@ -391,102 +429,44 @@ function IndividualDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, user
   );
 }
 
-function TasksAndActionsSection({ todayTasks, dashStats, navigate }: any) {
+function MyTodayAndOverdueSection({ todayTasks, dashStats, navigate }: any) {
   const hasOverdueActions = dashStats.overdueActions?.length > 0;
   const hasTodayActions = dashStats.nextActions?.length > 0;
-  const hasTasks = (todayTasks?.total || 0) > 0;
+  const hasOverdueTasks = (todayTasks?.overdue?.length || 0) > 0;
+  const hasTodayTasks = (todayTasks?.dueToday?.length || 0) > 0;
 
-  if (!hasOverdueActions && !hasTodayActions && !hasTasks) return null;
+  const hasTodayContent = hasTodayActions || hasTodayTasks;
+  const hasOverdueContent = hasOverdueActions || hasOverdueTasks;
+
+  if (!hasTodayContent && !hasOverdueContent) return null;
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      {(hasTasks) && (
-        <Card data-testid="card-todays-tasks">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2 flex-wrap">
-              <Clock className="h-4 w-4 text-primary" />
-              Today's Tasks
-              <Badge variant="secondary" className="ml-auto text-xs">{todayTasks.total} pending</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {todayTasks.overdue.length > 0 && (
-              <div className="mb-3">
-                <p className="text-xs font-semibold text-red-600 mb-1.5 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" />
-                  Overdue ({todayTasks.overdue.length})
-                </p>
-                <div className="space-y-1.5">
-                  {todayTasks.overdue.slice(0, 5).map((task: any) => (
-                    <div key={task.id} className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-950/20 rounded-md cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/30 transition-colors" onClick={() => navigate(`/leads/${task.leadId}`)} data-testid={`overdue-task-${task.id}`}>
-                      <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-foreground truncate">{task.title}</p>
-                        <p className="text-[10px] text-red-500">{task.dueDate && formatDistanceToNow(new Date(task.dueDate), { addSuffix: true })}</p>
-                      </div>
-                      <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {todayTasks.dueToday.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-foreground mb-1.5">Due Today ({todayTasks.dueToday.length})</p>
-                <div className="space-y-1.5">
-                  {todayTasks.dueToday.slice(0, 5).map((task: any) => (
-                    <div key={task.id} className="flex items-center gap-2 p-2 bg-amber-50 dark:bg-amber-950/20 rounded-md cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-950/30 transition-colors" onClick={() => navigate(`/leads/${task.leadId}`)} data-testid={`today-task-${task.id}`}>
-                      <Clock className="w-3 h-3 text-amber-500 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-foreground truncate">{task.title}</p>
-                        <p className="text-[10px] text-muted-foreground">{task.dueDate && fmtTime(task.dueDate)}</p>
-                      </div>
-                      <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      <Card data-testid="card-next-actions">
+      <Card data-testid="card-my-today-tasks">
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2 flex-wrap">
-            <ListChecks className="h-4 w-4 text-primary" />
-            Next Actions
-            {hasOverdueActions && (
-              <Badge variant="destructive" className="text-xs">{dashStats.overdueActions.length} overdue</Badge>
-            )}
-            {hasTodayActions && (
-              <Badge variant="secondary" className="ml-auto text-xs">{dashStats.nextActions.length} today</Badge>
+            <Clock className="h-4 w-4 text-primary" />
+            My Today's Tasks
+            {(hasTodayActions || hasTodayTasks) && (
+              <Badge variant="secondary" className="ml-auto text-xs">
+                {(dashStats.nextActions?.length || 0) + (todayTasks?.dueToday?.length || 0)} due
+              </Badge>
             )}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {hasOverdueActions && (
+          {hasTodayTasks && (
             <div className="mb-3">
-              <p className="text-xs font-semibold text-red-600 mb-1.5">Overdue</p>
+              <p className="text-xs font-semibold text-foreground mb-1.5">System Tasks ({todayTasks.dueToday.length})</p>
               <div className="space-y-1.5">
-                {dashStats.overdueActions.slice(0, 5).map((a: any, i: number) => (
-                  <div
-                    key={`overdue-${i}`}
-                    className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-950/20 rounded-md cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/30 transition-colors"
-                    onClick={() => navigate(a.entity_type === "lead" ? `/leads/${a.entity_id}` : `/episodes/${a.entity_id}`)}
-                    data-testid={`overdue-action-${i}`}
-                  >
-                    <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />
+                {todayTasks.dueToday.slice(0, 5).map((task: any) => (
+                  <div key={task.id} className="flex items-center gap-2 p-2 bg-amber-50 dark:bg-amber-950/20 rounded-md cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-950/30 transition-colors" onClick={() => navigate(`/leads/${task.leadId}`)} data-testid={`today-task-${task.id}`}>
+                    <Clock className="w-3 h-3 text-amber-500 shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-foreground truncate">
-                        {a.action_type_name || "Follow Up"}: {a.entity_name}
-                      </p>
-                      <p className="text-[10px] text-red-500">
-                        {a.next_action_date && formatDistanceToNow(new Date(a.next_action_date), { addSuffix: true })}
-                        {a.assigned_to_name ? ` · ${a.assigned_to_name}` : ""}
-                      </p>
+                      <p className="text-xs font-medium text-foreground truncate">{task.title}</p>
+                      <p className="text-[10px] text-muted-foreground">{task.dueDate && fmtTime(task.dueDate)}</p>
                     </div>
-                    <Badge variant="outline" className="text-[10px] shrink-0">{a.entity_type}</Badge>
+                    <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
                   </div>
                 ))}
               </div>
@@ -494,7 +474,7 @@ function TasksAndActionsSection({ todayTasks, dashStats, navigate }: any) {
           )}
           {hasTodayActions && (
             <div>
-              <p className="text-xs font-semibold text-foreground mb-1.5">Due Today</p>
+              <p className="text-xs font-semibold text-foreground mb-1.5">Follow-Up Actions ({dashStats.nextActions.length})</p>
               <div className="space-y-1.5">
                 {dashStats.nextActions.slice(0, 8).map((a: any, i: number) => (
                   <div
@@ -520,8 +500,74 @@ function TasksAndActionsSection({ todayTasks, dashStats, navigate }: any) {
               </div>
             </div>
           )}
-          {!hasOverdueActions && !hasTodayActions && (
-            <p className="text-sm text-muted-foreground py-4 text-center">No actions scheduled for today</p>
+          {!hasTodayContent && (
+            <p className="text-sm text-muted-foreground py-4 text-center">No tasks scheduled for today</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-my-overdue-tasks">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+            <AlertTriangle className="h-4 w-4 text-red-500" />
+            My Overdue Tasks
+            {hasOverdueContent && (
+              <Badge variant="destructive" className="ml-auto text-xs">
+                {(dashStats.overdueActions?.length || 0) + (todayTasks?.overdue?.length || 0)} overdue
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {hasOverdueTasks && (
+            <div className="mb-3">
+              <p className="text-xs font-semibold text-red-600 mb-1.5 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                System Tasks ({todayTasks.overdue.length})
+              </p>
+              <div className="space-y-1.5">
+                {todayTasks.overdue.slice(0, 5).map((task: any) => (
+                  <div key={task.id} className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-950/20 rounded-md cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/30 transition-colors" onClick={() => navigate(`/leads/${task.leadId}`)} data-testid={`overdue-task-${task.id}`}>
+                    <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-foreground truncate">{task.title}</p>
+                      <p className="text-[10px] text-red-500">{task.dueDate && formatDistanceToNow(new Date(task.dueDate), { addSuffix: true })}</p>
+                    </div>
+                    <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {hasOverdueActions && (
+            <div>
+              <p className="text-xs font-semibold text-red-600 mb-1.5">Overdue Follow-Ups ({dashStats.overdueActions.length})</p>
+              <div className="space-y-1.5">
+                {dashStats.overdueActions.slice(0, 8).map((a: any, i: number) => (
+                  <div
+                    key={`overdue-${i}`}
+                    className="flex items-center gap-2 p-2 bg-red-50 dark:bg-red-950/20 rounded-md cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/30 transition-colors"
+                    onClick={() => navigate(a.entity_type === "lead" ? `/leads/${a.entity_id}` : `/episodes/${a.entity_id}`)}
+                    data-testid={`overdue-action-${i}`}
+                  >
+                    <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-foreground truncate">
+                        {a.action_type_name || "Follow Up"}: {a.entity_name}
+                      </p>
+                      <p className="text-[10px] text-red-500">
+                        {a.next_action_date && formatDistanceToNow(new Date(a.next_action_date), { addSuffix: true })}
+                        {a.assigned_to_name ? ` · ${a.assigned_to_name}` : ""}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] shrink-0">{a.entity_type}</Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {!hasOverdueContent && (
+            <p className="text-sm text-muted-foreground py-4 text-center">No overdue tasks — great job!</p>
           )}
         </CardContent>
       </Card>
