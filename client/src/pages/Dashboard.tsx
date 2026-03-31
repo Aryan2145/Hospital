@@ -356,6 +356,23 @@ function ManagerDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, userNam
 function IndividualDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, userName, roleCode }: any) {
   const totalLeads = Number(lc.total_leads) || 0;
   const roleLabel = roleCode === "COUNSELLOR" ? "Counsellor" : roleCode === "AGENT" ? "Tele-Caller" : "Team Member";
+  const perf = dashStats.individualPerformance || {};
+  const callStats = perf.callStats || {};
+  const leadSources = perf.leadSourceBreakdown || [];
+  const myEpStats = perf.myEpisodeStats || {};
+  const funnel = perf.conversionFunnel || {};
+  const isAgent = roleCode === "AGENT";
+  const isCounsellor = roleCode === "COUNSELLOR";
+
+  const funnelStages = [
+    { label: "Raw", value: Number(funnel.raw) || 0, color: "#94a3b8" },
+    { label: "Contacted", value: Number(funnel.contacted) || 0, color: "#60a5fa" },
+    { label: "Qualified", value: Number(funnel.qualified) || 0, color: "#a78bfa" },
+    { label: "Appt Booked", value: Number(funnel.appointment_booked) || 0, color: "#34d399" },
+    { label: "Consult Done", value: Number(funnel.consultation_done) || 0, color: "#f59e0b" },
+    { label: "Won", value: Number(funnel.closed_won) || 0, color: "#22c55e" },
+  ];
+  const maxFunnel = Math.max(...funnelStages.map(s => s.value), 1);
 
   return (
     <>
@@ -387,6 +404,193 @@ function IndividualDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, user
       </div>
 
       <MyTodayAndOverdueSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {isAgent && (
+          <Card data-testid="card-call-performance">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Phone className="h-4 w-4 text-primary" />
+                My Call Performance
+              </CardTitle>
+              <CardDescription className="text-xs">Call activity and outcomes</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="text-center p-2 bg-muted/30 rounded-lg">
+                  <p className="text-lg font-bold text-foreground">{Number(callStats.today_calls) || 0}</p>
+                  <p className="text-[10px] text-muted-foreground">Today</p>
+                </div>
+                <div className="text-center p-2 bg-muted/30 rounded-lg">
+                  <p className="text-lg font-bold text-foreground">{Number(callStats.week_calls) || 0}</p>
+                  <p className="text-[10px] text-muted-foreground">This Week</p>
+                </div>
+                <div className="text-center p-2 bg-muted/30 rounded-lg">
+                  <p className="text-lg font-bold text-foreground">{Math.round(Number(callStats.avg_call_duration) / 60) || 0}m</p>
+                  <p className="text-[10px] text-muted-foreground">Avg Duration</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Outbound</span>
+                  <span className="font-medium">{Number(callStats.outbound_calls) || 0}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Inbound</span>
+                  <span className="font-medium">{Number(callStats.inbound_calls) || 0}</span>
+                </div>
+                <div className="border-t pt-2 mt-2">
+                  <p className="text-xs font-semibold text-foreground mb-1.5">Outcomes</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div className="flex justify-between text-xs p-1.5 bg-green-50 dark:bg-green-950/20 rounded">
+                      <span>Interested</span>
+                      <Badge variant="secondary" className="text-[10px] h-4">{Number(callStats.interested_outcomes) || 0}</Badge>
+                    </div>
+                    <div className="flex justify-between text-xs p-1.5 bg-blue-50 dark:bg-blue-950/20 rounded">
+                      <span>Confirmed</span>
+                      <Badge variant="secondary" className="text-[10px] h-4">{Number(callStats.confirmed_outcomes) || 0}</Badge>
+                    </div>
+                    <div className="flex justify-between text-xs p-1.5 bg-amber-50 dark:bg-amber-950/20 rounded">
+                      <span>Callback</span>
+                      <Badge variant="secondary" className="text-[10px] h-4">{Number(callStats.callback_outcomes) || 0}</Badge>
+                    </div>
+                    <div className="flex justify-between text-xs p-1.5 bg-red-50 dark:bg-red-950/20 rounded">
+                      <span>Not Available</span>
+                      <Badge variant="secondary" className="text-[10px] h-4">{Number(callStats.not_available_outcomes) || 0}</Badge>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isCounsellor && (
+          <Card data-testid="card-episode-progress">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Stethoscope className="h-4 w-4 text-primary" />
+                My Episode Progress
+              </CardTitle>
+              <CardDescription className="text-xs">Treatment episodes under your care</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="text-center p-3 bg-primary/5 rounded-lg">
+                  <p className="text-2xl font-bold text-foreground">{Number(myEpStats.active_episodes) || 0}</p>
+                  <p className="text-xs text-muted-foreground">Active Episodes</p>
+                </div>
+                <div className="text-center p-3 bg-green-50 dark:bg-green-950/20 rounded-lg">
+                  <p className="text-2xl font-bold text-green-600">{Number(myEpStats.completed_episodes) || 0}</p>
+                  <p className="text-xs text-muted-foreground">Completed</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Surgery Cases</span>
+                  <span className="font-medium">{Number(myEpStats.surgery_episodes) || 0}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Total Episodes</span>
+                  <span className="font-medium">{Number(myEpStats.total_episodes) || 0}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isCounsellor && (
+          <Card data-testid="card-revenue-pipeline">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <IndianRupee className="h-4 w-4 text-primary" />
+                My Revenue Pipeline
+              </CardTitle>
+              <CardDescription className="text-xs">Financial overview of your episodes</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="p-3 bg-primary/5 rounded-lg">
+                  <p className="text-xs text-muted-foreground">Active Pipeline Value</p>
+                  <p className="text-xl font-bold text-foreground">Rs.{formatINR(Number(myEpStats.pipeline_value) || 0)}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-2 bg-green-50 dark:bg-green-950/20 rounded-lg">
+                    <p className="text-[10px] text-muted-foreground">Realized Revenue</p>
+                    <p className="text-sm font-bold text-green-600">Rs.{formatINR(Number(myEpStats.realized_revenue) || 0)}</p>
+                  </div>
+                  <div className="p-2 bg-amber-50 dark:bg-amber-950/20 rounded-lg">
+                    <p className="text-[10px] text-muted-foreground">Expected Revenue</p>
+                    <p className="text-sm font-bold text-amber-600">Rs.{formatINR(Number(myEpStats.expected_revenue) || 0)}</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isAgent && leadSources.length > 0 && (
+          <Card data-testid="card-lead-sources">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Target className="h-4 w-4 text-primary" />
+                My Lead Sources
+              </CardTitle>
+              <CardDescription className="text-xs">Where your leads come from</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {leadSources.map((s: any, i: number) => {
+                  const total = Number(s.lead_count) || 0;
+                  const converted = Number(s.converted) || 0;
+                  const pct = totalLeads > 0 ? (total / totalLeads) * 100 : 0;
+                  return (
+                    <div key={i} className="space-y-1" data-testid={`lead-source-${i}`}>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-foreground truncate max-w-[160px]">{s.source_name || "Unknown"}</span>
+                        <span className="text-muted-foreground shrink-0">{total} leads · {converted} converted</span>
+                      </div>
+                      <div className="h-2 bg-muted/30 rounded overflow-hidden">
+                        <div className="h-full bg-primary/60 rounded transition-all" style={{ width: `${Math.max(pct, 2)}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      <Card data-testid="card-conversion-funnel">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-primary" />
+            My Conversion Funnel
+          </CardTitle>
+          <CardDescription className="text-xs">Lead progression through stages</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {funnelStages.map((stage, i) => (
+              <div key={i} className="flex items-center gap-3" data-testid={`funnel-stage-${i}`}>
+                <span className="text-xs text-muted-foreground w-24 text-right shrink-0">{stage.label}</span>
+                <div className="flex-1 h-7 bg-muted/20 rounded overflow-hidden relative">
+                  <div className="h-full rounded transition-all duration-500 flex items-center px-2" style={{ width: `${Math.max((stage.value / maxFunnel) * 100, 3)}%`, backgroundColor: stage.color }}>
+                    {stage.value > 0 && <span className="text-[10px] font-bold text-white drop-shadow">{stage.value}</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {(Number(funnel.nurture) || 0) > 0 && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <Snowflake className="w-3 h-3" />
+              <span>{funnel.nurture} in Nurture · {Number(funnel.closed_lost) || 0} Lost</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {dashStats.recentActivities && dashStats.recentActivities.length > 0 && (
         <Card data-testid="card-recent-activities">

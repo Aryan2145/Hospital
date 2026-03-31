@@ -6450,6 +6450,7 @@ export async function registerRoutes(
       }
 
       let recentActivities = null;
+      let individualPerformance = null;
       if (!isManagement) {
         recentActivities = (await pool.query(
           `SELECT a.id, a.type, a.description, a.outcome, a.created_at, l.name as lead_name, l.id as lead_id
@@ -6459,6 +6460,68 @@ export async function registerRoutes(
           ORDER BY a.created_at DESC LIMIT 10`,
           [tid, String(crmUserId)]
         )).rows;
+
+        const [callStats] = (await pool.query(
+          `SELECT 
+            COUNT(*) FILTER (WHERE a.type = 'call') as total_calls,
+            COUNT(*) FILTER (WHERE a.type = 'call' AND a.call_direction = 'outbound') as outbound_calls,
+            COUNT(*) FILTER (WHERE a.type = 'call' AND a.call_direction = 'inbound') as inbound_calls,
+            COALESCE(AVG(a.call_duration_seconds) FILTER (WHERE a.type = 'call' AND a.call_duration_seconds > 0), 0) as avg_call_duration,
+            COUNT(*) FILTER (WHERE a.type = 'call' AND a.created_at >= $2) as today_calls,
+            COUNT(*) FILTER (WHERE a.type = 'call' AND a.created_at >= NOW() - interval '7 days') as week_calls,
+            COUNT(*) FILTER (WHERE a.outcome = 'Interested') as interested_outcomes,
+            COUNT(*) FILTER (WHERE a.outcome = 'Confirmed') as confirmed_outcomes,
+            COUNT(*) FILTER (WHERE a.outcome = 'Not Available') as not_available_outcomes,
+            COUNT(*) FILTER (WHERE a.outcome = 'Callback Requested') as callback_outcomes,
+            COUNT(*) as total_activities
+          FROM activities a WHERE a.tenant_id = $1 AND a.created_by = $3`,
+          [tid, todayISO, String(crmUserId)]
+        )).rows;
+
+        const leadSourceBreakdown = (await pool.query(
+          `SELECT ls.name as source_name, COUNT(l.id) as lead_count,
+            COUNT(l.id) FILTER (WHERE l.status IN ('Consultation Done', 'Closed Won')) as converted
+          FROM leads l
+          LEFT JOIN lead_sources ls ON l.lead_source_id = ls.id
+          WHERE l.tenant_id = $1 AND (l.assigned_crm_user_id = $2 OR l.assigned_to = $3)
+          GROUP BY ls.name ORDER BY lead_count DESC LIMIT 8`,
+          [tid, crmUserId, String(crmUserId)]
+        )).rows;
+
+        const myEpisodeStats = (await pool.query(
+          `SELECT
+            COUNT(*) as total_episodes,
+            COUNT(*) FILTER (WHERE e.status NOT IN ('Completed', 'Discontinued')) as active_episodes,
+            COUNT(*) FILTER (WHERE e.status = 'Completed') as completed_episodes,
+            COUNT(*) FILTER (WHERE e.status IN ('Surgery Scheduled', 'Surgery Done')) as surgery_episodes,
+            COALESCE(SUM(e.estimated_cost) FILTER (WHERE e.status NOT IN ('Completed', 'Discontinued')), 0) as pipeline_value,
+            COALESCE(SUM(e.actual_bill) FILTER (WHERE e.status = 'Completed'), 0) as realized_revenue,
+            COALESCE(SUM(e.expected_revenue_amount) FILTER (WHERE e.status NOT IN ('Completed', 'Discontinued')), 0) as expected_revenue
+          FROM episodes e WHERE e.tenant_id = $1 AND e.assigned_crm_user_id = $2`,
+          [tid, crmUserId]
+        )).rows;
+
+        const conversionFunnel = (await pool.query(
+          `SELECT
+            COUNT(*) FILTER (WHERE l.status = 'Raw Lead Captured') as raw,
+            COUNT(*) FILTER (WHERE l.status = 'Contacted') as contacted,
+            COUNT(*) FILTER (WHERE l.status = 'Qualified') as qualified,
+            COUNT(*) FILTER (WHERE l.status = 'Appointment Booked') as appointment_booked,
+            COUNT(*) FILTER (WHERE l.status = 'Consultation Done') as consultation_done,
+            COUNT(*) FILTER (WHERE l.status = 'Closed Won') as closed_won,
+            COUNT(*) FILTER (WHERE l.status = 'Closed Lost') as closed_lost,
+            COUNT(*) FILTER (WHERE l.status = 'Nurture') as nurture,
+            COUNT(*) as total
+          FROM leads l WHERE l.tenant_id = $1 AND (l.assigned_crm_user_id = $2 OR l.assigned_to = $3)`,
+          [tid, crmUserId, String(crmUserId)]
+        )).rows;
+
+        individualPerformance = {
+          callStats: callStats || {},
+          leadSourceBreakdown,
+          myEpisodeStats: myEpisodeStats[0] || {},
+          conversionFunnel: conversionFunnel[0] || {},
+        };
       }
 
       res.json({
@@ -6472,6 +6535,7 @@ export async function registerRoutes(
         teamStats,
         teamOverdueActions,
         recentActivities,
+        individualPerformance,
       });
     } catch (err: any) {
       console.error("Dashboard stats error:", err);
