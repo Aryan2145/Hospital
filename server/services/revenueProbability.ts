@@ -59,7 +59,7 @@ export async function computeRevenueProbability(
   }
 
   const estimatedCost = episode.finalEstimatedAmount || episode.estimatedCost || 0;
-  const expectedRevenue = Math.round((estimatedCost * baseProbability) / 100);
+  const expectedRevenue = baseProbability > 0 ? estimatedCost : 0;
 
   await db.update(episodes).set({
     revenueProbability: baseProbability,

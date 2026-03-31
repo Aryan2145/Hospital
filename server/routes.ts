@@ -5951,13 +5951,13 @@ export async function registerRoutes(
         discountValue: calcAmount,
         discountNotes: discountNotes.trim(),
         discountStatus: "Pending",
-        finalEstimatedAmount: Math.max(0, finalAmount),
         initialQuote: baseAmount,
-        approvedDiscount: calcAmount,
-        finalQuote: Math.max(0, finalAmount),
+        finalEstimatedAmount: baseAmount,
+        finalQuote: baseAmount,
       };
 
-      const ep = await storage.updateEpisode(episodeId, tid, updates);
+      await storage.updateEpisode(episodeId, tid, updates);
+      await computeRevenueProbability(episodeId, tid);
 
       const crmUser = await getSessionCrmUserWithRole(req);
       const userName = crmUser?.employeeName || crmUser?.name || "System";
@@ -5973,7 +5973,8 @@ export async function registerRoutes(
         performedByCrmUserId: crmUser?.id,
       });
 
-      res.json(ep);
+      const freshEp = await storage.getEpisode(episodeId, tid);
+      res.json(freshEp);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -6017,7 +6018,8 @@ export async function registerRoutes(
       if (oldEpisode.actualBill != null) {
         updateFields.variance = newFinalQuote - (oldEpisode.actualBill || 0);
       }
-      const ep = await storage.updateEpisode(episodeId, tid, updateFields);
+      await storage.updateEpisode(episodeId, tid, updateFields);
+      await computeRevenueProbability(episodeId, tid);
 
       await storage.createAuditLog({
         tenantId: tid,
@@ -6031,7 +6033,8 @@ export async function registerRoutes(
         performedByCrmUserId: crmUser?.id,
       });
 
-      res.json(ep);
+      const freshEp = await storage.getEpisode(episodeId, tid);
+      res.json(freshEp);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -6070,7 +6073,8 @@ export async function registerRoutes(
       if (oldEpisode.actualBill != null) {
         revokeFields.variance = baseAmt - (oldEpisode.actualBill || 0);
       }
-      const ep = await storage.updateEpisode(episodeId, tid, revokeFields);
+      await storage.updateEpisode(episodeId, tid, revokeFields);
+      await computeRevenueProbability(episodeId, tid);
 
       await storage.createAuditLog({
         tenantId: tid,
@@ -6084,7 +6088,8 @@ export async function registerRoutes(
         performedByCrmUserId: crmUser?.id,
       });
 
-      res.json(ep);
+      const freshEp = await storage.getEpisode(episodeId, tid);
+      res.json(freshEp);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

@@ -343,7 +343,7 @@ export default function CampaignsPage() {
   };
 
   const handleSubmit = () => {
-    if (!formPlatform || !formObjective) {
+    if (!editing && (!formPlatform || !formObjective)) {
       toast({ title: "Platform and Objective are required", variant: "destructive" });
       return;
     }
@@ -919,7 +919,7 @@ export default function CampaignsPage() {
               <Button
                 onClick={handleSubmit}
                 className="w-full"
-                disabled={isPending || !formPlatform || !formObjective}
+                disabled={isPending || (!formPlatform && !editing) || (!formObjective && !editing)}
                 data-testid="button-save-campaign"
               >
                 {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Megaphone className="w-4 h-4 mr-2" />}

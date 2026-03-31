@@ -1119,8 +1119,11 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
   const { isAdmin } = useCurrentUser();
 
   const initialQuote = episode.initialQuote ?? episode.originalQuotedAmount ?? episode.estimatedCost ?? 0;
-  const approvedDiscount = episode.approvedDiscount ?? episode.discountAmount ?? 0;
-  const finalQuote = episode.finalQuote ?? episode.finalEstimatedAmount ?? Math.max(0, initialQuote - approvedDiscount);
+  const isDiscountApproved = episode.discountStatus === "Approved";
+  const approvedDiscount = isDiscountApproved ? (episode.approvedDiscount ?? episode.discountAmount ?? 0) : 0;
+  const finalQuote = isDiscountApproved 
+    ? (episode.finalQuote ?? episode.finalEstimatedAmount ?? Math.max(0, initialQuote - approvedDiscount))
+    : initialQuote;
   const actualBill = episode.actualBill ?? episode.actualCost ?? 0;
   const variance = episode.variance ?? (finalQuote - actualBill);
 
@@ -1137,7 +1140,7 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [revokeReason, setRevokeReason] = useState("");
 
-  const localFinalQuote = Math.max(0, localInitialQuote - localDiscountAmount);
+  const localFinalQuote = isDiscountApproved ? Math.max(0, localInitialQuote - localDiscountAmount) : localInitialQuote;
   const localVariance = localFinalQuote - localActualBill;
 
   const handlePercentChange = (pct: number) => {
@@ -1248,14 +1251,19 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Approved Discount (₹)</Label>
+              <Label className="text-xs text-muted-foreground">
+                {isDiscountApproved ? "Approved Discount (₹)" : "Discount (₹)"}
+              </Label>
               <Input
                 type="number"
-                value={approvedDiscount}
+                value={isDiscountApproved ? approvedDiscount : (episode.discountAmount ?? 0)}
                 readOnly
                 className="text-xs bg-muted"
                 data-testid="input-approved-discount"
               />
+              {isPendingDiscount && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">Pending approval — not applied to final quote</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
