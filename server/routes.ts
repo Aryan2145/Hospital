@@ -7713,35 +7713,62 @@ async function ensureSuperAdmin() {
         await db.update(crmUsers).set(updates).where(eq(crmUsers.id, existingUsers[0].id));
         console.log("Super Admin updated:", Object.keys(updates).join(", "));
       }
-      return;
-    }
-
-    let roleRows = await db.select().from(systemRoles).where(
-      and(eq(systemRoles.code, "SYS_ADMIN"), eq(systemRoles.tenantId, tid))
-    );
-    if (roleRows.length === 0) {
-      roleRows = await db.select().from(systemRoles).where(
-        and(eq(systemRoles.code, "ADMIN"), eq(systemRoles.tenantId, tid))
+    } else {
+      let roleRows = await db.select().from(systemRoles).where(
+        and(eq(systemRoles.code, "SYS_ADMIN"), eq(systemRoles.tenantId, tid))
       );
-    }
-    const adminRoleId = roleRows.length > 0 ? roleRows[0].id : null;
+      if (roleRows.length === 0) {
+        roleRows = await db.select().from(systemRoles).where(
+          and(eq(systemRoles.code, "ADMIN"), eq(systemRoles.tenantId, tid))
+        );
+      }
+      const adminRoleId = roleRows.length > 0 ? roleRows[0].id : null;
 
-    const hash = await hashPassword(defaultPassword);
-    await db.insert(crmUsers).values({
-      tenantId: tid,
-      code: "SUPERADMIN",
-      name: "Super Admin",
-      email: "superadmin@viroc.in",
-      phone,
-      systemRoleId: adminRoleId,
-      isActive: true,
-      status: "Active",
-      accessScopeType: "All",
-      phiAccessLevel: "Full",
-      passwordHash: hash,
-      displayOrder: 0,
-    });
-    console.log("Super Admin user created.");
+      const hash = await hashPassword(defaultPassword);
+      await db.insert(crmUsers).values({
+        tenantId: tid,
+        code: "SUPERADMIN",
+        name: "Super Admin",
+        email: "superadmin@viroc.in",
+        phone,
+        systemRoleId: adminRoleId,
+        isActive: true,
+        status: "Active",
+        accessScopeType: "All",
+        phiAccessLevel: "Full",
+        passwordHash: hash,
+        displayOrder: 0,
+      });
+      console.log("Super Admin user created.");
+    }
+
+    const defaultHash = await hashPassword(defaultPassword);
+    const bcrypt = await import("bcryptjs");
+    const allUsers = await db.select().from(crmUsers).where(eq(crmUsers.status, "Active"));
+    let fixedCount = 0;
+    for (const user of allUsers) {
+      const updates: Record<string, any> = {};
+      if (!user.passwordHash) {
+        updates.passwordHash = defaultHash;
+      } else {
+        const matches = await bcrypt.compare(defaultPassword, user.passwordHash);
+        if (!matches) {
+          updates.passwordHash = defaultHash;
+        }
+      }
+      if (user.phone && !user.phone.startsWith("+91") && user.phone.replace(/\D/g, "").length === 10) {
+        updates.phone = "+91" + user.phone.replace(/\D/g, "");
+      }
+      if (user.failedLoginAttempts && user.failedLoginAttempts > 0) {
+        updates.failedLoginAttempts = 0;
+        updates.lockedUntil = null;
+      }
+      if (Object.keys(updates).length > 0) {
+        await db.update(crmUsers).set(updates).where(eq(crmUsers.id, user.id));
+        fixedCount++;
+      }
+    }
+    if (fixedCount > 0) console.log(`Fixed ${fixedCount} CRM user(s) (password/phone/lockout)`);
   } catch (err) {
     console.error("Error ensuring super admin:", err);
   }
