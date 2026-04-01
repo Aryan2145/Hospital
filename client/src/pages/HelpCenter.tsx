@@ -273,6 +273,8 @@ const HELP_SECTIONS: HelpSection[] = [
     icon: Users,
     topics: [
       { id: "creating-leads", title: "Creating & Importing Leads", icon: Users },
+      { id: "csv-import", title: "CSV Lead Import", icon: FileText },
+      { id: "google-sheets-import", title: "Google Sheets Import", icon: Database },
       { id: "lifecycle", title: "Lead Lifecycle Stages", icon: ArrowRight },
       { id: "kanban", title: "Kanban Workspace", icon: LayoutDashboard },
       { id: "lead-detail", title: "Lead Detail Page", icon: FileText },
@@ -288,6 +290,7 @@ const HELP_SECTIONS: HelpSection[] = [
     topics: [
       { id: "scheduling", title: "Scheduling Appointments", icon: Calendar },
       { id: "opd-timings", title: "Doctor OPD Timings", icon: Clock },
+      { id: "doctor-availability", title: "Doctor Availability Calendar", icon: CalendarDays },
       { id: "check-in", title: "Check-In Process", icon: CheckCircle2 },
     ],
   },
@@ -342,6 +345,7 @@ const HELP_SECTIONS: HelpSection[] = [
     icon: Megaphone,
     topics: [
       { id: "campaign-setup", title: "Campaign Setup", icon: Megaphone },
+      { id: "campaign-dashboard", title: "Campaign Dashboard & Stats", icon: LayoutDashboard },
       { id: "naming-conventions", title: "Naming Conventions", icon: FileText },
       { id: "utm-tracking", title: "UTM Tracking", icon: ExternalLink },
       { id: "meta-integration", title: "Connecting Meta to CRM", icon: SiFacebook, isExternal: true, href: "/help/meta-integration" },
@@ -363,6 +367,8 @@ const HELP_SECTIONS: HelpSection[] = [
     icon: Settings,
     topics: [
       { id: "connectors", title: "Connectors Setup", icon: Plug },
+      { id: "email-settings", title: "Email / SMTP Settings", icon: Bell },
+      { id: "whatsapp-settings", title: "WhatsApp Business Settings", icon: Phone },
       { id: "branding", title: "Branding Customization", icon: Paintbrush },
       { id: "intelligence-config", title: "Intelligence Config", icon: Brain },
       { id: "sla-reminders", title: "SLA & Reminder Policies", icon: Bell },
@@ -620,6 +626,74 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
         </div>
       ),
     },
+    "leads/csv-import": {
+      title: "CSV Lead Import",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Bulk Import from CSV</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The CSV Import tool allows you to bulk-upload leads from a local file. Navigate to <strong>Leads &gt; Import Leads</strong> or use the import button on the Leads page.
+            </p>
+            <StepList steps={[
+              "Download the sample CSV template to see the required column format",
+              "Prepare your CSV file with lead data (Name, Phone, Email, etc.)",
+              "Drag and drop the file or click to upload your CSV",
+              "Map your CSV column headers to the CRM lead fields (e.g., 'Full Name' → 'name')",
+              "Configure import settings: Duplicate Strategy, Default Lead Status, and Default Tags",
+              "Review the preview and click Import to process",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Duplicate Handling Strategies</h2>
+            <FieldTable fields={[
+              { field: "Skip", desc: "If a lead with the same phone number already exists, skip the row entirely" },
+              { field: "Update Blank Fields Only", desc: "Only fill in fields that are currently empty on the existing lead" },
+              { field: "Overwrite", desc: "Replace existing lead data with the imported data" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Import History</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Every import is logged with a timestamp, status (completed/failed), success count, and failure count. You can review past imports at the bottom of the import page.
+            </p>
+          </section>
+          <TipBox>Always download and use the sample template to ensure your columns are formatted correctly. Phone numbers should include country codes for best duplicate detection.</TipBox>
+        </div>
+      ),
+    },
+    "leads/google-sheets-import": {
+      title: "Google Sheets Import",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Import from Google Sheets</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Google Sheets Import allows you to pull leads directly from a live Google Spreadsheet. This is ideal for ongoing lead capture from Google Forms or shared spreadsheets.
+            </p>
+            <StepList steps={[
+              "Navigate to the Google Sheets Import page from the Leads menu",
+              "Enter your Google API Key and paste the Google Sheet URL",
+              "Select the specific sheet tab to import from",
+              "Map the spreadsheet columns to CRM fields (Name, Phone, Email, UTM Source, etc.)",
+              "Preview the first few rows to verify the mapping is correct",
+              "Configure duplicate handling, default status, and tags",
+              "Click Import to start the process",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">4-Step Import Wizard</h2>
+            <FieldTable fields={[
+              { field: "Step 1: Connect", desc: "Enter API key and sheet URL, then verify connection" },
+              { field: "Step 2: Map", desc: "Map spreadsheet columns to CRM lead fields" },
+              { field: "Step 3: Preview", desc: "Review first rows of data before importing" },
+              { field: "Step 4: Result", desc: "View import summary with success/failure counts" },
+            ]} />
+          </section>
+          <WarningBox>The Google API Key must have read access to the Google Sheets API. Contact your administrator if you need help setting up API credentials.</WarningBox>
+        </div>
+      ),
+    },
     "leads/lifecycle": {
       title: "Lead Lifecycle Stages",
       content: (
@@ -860,6 +934,40 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               The doctor availability calendar shows a visual view of each doctor's schedule. Green slots indicate available times, and blocked/red slots show unavailable periods. Admins and Managers can edit doctor schedules from the Master Data section.
             </p>
           </section>
+        </div>
+      ),
+    },
+    "appointments/doctor-availability": {
+      title: "Doctor Availability Calendar",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Availability Calendar</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Doctor Availability page provides a monthly calendar view showing doctor leaves and availability. Navigate to <strong>Appointments &gt; Doctor Availability</strong> to access it.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Key Features</h2>
+            <FieldTable fields={[
+              { field: "Monthly Calendar View", desc: "A visual calendar where days with scheduled leaves are highlighted in red" },
+              { field: "Doctor Filter", desc: "Filter the calendar by a specific doctor or view all doctors at once" },
+              { field: "Leave Records", desc: "Each leave shows the doctor's name, leave dates (from-to), and the reason" },
+              { field: "Upcoming Leaves", desc: "A sidebar list showing the next 10 scheduled leaves across all doctors" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Quick Stats</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Dashboard cards at the top provide at-a-glance information:
+            </p>
+            <FieldTable fields={[
+              { field: "Active Doctors", desc: "Total number of doctors currently active in the system" },
+              { field: "Leaves This Month", desc: "Count of leave days scheduled in the current month" },
+              { field: "Total Leave Records", desc: "Historical count of all leave records" },
+            ]} />
+          </section>
+          <TipBox>Check the availability calendar before scheduling appointments to avoid booking patients on days when their doctor is on leave.</TipBox>
         </div>
       ),
     },
@@ -1545,6 +1653,58 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
         </div>
       ),
     },
+    "campaigns/campaign-dashboard": {
+      title: "Campaign Dashboard & Stats",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Campaign Statistics</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              At the top of the Campaigns page, four summary cards give you an at-a-glance overview of your marketing activity:
+            </p>
+            <FieldTable fields={[
+              { field: "Total Campaigns", desc: "Count of all campaigns created in the system" },
+              { field: "Active", desc: "Number of currently running (active) campaigns" },
+              { field: "Total Budget", desc: "Aggregated budget across all campaigns (₹)" },
+              { field: "Platforms", desc: "Count of unique advertising platforms being used" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Supported Platforms</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              The CRM supports campaigns across multiple advertising platforms:
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {["Meta (Facebook & Instagram)", "Google Ads", "LinkedIn", "X (Twitter)", "YouTube", "Microsoft Ads (Bing)", "WhatsApp", "Offline"].map((p, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
+                  {p}
+                </div>
+              ))}
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Search & Filters</h2>
+            <FieldTable fields={[
+              { field: "Search", desc: "Text search across campaign names" },
+              { field: "Platform Filter", desc: "Filter campaigns by advertising platform" },
+              { field: "Status Filter", desc: "Show only Active or Inactive campaigns" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Campaign Detail View</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Click any campaign to open its detail dialog with two tabs:
+            </p>
+            <FieldTable fields={[
+              { field: "Details Tab", desc: "Full metadata — platform, objective, funnel stage, channel, target audience, budget, dates, and name breakdown" },
+              { field: "UTM Parameters Tab", desc: "View and copy individual UTM parameters or the full UTM query string for tracking URLs" },
+            ]} />
+          </section>
+          <TipBox>The auto-increment feature automatically suggests the next ad number (Ad2, Ad3, etc.) when you create a campaign with the same platform, objective, and month as an existing one.</TipBox>
+        </div>
+      ),
+    },
     "campaigns/naming-conventions": {
       title: "Naming Conventions",
       content: (
@@ -1616,23 +1776,9 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
             <p className="text-sm text-muted-foreground leading-relaxed mb-4">
               Master Data is the reference data that powers the entire CRM. These are configurable lookup tables that define the options available throughout the system — like lead sources, treatment types, departments, and more.
             </p>
-            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-              Navigate to <strong>Masters &gt; Master Data</strong> to view and manage all master tables. The tables are organized into categories:
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Navigate to <strong>Masters &gt; Master Data</strong> to view and manage all master tables. The tables are organized into categories (see the full list below).
             </p>
-            <div className="space-y-2">
-              {[
-                { cat: "Organisation", examples: "Branches, Departments, Designations" },
-                { cat: "Clinical", examples: "Treatment Types, Specializations, Doctors, Consultation Outcomes" },
-                { cat: "Lead & Patient", examples: "Lead Sources, Lead Source Categories, Lead Statuses" },
-                { cat: "Campaign & Marketing", examples: "Campaign Channels, UTM Sources" },
-                { cat: "System", examples: "System Roles, Reminder Policies, SLA Rules" },
-              ].map((item, i) => (
-                <div key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
-                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
-                  <span><strong>{item.cat}:</strong> {item.examples}</span>
-                </div>
-              ))}
-            </div>
           </section>
           <section>
             <h2 className="text-lg font-bold text-foreground mb-3">Adding & Editing Records</h2>
@@ -1644,6 +1790,30 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               "Submit the record — it enters the Approval Queue for review",
               "Once approved by an authorized user, the record becomes active",
             ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Master Data Categories</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Master data tables are organized into logical categories:
+            </p>
+            <div className="space-y-3">
+              {[
+                { cat: "Location", tables: "Countries, States, Cities, Areas" },
+                { cat: "Organisation", tables: "Organisations, Branches, Departments, Designations, Employment Types, System Roles, CRM Users, Calling Lines, User-Line Assignments" },
+                { cat: "Doctors", tables: "Doctors, Treatment Departments, OPD Timings, Doctor Leave Exceptions" },
+                { cat: "Lead Generation", tables: "Lead Source Categories, Lead Sources, Referrers, Corporate Insurances" },
+                { cat: "Consultation", tables: "Conversion Stages, Consultation Outcome Remarks" },
+                { cat: "Activity & Workflow", tables: "Lead Statuses" },
+                { cat: "Communication", tables: "Message Templates (SMS, Email, WhatsApp, Push), Holidays, Tags" },
+                { cat: "Insurance", tables: "Insurers, TPAs, Policy Types, Pre-Auth Statuses, Rejection Reasons" },
+                { cat: "Governance", tables: "SLA Rules, Reminder Policies, Data Retention Policies" },
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
+                  <span><strong>{item.cat}:</strong> {item.tables}</span>
+                </div>
+              ))}
+            </div>
           </section>
           <TipBox>Master data changes go through an approval workflow to prevent accidental modifications. Only Admins and Managers can approve pending changes.</TipBox>
         </div>
@@ -1735,11 +1905,103 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
             </div>
           </section>
           <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Lead Capture Rules</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              In addition to platform connectors, you can set up Lead Capture Rules to automatically ingest leads from various sources:
+            </p>
+            <div className="space-y-3">
+              {[
+                { name: "Meta Lead Ads", desc: "Automatically capture leads from Facebook and Instagram lead ad forms." },
+                { name: "Google Forms", desc: "Route Google Form submissions directly into the CRM pipeline." },
+                { name: "Telephony (Callyzer)", desc: "Auto-create leads from incoming calls via the telephony integration." },
+                { name: "WhatsApp Business", desc: "Capture leads from WhatsApp conversations and inquiries." },
+                { name: "Google Sheets", desc: "Pull leads from shared Google Spreadsheets on a configured schedule." },
+                { name: "Custom Webhook", desc: "Set up a webhook endpoint to receive leads from any external system." },
+              ].map((item, i) => (
+                <Card key={i} className="p-3">
+                  <h3 className="text-sm font-semibold text-foreground mb-1">{item.name}</h3>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                </Card>
+              ))}
+            </div>
+          </section>
+          <section>
             <h2 className="text-lg font-bold text-foreground mb-3">Connector Security</h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
               All connector credentials (API keys, tokens, secrets) are encrypted at rest using AES-256-GCM encryption. Credentials are never displayed in plain text after saving — only the connection status is shown.
             </p>
           </section>
+        </div>
+      ),
+    },
+    "configurations/email-settings": {
+      title: "Email / SMTP Settings",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">SMTP Email Configuration</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Configure the outbound email server for your hospital. This is used for sending appointment confirmations, password reset emails, and system notifications. Navigate to <strong>Configurations &gt; Email / SMTP Settings</strong>.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Server Settings</h2>
+            <FieldTable fields={[
+              { field: "SMTP Host", desc: "The mail server hostname (e.g., smtp.gmail.com, smtp.office365.com)" },
+              { field: "SMTP Port", desc: "Port number — typically 587 (TLS) or 465 (SSL)" },
+              { field: "Username", desc: "Authentication username for the SMTP server" },
+              { field: "Password", desc: "Authentication password (stored encrypted)" },
+              { field: "Security", desc: "Encryption protocol — TLS (recommended) or SSL" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Sender Information</h2>
+            <FieldTable fields={[
+              { field: "From Email", desc: "The email address that appears as the sender (e.g., noreply@virocortho.com)" },
+              { field: "From Name", desc: "The display name shown in recipients' inbox (e.g., 'Viroc Hospital')" },
+            ]} />
+          </section>
+          <WarningBox>SMTP credentials are encrypted at rest. After saving, the password is never displayed in plain text — only the connection status is shown. Each hospital (tenant) has its own independent email configuration.</WarningBox>
+        </div>
+      ),
+    },
+    "configurations/whatsapp-settings": {
+      title: "WhatsApp Business Settings",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">WhatsApp Business API Integration</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Connect your hospital's WhatsApp Business account to send automated messages to patients. Navigate to <strong>Configurations &gt; WhatsApp Business Settings</strong>.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Configuration Fields</h2>
+            <FieldTable fields={[
+              { field: "Phone Number ID", desc: "Your WhatsApp Business Phone Number ID from Meta Business Manager" },
+              { field: "Business Account ID", desc: "Your WhatsApp Business Account ID" },
+              { field: "Permanent Access Token", desc: "A long-lived access token from Meta for API authentication (stored encrypted)" },
+              { field: "Integration Toggle", desc: "Enable or disable the WhatsApp integration without removing credentials" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Message Templates</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              WhatsApp Business API requires pre-approved message templates. You can configure templates for:
+            </p>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li><strong>Appointment Confirmations:</strong> Sent when an appointment is booked</li>
+              <li><strong>Appointment Reminders:</strong> Sent before the scheduled appointment</li>
+              <li><strong>Follow-Up Messages:</strong> Sent as part of post-care or nurture workflows</li>
+            </ul>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Testing the Connection</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              After saving your credentials, use the "Send Test Message" button to verify the integration is working correctly. Enter a phone number and send a test template message to confirm delivery.
+            </p>
+          </section>
+          <TipBox>WhatsApp message templates must be approved by Meta before they can be used. Create templates in the Meta Business Manager and reference them here by template name.</TipBox>
         </div>
       ),
     },
@@ -1831,41 +2093,78 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
             </p>
           </section>
           <section>
-            <h2 className="text-lg font-bold text-foreground mb-3">Dashboard by Role</h2>
-            <div className="space-y-4">
-              {[
-                {
-                  role: "Admin Dashboard",
-                  sections: ["Total Leads (with trend)", "Pipeline Value", "Realized Revenue", "Conversion Rate", "Lead Source Breakdown", "Campaign Performance", "Team Overview"]
-                },
-                {
-                  role: "Manager Dashboard",
-                  sections: ["My Today's Tasks", "My Overdue Tasks", "Team Overdue Tasks", "Team Performance Metrics", "Department-level Analytics"]
-                },
-                {
-                  role: "Agent (Tele-Caller) Dashboard",
-                  sections: ["My Today's Tasks", "My Overdue Tasks", "My Call Performance (total calls, average duration, outcomes)", "My Lead Sources (source-wise breakdown)", "My Conversion Funnel"]
-                },
-                {
-                  role: "Counsellor Dashboard",
-                  sections: ["My Today's Tasks", "My Overdue Tasks", "My Episode Progress (active/completed episodes)", "My Revenue Pipeline (pipeline value, realized revenue)", "My Conversion Funnel"]
-                },
-              ].map((item, i) => (
-                <Card key={i} className="p-3">
-                  <h3 className="text-sm font-semibold text-foreground mb-2">{item.role}</h3>
-                  <ul className="space-y-1">
-                    {item.sections.map((section, j) => (
-                      <li key={j} className="flex items-start gap-2 text-xs text-muted-foreground">
-                        <div className="w-1 h-1 rounded-full bg-primary mt-1.5 flex-shrink-0" />
-                        {section}
-                      </li>
-                    ))}
-                  </ul>
-                </Card>
-              ))}
-            </div>
+            <h2 className="text-lg font-bold text-foreground mb-3">Admin Dashboard</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              The Admin dashboard provides a hospital-wide overview with management-level KPIs and intelligence:
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">KPI Cards</h3>
+            <FieldTable fields={[
+              { field: "Total Leads", desc: "Total lead count with 'new today' trend indicator" },
+              { field: "Active Episodes", desc: "Active treatment episodes with surgery count" },
+              { field: "Pipeline Value (₹)", desc: "Financial value of all active episodes" },
+              { field: "Revenue Realized (₹)", desc: "Total completed revenue" },
+              { field: "Today Appointments", desc: "Today's appointment count with pending indicator" },
+            ]} />
+            <h3 className="text-sm font-semibold text-foreground mb-2 mt-3">Secondary Stats</h3>
+            <FieldTable fields={[
+              { field: "Hot Leads", desc: "High-priority leads needing immediate attention" },
+              { field: "Dormant Leads", desc: "Leads with no activity for 5+ days" },
+              { field: "Overdue Actions", desc: "Combined overdue lead and episode follow-ups" },
+              { field: "Insurance Cases", desc: "Active insurance-related episodes" },
+            ]} />
+            <h3 className="text-sm font-semibold text-foreground mb-2 mt-3">Charts & Analytics</h3>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li><strong>CRM Lead Pipeline:</strong> Horizontal bar chart showing lead distribution across stages (Raw → Won)</li>
+              <li><strong>Episode Status Distribution:</strong> Pie chart of Active, Consultations, Surgeries, Completed, Discontinued</li>
+              <li><strong>Lead Temperature Chart:</strong> Bar chart breakdown by temperature (Very Hot to Dormant)</li>
+              <li><strong>No-Show Rate by Doctor:</strong> Doctor-wise no-show counts and percentage rates</li>
+              <li><strong>Drop-Off by Stage:</strong> Where leads are lost and the associated lost revenue</li>
+            </ul>
+            <h3 className="text-sm font-semibold text-foreground mb-2 mt-3">Other Sections</h3>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li><strong>My Today's Tasks:</strong> System tasks and follow-up actions due today</li>
+              <li><strong>My Overdue Tasks:</strong> Tasks past their due date</li>
+              <li><strong>Dormant Leads:</strong> List of leads needing re-engagement</li>
+              <li><strong>Team Performance:</strong> Table with team member stats (Total Leads, Untouched, New Today, Overdue)</li>
+            </ul>
           </section>
-          <TipBox>The "My Today's Tasks" and "My Overdue Tasks" cards are your daily starting point. Use them in morning huddles to review what needs to be done today.</TipBox>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Manager Dashboard</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              The Manager dashboard focuses on team oversight and departmental lead flow:
+            </p>
+            <FieldTable fields={[
+              { field: "KPI Cards", desc: "My Leads, Hot Leads, Active Episodes, Today Appointments" },
+              { field: "Stat Cards", desc: "Overdue Actions, Today's Actions, Dormant Leads, Untouched Leads" },
+              { field: "Team Overdue Tasks", desc: "Overdue actions assigned to team members (unique to managers)" },
+              { field: "Team Performance", desc: "Per-member stats table with lead counts and activity" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Agent (Tele-Caller) Dashboard</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              The Agent dashboard is optimized for call center staff with call performance metrics:
+            </p>
+            <FieldTable fields={[
+              { field: "My Call Performance", desc: "Today's calls, weekly calls, average duration, outbound vs inbound, and call outcomes (Interested, Confirmed, Callback, Not Available)" },
+              { field: "My Lead Sources", desc: "Progress bar breakdown showing lead counts and conversions per source" },
+              { field: "My Conversion Funnel", desc: "Horizontal bar chart of personal lead progression (Raw → Won)" },
+              { field: "My Recent Activity", desc: "Chronological feed of calls, notes, and activity logs" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Counsellor Dashboard</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              The Counsellor dashboard focuses on episode management and revenue tracking:
+            </p>
+            <FieldTable fields={[
+              { field: "My Episode Progress", desc: "Active and completed episode counts, surgery cases, total episodes" },
+              { field: "My Revenue Pipeline", desc: "Active pipeline value (₹), realized revenue, and expected revenue" },
+              { field: "My Conversion Funnel", desc: "Personal lead progression bar chart" },
+              { field: "My Recent Activity", desc: "Chronological activity feed" },
+            ]} />
+          </section>
+          <TipBox>The "My Today's Tasks" and "My Overdue Tasks" cards appear on every role's dashboard. Use them in morning huddles to review what needs to be done today.</TipBox>
         </div>
       ),
     },
@@ -1876,23 +2175,39 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
           <section>
             <h2 className="text-lg font-bold text-foreground mb-3">Call Activity Reports</h2>
             <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-              Navigate to <strong>Reports & Dashboards &gt; Telephony Reports</strong> to view detailed call activity data captured through the telephony (Callyzer) integration.
+              Navigate to <strong>Reports & Dashboards &gt; Telephony Reports</strong> to view detailed call activity data captured through the telephony integration.
             </p>
-            <h3 className="text-sm font-semibold text-foreground mb-2">Available Metrics</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Summary Cards</h3>
             <FieldTable fields={[
-              { field: "Total Calls", desc: "Total incoming and outgoing calls" },
-              { field: "Call Duration", desc: "Total and average call duration" },
-              { field: "Calls by Employee", desc: "Breakdown of calls per team member" },
-              { field: "Call Outcomes", desc: "Connected, Not Answered, Busy, etc." },
-              { field: "Call Trends", desc: "Call volume trends over time" },
+              { field: "Total Calls", desc: "Combined count of incoming and outgoing calls" },
+              { field: "Average Duration", desc: "Average call duration across all calls" },
+              { field: "Lead Conversions", desc: "Calls that resulted in new lead creation or lead matching" },
             ]} />
           </section>
           <section>
-            <h2 className="text-lg font-bold text-foreground mb-3">Using Reports for Management</h2>
+            <h2 className="text-lg font-bold text-foreground mb-3">Report Tabs</h2>
+            <div className="space-y-3">
+              <Card className="p-3">
+                <h3 className="text-sm font-semibold text-foreground mb-1">Call Logs</h3>
+                <p className="text-xs text-muted-foreground">Detailed table of all calls — Incoming, Outgoing, and Missed — with timestamps, durations, and phone numbers. Each row shows the Match Status: whether the call was matched to an existing lead, used to auto-create a new lead, or remained unmatched.</p>
+              </Card>
+              <Card className="p-3">
+                <h3 className="text-sm font-semibold text-foreground mb-1">Employee Performance</h3>
+                <p className="text-xs text-muted-foreground">Summary table showing per-employee call statistics: total calls, total duration, average duration, and lead match rate. Use this to compare team member productivity.</p>
+              </Card>
+              <Card className="p-3">
+                <h3 className="text-sm font-semibold text-foreground mb-1">Telecalling Team</h3>
+                <p className="text-xs text-muted-foreground">Management tab for mapping telephony employee IDs to CRM user accounts. This mapping ensures calls are attributed to the correct CRM users for performance tracking.</p>
+              </Card>
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Export & Filtering</h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Telephony reports help managers evaluate team calling activity, identify underperforming agents, and correlate call volume with lead conversion rates. Use these reports in weekly reviews to spot trends and adjust team workload.
+              Use the date range filter to focus on specific periods. The Export button generates a CSV file of the filtered call logs for external analysis or reporting.
             </p>
           </section>
+          <TipBox>Telephony reports help managers evaluate team calling activity, identify underperforming agents, and correlate call volume with lead conversion rates. Use these reports in weekly reviews to spot trends and adjust team workload.</TipBox>
         </div>
       ),
     },
