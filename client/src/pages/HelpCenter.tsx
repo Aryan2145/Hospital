@@ -298,6 +298,10 @@ const HELP_SECTIONS: HelpSection[] = [
     topics: [
       { id: "episode-lifecycle", title: "Episode Lifecycle", icon: ArrowRight },
       { id: "consultation-log", title: "Consultation Log & Outcomes", icon: ClipboardList },
+      { id: "clinical-tab", title: "Clinical Information", icon: Stethoscope },
+      { id: "financial-tab", title: "Financial & Billing", icon: FileText },
+      { id: "insurance-tab", title: "Insurance & Pre-Auth", icon: Shield },
+      { id: "family-tab", title: "Family & Decision Status", icon: Users },
       { id: "treatment-planning", title: "Treatment Planning", icon: FileText },
       { id: "intelligence", title: "Episode Intelligence", icon: Brain },
     ],
@@ -967,6 +971,213 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               For outcomes that don't auto-close the episode, a Next Action panel appears allowing you to schedule follow-up tasks, set the next appointment date, and assign the follow-up to a team member. The episode status automatically transitions to "Consultation Done" when the log is submitted.
             </p>
           </section>
+        </div>
+      ),
+    },
+    "episodes/clinical-tab": {
+      title: "Clinical Information",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Clinical Tab Overview</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Clinical tab is the default view on the Episode Detail page. It contains the core medical information for this treatment episode, divided into three sections: Episode Details, Case Ownership, and Clinical Information.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Episode Details</h2>
+            <FieldTable fields={[
+              { field: "Episode Name", desc: "The name/title of this treatment episode (e.g., 'Robotic Knee Replacement - Right')" },
+              { field: "Type", desc: "Episode type classification" },
+              { field: "Status", desc: "Current status in the episode lifecycle" },
+              { field: "Start Date", desc: "When this episode was created (typically at check-in)" },
+              { field: "End Date", desc: "When the episode was completed or discontinued" },
+              { field: "Lead ID", desc: "Link back to the original lead record" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Case Ownership</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Each episode can have up to three doctor assignments for different phases of care:
+            </p>
+            <FieldTable fields={[
+              { field: "Primary Doctor (Case Owner)", desc: "The main consulting doctor responsible for this case. Required field." },
+              { field: "Surgery Doctor", desc: "The surgeon performing the procedure (if different from the primary doctor)" },
+              { field: "Post-Care Doctor", desc: "The doctor responsible for post-operative care and follow-up" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Clinical Information</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              The Clinical Information card contains the medical details of the case:
+            </p>
+            <FieldTable fields={[
+              { field: "Diagnosis", desc: "The medical diagnosis for this episode" },
+              { field: "Treatment Plan", desc: "Detailed treatment plan as determined by the doctor" },
+              { field: "Notes", desc: "Additional clinical notes and observations" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Editing Clinical Notes</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Clinical notes have a special edit workflow with audit controls:
+            </p>
+            <StepList steps={[
+              "Click the pencil (edit) icon on the Clinical Information card",
+              "The fields switch to edit mode — modify Diagnosis, Treatment Plan, and Notes as needed",
+              "Click 'Save' — a dialog will ask you to provide a reason for the edit",
+              "Enter the reason (minimum 10 characters) explaining why the change was made",
+              "Click 'Confirm Save' — the edit is saved and the reason is recorded in the audit trail",
+            ]} />
+          </section>
+          <WarningBox>Clinical note edits are tracked with full audit trails including who made the change, when, and why. Only users with the appropriate role permissions can edit clinical notes.</WarningBox>
+        </div>
+      ),
+    },
+    "episodes/financial-tab": {
+      title: "Financial & Billing",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Financial Tab Overview</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Financial tab on the Episode Detail page manages all cost-related information for a treatment episode — from initial quotation through billing and discount approval.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Quote & Billing</h2>
+            <FieldTable fields={[
+              { field: "Initial Quote (₹)", desc: "The original quoted amount for the treatment. Editable until a discount is approved." },
+              { field: "Discount (₹)", desc: "The discount amount applied. Shows 'Approved Discount' once approved by management." },
+              { field: "Final Quote (₹)", desc: "Auto-calculated: Initial Quote minus Approved Discount. Read-only." },
+              { field: "Actual Bill (₹)", desc: "The actual amount billed to the patient after treatment" },
+              { field: "Variance (₹)", desc: "Auto-calculated: Final Quote minus Actual Bill. Shows 'Under budget' (green) or 'Over budget' (red)." },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Discount Approval Workflow</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Discounts go through a formal approval process to maintain financial controls:
+            </p>
+            <StepList steps={[
+              "Counsellor enters the discount percentage and amount in the Negotiation & Discount section",
+              "Add discount notes explaining why the discount is being offered",
+              "Click 'Submit for Approval' — the discount request enters 'Pending' status",
+              "An Admin or Manager reviews the request and can Approve or Revoke it",
+              "If Approved: the discount is applied and the Final Quote updates automatically",
+              "If Revoked: the reviewer provides a reason, and the discount is removed",
+            ]} />
+            <h3 className="text-sm font-semibold text-foreground mb-2 mt-4">Discount Status Badges</h3>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Badge className="bg-muted text-muted-foreground text-[10px]">Draft</Badge>
+                <span>— Discount has not been submitted yet</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Badge className="bg-amber-100 text-amber-800 text-[10px]">Pending</Badge>
+                <span>— Submitted, waiting for manager/admin approval</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Badge className="bg-green-100 text-green-800 text-[10px]">Approved</Badge>
+                <span>— Discount approved and applied to the final quote</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Badge className="bg-red-100 text-red-800 text-[10px]">Revoked</Badge>
+                <span>— Discount rejected by management</span>
+              </div>
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Revenue Tracking</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              The Financial tab also contributes to pipeline value and realized revenue calculations on the dashboard. The Initial Quote feeds into the pipeline value, and the Actual Bill feeds into realized revenue once the episode is completed.
+            </p>
+          </section>
+          <TipBox>Once a discount is approved, the Initial Quote and discount fields become read-only. If a correction is needed, an Admin must first revoke the existing discount.</TipBox>
+        </div>
+      ),
+    },
+    "episodes/insurance-tab": {
+      title: "Insurance & Pre-Auth",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Insurance Tab Overview</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Insurance tab manages all insurance-related details for a treatment episode. It is only relevant when the patient has insurance coverage. Toggle the "Insurance Applicable" switch to enable the insurance fields.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Enabling Insurance</h2>
+            <StepList steps={[
+              "Open the Episode Detail page and click the Insurance tab",
+              "Toggle the 'Insurance Applicable' switch to ON",
+              "The Insurance Provider and Pre-Authorization sections will appear",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Insurance Provider Details</h2>
+            <FieldTable fields={[
+              { field: "Insurer", desc: "The insurance company (e.g., Star Health, HDFC ERGO). Selected from master data." },
+              { field: "TPA", desc: "Third-Party Administrator handling claims processing (e.g., Medi Assist, Vidal Health)" },
+              { field: "Policy Type", desc: "Type of insurance policy (e.g., Individual, Family Floater, Group)" },
+            ]} />
+            <TipBox>If the insurer, TPA, or policy type you need isn't in the list, click 'Request New' next to the field. This submits a new entry to the Master Data approval queue.</TipBox>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Pre-Authorization</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Pre-authorization (pre-auth) is the process of getting approval from the insurance company before the treatment begins. Track the full pre-auth lifecycle:
+            </p>
+            <FieldTable fields={[
+              { field: "Pre-Auth Status", desc: "Current status (e.g., Not Submitted, Submitted, Approved, Rejected, Enhancement Required)" },
+              { field: "Submitted At", desc: "Date/time when the pre-auth request was submitted (auto-recorded)" },
+              { field: "Approved Amount", desc: "The amount approved by the insurance company (₹)" },
+              { field: "Rejection Reason", desc: "If rejected, the reason provided by the insurer (selected from master data)" },
+            ]} />
+          </section>
+          <WarningBox>Insurance details are part of Protected Health Information (PHI). Users with 'None' PHI access level will not see insurance information.</WarningBox>
+        </div>
+      ),
+    },
+    "episodes/family-tab": {
+      title: "Family & Decision Status",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Family Tab Overview</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Family & Decision Status tab tracks the family's involvement in the treatment decision. This is especially important in orthopedic surgery decisions where family support and agreement are critical for successful outcomes.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Family & Decision Fields</h2>
+            <FieldTable fields={[
+              { field: "Family Discussion Done", desc: "Toggle switch — has the family been consulted about the treatment plan? Turn ON after the counsellor has discussed with the family." },
+              { field: "Second Opinion Taken", desc: "Toggle switch — has the patient sought a second medical opinion? This is common for major surgeries and helps track patient readiness." },
+              { field: "Decision Status", desc: "Current family decision status from the dropdown (see options below)" },
+              { field: "Decision Notes", desc: "Free-text area for detailed notes about the family's concerns, questions, and feedback" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Decision Status Options</h2>
+            <div className="space-y-2">
+              {[
+                { status: "Pending", desc: "No decision made yet — family is still considering" },
+                { status: "Approved by Family", desc: "Family agrees with the treatment plan and gives consent to proceed" },
+                { status: "Rejected by Family", desc: "Family does not agree with the proposed treatment" },
+                { status: "Seeking Second Opinion", desc: "Patient/family wants another doctor's opinion before deciding" },
+                { status: "Decided to Proceed", desc: "Final decision to go ahead with the treatment" },
+                { status: "Decided Not to Proceed", desc: "Final decision not to proceed with treatment" },
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
+                  <span><strong>{item.status}:</strong> {item.desc}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <TipBox>Tracking family decisions helps counsellors identify which episodes need more engagement. A patient with "Seeking Second Opinion" status may need additional support to address their concerns about the treatment.</TipBox>
         </div>
       ),
     },
