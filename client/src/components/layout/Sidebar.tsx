@@ -17,6 +17,8 @@ import {
   Phone,
   Brain,
   HelpCircle,
+  Stethoscope,
+  Gift,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -41,6 +43,7 @@ const sections: { label: string; items: NavItem[] }[] = [
       { icon: Users, label: "Leads", href: "/leads", page: "leads" },
       { icon: Calendar, label: "Appointments", href: "/appointments", page: "appointments" },
       { icon: HeartPulse, label: "Consultation Episodes", href: "/transactions", page: "transactions" },
+      { icon: Gift, label: "Referrals", href: "/referrals", page: "transactions" },
     ],
   },
   {
@@ -56,6 +59,7 @@ const sections: { label: string; items: NavItem[] }[] = [
       { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
       { icon: Paintbrush, label: "Branding", href: "/branding", page: "branding" },
       { icon: Brain, label: "Intelligence Config", href: "/intelligence-config", page: "connectors" },
+      { icon: Stethoscope, label: "Post-Care Protocols", href: "/post-care-protocols", page: "connectors" },
     ],
   },
 ];

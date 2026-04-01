@@ -40,6 +40,8 @@ import AdminSubscriptions from "@/pages/admin/AdminSubscriptions";
 import AdminPayments from "@/pages/admin/AdminPayments";
 import CallyzerReportsPage from "@/pages/CallyzerReportsPage";
 import IntelligenceConfigPage from "@/pages/IntelligenceConfigPage";
+import PostCareProtocolsPage from "@/pages/PostCareProtocolsPage";
+import ReferralsPage from "@/pages/ReferralsPage";
 import AdminLogin from "@/pages/admin/AdminLogin";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import MetaHelpGuide from "@/pages/MetaHelpGuide";
@@ -208,6 +210,18 @@ function Router() {
       <Route path="/intelligence-config">
         {isAuthenticated ? (
           <RoleGate page="connectors"><IntelligenceConfigPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/post-care-protocols">
+        {isAuthenticated ? (
+          <RoleGate page="connectors"><PostCareProtocolsPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/referrals">
+        {isAuthenticated ? (
+          <RoleGate page="transactions"><ReferralsPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

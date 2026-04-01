@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -659,6 +659,106 @@ async function ensurePatientsForConvertedLeads() {
   } catch (error) {
     console.error("Error in ensurePatientsForConvertedLeads:", error);
   }
+}
+
+async function triggerPostCareProtocol(episodeId: number, tid: number, triggerStatus: string, userId: string) {
+  const [episode] = await db.select().from(episodes).where(and(eq(episodes.id, episodeId), eq(episodes.tenantId, tid)));
+  if (!episode || !episode.leadId) return;
+
+  if (episode.postCareProtocolId) {
+    const existingTasks = await db.select().from(tasks).where(
+      and(
+        eq(tasks.tenantId, tid),
+        eq(tasks.leadId, episode.leadId),
+        sql`${tasks.notes} LIKE ${'%"postCareEpisodeId":' + episodeId + '%'}`
+      )
+    );
+    if (existingTasks.length > 0) return;
+  }
+
+  let protocolId = episode.postCareProtocolId;
+  if (!protocolId) {
+    const [defaultProtocol] = await db.select().from(postCareProtocols).where(
+      and(eq(postCareProtocols.tenantId, tid), eq(postCareProtocols.isDefault, true), eq(postCareProtocols.status, "Active"))
+    );
+    if (!defaultProtocol) {
+      const activeProtocols = await db.select().from(postCareProtocols).where(
+        and(eq(postCareProtocols.tenantId, tid), eq(postCareProtocols.status, "Active"), eq(postCareProtocols.triggerOn, triggerStatus))
+      );
+      if (activeProtocols.length === 0) return;
+      protocolId = activeProtocols[0].id;
+    } else {
+      protocolId = defaultProtocol.id;
+    }
+    await db.update(episodes).set({ postCareProtocolId: protocolId }).where(eq(episodes.id, episodeId));
+  }
+
+  const steps = await db.select().from(postCareProtocolSteps).where(
+    and(eq(postCareProtocolSteps.protocolId, protocolId), eq(postCareProtocolSteps.tenantId, tid), eq(postCareProtocolSteps.status, "Active"))
+  ).orderBy(postCareProtocolSteps.stepNumber);
+
+  if (steps.length === 0) return;
+
+  const dischargeDate = episode.endDate || new Date();
+
+  for (const step of steps) {
+    const dueDate = new Date(dischargeDate);
+    dueDate.setDate(dueDate.getDate() + step.daysAfterDischarge);
+
+    let assignedCrmUserId: number | null = null;
+    if (step.assigneeType === "PostCareOwner" && episode.postCareOwnerId) {
+      const [doc] = await db.select().from(doctors).where(eq(doctors.id, episode.postCareOwnerId));
+      if (doc?.phone) {
+        const [matchingUser] = await db.select().from(crmUsers).where(
+          and(eq(crmUsers.tenantId, tid), eq(crmUsers.phone, doc.phone), eq(crmUsers.isActive, true))
+        );
+        if (matchingUser) assignedCrmUserId = matchingUser.id;
+      }
+      if (!assignedCrmUserId && episode.assignedCrmUserId) {
+        assignedCrmUserId = episode.assignedCrmUserId;
+      }
+    } else if (step.assigneeType === "Counsellor" && episode.assignedCrmUserId) {
+      assignedCrmUserId = episode.assignedCrmUserId;
+    } else if (step.assigneeType === "RoundRobin" && step.assigneeRoleCode) {
+      const roleUsers = await db.select().from(crmUsers).where(
+        and(eq(crmUsers.tenantId, tid), eq(crmUsers.isActive, true))
+      );
+      const sysRoles = await db.select().from(systemRoles).where(eq(systemRoles.tenantId, tid));
+      const targetRole = sysRoles.find(r => (r as any).code === step.assigneeRoleCode);
+      if (targetRole) {
+        const eligible = roleUsers.filter(u => u.systemRoleId === targetRole.id);
+        if (eligible.length > 0) {
+          assignedCrmUserId = eligible[Math.floor(Math.random() * eligible.length)].id;
+        }
+      }
+    }
+
+    if (!assignedCrmUserId && episode.assignedCrmUserId) {
+      assignedCrmUserId = episode.assignedCrmUserId;
+    }
+
+    const meta = JSON.stringify({
+      postCareEpisodeId: episodeId,
+      postCareProtocolId: protocolId,
+      postCareStepNumber: step.stepNumber,
+      source: "Post Care Protocol",
+    });
+
+    await db.insert(tasks).values({
+      tenantId: tid,
+      leadId: episode.leadId,
+      title: step.taskTitle,
+      description: step.taskDescription || `Post-care follow-up: Day ${step.daysAfterDischarge}`,
+      priority: step.priority,
+      dueDate,
+      assignedCrmUserId,
+      status: "Pending",
+      notes: meta,
+      createdBy: "system",
+    });
+  }
+
+  console.log(`[post-care] Created ${steps.length} follow-up tasks for episode #${episodeId} using protocol #${protocolId}`);
 }
 
 export async function registerRoutes(
@@ -5741,7 +5841,334 @@ export async function registerRoutes(
         await computeRevenueProbability(episodeId, tid);
       } catch {}
 
+      if (oldEpisode && body.status && body.status !== oldEpisode.status) {
+        const postCareTriggerStatuses = ["Post Care", "Completed"];
+        if (postCareTriggerStatuses.includes(body.status)) {
+          try {
+            await triggerPostCareProtocol(episodeId, tid, body.status, userId);
+          } catch (pcErr) {
+            console.error("[post-care] Error triggering protocol:", pcErr);
+          }
+        }
+      }
+
       res.json(ep);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // POST-CARE FOLLOW-UP PROTOCOLS
+  // =============================================
+
+  app.get("/api/post-care-protocols", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const rows = await db.select().from(postCareProtocols).where(eq(postCareProtocols.tenantId, tid)).orderBy(postCareProtocols.displayOrder);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/post-care-protocols/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      const [protocol] = await db.select().from(postCareProtocols).where(and(eq(postCareProtocols.id, id), eq(postCareProtocols.tenantId, tid)));
+      if (!protocol) return res.status(404).json({ message: "Protocol not found" });
+      const steps = await db.select().from(postCareProtocolSteps).where(and(eq(postCareProtocolSteps.protocolId, id), eq(postCareProtocolSteps.tenantId, tid))).orderBy(postCareProtocolSteps.stepNumber);
+      res.json({ ...protocol, steps });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/post-care-protocols", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const userId = String((req as any).session?.crmUserId || "system");
+      const { steps, ...protocolData } = req.body;
+      const parsed = insertPostCareProtocolSchema.parse({ ...protocolData, tenantId: tid, createdBy: userId, modifiedBy: userId });
+
+      if (parsed.isDefault) {
+        await db.update(postCareProtocols).set({ isDefault: false }).where(and(eq(postCareProtocols.tenantId, tid), eq(postCareProtocols.isDefault, true)));
+      }
+
+      const [protocol] = await db.insert(postCareProtocols).values(parsed).returning();
+
+      if (steps && Array.isArray(steps)) {
+        for (let i = 0; i < steps.length; i++) {
+          const stepParsed = insertPostCareProtocolStepSchema.parse({
+            ...steps[i],
+            tenantId: tid,
+            protocolId: protocol.id,
+            stepNumber: i + 1,
+          });
+          await db.insert(postCareProtocolSteps).values(stepParsed);
+        }
+      }
+
+      const savedSteps = await db.select().from(postCareProtocolSteps).where(eq(postCareProtocolSteps.protocolId, protocol.id)).orderBy(postCareProtocolSteps.stepNumber);
+      res.json({ ...protocol, steps: savedSteps });
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.patch("/api/post-care-protocols/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      const userId = String((req as any).session?.crmUserId || "system");
+      const { steps, ...protocolData } = req.body;
+
+      if (protocolData.isDefault) {
+        await db.update(postCareProtocols).set({ isDefault: false }).where(and(eq(postCareProtocols.tenantId, tid), eq(postCareProtocols.isDefault, true)));
+      }
+
+      const updateData: any = { ...protocolData, modifiedBy: userId, modifiedAt: new Date() };
+      delete updateData.id;
+      delete updateData.tenantId;
+      delete updateData.createdAt;
+      delete updateData.createdBy;
+      const [protocol] = await db.update(postCareProtocols).set(updateData).where(and(eq(postCareProtocols.id, id), eq(postCareProtocols.tenantId, tid))).returning();
+      if (!protocol) return res.status(404).json({ message: "Protocol not found" });
+
+      if (steps && Array.isArray(steps)) {
+        await db.delete(postCareProtocolSteps).where(and(eq(postCareProtocolSteps.protocolId, id), eq(postCareProtocolSteps.tenantId, tid)));
+        for (let i = 0; i < steps.length; i++) {
+          const stepParsed = insertPostCareProtocolStepSchema.parse({
+            ...steps[i],
+            tenantId: tid,
+            protocolId: id,
+            stepNumber: i + 1,
+          });
+          await db.insert(postCareProtocolSteps).values(stepParsed);
+        }
+      }
+
+      const savedSteps = await db.select().from(postCareProtocolSteps).where(eq(postCareProtocolSteps.protocolId, id)).orderBy(postCareProtocolSteps.stepNumber);
+      res.json({ ...protocol, steps: savedSteps });
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.delete("/api/post-care-protocols/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      await db.delete(postCareProtocolSteps).where(and(eq(postCareProtocolSteps.protocolId, id), eq(postCareProtocolSteps.tenantId, tid)));
+      await db.delete(postCareProtocols).where(and(eq(postCareProtocols.id, id), eq(postCareProtocols.tenantId, tid)));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/episodes/:id/post-care-timeline", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+      const [episode] = await db.select().from(episodes).where(and(eq(episodes.id, episodeId), eq(episodes.tenantId, tid)));
+      if (!episode) return res.status(404).json({ message: "Episode not found" });
+
+      if (!episode.postCareProtocolId) {
+        return res.json({ protocol: null, steps: [], tasks: [] });
+      }
+
+      const [protocol] = await db.select().from(postCareProtocols).where(and(eq(postCareProtocols.id, episode.postCareProtocolId), eq(postCareProtocols.tenantId, tid)));
+      if (!protocol) return res.json({ protocol: null, steps: [], tasks: [] });
+      const steps = await db.select().from(postCareProtocolSteps).where(and(eq(postCareProtocolSteps.protocolId, episode.postCareProtocolId), eq(postCareProtocolSteps.tenantId, tid))).orderBy(postCareProtocolSteps.stepNumber);
+
+      const postCareTasks = await db.select().from(tasks).where(
+        and(
+          eq(tasks.tenantId, tid),
+          eq(tasks.leadId, episode.leadId),
+          sql`${tasks.notes} LIKE ${'%"postCareEpisodeId":' + episodeId + '%'}`
+        )
+      ).orderBy(tasks.dueDate);
+
+      const enrichedSteps = steps.map(step => {
+        const matchingTask = postCareTasks.find(t => {
+          try {
+            const meta = JSON.parse(t.notes || "{}");
+            return meta.postCareStepNumber === step.stepNumber && meta.postCareEpisodeId === episodeId;
+          } catch { return false; }
+        });
+        return {
+          ...step,
+          task: matchingTask || null,
+          taskStatus: matchingTask?.status || "Upcoming",
+          taskDueDate: matchingTask?.dueDate || null,
+          taskCompletedAt: matchingTask?.completedAt || null,
+        };
+      });
+
+      res.json({ protocol, steps: enrichedSteps });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // REFERRAL MANAGEMENT
+  // =============================================
+
+  app.get("/api/referrals", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const rows = await db.select().from(referrals).where(eq(referrals.tenantId, tid)).orderBy(sql`${referrals.createdAt} DESC`);
+
+      const enriched = await Promise.all(rows.map(async (r) => {
+        let referrerName = null;
+        let referrerType = null;
+        if (r.referrerId) {
+          const [ref] = await db.select().from(referrers).where(and(eq(referrers.id, r.referrerId), eq(referrers.tenantId, tid)));
+          if (ref) { referrerName = ref.name; referrerType = ref.type; }
+        }
+        let referrerPatientName = null;
+        if (r.referrerPatientId) {
+          const [pat] = await db.select().from(patients).where(and(eq(patients.id, r.referrerPatientId), eq(patients.tenantId, tid)));
+          if (pat) referrerPatientName = pat.name;
+        }
+        let resultingLeadName = null;
+        let resultingLeadStatus = null;
+        if (r.resultingLeadId) {
+          const [lead] = await db.select().from(leads).where(and(eq(leads.id, r.resultingLeadId), eq(leads.tenantId, tid)));
+          if (lead) { resultingLeadName = lead.name; resultingLeadStatus = lead.status; }
+        }
+        return { ...r, referrerName, referrerType, referrerPatientName, resultingLeadName, resultingLeadStatus };
+      }));
+
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/referrals/stats", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const allReferrals = await db.select().from(referrals).where(eq(referrals.tenantId, tid));
+      const total = allReferrals.length;
+      const converted = allReferrals.filter(r => r.outcome === "Converted" || r.outcome === "Appointment Booked" || r.outcome === "Consulted" || r.outcome === "Won").length;
+      const pending = allReferrals.filter(r => r.outcome === "Pending").length;
+
+      const topReferrersMap: Record<string, { name: string; count: number; converted: number }> = {};
+      for (const r of allReferrals) {
+        let name = "Unknown";
+        if (r.referrerId) {
+          const [ref] = await db.select().from(referrers).where(and(eq(referrers.id, r.referrerId), eq(referrers.tenantId, tid)));
+          if (ref) name = ref.name;
+        } else if (r.referrerPatientId) {
+          const [pat] = await db.select().from(patients).where(and(eq(patients.id, r.referrerPatientId), eq(patients.tenantId, tid)));
+          if (pat) name = pat.name;
+        }
+        if (!topReferrersMap[name]) topReferrersMap[name] = { name, count: 0, converted: 0 };
+        topReferrersMap[name].count++;
+        if (["Converted", "Appointment Booked", "Consulted", "Won"].includes(r.outcome)) {
+          topReferrersMap[name].converted++;
+        }
+      }
+      const topReferrers = Object.values(topReferrersMap).sort((a, b) => b.count - a.count).slice(0, 10);
+
+      const channelBreakdown: Record<string, number> = {};
+      for (const r of allReferrals) {
+        channelBreakdown[r.referralChannel] = (channelBreakdown[r.referralChannel] || 0) + 1;
+      }
+
+      res.json({
+        total,
+        converted,
+        pending,
+        conversionRate: total > 0 ? Math.round((converted / total) * 100) : 0,
+        topReferrers,
+        channelBreakdown,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  async function validateReferralFKs(tid: number, body: any) {
+    if (body.referrerId) {
+      const [ref] = await db.select().from(referrers).where(and(eq(referrers.id, Number(body.referrerId)), eq(referrers.tenantId, tid)));
+      if (!ref) throw new Error("Referrer not found in your tenant");
+    }
+    if (body.referrerPatientId) {
+      const [pat] = await db.select().from(patients).where(and(eq(patients.id, Number(body.referrerPatientId)), eq(patients.tenantId, tid)));
+      if (!pat) throw new Error("Referrer patient not found in your tenant");
+    }
+    if (body.referrerLeadId) {
+      const [lead] = await db.select().from(leads).where(and(eq(leads.id, Number(body.referrerLeadId)), eq(leads.tenantId, tid)));
+      if (!lead) throw new Error("Referrer lead not found in your tenant");
+    }
+    if (body.resultingLeadId) {
+      const [lead] = await db.select().from(leads).where(and(eq(leads.id, Number(body.resultingLeadId)), eq(leads.tenantId, tid)));
+      if (!lead) throw new Error("Resulting lead not found in your tenant");
+    }
+  }
+
+  app.post("/api/referrals", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const userId = String((req as any).session?.crmUserId || "system");
+      const body = coerceDateFields(req.body, ["referralDate", "outcomeDate"]);
+      await validateReferralFKs(tid, body);
+      const parsed = insertReferralSchema.parse({ ...body, tenantId: tid, createdBy: userId, modifiedBy: userId });
+      const [referral] = await db.insert(referrals).values(parsed).returning();
+      res.json(referral);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.patch("/api/referrals/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      const userId = String((req as any).session?.crmUserId || "system");
+      const body = coerceDateFields(req.body, ["referralDate", "outcomeDate"]);
+      await validateReferralFKs(tid, body);
+      const updateData: any = { ...body, modifiedBy: userId, modifiedAt: new Date() };
+      delete updateData.id;
+      delete updateData.tenantId;
+      delete updateData.createdAt;
+      delete updateData.createdBy;
+      const [referral] = await db.update(referrals).set(updateData).where(and(eq(referrals.id, id), eq(referrals.tenantId, tid))).returning();
+      if (!referral) return res.status(404).json({ message: "Referral not found" });
+      res.json(referral);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.delete("/api/referrals/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      const [referral] = await db.delete(referrals).where(and(eq(referrals.id, id), eq(referrals.tenantId, tid))).returning();
+      if (!referral) return res.status(404).json({ message: "Referral not found" });
+      res.json({ message: "Referral deleted" });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/episodes/:id/referral-ready", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      const [episode] = await db.update(episodes).set({
+        referralReady: true,
+        referralReadyAt: new Date(),
+        modifiedAt: new Date(),
+      }).where(and(eq(episodes.id, id), eq(episodes.tenantId, tid))).returning();
+      if (!episode) return res.status(404).json({ message: "Episode not found" });
+      res.json(episode);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
     }

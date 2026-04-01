@@ -1226,6 +1226,9 @@ export const episodes = pgTable("episodes", {
   decisionNotes: text("decision_notes"),
   surgeryDoctorId: integer("surgery_doctor_id").references(() => doctors.id),
   postCareOwnerId: integer("post_care_owner_id").references(() => doctors.id),
+  postCareProtocolId: integer("post_care_protocol_id"),
+  referralReady: boolean("referral_ready").default(false),
+  referralReadyAt: timestamp("referral_ready_at"),
   initialQuote: integer("initial_quote"),
   approvedDiscount: integer("approved_discount").default(0),
   finalQuote: integer("final_quote"),
@@ -1709,6 +1712,12 @@ export type TemperatureLog = typeof temperatureLogs.$inferSelect;
 export type InsertTemperatureLog = z.infer<typeof insertTemperatureLogSchema>;
 export type RevenueProbabilityConfigRecord = typeof revenueProbabilityConfig.$inferSelect;
 export type InsertRevenueProbabilityConfig = z.infer<typeof insertRevenueProbabilityConfigSchema>;
+export type PostCareProtocol = typeof postCareProtocols.$inferSelect;
+export type InsertPostCareProtocol = z.infer<typeof insertPostCareProtocolSchema>;
+export type PostCareProtocolStep = typeof postCareProtocolSteps.$inferSelect;
+export type InsertPostCareProtocolStep = z.infer<typeof insertPostCareProtocolStepSchema>;
+export type Referral = typeof referrals.$inferSelect;
+export type InsertReferral = z.infer<typeof insertReferralSchema>;
 
 // Generic master record type
 export interface MasterRecord {
@@ -1786,6 +1795,72 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   consultationOutcomes: "consultation_outcomes",
   consultationOutcomeRemarks: "consultation_outcome_remarks",
 };
+
+// =============================================
+// POST-CARE FOLLOW-UP PROTOCOLS
+// =============================================
+export const postCareProtocols = pgTable("post_care_protocols", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  triggerOn: text("trigger_on").notNull().default("Post Care"),
+  isDefault: boolean("is_default").default(false),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const postCareProtocolSteps = pgTable("post_care_protocol_steps", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  protocolId: integer("protocol_id").notNull().references(() => postCareProtocols.id),
+  stepNumber: integer("step_number").notNull(),
+  daysAfterDischarge: integer("days_after_discharge").notNull(),
+  taskTitle: text("task_title").notNull(),
+  taskDescription: text("task_description"),
+  assigneeType: text("assignee_type").notNull().default("PostCareOwner"),
+  assigneeRoleCode: text("assignee_role_code"),
+  priority: text("priority").notNull().default("Normal"),
+  status: text("status").notNull().default("Active"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPostCareProtocolSchema = createInsertSchema(postCareProtocols).omit({ id: true, createdAt: true, modifiedAt: true });
+export const insertPostCareProtocolStepSchema = createInsertSchema(postCareProtocolSteps).omit({ id: true, createdAt: true });
+
+// =============================================
+// REFERRAL MANAGEMENT
+// =============================================
+export const referrals = pgTable("referrals", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  referrerId: integer("referrer_id").references(() => referrers.id),
+  referrerPatientId: integer("referrer_patient_id").references(() => patients.id),
+  referrerLeadId: integer("referrer_lead_id").references(() => leads.id),
+  referrerEpisodeId: integer("referrer_episode_id").references(() => episodes.id),
+  referredName: text("referred_name").notNull(),
+  referredPhone: text("referred_phone").notNull(),
+  referredEmail: text("referred_email"),
+  referralChannel: text("referral_channel").notNull().default("Word of Mouth"),
+  referralDate: timestamp("referral_date").defaultNow(),
+  referralNotes: text("referral_notes"),
+  resultingLeadId: integer("resulting_lead_id").references(() => leads.id),
+  outcome: text("outcome").notNull().default("Pending"),
+  outcomeDate: timestamp("outcome_date"),
+  outcomeNotes: text("outcome_notes"),
+  status: text("status").notNull().default("Active"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const insertReferralSchema = createInsertSchema(referrals).omit({ id: true, createdAt: true, modifiedAt: true });
 
 export const accessLogs = pgTable("access_logs", {
   id: serial("id").primaryKey(),

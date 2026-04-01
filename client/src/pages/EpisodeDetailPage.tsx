@@ -57,6 +57,9 @@ import {
   CalendarClock,
   StickyNote,
   AlertTriangle,
+  HeartPulse,
+  CalendarDays,
+  Gift,
 } from "lucide-react";
 
 interface AuditLogEntry {
@@ -78,6 +81,110 @@ function getRevenueProbabilityColor(probability: number | null | undefined): str
   if (probability >= 40) return "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300";
   if (probability >= 20) return "bg-orange-100 dark:bg-orange-950/50 text-orange-800 dark:text-orange-300";
   return "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300";
+}
+
+function PostCareTimeline({ episodeId, episodeStatus }: { episodeId: number; episodeStatus: string }) {
+  const postCareStatuses = ["Post Care", "Follow Up", "Completed"];
+  const showTimeline = postCareStatuses.includes(episodeStatus);
+
+  const { data: timeline } = useQuery<{
+    protocol: any;
+    steps: Array<{
+      id: number;
+      stepNumber: number;
+      daysAfterDischarge: number;
+      taskTitle: string;
+      taskDescription: string | null;
+      assigneeType: string;
+      priority: string;
+      task: any;
+      taskStatus: string;
+      taskDueDate: string | null;
+      taskCompletedAt: string | null;
+    }>;
+  }>({
+    queryKey: ["/api/episodes", episodeId, "post-care-timeline"],
+    queryFn: async () => {
+      const res = await fetch(`/api/episodes/${episodeId}/post-care-timeline`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load");
+      return res.json();
+    },
+    enabled: showTimeline,
+  });
+
+  if (!showTimeline || !timeline?.protocol || timeline.steps.length === 0) return null;
+
+  return (
+    <Card className="p-4 mb-0" data-testid="card-post-care-timeline">
+      <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+        <HeartPulse className="w-4 h-4 text-primary" />
+        Post-Care Follow-Up Schedule
+        <Badge variant="outline" className="text-xs ml-auto">{timeline.protocol.name}</Badge>
+      </h3>
+      <div className="space-y-2">
+        {timeline.steps.map((step, idx) => {
+          const isCompleted = step.taskStatus === "Completed";
+          const isOverdue = step.taskDueDate && !isCompleted && new Date(step.taskDueDate) < new Date();
+          const isPending = step.taskStatus === "Pending";
+          return (
+            <div
+              key={step.id || idx}
+              className={cn(
+                "flex items-center gap-3 p-3 rounded-lg border transition-colors",
+                isCompleted ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900" :
+                isOverdue ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900" :
+                isPending ? "bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900" :
+                "bg-muted/30 border-border"
+              )}
+              data-testid={`post-care-step-${idx}`}
+            >
+              <div className="flex-shrink-0">
+                {isCompleted ? (
+                  <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+                ) : isOverdue ? (
+                  <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                ) : isPending ? (
+                  <Clock className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                ) : (
+                  <CircleDot className="w-5 h-5 text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-foreground">{step.taskTitle}</span>
+                  <Badge variant={isCompleted ? "default" : isOverdue ? "destructive" : "secondary"} className="text-[10px] px-1.5 py-0">
+                    Day {step.daysAfterDischarge}
+                  </Badge>
+                  <Badge variant={step.priority === "Urgent" || step.priority === "High" ? "destructive" : "outline"} className="text-[10px] px-1.5 py-0">
+                    {step.priority}
+                  </Badge>
+                </div>
+                {step.taskDescription && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{step.taskDescription}</p>
+                )}
+              </div>
+              <div className="flex-shrink-0 text-right">
+                {step.taskDueDate && (
+                  <div className="text-xs text-muted-foreground flex items-center gap-1">
+                    <CalendarDays className="w-3 h-3" />
+                    {fmtDate(step.taskDueDate)}
+                  </div>
+                )}
+                {step.taskCompletedAt && (
+                  <div className="text-xs text-green-600 dark:text-green-400 mt-0.5">
+                    Completed {fmtDate(step.taskCompletedAt)}
+                  </div>
+                )}
+                {isOverdue && !isCompleted && (
+                  <div className="text-xs text-red-600 dark:text-red-400 mt-0.5 font-medium">Overdue</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
 }
 
 export default function EpisodeDetailPage() {
@@ -561,6 +668,10 @@ export default function EpisodeDetailPage() {
           </TabsContent>
         </Tabs>
 
+        <PostCareTimeline episodeId={episode.id} episodeStatus={episode.status} />
+
+        <ReferralReadyCard episode={episode} onUpdate={() => queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id] })} />
+
         <Card className="p-4" data-testid="card-episode-journey-timeline">
           <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
             <Clock className="w-4 h-4 text-primary" />
@@ -734,6 +845,60 @@ export default function EpisodeDetailPage() {
         </DialogContent>
       </Dialog>
     </AppLayout>
+  );
+}
+
+function ReferralReadyCard({ episode, onUpdate }: { episode: any; onUpdate: () => void }) {
+  const { toast } = useToast();
+  const referralReadyStatuses = ["Post Care", "Follow Up", "Completed", "Surgery Done", "In Treatment"];
+  const showCard = referralReadyStatuses.includes(episode.status);
+
+  const markReadyMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/episodes/${episode.id}/referral-ready`),
+    onSuccess: () => {
+      onUpdate();
+      toast({ title: "Episode marked as referral-ready" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  if (!showCard) return null;
+
+  return (
+    <Card className="p-4" data-testid="card-referral-ready">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30">
+            <Gift className="h-5 w-5 text-amber-600" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Referral Program</h3>
+            <p className="text-xs text-muted-foreground">
+              {episode.referralReady
+                ? `Marked referral-ready on ${episode.referralReadyAt ? fmtDate(episode.referralReadyAt) : "—"}`
+                : "Patient may be ready to refer others"}
+            </p>
+          </div>
+        </div>
+        {episode.referralReady ? (
+          <Badge variant="default" className="bg-green-600" data-testid="badge-referral-ready">
+            <CheckCircle2 className="h-3 w-3 mr-1" />
+            Referral Ready
+          </Badge>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => markReadyMutation.mutate()}
+            disabled={markReadyMutation.isPending}
+            data-testid="button-mark-referral-ready"
+          >
+            <Gift className="h-4 w-4 mr-2" />
+            {markReadyMutation.isPending ? "Marking..." : "Mark as Referral Ready"}
+          </Button>
+        )}
+      </div>
+    </Card>
   );
 }
 
