@@ -8544,7 +8544,8 @@ async function ensureSuperAdmin() {
     const { hashPassword } = await import("./replit_integrations/auth/replitAuth");
     const allTenantRows = await db.select().from(tenants);
     if (allTenantRows.length === 0) return;
-    const tid = allTenantRows[0].id;
+    const virocRow = allTenantRows.find(t => t.id === 4);
+    const tid = virocRow ? virocRow.id : allTenantRows[0].id;
 
     const virocTenant = allTenantRows.find(t => t.id === 4);
     if (virocTenant && virocTenant.name !== "Viroc Super Specialty Orthopaedic Hospital") {

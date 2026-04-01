@@ -27,6 +27,7 @@ import {
   Phone,
   Mail,
   User,
+  ExternalLink,
 } from "lucide-react";
 
 export default function AdminHospitals() {
@@ -64,6 +65,18 @@ export default function AdminHospitals() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
       toast({ title: "Hospital activated" });
     },
+  });
+
+  const switchTenant = useMutation({
+    mutationFn: async (tenantId: number) => {
+      const res = await apiRequest("POST", "/api/auth/switch-tenant", { tenantId });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: `Switched to ${data.tenant?.displayName || data.tenant?.name}` });
+      window.location.href = "/";
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   if (isLoading) {
@@ -140,7 +153,14 @@ export default function AdminHospitals() {
                     <Building2 className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-slate-900">{t.displayName || t.tenantName}</h3>
+                    <button
+                      className="font-semibold text-slate-900 hover:text-blue-600 hover:underline text-left cursor-pointer transition-colors"
+                      onClick={() => switchTenant.mutate(t.tenantId)}
+                      disabled={switchTenant.isPending}
+                      data-testid={`link-open-hospital-${t.tenantId}`}
+                    >
+                      {t.displayName || t.tenantName}
+                    </button>
                     <p className="text-xs text-slate-400 flex items-center gap-1"><Globe className="w-3 h-3" />{t.subdomain}</p>
                   </div>
                 </div>
@@ -168,6 +188,16 @@ export default function AdminHospitals() {
               </div>
 
               <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+                  onClick={() => switchTenant.mutate(t.tenantId)}
+                  disabled={switchTenant.isPending}
+                  data-testid={`button-open-hospital-${t.tenantId}`}
+                >
+                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Open Hospital
+                </Button>
                 {t.subscriptionStatus === "Active" ? (
                   <Button
                     variant="outline"

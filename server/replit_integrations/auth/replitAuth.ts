@@ -76,14 +76,14 @@ export async function setupAuth(app: Express) {
 
       const normalizedMobile = mobile.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
 
-      let user: any = null;
-      const [found] = await db.select().from(crmUsers).where(eq(crmUsers.phone, normalizedMobile));
-      user = found;
+      let allMatches = await db.select().from(crmUsers).where(eq(crmUsers.phone, normalizedMobile));
 
-      if (!user && normalizedMobile.length === 10) {
-        const [userWithPrefix] = await db.select().from(crmUsers).where(eq(crmUsers.phone, `+91${normalizedMobile}`));
-        user = userWithPrefix;
+      if (allMatches.length === 0 && normalizedMobile.length === 10) {
+        allMatches = await db.select().from(crmUsers).where(eq(crmUsers.phone, `+91${normalizedMobile}`));
       }
+
+      const sysAdminMatch = allMatches.find(u => u.systemRoleId !== null);
+      const user: any = sysAdminMatch || allMatches[0];
 
       if (!user) {
         return res.status(401).json({ message: "Invalid credentials" });
@@ -191,6 +191,64 @@ export async function setupAuth(app: Express) {
     } catch (error) {
       console.error("Initial setup error:", error);
       res.status(500).json({ message: "Setup failed" });
+    }
+  });
+
+  app.post("/api/auth/switch-tenant", async (req, res) => {
+    try {
+      const crmUserId = (req.session as any).crmUserId;
+      if (!crmUserId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const [currentUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, crmUserId));
+      if (!currentUser || !currentUser.systemRoleId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const [role] = await db.select().from(systemRoles).where(eq(systemRoles.id, currentUser.systemRoleId));
+      if (!role || role.code !== "SYS_ADMIN") {
+        return res.status(403).json({ message: "Only System Administrators can switch tenants" });
+      }
+
+      const { tenantId } = req.body;
+      if (!tenantId) {
+        return res.status(400).json({ message: "Tenant ID is required" });
+      }
+
+      const [targetTenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId));
+      if (!targetTenant) {
+        return res.status(404).json({ message: "Hospital not found" });
+      }
+
+      let [targetUser] = await db.select().from(crmUsers).where(
+        and(eq(crmUsers.tenantId, tenantId), eq(crmUsers.phone, currentUser.phone!))
+      );
+
+      if (!targetUser) {
+        const [anyAdmin] = await db.select().from(crmUsers).where(eq(crmUsers.tenantId, tenantId));
+        if (!anyAdmin) {
+          return res.status(404).json({ message: "No users found for this hospital" });
+        }
+        targetUser = anyAdmin;
+      }
+
+      (req.session as any).crmUserId = targetUser.id;
+      (req.session as any).tenantId = tenantId;
+
+      req.session.save((err: any) => {
+        if (err) {
+          return res.status(500).json({ message: "Failed to switch tenant" });
+        }
+        res.json({
+          success: true,
+          tenant: { id: targetTenant.id, name: targetTenant.name, displayName: targetTenant.displayName },
+          user: { id: targetUser.id, name: targetUser.name },
+        });
+      });
+    } catch (error) {
+      console.error("Switch tenant error:", error);
+      res.status(500).json({ message: "Failed to switch tenant" });
     }
   });
 
