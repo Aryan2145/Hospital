@@ -8547,15 +8547,15 @@ async function ensureSuperAdmin() {
     const tid = allTenantRows[0].id;
 
     const virocTenant = allTenantRows.find(t => t.id === 4);
-    if (virocTenant && virocTenant.name !== "Demo Hospital") {
-      await db.update(tenants).set({ name: "Demo Hospital", displayName: "Demo Hospital" }).where(eq(tenants.id, 4));
-      console.log("Renamed tenant #4 to Demo Hospital");
+    if (virocTenant && virocTenant.name !== "Viroc Super Specialty Orthopaedic Hospital") {
+      await db.update(tenants).set({ name: "Viroc Super Specialty Orthopaedic Hospital", displayName: "Viroc Super Specialty Orthopaedic Hospital" }).where(eq(tenants.id, 4));
+      console.log("Renamed tenant #4 to Viroc Super Specialty Orthopaedic Hospital");
     }
 
     if (virocTenant) {
       const virocBranch = await db.select().from(branches).where(and(eq(branches.id, 1), eq(branches.tenantId, 4)));
-      if (virocBranch.length > 0 && virocBranch[0].name !== "Demo Hospital Main Branch") {
-        await db.update(branches).set({ name: "Demo Hospital Main Branch" }).where(eq(branches.id, 1));
+      if (virocBranch.length > 0 && virocBranch[0].name !== "Viroc Main Branch") {
+        await db.update(branches).set({ name: "Viroc Main Branch" }).where(eq(branches.id, 1));
       }
     }
 
