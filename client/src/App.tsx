@@ -42,6 +42,8 @@ import CallyzerReportsPage from "@/pages/CallyzerReportsPage";
 import IntelligenceConfigPage from "@/pages/IntelligenceConfigPage";
 import PostCareProtocolsPage from "@/pages/PostCareProtocolsPage";
 import ReferralsPage from "@/pages/ReferralsPage";
+import EventsPage from "@/pages/EventsPage";
+import EventDetailPage from "@/pages/EventDetailPage";
 import AdminLogin from "@/pages/admin/AdminLogin";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import MetaHelpGuide from "@/pages/MetaHelpGuide";
@@ -222,6 +224,18 @@ function Router() {
       <Route path="/referrals">
         {isAuthenticated ? (
           <RoleGate page="transactions"><ReferralsPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/events/:id">
+        {isAuthenticated ? (
+          <RoleGate page="campaigns"><EventDetailPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/events">
+        {isAuthenticated ? (
+          <RoleGate page="campaigns"><EventsPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

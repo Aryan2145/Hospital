@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -6008,6 +6008,339 @@ export async function registerRoutes(
       });
 
       res.json({ protocol, steps: enrichedSteps });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // EVENT MANAGEMENT (Webinars / Seminars / Health Camps)
+  // =============================================
+
+  app.get("/api/events/stats", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const allEvents = await db.select().from(events).where(eq(events.tenantId, tid));
+      const total = allEvents.length;
+      const upcoming = allEvents.filter(e => e.status === "Published" && e.startDate && new Date(e.startDate) > new Date()).length;
+      const ongoing = allEvents.filter(e => e.status === "Ongoing").length;
+      const completed = allEvents.filter(e => e.status === "Completed").length;
+      const totalRegistrations = allEvents.reduce((s, e) => s + (e.registeredCount || 0), 0);
+      const totalAttended = allEvents.reduce((s, e) => s + (e.attendedCount || 0), 0);
+      const totalConverted = allEvents.reduce((s, e) => s + (e.convertedCount || 0), 0);
+      const totalBudget = allEvents.reduce((s, e) => s + (e.budget || 0), 0);
+
+      const typeBreakdown: Record<string, number> = {};
+      for (const e of allEvents) {
+        typeBreakdown[e.type] = (typeBreakdown[e.type] || 0) + 1;
+      }
+
+      res.json({ total, upcoming, ongoing, completed, totalRegistrations, totalAttended, totalConverted, totalBudget, typeBreakdown });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/events", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const rows = await db.select().from(events).where(eq(events.tenantId, tid)).orderBy(sql`${events.startDate} DESC NULLS LAST`);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/events/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      const [event] = await db.select().from(events).where(and(eq(events.id, id), eq(events.tenantId, tid)));
+      if (!event) return res.status(404).json({ message: "Event not found" });
+      res.json(event);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  const EVENT_MUTABLE_FIELDS = ["name", "type", "description", "venue", "location", "startDate", "endDate", "maxCapacity", "organizer", "budget", "campaignId", "contactPhone", "contactEmail", "notes", "status"];
+
+  async function validateEventFKs(tid: number, body: any) {
+    if (body.campaignId) {
+      const [camp] = await db.select().from(campaigns).where(and(eq(campaigns.id, Number(body.campaignId)), eq(campaigns.tenantId, tid)));
+      if (!camp) throw new Error("Campaign not found in your tenant");
+    }
+  }
+
+  app.post("/api/events", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const userId = String((req as any).session?.crmUserId || "system");
+      const body = coerceDateFields(req.body, ["startDate", "endDate"]);
+
+      await validateEventFKs(tid, body);
+
+      const existingEvents = await db.select({ id: events.id }).from(events).where(eq(events.tenantId, tid));
+      const code = `EVT-${String(existingEvents.length + 1).padStart(4, "0")}`;
+
+      const safeBody: any = {};
+      for (const k of EVENT_MUTABLE_FIELDS) { if (body[k] !== undefined) safeBody[k] = body[k]; }
+
+      const parsed = insertEventSchema.parse({ ...safeBody, tenantId: tid, code, createdBy: userId, modifiedBy: userId });
+      const [event] = await db.insert(events).values(parsed).returning();
+      res.json(event);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.patch("/api/events/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      const userId = String((req as any).session?.crmUserId || "system");
+      const body = coerceDateFields(req.body, ["startDate", "endDate"]);
+
+      await validateEventFKs(tid, body);
+
+      const updateData: any = { modifiedBy: userId, modifiedAt: new Date() };
+      for (const k of EVENT_MUTABLE_FIELDS) { if (body[k] !== undefined) updateData[k] = body[k]; }
+
+      const [event] = await db.update(events).set(updateData).where(and(eq(events.id, id), eq(events.tenantId, tid))).returning();
+      if (!event) return res.status(404).json({ message: "Event not found" });
+      res.json(event);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.delete("/api/events/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      await db.delete(eventRegistrations).where(and(eq(eventRegistrations.eventId, id), eq(eventRegistrations.tenantId, tid)));
+      const [event] = await db.delete(events).where(and(eq(events.id, id), eq(events.tenantId, tid))).returning();
+      if (!event) return res.status(404).json({ message: "Event not found" });
+      res.json({ message: "Event deleted" });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/events/:id/registrations", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const eventId = Number(req.params.id);
+      const [event] = await db.select().from(events).where(and(eq(events.id, eventId), eq(events.tenantId, tid)));
+      if (!event) return res.status(404).json({ message: "Event not found" });
+
+      const rows = await db.select().from(eventRegistrations)
+        .where(and(eq(eventRegistrations.eventId, eventId), eq(eventRegistrations.tenantId, tid)))
+        .orderBy(sql`${eventRegistrations.createdAt} DESC`);
+
+      const enriched = await Promise.all(rows.map(async (r) => {
+        let resultingLeadName = null;
+        let resultingLeadStatus = null;
+        if (r.resultingLeadId) {
+          const [lead] = await db.select().from(leads).where(and(eq(leads.id, r.resultingLeadId), eq(leads.tenantId, tid)));
+          if (lead) { resultingLeadName = lead.name; resultingLeadStatus = lead.status; }
+        }
+        return { ...r, resultingLeadName, resultingLeadStatus };
+      }));
+
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/events/:id/registrations", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const eventId = Number(req.params.id);
+      const userId = String((req as any).session?.crmUserId || "system");
+
+      const [event] = await db.select().from(events).where(and(eq(events.id, eventId), eq(events.tenantId, tid)));
+      if (!event) return res.status(404).json({ message: "Event not found" });
+
+      if (event.maxCapacity && (event.registeredCount || 0) >= event.maxCapacity) {
+        return res.status(400).json({ message: "Event has reached maximum capacity" });
+      }
+
+      const body = coerceDateFields(req.body, ["registrationDate", "checkedInAt"]);
+      const parsed = insertEventRegistrationSchema.parse({ ...body, tenantId: tid, eventId, createdBy: userId, modifiedBy: userId });
+      const [reg] = await db.insert(eventRegistrations).values(parsed).returning();
+
+      await db.update(events).set({
+        registeredCount: sql`COALESCE(${events.registeredCount}, 0) + 1`,
+        modifiedAt: new Date(),
+      }).where(eq(events.id, eventId));
+
+      res.json(reg);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.patch("/api/events/:id/registrations/:regId", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const eventId = Number(req.params.id);
+      const regId = Number(req.params.regId);
+      const userId = String((req as any).session?.crmUserId || "system");
+
+      const [event] = await db.select().from(events).where(and(eq(events.id, eventId), eq(events.tenantId, tid)));
+      if (!event) return res.status(404).json({ message: "Event not found" });
+
+      const [existing] = await db.select().from(eventRegistrations).where(
+        and(eq(eventRegistrations.id, regId), eq(eventRegistrations.eventId, eventId), eq(eventRegistrations.tenantId, tid))
+      );
+      if (!existing) return res.status(404).json({ message: "Registration not found" });
+
+      const body = coerceDateFields(req.body, ["registrationDate", "checkedInAt"]);
+      const updateData: any = { ...body, modifiedBy: userId, modifiedAt: new Date() };
+      delete updateData.id;
+      delete updateData.tenantId;
+      delete updateData.eventId;
+      delete updateData.createdAt;
+      delete updateData.createdBy;
+
+      if (updateData.attendanceStatus === "Attended" && existing.attendanceStatus !== "Attended") {
+        updateData.checkedInAt = new Date();
+        await db.update(events).set({
+          attendedCount: sql`COALESCE(${events.attendedCount}, 0) + 1`,
+          modifiedAt: new Date(),
+        }).where(eq(events.id, eventId));
+      } else if (existing.attendanceStatus === "Attended" && updateData.attendanceStatus && updateData.attendanceStatus !== "Attended") {
+        await db.update(events).set({
+          attendedCount: sql`GREATEST(COALESCE(${events.attendedCount}, 0) - 1, 0)`,
+          modifiedAt: new Date(),
+        }).where(eq(events.id, eventId));
+      }
+
+      if (updateData.attendanceStatus === "Cancelled" && existing.attendanceStatus !== "Cancelled") {
+        await db.update(events).set({
+          registeredCount: sql`GREATEST(COALESCE(${events.registeredCount}, 0) - 1, 0)`,
+          modifiedAt: new Date(),
+        }).where(eq(events.id, eventId));
+      } else if (existing.attendanceStatus === "Cancelled" && updateData.attendanceStatus && updateData.attendanceStatus !== "Cancelled") {
+        await db.update(events).set({
+          registeredCount: sql`COALESCE(${events.registeredCount}, 0) + 1`,
+          modifiedAt: new Date(),
+        }).where(eq(events.id, eventId));
+      }
+
+      const [reg] = await db.update(eventRegistrations).set(updateData).where(
+        and(eq(eventRegistrations.id, regId), eq(eventRegistrations.tenantId, tid))
+      ).returning();
+      res.json(reg);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/events/:id/registrations/:regId/convert-to-lead", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const eventId = Number(req.params.id);
+      const regId = Number(req.params.regId);
+      const userId = String((req as any).session?.crmUserId || "system");
+
+      const [event] = await db.select().from(events).where(and(eq(events.id, eventId), eq(events.tenantId, tid)));
+      if (!event) return res.status(404).json({ message: "Event not found" });
+
+      const [reg] = await db.select().from(eventRegistrations).where(
+        and(eq(eventRegistrations.id, regId), eq(eventRegistrations.eventId, eventId), eq(eventRegistrations.tenantId, tid))
+      );
+      if (!reg) return res.status(404).json({ message: "Registration not found" });
+
+      if (reg.resultingLeadId) {
+        return res.status(400).json({ message: "This registrant has already been converted to a lead" });
+      }
+
+      const phoneE164 = reg.phone.startsWith("+") ? reg.phone : `+91${reg.phone.replace(/^0/, "")}`;
+      const normalized = phoneE164.replace(/\D/g, "").slice(-10);
+
+      const existingLeads = await db.select().from(leads).where(
+        and(eq(leads.tenantId, tid), eq(leads.mobileNormalized, normalized))
+      );
+
+      let leadId: number;
+      if (existingLeads.length > 0) {
+        leadId = existingLeads[0].id;
+      } else {
+        const [newLead] = await db.insert(leads).values({
+          tenantId: tid,
+          name: reg.name,
+          phoneE164,
+          mobileNormalized: normalized,
+          email: reg.email,
+          status: "Raw",
+          source: `Event: ${event.name}`,
+          campaignId: event.campaignId,
+          createdBy: userId,
+          modifiedBy: userId,
+        }).returning();
+        leadId = newLead.id;
+      }
+
+      await db.update(eventRegistrations).set({
+        resultingLeadId: leadId,
+        modifiedBy: userId,
+        modifiedAt: new Date(),
+      }).where(eq(eventRegistrations.id, regId));
+
+      await db.update(events).set({
+        convertedCount: sql`COALESCE(${events.convertedCount}, 0) + 1`,
+        modifiedAt: new Date(),
+      }).where(eq(events.id, eventId));
+
+      res.json({ message: "Registrant converted to lead", leadId });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/events/:id/bulk-attendance", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const eventId = Number(req.params.id);
+      const userId = String((req as any).session?.crmUserId || "system");
+      const { registrationIds, status } = req.body;
+
+      if (!Array.isArray(registrationIds) || !status) {
+        return res.status(400).json({ message: "registrationIds array and status are required" });
+      }
+
+      const [event] = await db.select().from(events).where(and(eq(events.id, eventId), eq(events.tenantId, tid)));
+      if (!event) return res.status(404).json({ message: "Event not found" });
+
+      let attendedDelta = 0;
+      for (const regId of registrationIds) {
+        const [existing] = await db.select().from(eventRegistrations).where(
+          and(eq(eventRegistrations.id, Number(regId)), eq(eventRegistrations.eventId, eventId), eq(eventRegistrations.tenantId, tid))
+        );
+        if (!existing) continue;
+
+        if (status === "Attended" && existing.attendanceStatus !== "Attended") attendedDelta++;
+        else if (status !== "Attended" && existing.attendanceStatus === "Attended") attendedDelta--;
+
+        await db.update(eventRegistrations).set({
+          attendanceStatus: status,
+          checkedInAt: status === "Attended" ? new Date() : existing.checkedInAt,
+          modifiedBy: userId,
+          modifiedAt: new Date(),
+        }).where(eq(eventRegistrations.id, Number(regId)));
+      }
+
+      if (attendedDelta !== 0) {
+        await db.update(events).set({
+          attendedCount: sql`GREATEST(COALESCE(${events.attendedCount}, 0) + ${attendedDelta}, 0)`,
+          modifiedAt: new Date(),
+        }).where(eq(events.id, eventId));
+      }
+
+      res.json({ message: `${registrationIds.length} registrations updated`, attendedDelta });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

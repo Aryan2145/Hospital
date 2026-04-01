@@ -19,6 +19,7 @@ import {
   HelpCircle,
   Stethoscope,
   Gift,
+  CalendarDays,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -40,6 +41,7 @@ const sections: { label: string; items: NavItem[] }[] = [
     label: "Transactions",
     items: [
       { icon: Megaphone, label: "Campaigns", href: "/campaigns", page: "campaigns" },
+      { icon: CalendarDays, label: "Events", href: "/events", page: "campaigns" },
       { icon: Users, label: "Leads", href: "/leads", page: "leads" },
       { icon: Calendar, label: "Appointments", href: "/appointments", page: "appointments" },
       { icon: HeartPulse, label: "Consultation Episodes", href: "/transactions", page: "transactions" },

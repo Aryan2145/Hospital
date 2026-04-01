@@ -1718,6 +1718,10 @@ export type PostCareProtocolStep = typeof postCareProtocolSteps.$inferSelect;
 export type InsertPostCareProtocolStep = z.infer<typeof insertPostCareProtocolStepSchema>;
 export type Referral = typeof referrals.$inferSelect;
 export type InsertReferral = z.infer<typeof insertReferralSchema>;
+export type Event = typeof events.$inferSelect;
+export type InsertEvent = z.infer<typeof insertEventSchema>;
+export type EventRegistration = typeof eventRegistrations.$inferSelect;
+export type InsertEventRegistration = z.infer<typeof insertEventRegistrationSchema>;
 
 // Generic master record type
 export interface MasterRecord {
@@ -1861,6 +1865,59 @@ export const referrals = pgTable("referrals", {
 });
 
 export const insertReferralSchema = createInsertSchema(referrals).omit({ id: true, createdAt: true, modifiedAt: true });
+
+// =============================================
+// EVENT MANAGEMENT (Webinars / Seminars / Health Camps)
+// =============================================
+export const events = pgTable("events", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("Health Camp"),
+  description: text("description"),
+  venue: text("venue"),
+  location: text("location"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  maxCapacity: integer("max_capacity"),
+  registeredCount: integer("registered_count").default(0),
+  attendedCount: integer("attended_count").default(0),
+  convertedCount: integer("converted_count").default(0),
+  status: text("status").notNull().default("Draft"),
+  organizer: text("organizer"),
+  budget: integer("budget"),
+  campaignId: integer("campaign_id").references(() => campaigns.id),
+  contactPhone: text("contact_phone"),
+  contactEmail: text("contact_email"),
+  notes: text("notes"),
+  createdBy: varchar("created_by"),
+  modifiedBy: varchar("modified_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+});
+
+export const eventRegistrations = pgTable("event_registrations", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  eventId: integer("event_id").notNull().references(() => events.id),
+  name: text("name").notNull(),
+  phone: text("phone").notNull(),
+  email: text("email"),
+  source: text("source").default("Walk-in"),
+  registrationDate: timestamp("registration_date").defaultNow(),
+  attendanceStatus: text("attendance_status").notNull().default("Registered"),
+  checkedInAt: timestamp("checked_in_at"),
+  resultingLeadId: integer("resulting_lead_id").references(() => leads.id),
+  notes: text("notes"),
+  createdBy: varchar("created_by"),
+  modifiedBy: varchar("modified_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+});
+
+export const insertEventSchema = createInsertSchema(events).omit({ id: true, createdAt: true, modifiedAt: true });
+export const insertEventRegistrationSchema = createInsertSchema(eventRegistrations).omit({ id: true, createdAt: true, modifiedAt: true });
 
 export const accessLogs = pgTable("access_logs", {
   id: serial("id").primaryKey(),
