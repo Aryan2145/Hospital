@@ -1,5 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useLocation } from "wouter";
+import { useState, useMemo } from "react";
 import {
   ArrowRight,
   CheckCircle2,
@@ -21,11 +22,31 @@ import {
   BookOpen,
   ExternalLink,
   AlertTriangle,
+  Search,
+  ChevronDown,
+  ChevronRight,
+  Users,
+  Calendar,
+  HeartPulse,
+  Gift,
+  CalendarDays,
+  Database,
+  Plug,
+  Paintbrush,
+  Brain,
+  Stethoscope,
+  LayoutDashboard,
+  Settings,
+  Info,
+  Menu,
+  X,
 } from "lucide-react";
 import { SiFacebook, SiInstagram } from "react-icons/si";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 type ComplianceItem = {
   id: string;
@@ -219,36 +240,1775 @@ const COMPLIANCE_ITEMS: ComplianceItem[] = [
   },
 ];
 
-type HelpDoc = {
+type HelpTopic = {
   id: string;
   title: string;
-  description: string;
-  href: string;
   icon: any;
-  iconBg: string;
-  category: string;
+  isExternal?: boolean;
+  href?: string;
 };
 
-const HELP_DOCS: HelpDoc[] = [
+type HelpSection = {
+  id: string;
+  title: string;
+  icon: any;
+  topics: HelpTopic[];
+};
+
+const HELP_SECTIONS: HelpSection[] = [
   {
-    id: "meta-integration",
-    title: "Meta (Facebook & Instagram) Integration Guide",
-    description: "Complete setup guide for connecting your Meta Business ad accounts, configuring lead capture rules, and tracking campaign performance with UTM attribution.",
-    href: "/help/meta-integration",
-    icon: SiFacebook,
-    iconBg: "bg-blue-50",
-    category: "Integrations",
+    id: "getting-started",
+    title: "Getting Started",
+    icon: BookOpen,
+    topics: [
+      { id: "overview", title: "Platform Overview", icon: Info },
+      { id: "logging-in", title: "Logging In", icon: Lock },
+      { id: "navigation", title: "Navigating the CRM", icon: Menu },
+      { id: "roles", title: "Understanding Your Role", icon: Shield },
+    ],
   },
   {
-    id: "data-security",
-    title: "Data Security & Compliance Status",
-    description: "Healthcare-grade security compliance tracker showing implemented protections and upcoming security enhancements for patient data.",
-    href: "/help/data-security",
+    id: "leads",
+    title: "Lead Management",
+    icon: Users,
+    topics: [
+      { id: "creating-leads", title: "Creating & Importing Leads", icon: Users },
+      { id: "lifecycle", title: "Lead Lifecycle Stages", icon: ArrowRight },
+      { id: "kanban", title: "Kanban Workspace", icon: LayoutDashboard },
+      { id: "lead-detail", title: "Lead Detail Page", icon: FileText },
+      { id: "merge-duplicates", title: "Merge & Duplicates", icon: Users },
+      { id: "nurture-engine", title: "Nurture Engine", icon: Bell },
+      { id: "dormant-detection", title: "Dormant Lead Detection", icon: Clock },
+    ],
+  },
+  {
+    id: "appointments",
+    title: "Appointments",
+    icon: Calendar,
+    topics: [
+      { id: "scheduling", title: "Scheduling Appointments", icon: Calendar },
+      { id: "opd-timings", title: "Doctor OPD Timings", icon: Clock },
+      { id: "check-in", title: "Check-In Process", icon: CheckCircle2 },
+    ],
+  },
+  {
+    id: "episodes",
+    title: "Consultation Episodes",
+    icon: HeartPulse,
+    topics: [
+      { id: "episode-lifecycle", title: "Episode Lifecycle", icon: ArrowRight },
+      { id: "consultation-log", title: "Consultation Log & Outcomes", icon: ClipboardList },
+      { id: "treatment-planning", title: "Treatment Planning", icon: FileText },
+      { id: "intelligence", title: "Episode Intelligence", icon: Brain },
+    ],
+  },
+  {
+    id: "post-care",
+    title: "Post-Care & Follow-Up",
+    icon: Stethoscope,
+    topics: [
+      { id: "protocols", title: "Setting Up Protocols", icon: Settings },
+      { id: "auto-triggering", title: "How Auto-Triggering Works", icon: Bell },
+      { id: "timeline", title: "Post-Care Timeline", icon: Clock },
+    ],
+  },
+  {
+    id: "referrals",
+    title: "Referral Management",
+    icon: Gift,
+    topics: [
+      { id: "creating-referrals", title: "Creating Referrals", icon: Gift },
+      { id: "referral-ready", title: "Marking Episodes Referral-Ready", icon: CheckCircle2 },
+      { id: "tracking-outcomes", title: "Tracking & Outcomes", icon: LayoutDashboard },
+    ],
+  },
+  {
+    id: "events",
+    title: "Event Management",
+    icon: CalendarDays,
+    topics: [
+      { id: "creating-events", title: "Creating Events", icon: CalendarDays },
+      { id: "registrations", title: "Registrations & Attendance", icon: Users },
+      { id: "convert-to-lead", title: "Converting Attendees to Leads", icon: ArrowRight },
+    ],
+  },
+  {
+    id: "campaigns",
+    title: "Campaigns & Marketing",
+    icon: Megaphone,
+    topics: [
+      { id: "campaign-setup", title: "Campaign Setup", icon: Megaphone },
+      { id: "naming-conventions", title: "Naming Conventions", icon: FileText },
+      { id: "utm-tracking", title: "UTM Tracking", icon: ExternalLink },
+      { id: "meta-integration", title: "Connecting Meta to CRM", icon: SiFacebook, isExternal: true, href: "/help/meta-integration" },
+    ],
+  },
+  {
+    id: "masters",
+    title: "Master Data",
+    icon: Database,
+    topics: [
+      { id: "master-tables", title: "Managing Master Tables", icon: Database },
+      { id: "approval-workflow", title: "Approval Workflow", icon: CheckCircle2 },
+      { id: "bulk-import-export", title: "Bulk Import & Export", icon: FileText },
+    ],
+  },
+  {
+    id: "configurations",
+    title: "Configurations",
+    icon: Settings,
+    topics: [
+      { id: "connectors", title: "Connectors Setup", icon: Plug },
+      { id: "branding", title: "Branding Customization", icon: Paintbrush },
+      { id: "intelligence-config", title: "Intelligence Config", icon: Brain },
+      { id: "sla-reminders", title: "SLA & Reminder Policies", icon: Bell },
+    ],
+  },
+  {
+    id: "dashboards",
+    title: "Dashboards & Reports",
+    icon: LayoutDashboard,
+    topics: [
+      { id: "role-dashboards", title: "Role-Based Dashboards", icon: LayoutDashboard },
+      { id: "telephony-reports", title: "Telephony Reports", icon: Phone },
+    ],
+  },
+  {
+    id: "security",
+    title: "Security & Compliance",
     icon: ShieldCheck,
-    iconBg: "bg-green-50",
-    category: "Security & Compliance",
+    topics: [
+      { id: "rbac-guide", title: "Role-Based Access Control", icon: Shield },
+      { id: "phi-masking", title: "PHI Masking", icon: Eye },
+      { id: "session-security", title: "Session & Login Security", icon: Lock },
+      { id: "audit-logging", title: "Audit Logging", icon: ClipboardList },
+      { id: "consent-prefs", title: "Consent & Communication Prefs", icon: UserCheck },
+      { id: "data-security-compliance", title: "Data Security & Compliance", icon: ShieldCheck, isExternal: true, href: "/help/data-security" },
+    ],
+  },
+  {
+    id: "user-management",
+    title: "User Management (Admin)",
+    icon: Users,
+    topics: [
+      { id: "creating-users", title: "Creating CRM Users", icon: UserCheck },
+      { id: "role-assignment", title: "Role & Access Assignment", icon: Shield },
+      { id: "branch-management", title: "Branch Management", icon: Settings },
+    ],
   },
 ];
+
+function getArticleContent(sectionId: string, topicId: string): { title: string; content: JSX.Element } | null {
+  const key = `${sectionId}/${topicId}`;
+  const articles: Record<string, { title: string; content: JSX.Element }> = {
+    "getting-started/overview": {
+      title: "Platform Overview",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is myProSys Hospital CRM?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              myProSys Hospital CRM is a comprehensive, multi-tenant platform designed specifically for hospitals and healthcare organizations. It streamlines the entire patient journey — from initial lead capture through consultation, treatment, post-care, and referral — in one unified system.
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              The platform replaces spreadsheets, disconnected tools, and manual tracking with an intelligent CRM that automates follow-ups, manages appointments, tracks treatment episodes, and provides real-time dashboards for every level of your organization.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Key Capabilities</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {[
+                { title: "Lead Management", desc: "Capture, qualify, and convert patient inquiries with automated nurturing" },
+                { title: "Appointment Scheduling", desc: "Token-based scheduling with doctor OPD timings and check-in workflow" },
+                { title: "Consultation Episodes", desc: "Track treatments from consultation through surgery to post-care" },
+                { title: "Campaign Tracking", desc: "Attribute leads to campaigns with full UTM tracking and Meta Ads integration" },
+                { title: "Event Management", desc: "Manage health camps, webinars, and seminars with registration tracking" },
+                { title: "Referral Management", desc: "Track and manage patient referrals with conversion analytics" },
+                { title: "Post-Care Protocols", desc: "Automated follow-up task chains after treatment completion" },
+                { title: "Role-Based Dashboards", desc: "Tailored analytics for admins, managers, agents, and counsellors" },
+              ].map((item, i) => (
+                <Card key={i} className="p-3">
+                  <h3 className="text-sm font-semibold text-foreground mb-1">{item.title}</h3>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                </Card>
+              ))}
+            </div>
+          </section>
+          <TipBox>The CRM is designed so that every team member — from tele-callers to hospital administrators — has exactly the tools and data they need for their role.</TipBox>
+        </div>
+      ),
+    },
+    "getting-started/logging-in": {
+      title: "Logging In",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">How to Log In</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Access the CRM by navigating to your hospital's CRM URL. You will see a login screen where you can enter your credentials.
+            </p>
+            <StepList steps={[
+              "Open your browser and navigate to your hospital's CRM URL",
+              "Enter your registered mobile number and password",
+              "Click 'Sign In' to access your dashboard",
+              "If this is your first login, contact your administrator for your initial credentials",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Account Security</h2>
+            <ul className="space-y-2">
+              <li className="flex items-start gap-2 text-sm text-muted-foreground">
+                <Lock className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>Account Lockout:</strong> After 5 consecutive failed login attempts, your account is locked for 15 minutes. Wait and try again, or contact your administrator.</span>
+              </li>
+              <li className="flex items-start gap-2 text-sm text-muted-foreground">
+                <Timer className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>Session Timeout:</strong> For security, your session expires after 24 hours. You will also be logged out after 30 minutes of inactivity, with a 5-minute warning before logout.</span>
+              </li>
+              <li className="flex items-start gap-2 text-sm text-muted-foreground">
+                <Shield className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>Stay Logged In:</strong> When you see the inactivity warning, click "Stay Logged In" to extend your session.</span>
+              </li>
+            </ul>
+          </section>
+          <WarningBox>Never share your login credentials. Each user account tracks activities for audit purposes, so shared accounts compromise security and accountability.</WarningBox>
+        </div>
+      ),
+    },
+    "getting-started/navigation": {
+      title: "Navigating the CRM",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Sidebar Navigation</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The left sidebar is your primary navigation. It is organized into logical sections based on what you do:
+            </p>
+            <div className="space-y-4">
+              {[
+                { title: "Reports & Dashboards", desc: "Your personalized dashboard and telephony call reports. This is your home screen and daily starting point.", icon: LayoutDashboard },
+                { title: "Transactions", desc: "Where you do your day-to-day work — managing campaigns, events, leads, appointments, consultation episodes, and referrals.", icon: FileText },
+                { title: "Masters", desc: "Reference data that powers the system — lead sources, departments, treatment types, and more. Includes the approval queue for pending changes.", icon: Database },
+                { title: "Configurations", desc: "System settings — platform connectors (Meta, WhatsApp, Telephony), hospital branding, intelligence engine settings, and post-care protocols.", icon: Settings },
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-3 p-3 rounded-lg border bg-card">
+                  <item.icon className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">{item.title}</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+          <TipBox>The sections and menu items visible to you depend on your role. Agents and Counsellors see fewer configuration options than Admins and Managers.</TipBox>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Mobile Navigation</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              On mobile devices, the sidebar is hidden by default. Tap the menu icon (three horizontal lines) in the top-left corner to open the navigation drawer. Tap any menu item to navigate, and the drawer will close automatically.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "getting-started/roles": {
+      title: "Understanding Your Role",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Role Hierarchy</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The CRM uses a 4-tier role hierarchy. Each role has specific permissions and sees a tailored view of the system:
+            </p>
+            <div className="space-y-3">
+              {[
+                { role: "System Admin (SYS_ADMIN)", desc: "Platform-level administrator. Manages hospitals (tenants), subscriptions, and system-wide settings. Accesses the separate Admin Panel.", color: "bg-red-50 text-red-700 border-red-200" },
+                { role: "Admin (ADMIN)", desc: "Hospital-level administrator. Full access to all data and configurations for their hospital. Manages users, master data, connectors, branding, and views all dashboards.", color: "bg-orange-50 text-orange-700 border-orange-200" },
+                { role: "Manager (MANAGER)", desc: "Team leader. Sees their team's data plus their own. Can view team performance dashboards, overdue tasks, and manage lead assignments. Access scope can be Branch-level or All.", color: "bg-blue-50 text-blue-700 border-blue-200" },
+                { role: "Agent / Counsellor", desc: "Frontline staff. Agents (Tele-Callers) handle initial lead contact and qualification. Counsellors manage consultation episodes and treatment follow-up. Both see only their own assigned data by default.", color: "bg-green-50 text-green-700 border-green-200" },
+              ].map((item, i) => (
+                <Card key={i} className={`p-3 border ${item.color.split(' ')[2]}`}>
+                  <h3 className="text-sm font-semibold text-foreground mb-1">{item.role}</h3>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                </Card>
+              ))}
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">PHI Access Levels</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Each user is assigned a Protected Health Information (PHI) access level that controls what patient data they can see:
+            </p>
+            <div className="space-y-2">
+              <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                <Eye className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span><strong>Full:</strong> All patient data visible including phone, email, diagnosis, and treatment details.</span>
+              </div>
+              <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                <Eye className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <span><strong>Masked:</strong> Contact information (phone, email) is partially hidden (e.g., 98XXXXX003). Clinical fields remain visible.</span>
+              </div>
+              <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                <Eye className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                <span><strong>None:</strong> Contact information is fully hidden. Clinical fields (diagnosis, treatment plan, insurance) are also hidden.</span>
+              </div>
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Access Scope</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-2">
+              Your access scope determines whose data you can see:
+            </p>
+            <ul className="space-y-1 text-sm text-muted-foreground">
+              <li><strong>Self:</strong> Only records assigned to you.</li>
+              <li><strong>Branch:</strong> Records assigned to anyone in your branch.</li>
+              <li><strong>All:</strong> Records across all branches (typically for Admins).</li>
+            </ul>
+          </section>
+        </div>
+      ),
+    },
+    "leads/creating-leads": {
+      title: "Creating & Importing Leads",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Creating a Lead Manually</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              To create a new lead, navigate to <strong>Transactions &gt; Leads</strong> and click the "New Lead" button.
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Required Fields</h3>
+            <FieldTable fields={[
+              { field: "Patient Name", desc: "Full name of the patient or inquiry contact" },
+              { field: "Phone", desc: "Primary contact number (used for duplicate detection)" },
+              { field: "Lead Source", desc: "Where this lead came from (e.g., Walk-in, Meta Ads, Referral)" },
+              { field: "Assigned To", desc: "The CRM user who will handle this lead" },
+            ]} />
+            <h3 className="text-sm font-semibold text-foreground mb-2 mt-4">Optional Fields</h3>
+            <FieldTable fields={[
+              { field: "Email", desc: "Patient's email address" },
+              { field: "City / State / Country", desc: "Location details" },
+              { field: "Campaign", desc: "Link to a specific marketing campaign" },
+              { field: "Treatment Interest", desc: "The treatment the patient is interested in" },
+              { field: "Consent", desc: "Checkbox indicating patient has given consent for data processing" },
+              { field: "Remarks", desc: "Initial notes about the inquiry" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Duplicate Detection</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              When you enter a phone number, the system automatically checks for existing leads with the same number. If a duplicate is found, you will be alerted and can choose to view the existing lead instead of creating a duplicate.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Automatic Lead Capture</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Leads can also be created automatically from:
+            </p>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li><strong>Meta Lead Ads:</strong> Facebook and Instagram lead form submissions are synced automatically via the Meta connector</li>
+              <li><strong>Telephony (Callyzer):</strong> Incoming calls from unknown numbers can auto-create leads</li>
+              <li><strong>Event Registrations:</strong> Event attendees can be converted to leads</li>
+              <li><strong>Lead Capture Rules:</strong> Configurable rules route leads from specific sources to designated team members</li>
+            </ul>
+          </section>
+          <TipBox>Always check for duplicates before creating a lead manually. The system uses phone number matching, but slight variations (country code differences) could bypass detection.</TipBox>
+        </div>
+      ),
+    },
+    "leads/lifecycle": {
+      title: "Lead Lifecycle Stages",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Lead Status Flow</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Every lead progresses through a defined set of stages. The system tracks movement between stages and calculates time spent at each stage for SLA monitoring.
+            </p>
+            <div className="space-y-2">
+              {[
+                { stage: "Raw Lead Captured", desc: "New lead just entered the system. No contact has been attempted yet.", color: "bg-gray-100" },
+                { stage: "Contacted", desc: "Agent has made initial contact with the lead. Conversation has started.", color: "bg-blue-50" },
+                { stage: "Qualified", desc: "Lead has been assessed and shows genuine interest in treatment.", color: "bg-blue-100" },
+                { stage: "Appointment Booked", desc: "A consultation appointment has been scheduled for this lead.", color: "bg-indigo-50" },
+                { stage: "Reminder Running", desc: "Automated appointment reminders are being sent. Mapped to Appointment Booked in the funnel.", color: "bg-indigo-100" },
+                { stage: "Consultation In Progress", desc: "Patient has checked in and is with the doctor.", color: "bg-violet-50" },
+                { stage: "Consultation Done", desc: "Doctor has completed the consultation and logged the outcome.", color: "bg-violet-100" },
+                { stage: "Nurture", desc: "Lead is being nurtured via automated follow-up sequences.", color: "bg-amber-50" },
+                { stage: "Closed Won", desc: "Lead has converted — treatment confirmed or completed.", color: "bg-green-50" },
+                { stage: "Closed Lost", desc: "Lead has been lost — patient not proceeding.", color: "bg-red-50" },
+                { stage: "No Show", desc: "Patient did not attend their scheduled appointment.", color: "bg-orange-50" },
+                { stage: "Dormant", desc: "No activity for 5+ days. System auto-detects and creates re-engagement tasks.", color: "bg-gray-50" },
+              ].map((item, i) => (
+                <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${item.color}`}>
+                  <div className="w-6 h-6 rounded-full bg-white border-2 border-primary/30 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">{i + 1}</div>
+                  <div>
+                    <span className="text-sm font-semibold text-foreground">{item.stage}</span>
+                    <span className="text-xs text-muted-foreground ml-2">— {item.desc}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Unified Patient Journey Funnel</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              The visual funnel bar you see on lead cards and the workspace shows a simplified view: <strong>Raw → Contact → Qual → Appt → Consult</strong> for lead-only records. When a lead has an episode, the funnel extends to show the full 12-stage journey through treatment stages. Past stages show in green, the current stage in blue (lead phase) or violet (episode phase), and future stages in gray.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "leads/kanban": {
+      title: "Kanban Workspace",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Using the Kanban Board</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Kanban view on the Leads page provides a visual, column-based view of your leads organized by their current status. Each column represents a lead status, and each card represents a lead.
+            </p>
+            <StepList steps={[
+              "Navigate to Transactions > Leads",
+              "Toggle to the Kanban view using the view switcher at the top",
+              "Each column shows leads in that status with a count badge",
+              "Click on any lead card to open the Lead Detail page",
+              "Use the filters at the top to narrow down by date range, assigned user, or lead source",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Kanban Card Information</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Each Kanban card displays: patient name, phone number (masked if your PHI access is limited), lead source, age of the lead, treatment interest, and the mini patient journey funnel bar showing progress.
+            </p>
+          </section>
+          <TipBox>The Kanban board is ideal for getting a quick visual overview of your pipeline. For detailed filtering and sorting, switch to the List view.</TipBox>
+        </div>
+      ),
+    },
+    "leads/lead-detail": {
+      title: "Lead Detail Page",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Lead Detail Layout</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Clicking on any lead opens the Lead Detail page with comprehensive information organized into sections:
+            </p>
+            <div className="space-y-3">
+              {[
+                { title: "Header", desc: "Patient name, status badge, lead age, consent badge, and the patient journey funnel bar." },
+                { title: "Contact Information", desc: "Phone, email, city, state, country. Visibility depends on your PHI access level." },
+                { title: "Lead Details", desc: "Source, campaign, treatment interest, assigned user, and any UTM parameters." },
+                { title: "Activity Timeline", desc: "Chronological log of all activities — calls, status changes, notes, appointments, and system events." },
+                { title: "Next Actions", desc: "Upcoming tasks and follow-ups. You can create new next actions or delegate them to other team members." },
+                { title: "Clinical Notes", desc: "Medical notes with full audit trail showing who added or edited each note." },
+                { title: "Communication Preferences", desc: "Per-channel opt-in/opt-out toggles for WhatsApp, SMS, Email, and Phone." },
+                { title: "Episodes", desc: "If the lead has consultation episodes, they are listed here with links to episode detail." },
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
+                  <span><strong>{item.title}:</strong> {item.desc}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Changing Lead Status</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Use the status dropdown on the lead detail page to change the lead's current status. Some transitions trigger automations — for example, moving to "Nurture" starts the nurture task chain, and "Appointment Booked" can trigger reminder sequences.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "leads/merge-duplicates": {
+      title: "Merge & Duplicates",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Duplicate Detection</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The system automatically detects potential duplicates based on phone number when creating new leads. If a duplicate is found, you are alerted before the lead is created.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Merging Leads</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              When duplicate leads exist, administrators and managers can merge them into a single record:
+            </p>
+            <StepList steps={[
+              "Identify the duplicate leads (usually found by phone number search)",
+              "Select the primary lead (the one that will be kept)",
+              "Review the data from both records — activities, notes, and attachments from the secondary lead will be merged into the primary",
+              "Confirm the merge — the secondary lead will be marked as merged and all references will point to the primary lead",
+            ]} />
+          </section>
+          <WarningBox>Lead merging is irreversible. Always verify you are merging the correct records before confirming.</WarningBox>
+        </div>
+      ),
+    },
+    "leads/nurture-engine": {
+      title: "Nurture Engine",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">How the Nurture Engine Works</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Nurture Engine is an automated follow-up system that activates when a lead is moved to the "Nurture" status. It creates a sequence of scheduled tasks to ensure consistent follow-up over time.
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Default Nurture Schedule</h3>
+            <FieldTable fields={[
+              { field: "Day 1", desc: "First follow-up call/message" },
+              { field: "Day 3", desc: "Second follow-up" },
+              { field: "Day 7", desc: "One-week check-in" },
+              { field: "Day 14", desc: "Two-week follow-up" },
+              { field: "Day 30", desc: "Monthly check-in" },
+              { field: "Day 60", desc: "Final follow-up before dormancy" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Escalation & Completion</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              If nurture tasks are overdue and not completed, the system can escalate them to the assigned user's manager. If a lead converts (moves to Appointment Booked or Consultation Done) during nurturing, the remaining nurture tasks are automatically cancelled.
+            </p>
+          </section>
+          <TipBox>The nurture engine works best when agents complete each task promptly and log the outcome. This ensures the system has accurate data for the next scheduled follow-up.</TipBox>
+        </div>
+      ),
+    },
+    "leads/dormant-detection": {
+      title: "Dormant Lead Detection",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is Dormant Detection?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The system automatically identifies leads that have had no activity for 5 or more days. These leads are flagged as potentially "Dormant" and re-engagement tasks are created to prompt follow-up.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Exclusions</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Not all inactive leads are considered dormant. The system excludes leads that are in active engagement statuses:
+            </p>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li>Appointment Booked (waiting for their appointment)</li>
+              <li>Reminder Running (actively being reminded)</li>
+              <li>Consultation Done (in the episode phase)</li>
+              <li>Nurture (already being nurtured)</li>
+              <li>Leads with future scheduled appointments</li>
+            </ul>
+          </section>
+        </div>
+      ),
+    },
+    "appointments/scheduling": {
+      title: "Scheduling Appointments",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Creating an Appointment</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Appointments can be created from the Appointments page or directly from a Lead Detail page. The system uses a token-based scheduling approach.
+            </p>
+            <StepList steps={[
+              "Navigate to Transactions > Appointments or click 'Book Appointment' on a lead detail page",
+              "Select the patient/lead for the appointment",
+              "Choose the doctor and verify their availability via OPD timings",
+              "Select the appointment date and time slot",
+              "Choose the appointment type (New Consultation, Follow-up, etc.)",
+              "Add any notes or special instructions",
+              "Save the appointment — the lead status automatically updates to 'Appointment Booked'",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Appointment Types</h2>
+            <FieldTable fields={[
+              { field: "New Consultation", desc: "First-time visit with a doctor" },
+              { field: "Follow-up", desc: "Return visit for ongoing treatment" },
+              { field: "Review", desc: "Post-treatment review appointment" },
+            ]} />
+          </section>
+          <TipBox>Always check doctor availability before booking. The OPD Timings page shows each doctor's schedule, including any leave or blocked dates.</TipBox>
+        </div>
+      ),
+    },
+    "appointments/opd-timings": {
+      title: "Doctor OPD Timings",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Managing Doctor Schedules</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              OPD (Out-Patient Department) Timings define when each doctor is available for consultations. This information is used by the appointment scheduling system to ensure appointments are only booked during available slots.
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Schedule Components</h3>
+            <FieldTable fields={[
+              { field: "Recurring Slots", desc: "Regular weekly schedule (e.g., Monday–Friday 9 AM to 1 PM)" },
+              { field: "Leave/Exceptions", desc: "Specific dates when the doctor is unavailable (holidays, conferences)" },
+              { field: "Consultation Location", desc: "Which branch or facility the doctor is at on each day" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Viewing Availability</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              The doctor availability calendar shows a visual view of each doctor's schedule. Green slots indicate available times, and blocked/red slots show unavailable periods. Admins and Managers can edit doctor schedules from the Master Data section.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "appointments/check-in": {
+      title: "Check-In Process",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Patient Check-In</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              When a patient arrives for their appointment, the front desk checks them in through the CRM. This triggers important workflow automations.
+            </p>
+            <StepList steps={[
+              "Navigate to Transactions > Appointments",
+              "Find the patient's appointment (use search or filter by today's date)",
+              "Click the 'Check In' button on the appointment row",
+              "The system records the check-in time and updates the appointment status",
+              "An Episode (Consultation In Progress) is automatically created for the patient",
+              "The lead status updates to 'Consultation In Progress'",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What Happens at Check-In</h2>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>Check-in timestamp is recorded for the appointment</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>A new Consultation Episode is created (status: "Consultation In Progress")</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>The lead transitions to the episode phase of the patient journey</span>
+              </li>
+            </ul>
+          </section>
+          <WarningBox>The "Consultation Done" action on the appointments page requires an episode to exist. Always check in the patient first before marking consultation as done.</WarningBox>
+        </div>
+      ),
+    },
+    "episodes/episode-lifecycle": {
+      title: "Episode Lifecycle",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is an Episode?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              An Episode represents a specific treatment journey for a patient. While a Lead tracks the initial inquiry and qualification, an Episode tracks everything from consultation through treatment completion and post-care. A single lead can have multiple episodes (e.g., a patient who comes for knee replacement and later returns for hip replacement).
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Episode Status Flow</h2>
+            <div className="space-y-2">
+              {[
+                { stage: "Consultation In Progress", desc: "Created automatically at check-in. Patient is with the doctor." },
+                { stage: "Consultation Done", desc: "Doctor has completed consultation and logged the outcome." },
+                { stage: "Treatment Planning", desc: "Treatment plan is being prepared — costs, timelines, procedures." },
+                { stage: "Surgery Scheduled", desc: "Surgery/procedure date has been confirmed." },
+                { stage: "Surgery Done", desc: "The surgical procedure has been completed." },
+                { stage: "In Treatment", desc: "Patient is undergoing active treatment (inpatient or ongoing care)." },
+                { stage: "Post Care", desc: "Treatment complete, patient is in post-care follow-up phase." },
+                { stage: "Follow Up", desc: "Long-term follow-up phase." },
+                { stage: "Completed", desc: "Episode fully completed — all follow-ups done." },
+                { stage: "Discontinued", desc: "Treatment discontinued by patient or doctor." },
+              ].map((item, i) => (
+                <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/50">
+                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">{i + 1}</div>
+                  <div>
+                    <span className="text-sm font-semibold text-foreground">{item.stage}</span>
+                    <span className="text-xs text-muted-foreground ml-2">— {item.desc}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      ),
+    },
+    "episodes/consultation-log": {
+      title: "Consultation Log & Outcomes",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Logging a Consultation Outcome</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              After a doctor completes a consultation, the outcome is logged in the Episode Detail page. This is a critical step that determines the next phase of the patient's journey.
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Consultation Outcomes</h3>
+            <FieldTable fields={[
+              { field: "Treatment Recommended", desc: "Doctor recommends a treatment/procedure. Episode continues to Treatment Planning." },
+              { field: "Follow-up Required", desc: "Patient needs another consultation or further evaluation." },
+              { field: "Conservative Treatment", desc: "Non-surgical treatment recommended (medication, physiotherapy, etc.)." },
+              { field: "Referred", desc: "Patient referred to another specialist or facility." },
+              { field: "No Treatment Required", desc: "Doctor determines no treatment is needed. Auto-closes the episode." },
+              { field: "Patient Did Not Proceed", desc: "Patient decides not to proceed with treatment. Auto-closes the episode." },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Remark Chips</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Each consultation outcome has configurable remark chips — predefined tags that provide quick categorization. These are managed through the Consultation Outcome Remarks master table and can be customized per hospital. You can select one or more chips and add free-text remarks.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Next Actions</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              For outcomes that don't auto-close the episode, a Next Action panel appears allowing you to schedule follow-up tasks, set the next appointment date, and assign the follow-up to a team member. The episode status automatically transitions to "Consultation Done" when the log is submitted.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "episodes/treatment-planning": {
+      title: "Treatment Planning",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Treatment Planning Phase</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Once a consultation concludes with "Treatment Recommended," the episode moves to the Treatment Planning phase. This is where the detailed treatment plan is prepared.
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Key Fields in Treatment Planning</h3>
+            <FieldTable fields={[
+              { field: "Treatment Type", desc: "The specific procedure or treatment (from master data)" },
+              { field: "Estimated Cost", desc: "Projected cost of the treatment" },
+              { field: "Discount", desc: "Any applicable discount (may require manager/admin approval)" },
+              { field: "Insurance / TPA", desc: "Insurance provider and pre-authorization details" },
+              { field: "Conversion Stage", desc: "Where the patient is in their decision process" },
+              { field: "Revenue Probability", desc: "System-calculated likelihood of conversion based on stage and engagement" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Discount Approval Workflow</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              If a discount exceeds the counsellor's authorized limit, it triggers an approval request to the manager or admin. The episode shows a pending approval badge until the discount is approved or rejected.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "episodes/intelligence": {
+      title: "Episode Intelligence",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Temperature Engine</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Temperature Engine automatically categorizes leads and episodes as Hot, Warm, or Cold based on engagement signals:
+            </p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 px-3 py-2 rounded bg-red-50">
+                <div className="w-3 h-3 rounded-full bg-red-500" />
+                <span className="text-sm font-semibold text-foreground">Hot</span>
+                <span className="text-xs text-muted-foreground">— Recent activity, appointment booked, high engagement</span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-2 rounded bg-amber-50">
+                <div className="w-3 h-3 rounded-full bg-amber-500" />
+                <span className="text-sm font-semibold text-foreground">Warm</span>
+                <span className="text-xs text-muted-foreground">— Some engagement but not yet committed, moderate recency</span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-2 rounded bg-blue-50">
+                <div className="w-3 h-3 rounded-full bg-blue-500" />
+                <span className="text-sm font-semibold text-foreground">Cold</span>
+                <span className="text-xs text-muted-foreground">— Low engagement, no recent contact, extended inactivity</span>
+              </div>
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Auto-Handover Engine</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              The Auto-Handover Engine automatically assigns or transfers leads/episodes to the appropriate team based on stage transitions. For example, when a lead progresses from qualification to consultation, it can be automatically handed over from the tele-calling team to the counselling team.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Revenue Probability</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              The system calculates a revenue probability percentage for each episode based on the treatment type, current conversion stage, and historical conversion data. This powers the pipeline value calculations on the dashboard and helps managers forecast revenue.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "post-care/protocols": {
+      title: "Setting Up Protocols",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What are Post-Care Protocols?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Post-Care Protocols are configurable follow-up schedules that automatically create tasks when a patient's episode reaches the "Post Care" or "Completed" stage. They ensure no patient falls through the cracks after treatment.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Creating a Protocol</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Navigate to <strong>Configurations &gt; Post-Care Protocols</strong> to create and manage protocols.
+            </p>
+            <StepList steps={[
+              "Click 'New Protocol' to create a new post-care protocol",
+              "Enter the protocol name (e.g., 'Post Knee Replacement Follow-Up')",
+              "Add steps — each step defines a follow-up task at a specific number of days after the episode status change",
+              "For each step, set: Days After (e.g., 7, 30, 90, 180, 365), Task Title, and Assignee Type",
+              "Assignee Types: Post Care Owner (episode owner), Counsellor, or Round Robin (auto-distribute)",
+              "Save the protocol — it will automatically apply to matching episodes",
+            ]} />
+          </section>
+          <TipBox>Create protocol templates for your most common procedures. For example, a "Standard Post-Surgery" protocol with Day 7, 30, 90, and 365 follow-ups.</TipBox>
+        </div>
+      ),
+    },
+    "post-care/auto-triggering": {
+      title: "How Auto-Triggering Works",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Automatic Activation</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Post-Care Protocols activate automatically based on episode status changes:
+            </p>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>When an episode moves to <strong>"Post Care"</strong> status, matching protocols start</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>When an episode moves to <strong>"Completed"</strong> status, protocols also trigger</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>Each protocol step creates a scheduled task with the calculated due date</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>Tasks are assigned based on the step's assignee type (Post Care Owner, Counsellor, or Round Robin)</span>
+              </li>
+            </ul>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Example</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              If a "Post Knee Replacement" protocol has steps at Day 7, Day 30, Day 90, and Day 365, and the episode moves to "Post Care" on January 1st, the system will automatically create tasks due on January 8th, January 31st, April 1st, and January 1st of the following year.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "post-care/timeline": {
+      title: "Post-Care Timeline",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Viewing the Timeline</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Episode Detail page includes a Post-Care Timeline component that visualizes all protocol steps in a chronological view. Each step shows:
+            </p>
+            <FieldTable fields={[
+              { field: "Step Number", desc: "The sequence order of the follow-up step" },
+              { field: "Task Title", desc: "Description of the follow-up action" },
+              { field: "Days After", desc: "Number of days after the trigger event" },
+              { field: "Due Date", desc: "Calculated actual date the task is due" },
+              { field: "Status", desc: "Whether the task is pending, completed, or overdue" },
+              { field: "Assigned To", desc: "The team member responsible for this follow-up" },
+            ]} />
+          </section>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Completed steps show a green check, overdue steps show a red alert, and upcoming steps show in the default style. This gives counsellors and managers a quick visual of where each patient stands in their post-care journey.
+          </p>
+        </div>
+      ),
+    },
+    "referrals/creating-referrals": {
+      title: "Creating Referrals",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is a Referral?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              A Referral tracks when a patient, doctor, or partner refers someone to your hospital. The referral module captures who referred, through which channel, and whether the referral converted into a new patient.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Creating a Referral</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Navigate to <strong>Transactions &gt; Referrals</strong> and click "New Referral."
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Referral Fields</h3>
+            <FieldTable fields={[
+              { field: "Referrer Name", desc: "Name of the person who made the referral" },
+              { field: "Referrer Phone", desc: "Contact number of the referrer" },
+              { field: "Channel", desc: "How the referral was made (Word of Mouth, Doctor Referral, Referral Card, etc.)" },
+              { field: "Referred Patient Name", desc: "Name of the person being referred" },
+              { field: "Referred Patient Phone", desc: "Contact number of the referred patient" },
+              { field: "Treatment Interest", desc: "What treatment the referred patient is interested in" },
+              { field: "Outcome", desc: "Current status of the referral (Pending, Contacted, Converted, Lost)" },
+              { field: "Resulting Lead", desc: "The CRM lead created from this referral (linked automatically or manually)" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Referral Channels</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Available channels: Word of Mouth, Referral Card, Doctor Referral, Staff Referral, Social Media, Patient Testimonial, Community Event, and Other. These help you understand which referral methods are most effective.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "referrals/referral-ready": {
+      title: "Marking Episodes Referral-Ready",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Referral-Ready Status</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              When a patient's treatment is going well and they might be willing to refer others, you can mark their episode as "Referral Ready." This flags the episode for the referral team.
+            </p>
+            <StepList steps={[
+              "Open the Episode Detail page for the patient",
+              "Look for the 'Mark as Referral Ready' button (available for eligible episode statuses)",
+              "Click the button to mark the episode as referral-ready",
+              "The episode will show a 'Referral Ready' badge with the date it was marked",
+              "The referral team can then follow up with the patient to request referrals",
+            ]} />
+          </section>
+          <TipBox>The best time to ask for referrals is when patients are happiest with their treatment outcome — typically during the Post Care or Follow Up stages.</TipBox>
+        </div>
+      ),
+    },
+    "referrals/tracking-outcomes": {
+      title: "Tracking & Outcomes",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Referral Dashboard</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Referrals page displays key metrics at the top:
+            </p>
+            <FieldTable fields={[
+              { field: "Total Referrals", desc: "All referrals created in the system" },
+              { field: "Converted", desc: "Referrals that resulted in new patients/leads" },
+              { field: "Pending", desc: "Referrals still being followed up" },
+              { field: "Conversion Rate", desc: "Percentage of referrals that converted" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Tracking Referral Outcomes</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Update the outcome field on each referral as it progresses. When a referral converts, link it to the resulting CRM lead for complete attribution tracking. The system validates that the linked lead belongs to your hospital to prevent cross-tenant data leaks.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "events/creating-events": {
+      title: "Creating Events",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Event Types</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              The Event Management module supports various event types for hospital marketing and community engagement:
+            </p>
+            <FieldTable fields={[
+              { field: "Health Camp", desc: "Community health screening and awareness events" },
+              { field: "Seminar", desc: "Educational presentations for patients or medical professionals" },
+              { field: "Webinar", desc: "Online educational or marketing sessions" },
+              { field: "Workshop", desc: "Hands-on training or rehabilitation workshops" },
+              { field: "Community Outreach", desc: "Outreach programs in local communities" },
+              { field: "Other", desc: "Any other type of hospital event" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Creating an Event</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Navigate to <strong>Transactions &gt; Events</strong> and click "New Event."
+            </p>
+            <StepList steps={[
+              "Enter the event code (unique identifier), name, and type",
+              "Set the venue and event dates (start and end)",
+              "Define the capacity (maximum attendees)",
+              "Set the budget if applicable",
+              "Optionally link to a campaign for attribution tracking",
+              "Save the event — it will appear on the Events page as a card",
+            ]} />
+          </section>
+        </div>
+      ),
+    },
+    "events/registrations": {
+      title: "Registrations & Attendance",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Managing Registrations</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Each event has a registration table where you can add and manage attendees. Click on an event card to open the Event Detail page with the registrations table.
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Registration Fields</h3>
+            <FieldTable fields={[
+              { field: "Name", desc: "Attendee's full name" },
+              { field: "Phone", desc: "Contact number" },
+              { field: "Email", desc: "Email address (optional)" },
+              { field: "Status", desc: "Registration status (Registered, Confirmed, Attended, No-Show, Cancelled)" },
+              { field: "Source", desc: "How they registered (Walk-in, Online, Phone, etc.)" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Marking Attendance</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              On the day of the event, use the attendance features:
+            </p>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li><strong>Individual Check-In:</strong> Click the check-in button next to each attendee</li>
+              <li><strong>Bulk Attendance:</strong> Select multiple attendees using checkboxes and use the bulk action to mark all as "Attended" at once</li>
+            </ul>
+          </section>
+          <TipBox>Use the bulk attendance feature for large events like health camps where checking in attendees one by one would be too slow.</TipBox>
+        </div>
+      ),
+    },
+    "events/convert-to-lead": {
+      title: "Converting Attendees to Leads",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Convert to Lead</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              After an event, you can convert interested attendees into CRM leads for follow-up. This connects your event marketing directly into the sales pipeline.
+            </p>
+            <StepList steps={[
+              "Open the Event Detail page",
+              "In the registrations table, select the attendees you want to convert",
+              "Click the 'Convert to Lead' button",
+              "The system checks for duplicate phone numbers — if an existing lead has the same phone, the registration is linked to the existing lead",
+              "For new leads, a lead record is created with the event as the source",
+              "The event registration record is updated with a link to the resulting lead",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Event Attribution</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              When a lead is created from an event registration, the event source is preserved on the lead record. If the event is linked to a campaign, the campaign attribution also carries over. This gives you complete tracking from event → lead → episode → revenue.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "campaigns/campaign-setup": {
+      title: "Campaign Setup",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Creating a Campaign</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Campaigns organize your marketing efforts and enable attribution tracking. Navigate to <strong>Transactions &gt; Campaigns</strong> to create and manage campaigns.
+            </p>
+            <StepList steps={[
+              "Click 'New Campaign' to create a new campaign",
+              "Enter the campaign name following the naming convention (see Naming Conventions topic)",
+              "Select the funnel stage: TOFU (Top of Funnel), MOFU (Middle), or BOFU (Bottom)",
+              "Choose the platform (Meta, Google, WhatsApp, etc.)",
+              "Set the target audience description",
+              "Specify the campaign channel from the master data list",
+              "Enter the budget if applicable",
+              "Save the campaign — it will be available for linking to leads",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Linking Campaigns to Leads</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              When creating or editing a lead, you can link it to a campaign using the Campaign field. For leads coming from Meta Lead Ads, the campaign is linked automatically via the Meta connector. This enables end-to-end attribution from campaign spend to patient revenue.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "campaigns/naming-conventions": {
+      title: "Naming Conventions",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Campaign Naming Format</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The CRM uses a standardized campaign naming convention for consistency and easy identification:
+            </p>
+            <Card className="p-4 bg-muted/50 font-mono text-sm text-foreground">
+              Prefix_Platform_Objective_Year_Month_Ad#
+            </Card>
+            <h3 className="text-sm font-semibold text-foreground mb-2 mt-4">Components</h3>
+            <FieldTable fields={[
+              { field: "Prefix", desc: "Hospital or brand identifier (e.g., VIROC)" },
+              { field: "Platform", desc: "Where the ad runs (META, GOOGLE, WHATSAPP)" },
+              { field: "Objective", desc: "Campaign goal (LEADS, AWARENESS, CONVERSION)" },
+              { field: "Year", desc: "4-digit year (e.g., 2026)" },
+              { field: "Month", desc: "2-digit month (e.g., 04)" },
+              { field: "Ad#", desc: "Sequential ad number within the month" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Example</h2>
+            <Card className="p-4 bg-muted/50 font-mono text-sm text-foreground">
+              VIROC_META_LEADS_2026_04_01
+            </Card>
+            <p className="text-sm text-muted-foreground mt-2">
+              This represents: Viroc hospital, Meta platform, Lead generation objective, April 2026, first ad.
+            </p>
+          </section>
+          <TipBox>Consistent naming makes it easy to filter, search, and compare campaign performance across periods and platforms.</TipBox>
+        </div>
+      ),
+    },
+    "campaigns/utm-tracking": {
+      title: "UTM Tracking",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is UTM Tracking?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              UTM (Urchin Tracking Module) parameters are tags added to URLs that identify where traffic and leads come from. The CRM captures and stores these parameters on every lead for granular marketing attribution.
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">UTM Parameters</h3>
+            <FieldTable fields={[
+              { field: "utm_source", desc: "The platform or referrer (e.g., facebook, google, newsletter)" },
+              { field: "utm_medium", desc: "The marketing medium (e.g., cpc, social, email)" },
+              { field: "utm_campaign", desc: "The specific campaign name" },
+              { field: "utm_term", desc: "The keyword or targeting term (optional)" },
+              { field: "utm_content", desc: "Differentiates similar content or ad variations (optional)" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">How It Works in the CRM</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              When a lead enters the CRM from a digital source (Meta Lead Ads, landing page, etc.), the UTM parameters from the original URL are automatically captured and stored with the lead record. You can see these on the Lead Detail page and filter/analyze by UTM parameters on the dashboard.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "masters/master-tables": {
+      title: "Managing Master Tables",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is Master Data?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Master Data is the reference data that powers the entire CRM. These are configurable lookup tables that define the options available throughout the system — like lead sources, treatment types, departments, and more.
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Navigate to <strong>Masters &gt; Master Data</strong> to view and manage all master tables. The tables are organized into categories:
+            </p>
+            <div className="space-y-2">
+              {[
+                { cat: "Organisation", examples: "Branches, Departments, Designations" },
+                { cat: "Clinical", examples: "Treatment Types, Specializations, Doctors, Consultation Outcomes" },
+                { cat: "Lead & Patient", examples: "Lead Sources, Lead Source Categories, Lead Statuses" },
+                { cat: "Campaign & Marketing", examples: "Campaign Channels, UTM Sources" },
+                { cat: "System", examples: "System Roles, Reminder Policies, SLA Rules" },
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
+                  <span><strong>{item.cat}:</strong> {item.examples}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Adding & Editing Records</h2>
+            <StepList steps={[
+              "Navigate to Masters > Master Data",
+              "Select the master table you want to edit from the dropdown or list",
+              "Click 'Add New' to create a new record, or click on an existing record to edit it",
+              "Fill in the required fields (name, code, and any table-specific fields)",
+              "Submit the record — it enters the Approval Queue for review",
+              "Once approved by an authorized user, the record becomes active",
+            ]} />
+          </section>
+          <TipBox>Master data changes go through an approval workflow to prevent accidental modifications. Only Admins and Managers can approve pending changes.</TipBox>
+        </div>
+      ),
+    },
+    "masters/approval-workflow": {
+      title: "Approval Workflow",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">How Approval Works</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              All master data changes (create, update, delete) go through a two-step approval process to ensure data integrity:
+            </p>
+            <StepList steps={[
+              "A user submits a master data change (new record, edit, or deletion request)",
+              "The change enters the Approval Queue with status 'Pending'",
+              "An authorized reviewer (Admin or Manager) reviews the change in the Approval Queue",
+              "The reviewer can Approve (change goes live) or Reject (change is discarded) the request",
+              "The submitter is notified of the decision",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Approval Queue</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Navigate to <strong>Masters &gt; Approval Queue</strong> to see all pending master data changes. The queue shows the table name, record details, who submitted it, and when. Each item has Approve and Reject buttons for quick processing.
+            </p>
+          </section>
+          <WarningBox>Approved changes take effect immediately across the system. Rejected changes are permanently discarded. Review carefully before approving.</WarningBox>
+        </div>
+      ),
+    },
+    "masters/bulk-import-export": {
+      title: "Bulk Import & Export",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Exporting Master Data</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              You can export any master table to CSV format for offline review or record-keeping:
+            </p>
+            <StepList steps={[
+              "Navigate to the master table you want to export",
+              "Click the Export/Download button",
+              "The system generates a CSV file with all records in that table",
+              "The export action is logged in the audit trail",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Importing Master Data</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              For bulk setup or updates, you can import records from a CSV file:
+            </p>
+            <StepList steps={[
+              "Download the template CSV for the target master table",
+              "Fill in the data following the template format",
+              "Upload the CSV file using the Import button",
+              "The system validates each row and reports any errors",
+              "Valid records are submitted to the Approval Queue",
+              "Approved records become active in the system",
+            ]} />
+          </section>
+          <TipBox>Always use the provided template when importing data. Column headers and formats must match exactly for the import to succeed.</TipBox>
+        </div>
+      ),
+    },
+    "configurations/connectors": {
+      title: "Connectors Setup",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Platform Connectors</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Connectors integrate the CRM with external platforms. Navigate to <strong>Configurations &gt; Connectors</strong> to set up and manage integrations.
+            </p>
+            <div className="space-y-3">
+              {[
+                { name: "Meta (Facebook & Instagram)", desc: "Connect your Meta Business account to sync lead ad submissions, track campaign performance, and pull ad insights (impressions, clicks, spend, CPC, CTR)." },
+                { name: "WhatsApp Business API", desc: "Send automated appointment reminders, follow-up messages, and template-based communications via WhatsApp." },
+                { name: "Telephony (Callyzer)", desc: "Capture call logs automatically, track call duration and outcomes, and auto-create leads from incoming calls." },
+                { name: "SMTP Email", desc: "Configure per-tenant email settings for sending appointment confirmations, reminders, and notifications." },
+                { name: "Google Forms", desc: "Capture leads from Google Form submissions and route them into the CRM pipeline." },
+              ].map((item, i) => (
+                <Card key={i} className="p-3">
+                  <h3 className="text-sm font-semibold text-foreground mb-1">{item.name}</h3>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                </Card>
+              ))}
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Connector Security</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              All connector credentials (API keys, tokens, secrets) are encrypted at rest using AES-256-GCM encryption. Credentials are never displayed in plain text after saving — only the connection status is shown.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "configurations/branding": {
+      title: "Branding Customization",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">White-Label Branding</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Each hospital (tenant) can customize the CRM's appearance to match their brand. Navigate to <strong>Configurations &gt; Branding</strong> to manage these settings.
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Customizable Elements</h3>
+            <FieldTable fields={[
+              { field: "Display Name", desc: "The hospital name shown in the sidebar and headers" },
+              { field: "Logo", desc: "Hospital logo displayed in the sidebar (recommended: 200x200px, PNG or SVG)" },
+              { field: "Favicon", desc: "Browser tab icon" },
+              { field: "Primary Color", desc: "Main brand color used throughout the interface" },
+              { field: "Accent Color", desc: "Secondary color used for highlights and action buttons" },
+            ]} />
+          </section>
+          <TipBox>Branding changes take effect immediately for all users of that hospital. Preview the changes before saving to ensure colors and logos look good together.</TipBox>
+        </div>
+      ),
+    },
+    "configurations/intelligence-config": {
+      title: "Intelligence Config",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Intelligence Engine Settings</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Intelligence Configuration page lets administrators fine-tune the automated engines that power lead scoring and workflow automation:
+            </p>
+            <div className="space-y-3">
+              {[
+                { name: "Temperature Engine", desc: "Configure the thresholds for Hot/Warm/Cold lead scoring. Adjust activity recency weights, engagement scoring factors, and temperature transition rules." },
+                { name: "Auto-Handover Engine", desc: "Set up stage-based team assignment rules. Define which team handles each lead/episode stage and configure automatic handover triggers." },
+                { name: "Dormant Detection", desc: "Configure the inactivity threshold (default: 5 days), exclusion statuses, and the re-engagement task template." },
+                { name: "Revenue Probability", desc: "Set conversion probability percentages for each pipeline stage. These are used to calculate pipeline value on dashboards." },
+              ].map((item, i) => (
+                <Card key={i} className="p-3">
+                  <h3 className="text-sm font-semibold text-foreground mb-1">{item.name}</h3>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                </Card>
+              ))}
+            </div>
+          </section>
+        </div>
+      ),
+    },
+    "configurations/sla-reminders": {
+      title: "SLA & Reminder Policies",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">SLA Rules</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Service Level Agreement (SLA) rules define the maximum time a lead should stay in each status before requiring action. When SLA thresholds are breached, the system flags the lead and can trigger escalation.
+            </p>
+            <FieldTable fields={[
+              { field: "Lead Status", desc: "The status this SLA applies to (e.g., Raw Lead Captured)" },
+              { field: "Max Duration", desc: "Maximum hours/days the lead should stay in this status" },
+              { field: "Escalation", desc: "What happens when the SLA is breached (alert, escalate to manager)" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Reminder Policies</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Reminder policies define automated reminders for appointments and follow-up tasks:
+            </p>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li><strong>Appointment Reminders:</strong> Automated reminders sent to patients before their scheduled appointments</li>
+              <li><strong>Task Reminders:</strong> Notifications to staff when tasks are approaching due dates</li>
+              <li><strong>Overdue Alerts:</strong> Escalation alerts when tasks pass their due dates</li>
+            </ul>
+          </section>
+        </div>
+      ),
+    },
+    "dashboards/role-dashboards": {
+      title: "Role-Based Dashboards",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Dashboard Overview</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Each user role sees a tailored dashboard when they log in. The dashboard is your command center — showing the metrics, tasks, and insights most relevant to your job.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Dashboard by Role</h2>
+            <div className="space-y-4">
+              {[
+                {
+                  role: "Admin Dashboard",
+                  sections: ["Total Leads (with trend)", "Pipeline Value", "Realized Revenue", "Conversion Rate", "Lead Source Breakdown", "Campaign Performance", "Team Overview"]
+                },
+                {
+                  role: "Manager Dashboard",
+                  sections: ["My Today's Tasks", "My Overdue Tasks", "Team Overdue Tasks", "Team Performance Metrics", "Department-level Analytics"]
+                },
+                {
+                  role: "Agent (Tele-Caller) Dashboard",
+                  sections: ["My Today's Tasks", "My Overdue Tasks", "My Call Performance (total calls, average duration, outcomes)", "My Lead Sources (source-wise breakdown)", "My Conversion Funnel"]
+                },
+                {
+                  role: "Counsellor Dashboard",
+                  sections: ["My Today's Tasks", "My Overdue Tasks", "My Episode Progress (active/completed episodes)", "My Revenue Pipeline (pipeline value, realized revenue)", "My Conversion Funnel"]
+                },
+              ].map((item, i) => (
+                <Card key={i} className="p-3">
+                  <h3 className="text-sm font-semibold text-foreground mb-2">{item.role}</h3>
+                  <ul className="space-y-1">
+                    {item.sections.map((section, j) => (
+                      <li key={j} className="flex items-start gap-2 text-xs text-muted-foreground">
+                        <div className="w-1 h-1 rounded-full bg-primary mt-1.5 flex-shrink-0" />
+                        {section}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              ))}
+            </div>
+          </section>
+          <TipBox>The "My Today's Tasks" and "My Overdue Tasks" cards are your daily starting point. Use them in morning huddles to review what needs to be done today.</TipBox>
+        </div>
+      ),
+    },
+    "dashboards/telephony-reports": {
+      title: "Telephony Reports",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Call Activity Reports</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Navigate to <strong>Reports & Dashboards &gt; Telephony Reports</strong> to view detailed call activity data captured through the telephony (Callyzer) integration.
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Available Metrics</h3>
+            <FieldTable fields={[
+              { field: "Total Calls", desc: "Total incoming and outgoing calls" },
+              { field: "Call Duration", desc: "Total and average call duration" },
+              { field: "Calls by Employee", desc: "Breakdown of calls per team member" },
+              { field: "Call Outcomes", desc: "Connected, Not Answered, Busy, etc." },
+              { field: "Call Trends", desc: "Call volume trends over time" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Using Reports for Management</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Telephony reports help managers evaluate team calling activity, identify underperforming agents, and correlate call volume with lead conversion rates. Use these reports in weekly reviews to spot trends and adjust team workload.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "security/rbac-guide": {
+      title: "Role-Based Access Control",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">RBAC Overview</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Role-Based Access Control (RBAC) ensures each user only sees and can modify the data appropriate to their role. The CRM implements a 4-tier role hierarchy with granular controls.
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Role Permissions Matrix</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 pr-4 font-semibold text-foreground">Capability</th>
+                    <th className="text-center py-2 px-2 font-semibold text-foreground">Admin</th>
+                    <th className="text-center py-2 px-2 font-semibold text-foreground">Manager</th>
+                    <th className="text-center py-2 px-2 font-semibold text-foreground">Agent</th>
+                    <th className="text-center py-2 px-2 font-semibold text-foreground">Counsellor</th>
+                  </tr>
+                </thead>
+                <tbody className="text-muted-foreground">
+                  {[
+                    { cap: "View All Leads", admin: true, mgr: true, agent: false, cns: false },
+                    { cap: "View Own Leads", admin: true, mgr: true, agent: true, cns: true },
+                    { cap: "Create Leads", admin: true, mgr: true, agent: true, cns: true },
+                    { cap: "Manage Master Data", admin: true, mgr: true, agent: false, cns: false },
+                    { cap: "Approve Master Data", admin: true, mgr: true, agent: false, cns: false },
+                    { cap: "Manage Users", admin: true, mgr: false, agent: false, cns: false },
+                    { cap: "Configure Connectors", admin: true, mgr: false, agent: false, cns: false },
+                    { cap: "View Dashboards", admin: true, mgr: true, agent: true, cns: true },
+                    { cap: "Branding Settings", admin: true, mgr: false, agent: false, cns: false },
+                  ].map((row, i) => (
+                    <tr key={i} className="border-b border-muted/50">
+                      <td className="py-1.5 pr-4">{row.cap}</td>
+                      <td className="text-center py-1.5 px-2">{row.admin ? "✓" : "—"}</td>
+                      <td className="text-center py-1.5 px-2">{row.mgr ? "✓" : "—"}</td>
+                      <td className="text-center py-1.5 px-2">{row.agent ? "✓" : "—"}</td>
+                      <td className="text-center py-1.5 px-2">{row.cns ? "✓" : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      ),
+    },
+    "security/phi-masking": {
+      title: "PHI Masking",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Protected Health Information Masking</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The CRM implements server-side masking of Protected Health Information (PHI) to comply with healthcare data privacy requirements. Masking is applied at the API level — the server never sends full data to clients who don't have authorization to see it.
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">Masking Levels</h3>
+            <FieldTable fields={[
+              { field: "Full Access", desc: "User sees all patient data — phone, email, diagnosis, treatment details. Typically for Admins and Counsellors." },
+              { field: "Masked Access", desc: "Phone numbers show as 98XXXXX003. Email shows as j***@example.com. Clinical data is visible. For Agents who need some context." },
+              { field: "No Access", desc: "Phone and email are fully hidden. Clinical fields (diagnosis, treatment plan, insurance details) are also hidden. For roles that don't need PHI." },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What Gets Masked</h2>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li>Phone numbers (primary and alternate)</li>
+              <li>Email addresses</li>
+              <li>Diagnosis and clinical notes (at None level)</li>
+              <li>Treatment plan details (at None level)</li>
+              <li>Insurance information (at None level)</li>
+            </ul>
+          </section>
+        </div>
+      ),
+    },
+    "security/session-security": {
+      title: "Session & Login Security",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Login Protection</h2>
+            <ul className="space-y-3 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <Lock className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>Account Lockout:</strong> 5 consecutive failed login attempts lock the account for 15 minutes. This prevents brute-force password attacks.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Shield className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>Rate Limiting:</strong> IP-based rate limiting prevents excessive login attempts from a single source.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Eye className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>Anti-Enumeration:</strong> Login error messages don't reveal whether a username exists, preventing attackers from enumerating valid accounts.</span>
+              </li>
+            </ul>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Session Management</h2>
+            <ul className="space-y-3 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <Timer className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>Session TTL:</strong> Sessions expire after 24 hours, requiring re-authentication.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Clock className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>Inactivity Timeout:</strong> 30 minutes of no mouse, keyboard, or touch activity triggers a warning. After 5 more minutes, the session ends automatically.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <ClipboardList className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>Log Sanitization:</strong> PHI fields are automatically stripped from server logs to prevent accidental data exposure in log files.</span>
+              </li>
+            </ul>
+          </section>
+        </div>
+      ),
+    },
+    "security/audit-logging": {
+      title: "Audit Logging",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What Gets Logged</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The CRM maintains a comprehensive audit trail of data access and actions for compliance and security monitoring:
+            </p>
+            <FieldTable fields={[
+              { field: "Lead/Patient Views", desc: "Every time a user views a lead or patient record, logged with user ID, timestamp, and IP address" },
+              { field: "Data Exports", desc: "CSV downloads and data exports, including which table and how many records" },
+              { field: "Communication Pref Changes", desc: "When opt-in/opt-out preferences are modified" },
+              { field: "Login Activity", desc: "Successful and failed login attempts with timestamps" },
+              { field: "Status Changes", desc: "Lead and episode status transitions with before/after values" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Viewing Audit Logs</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Audit logs are accessible to Admins via the API. Each log entry includes: user ID, action type, entity type and ID, IP address, user agent, and timestamp. This data is essential for compliance audits and investigating security incidents.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "security/consent-prefs": {
+      title: "Consent & Communication Prefs",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Patient Consent</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The CRM tracks explicit patient consent for data collection and processing:
+            </p>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li>A consent checkbox is included in the New Lead creation form</li>
+              <li>The Lead Detail page shows a consent status badge (Consent Given / No Consent)</li>
+              <li>Consent timestamp and method are recorded for audit purposes</li>
+              <li>Consent can be updated via the Lead Detail page or through API endpoints</li>
+            </ul>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Communication Preferences</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Each lead/patient has per-channel communication preferences with opt-in/opt-out controls:
+            </p>
+            <FieldTable fields={[
+              { field: "WhatsApp", desc: "Toggle opt-in/opt-out for WhatsApp messages" },
+              { field: "SMS", desc: "Toggle opt-in/opt-out for SMS messages" },
+              { field: "Email", desc: "Toggle opt-in/opt-out for email communications" },
+              { field: "Phone Call", desc: "Toggle opt-in/opt-out for phone call contacts" },
+            ]} />
+            <p className="text-sm text-muted-foreground leading-relaxed mt-3">
+              These preferences are accessible from the Lead Detail sidebar. Changes are validated against tenant ownership and logged in the audit trail.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "user-management/creating-users": {
+      title: "Creating CRM Users",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Adding New Users (Admin Only)</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Only Admins can create new CRM user accounts. Each user needs a unique employee code and phone number.
+            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-2">User Fields</h3>
+            <FieldTable fields={[
+              { field: "Employee Code", desc: "Unique identifier (e.g., VIROC-001). Cannot be changed after creation." },
+              { field: "Name", desc: "Full name of the employee" },
+              { field: "Phone", desc: "Mobile number (used for login)" },
+              { field: "Email", desc: "Work email address" },
+              { field: "Role", desc: "System role (Admin, Manager, Agent, Counsellor)" },
+              { field: "Department", desc: "Which department they belong to" },
+              { field: "Branch", desc: "Which hospital branch they are assigned to" },
+              { field: "PHI Access Level", desc: "Level of patient data visibility (Full, Masked, None)" },
+              { field: "Access Scope", desc: "Data scope (Self, Branch, All)" },
+              { field: "Password", desc: "Initial login password (user should change on first login)" },
+            ]} />
+          </section>
+          <TipBox>Follow the principle of least privilege — assign the minimum PHI access level and scope needed for each user's job function.</TipBox>
+        </div>
+      ),
+    },
+    "user-management/role-assignment": {
+      title: "Role & Access Assignment",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Assigning Roles</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              When creating or editing a user, select the appropriate role based on their job function:
+            </p>
+            <FieldTable fields={[
+              { field: "Admin", desc: "Hospital management staff who need full system access and configuration capabilities" },
+              { field: "Manager", desc: "Team leads who manage a group of agents/counsellors and need visibility into their team's performance" },
+              { field: "Agent", desc: "Tele-callers who handle initial lead contact, qualification, and appointment booking" },
+              { field: "Counsellor", desc: "Patient counsellors who manage consultations, treatment episodes, and patient follow-up" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Configuring Access</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              In addition to the role, configure these access settings per user:
+            </p>
+            <ul className="list-disc ml-5 space-y-2 text-sm text-muted-foreground">
+              <li><strong>PHI Access Level:</strong> Controls how much patient health information the user can see. Set to "Masked" or "None" for users who don't need to see full patient contact details.</li>
+              <li><strong>Access Scope:</strong> Controls whose data the user can see. "Self" means only their own assigned records. "Branch" means all records in their branch. "All" means cross-branch visibility.</li>
+            </ul>
+          </section>
+          <WarningBox>Changing a user's role or access level takes effect immediately. The user may need to log out and back in for all UI changes to reflect.</WarningBox>
+        </div>
+      ),
+    },
+    "user-management/branch-management": {
+      title: "Branch Management",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Multi-Branch Setup</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The CRM supports multi-branch hospitals through the branch management system. Each branch operates with data isolation while the central administration maintains oversight.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">How Branches Work</h2>
+            <ul className="list-disc ml-5 space-y-2 text-sm text-muted-foreground">
+              <li><strong>Data Isolation:</strong> Users with "Branch" scope only see leads, appointments, and episodes from their assigned branch</li>
+              <li><strong>Central Oversight:</strong> Admins and users with "All" scope can see data across all branches</li>
+              <li><strong>Branch Assignment:</strong> Each user is assigned to a primary branch. Leads and episodes are tagged with the branch of the handling user</li>
+              <li><strong>Branch Master Data:</strong> Branches are managed in the Master Data section under Organisation</li>
+            </ul>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Hub & Spoke Model</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              The multi-branch architecture supports a Hub & Spoke model — a central hospital (hub) with satellite clinics or outreach centers (spokes). Each spoke operates as a branch with its own team and data, while the hub maintains centralized dashboards, reporting, and administration.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+  };
+  return articles[key] || null;
+}
+
+function StepList({ steps }: { steps: string[] }) {
+  return (
+    <ol className="space-y-2">
+      {steps.map((step, i) => (
+        <li key={i} className="flex items-start gap-3 text-sm text-muted-foreground">
+          <span className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0 mt-0.5">{i + 1}</span>
+          <span>{step}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function FieldTable({ fields }: { fields: { field: string; desc: string }[] }) {
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-muted/50">
+            <th className="text-left py-2 px-3 font-semibold text-foreground text-xs">Field</th>
+            <th className="text-left py-2 px-3 font-semibold text-foreground text-xs">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {fields.map((f, i) => (
+            <tr key={i} className="border-t border-muted/50">
+              <td className="py-1.5 px-3 text-xs font-medium text-foreground whitespace-nowrap">{f.field}</td>
+              <td className="py-1.5 px-3 text-xs text-muted-foreground">{f.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TipBox({ children }: { children: React.ReactNode }) {
+  return (
+    <Card className="p-3 border-blue-200 bg-blue-50/50">
+      <div className="flex items-start gap-2">
+        <Info className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-blue-800 leading-relaxed">{children}</p>
+      </div>
+    </Card>
+  );
+}
+
+function WarningBox({ children }: { children: React.ReactNode }) {
+  return (
+    <Card className="p-3 border-amber-200 bg-amber-50/50">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-amber-800 leading-relaxed">{children}</p>
+      </div>
+    </Card>
+  );
+}
 
 function StatusBadge({ status }: { status: "done" | "partial" | "pending" }) {
   if (status === "done") {
@@ -300,78 +2060,243 @@ function ComplianceCard({ item }: { item: ComplianceItem }) {
   );
 }
 
+function HelpNavSidebar({
+  sections,
+  activeSectionId,
+  activeTopicId,
+  onSelectTopic,
+  searchQuery,
+  onSearchChange,
+  onClose,
+}: {
+  sections: HelpSection[];
+  activeSectionId: string;
+  activeTopicId: string;
+  onSelectTopic: (sectionId: string, topicId: string, href?: string) => void;
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  onClose?: () => void;
+}) {
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set([activeSectionId]));
+
+  const toggleSection = (sectionId: string) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+      return next;
+    });
+  };
+
+  const filteredSections = useMemo(() => {
+    if (!searchQuery.trim()) return sections;
+    const q = searchQuery.toLowerCase();
+    return sections
+      .map(section => ({
+        ...section,
+        topics: section.topics.filter(
+          t => t.title.toLowerCase().includes(q) || section.title.toLowerCase().includes(q)
+        ),
+      }))
+      .filter(s => s.topics.length > 0);
+  }, [sections, searchQuery]);
+
+  const allExpanded = useMemo(() => {
+    if (searchQuery.trim()) return new Set(filteredSections.map(s => s.id));
+    return expandedSections;
+  }, [searchQuery, filteredSections, expandedSections]);
+
+  return (
+    <div className="flex flex-col h-full" data-testid="help-nav-sidebar">
+      <div className="p-3 border-b border-border">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-primary" />
+            <span className="text-sm font-bold text-foreground">Help Topics</span>
+          </div>
+          {onClose && (
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} data-testid="button-close-help-nav">
+              <X className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search topics..."
+            value={searchQuery}
+            onChange={e => onSearchChange(e.target.value)}
+            className="pl-8 h-8 text-xs"
+            data-testid="input-help-search"
+          />
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto py-1">
+        {filteredSections.map(section => {
+          const isExpanded = allExpanded.has(section.id);
+          const SectionIcon = section.icon;
+          return (
+            <div key={section.id}>
+              <button
+                onClick={() => toggleSection(section.id)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                data-testid={`help-section-${section.id}`}
+              >
+                {isExpanded ? <ChevronDown className="w-3 h-3 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 flex-shrink-0" />}
+                <SectionIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate">{section.title}</span>
+                <Badge variant="outline" className="ml-auto text-[9px] px-1 py-0">{section.topics.length}</Badge>
+              </button>
+              {isExpanded && (
+                <div className="pb-1">
+                  {section.topics.map(topic => {
+                    const isActive = section.id === activeSectionId && topic.id === activeTopicId;
+                    const TopicIcon = topic.icon;
+                    return (
+                      <button
+                        key={topic.id}
+                        onClick={() => onSelectTopic(section.id, topic.id, topic.isExternal ? topic.href : undefined)}
+                        className={cn(
+                          "w-full flex items-center gap-2 pl-9 pr-3 py-1.5 text-xs transition-colors",
+                          isActive
+                            ? "bg-primary/10 text-primary font-medium"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                        )}
+                        data-testid={`help-topic-${section.id}-${topic.id}`}
+                      >
+                        <TopicIcon className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate text-left">{topic.title}</span>
+                        {topic.isExternal && <ExternalLink className="w-2.5 h-2.5 ml-auto flex-shrink-0 opacity-50" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {filteredSections.length === 0 && (
+          <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+            No topics found for "{searchQuery}"
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function HelpCenter() {
   const [location, navigate] = useLocation();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   if (location === "/help/data-security") {
     return <DataSecurityPage />;
   }
 
-  const doneCount = COMPLIANCE_ITEMS.filter(i => i.status === "done").length;
-  const totalCount = COMPLIANCE_ITEMS.length;
-  const compliancePercent = Math.round((doneCount / totalCount) * 100);
+  const pathParts = location.replace("/help", "").split("/").filter(Boolean);
+  let activeSectionId = pathParts[0] || "getting-started";
+  let activeTopicId = pathParts[1] || "";
+
+  const sectionExists = HELP_SECTIONS.find(s => s.id === activeSectionId);
+  if (!sectionExists) {
+    activeSectionId = "getting-started";
+    activeTopicId = "overview";
+  } else if (!activeTopicId) {
+    activeTopicId = sectionExists.topics[0]?.id || "";
+  }
+
+  const handleSelectTopic = (sectionId: string, topicId: string, externalHref?: string) => {
+    if (externalHref) {
+      navigate(externalHref);
+      return;
+    }
+    navigate(`/help/${sectionId}/${topicId}`);
+    setMobileNavOpen(false);
+  };
+
+  const article = getArticleContent(activeSectionId, activeTopicId);
+  const currentSection = HELP_SECTIONS.find(s => s.id === activeSectionId);
+  const currentTopic = currentSection?.topics.find(t => t.id === activeTopicId);
 
   return (
-    <AppLayout title="Help & Resources">
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-4 md:px-8 py-8">
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                <BookOpen className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-foreground" data-testid="text-help-title">Help & Resources</h1>
-                <p className="text-sm text-muted-foreground">Guides, documentation, and compliance information</p>
-              </div>
-            </div>
-          </div>
+    <AppLayout>
+      <div className="flex h-full overflow-hidden" data-testid="help-center-page">
+        <div className="hidden md:flex w-64 border-r border-border bg-card flex-shrink-0 flex-col">
+          <HelpNavSidebar
+            sections={HELP_SECTIONS}
+            activeSectionId={activeSectionId}
+            activeTopicId={activeTopicId}
+            onSelectTopic={handleSelectTopic}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+          />
+        </div>
 
-          <div className="mb-6">
-            <div className="flex items-center gap-3 mb-1">
-              <ShieldCheck className="w-5 h-5 text-green-600" />
-              <span className="text-sm font-semibold text-foreground">Overall Compliance</span>
-              <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">{compliancePercent}%</Badge>
-            </div>
-            <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mt-2 mb-1">
-              <div
-                className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-500"
-                style={{ width: `${compliancePercent}%` }}
-                data-testid="progress-compliance"
+        {mobileNavOpen && (
+          <div className="fixed inset-0 z-50 md:hidden">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setMobileNavOpen(false)} />
+            <div className="absolute left-0 top-0 bottom-0 w-72 bg-card shadow-xl">
+              <HelpNavSidebar
+                sections={HELP_SECTIONS}
+                activeSectionId={activeSectionId}
+                activeTopicId={activeTopicId}
+                onSelectTopic={handleSelectTopic}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                onClose={() => setMobileNavOpen(false)}
               />
             </div>
-            <p className="text-xs text-muted-foreground">{doneCount} of {totalCount} security measures implemented</p>
           </div>
+        )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-            {HELP_DOCS.map((doc) => {
-              const Icon = doc.icon;
-              return (
-                <Card
-                  key={doc.id}
-                  role="button"
-                  tabIndex={0}
-                  className="p-5 cursor-pointer hover:shadow-lg transition-all group border-2 hover:border-primary/30"
-                  onClick={() => navigate(doc.href)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(doc.href); }}
-                  data-testid={`help-card-${doc.id}`}
-                >
-                  <div className="flex items-start gap-4">
-                    <div className={`w-12 h-12 rounded-xl ${doc.iconBg} flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform`}>
-                      <Icon className="w-6 h-6 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge variant="outline" className="text-[10px]">{doc.category}</Badge>
-                      </div>
-                      <h3 className="text-sm font-bold text-foreground mb-1 group-hover:text-primary transition-colors">{doc.title}</h3>
-                      <p className="text-xs text-muted-foreground leading-relaxed">{doc.description}</p>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all flex-shrink-0 mt-1" />
-                  </div>
-                </Card>
-              );
-            })}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-4 md:px-8 py-6">
+            <div className="flex items-center gap-2 mb-6 md:hidden">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMobileNavOpen(true)}
+                data-testid="button-open-help-nav"
+              >
+                <Menu className="w-4 h-4 mr-1" />
+                Topics
+              </Button>
+            </div>
+
+            {currentSection && currentTopic && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-4" data-testid="help-breadcrumb">
+                <span>Help</span>
+                <ChevronRight className="w-3 h-3" />
+                <span>{currentSection.title}</span>
+                <ChevronRight className="w-3 h-3" />
+                <span className="text-foreground font-medium">{currentTopic.title}</span>
+              </div>
+            )}
+
+            {article ? (
+              <div data-testid="help-article-content">
+                <h1 className="text-xl font-bold text-foreground mb-6" data-testid="text-article-title">{article.title}</h1>
+                {article.content}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <BookOpen className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+                <h2 className="text-lg font-semibold text-foreground mb-1">Topic Not Found</h2>
+                <p className="text-sm text-muted-foreground">
+                  This help topic is coming soon. Please select another topic from the navigation.
+                </p>
+              </div>
+            )}
+
+            <div className="mt-10 pt-6 border-t border-border">
+              <p className="text-xs text-muted-foreground text-center">
+                myProSys Hospital CRM — Help & Resources
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -390,7 +2315,7 @@ function DataSecurityPage() {
   const compliancePercent = Math.round((doneCount / totalCount) * 100);
 
   return (
-    <AppLayout title="Data Security & Compliance">
+    <AppLayout>
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto px-4 md:px-8 py-8">
           <button

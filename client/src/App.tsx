@@ -257,6 +257,14 @@ function Router() {
         {isAuthenticated ? <HelpCenter /> : <Landing />}
       </Route>
 
+      <Route path="/help/:section/:topic">
+        {isAuthenticated ? <HelpCenter /> : <Landing />}
+      </Route>
+
+      <Route path="/help/:section">
+        {isAuthenticated ? <HelpCenter /> : <Landing />}
+      </Route>
+
       <Route path="/help">
         {isAuthenticated ? <HelpCenter /> : <Landing />}
       </Route>
