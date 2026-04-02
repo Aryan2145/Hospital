@@ -82,8 +82,10 @@ export async function setupAuth(app: Express) {
         allMatches = await db.select().from(crmUsers).where(eq(crmUsers.phone, `+91${normalizedMobile}`));
       }
 
-      const sysAdminMatch = allMatches.find(u => u.systemRoleId !== null);
-      const user: any = sysAdminMatch || allMatches[0];
+      const sysAdminMatches = allMatches.filter(u => u.systemRoleId !== null);
+      const user: any = sysAdminMatches.length > 0
+        ? sysAdminMatches.sort((a, b) => a.id - b.id)[0]
+        : allMatches[0];
 
       if (!user) {
         return res.status(401).json({ message: "Invalid credentials" });
