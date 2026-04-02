@@ -41,6 +41,7 @@ import AdminPayments from "@/pages/admin/AdminPayments";
 import CallyzerReportsPage from "@/pages/CallyzerReportsPage";
 import IntelligenceConfigPage from "@/pages/IntelligenceConfigPage";
 import PostCareProtocolsPage from "@/pages/PostCareProtocolsPage";
+import ReferralConfigPage from "@/pages/ReferralConfigPage";
 import ReferralsPage from "@/pages/ReferralsPage";
 import EventsPage from "@/pages/EventsPage";
 import EventDetailPage from "@/pages/EventDetailPage";
@@ -218,6 +219,12 @@ function Router() {
       <Route path="/post-care-protocols">
         {isAuthenticated ? (
           <RoleGate page="connectors"><PostCareProtocolsPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/referral-config">
+        {isAuthenticated ? (
+          <RoleGate page="connectors"><ReferralConfigPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

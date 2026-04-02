@@ -1040,6 +1040,8 @@ export const leads = pgTable("leads", {
   primaryOwnerUserId: integer("primary_owner_user_id").references(() => crmUsers.id),
   ownerTeam: text("owner_team"),
   lastHandoverAt: timestamp("last_handover_at"),
+  referralId: integer("referral_id"),
+  referralSourceFlag: boolean("referral_source_flag").default(false),
   mergedIntoLeadId: integer("merged_into_lead_id"),
   mergeStatus: text("merge_status").default("ACTIVE"),
   mergedAt: timestamp("merged_at"),
@@ -1944,5 +1946,60 @@ export const communicationPreferences = pgTable("communication_preferences", {
   optedInAt: timestamp("opted_in_at"),
   optedOutAt: timestamp("opted_out_at"),
   updatedBy: integer("updated_by").references(() => crmUsers.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// =============================================
+// REFERRAL CONFIGURATION
+// =============================================
+export const referralConfig = pgTable("referral_config", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  autoCreateLead: boolean("auto_create_lead").notNull().default(true),
+  defaultLeadStatus: text("default_lead_status").notNull().default("Raw Lead Captured"),
+  assignmentStrategy: text("assignment_strategy").notNull().default("round_robin"),
+  assignToUserIds: jsonb("assign_to_user_ids").default([]),
+  assignToBranchId: integer("assign_to_branch_id").references(() => branches.id),
+  trackReferralLeads: boolean("track_referral_leads").notNull().default(true),
+  trackedFunnelStages: jsonb("tracked_funnel_stages").default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const insertReferralConfigSchema = createInsertSchema(referralConfig).omit({ id: true, createdAt: true, modifiedAt: true });
+
+export const referralRewardRules = pgTable("referral_reward_rules", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  triggerStage: text("trigger_stage").notNull(),
+  referrerTypeFilter: text("referrer_type_filter"),
+  rewardType: text("reward_type").notNull().default("Recognition"),
+  rewardLabel: text("reward_label"),
+  rewardValue: text("reward_value"),
+  notifyReferrer: boolean("notify_referrer").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const insertReferralRewardRuleSchema = createInsertSchema(referralRewardRules).omit({ id: true, createdAt: true, modifiedAt: true });
+
+export const referralRewardLogs = pgTable("referral_reward_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  rewardRuleId: integer("reward_rule_id").notNull().references(() => referralRewardRules.id),
+  referralId: integer("referral_id").notNull().references(() => referrals.id),
+  referrerId: integer("referrer_id").references(() => referrers.id),
+  leadId: integer("lead_id").references(() => leads.id),
+  episodeId: integer("episode_id").references(() => episodes.id),
+  triggerStage: text("trigger_stage").notNull(),
+  rewardType: text("reward_type").notNull(),
+  rewardLabel: text("reward_label"),
+  rewardValue: text("reward_value"),
+  status: text("status").notNull().default("Pending"),
+  processedAt: timestamp("processed_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });

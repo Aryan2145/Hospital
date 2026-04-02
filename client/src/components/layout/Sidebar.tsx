@@ -20,6 +20,7 @@ import {
   Stethoscope,
   Gift,
   CalendarDays,
+  Settings2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -62,6 +63,7 @@ const sections: { label: string; items: NavItem[] }[] = [
       { icon: Paintbrush, label: "Branding", href: "/branding", page: "branding" },
       { icon: Brain, label: "Intelligence Config", href: "/intelligence-config", page: "connectors" },
       { icon: Stethoscope, label: "Post-Care Protocols", href: "/post-care-protocols", page: "connectors" },
+      { icon: Settings2, label: "Referral Settings", href: "/referral-config", page: "connectors" },
     ],
   },
 ];

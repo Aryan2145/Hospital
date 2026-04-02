@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -5861,6 +5861,11 @@ export async function registerRoutes(
             console.error("[post-care] Error triggering protocol:", pcErr);
           }
         }
+        try {
+          await checkAndTriggerReferralReward(tid, episodeId, body.status);
+        } catch (rwErr) {
+          console.error("[referral-reward] Error checking reward trigger:", rwErr);
+        }
       }
 
       res.json(ep);
@@ -6520,7 +6525,16 @@ export async function registerRoutes(
       await validateReferralFKs(tid, body);
       const parsed = insertReferralSchema.parse({ ...body, tenantId: tid, createdBy: userId, modifiedBy: userId });
       const [referral] = await db.insert(referrals).values(parsed).returning();
-      res.json(referral);
+
+      let autoLeadId: number | null = null;
+      try {
+        autoLeadId = await autoCreateLeadFromReferral(tid, referral, userId);
+      } catch (err: any) {
+        console.error("[referral] Auto-lead creation failed (non-blocking):", err.message);
+      }
+
+      const [updated] = await db.select().from(referrals).where(eq(referrals.id, referral.id));
+      res.json({ ...updated, autoCreatedLeadId: autoLeadId });
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
     }
@@ -6569,6 +6583,339 @@ export async function registerRoutes(
       }).where(and(eq(episodes.id, id), eq(episodes.tenantId, tid))).returning();
       if (!episode) return res.status(404).json({ message: "Episode not found" });
       res.json(episode);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // REFERRAL CONFIGURATION MODULE
+  // =============================================
+
+  async function getReferralConfig(tid: number) {
+    const [config] = await db.select().from(referralConfig).where(eq(referralConfig.tenantId, tid));
+    return config;
+  }
+
+  async function autoCreateLeadFromReferral(tid: number, referral: any, userId: string) {
+    const config = await getReferralConfig(tid);
+    if (!config || !config.autoCreateLead) return null;
+
+    const phoneNorm = normalizePhoneNumber(referral.referredPhone);
+    if (!phoneNorm) return null;
+
+    const closedStatuses = ["Closed Won", "Closed Lost", "Closed - Converted", "Closed - Junk", "Closed - Dormant"];
+    const dupResult = await pool.query(
+      `SELECT id, name, status FROM leads
+       WHERE tenant_id = $1 AND mobile_normalized = $2
+       AND (merge_status IS NULL OR merge_status = 'ACTIVE')
+       AND status NOT IN (${closedStatuses.map((_, i) => `$${i + 3}`).join(",")})
+       AND status NOT LIKE '%Closed%' LIMIT 1`,
+      [tid, phoneNorm, ...closedStatuses]
+    );
+    if (dupResult.rows.length > 0) {
+      const existingLead = dupResult.rows[0];
+      await db.update(referrals).set({ resultingLeadId: existingLead.id, modifiedAt: new Date() })
+        .where(eq(referrals.id, referral.id));
+      return existingLead.id;
+    }
+
+    let [referralSource] = await db.select().from(leadSources)
+      .where(and(eq(leadSources.tenantId, tid), eq(leadSources.code, "REFERRAL")));
+    if (!referralSource) {
+      [referralSource] = await db.select().from(leadSources)
+        .where(and(eq(leadSources.tenantId, tid), eq(leadSources.name, "Referral")));
+    }
+
+    let assignedUserId: number | null = null;
+    const userIds = (config.assignToUserIds as number[]) || [];
+    if (config.assignmentStrategy === "specific_user" && userIds.length > 0) {
+      assignedUserId = userIds[0];
+    } else if (config.assignmentStrategy === "round_robin" && userIds.length > 0) {
+      const lastLeadResult = await pool.query(
+        `SELECT assigned_crm_user_id FROM leads WHERE tenant_id = $1
+         AND assigned_crm_user_id = ANY($2::int[])
+         ORDER BY created_at DESC LIMIT 1`,
+        [tid, userIds]
+      );
+      if (lastLeadResult.rows.length > 0) {
+        const lastIdx = userIds.indexOf(lastLeadResult.rows[0].assigned_crm_user_id);
+        assignedUserId = userIds[(lastIdx + 1) % userIds.length];
+      } else {
+        assignedUserId = userIds[0];
+      }
+    } else if (config.assignmentStrategy === "least_loaded" && userIds.length > 0) {
+      const loadResult = await pool.query(
+        `SELECT u.id, COUNT(l.id) as lead_count
+         FROM crm_users u LEFT JOIN leads l ON l.assigned_crm_user_id = u.id AND l.tenant_id = $1
+           AND l.status NOT IN ('Closed Won','Closed Lost','Closed - Converted','Closed - Junk','Closed - Dormant')
+         WHERE u.id = ANY($2::int[]) GROUP BY u.id ORDER BY lead_count ASC LIMIT 1`,
+        [tid, userIds]
+      );
+      assignedUserId = loadResult.rows.length > 0 ? loadResult.rows[0].id : userIds[0];
+    }
+
+    const leadInput: any = {
+      tenantId: tid,
+      name: referral.referredName,
+      phoneE164: referral.referredPhone,
+      mobileNormalized: phoneNorm,
+      email: referral.referredEmail || null,
+      status: config.defaultLeadStatus || "Raw Lead Captured",
+      referrerId: referral.referrerId || null,
+      referralId: referral.id,
+      referralSourceFlag: true,
+      leadSourceId: referralSource?.id || null,
+      assignedCrmUserId: assignedUserId || Number(userId) || null,
+      primaryOwnerUserId: assignedUserId || Number(userId) || null,
+      ownerTeam: "Telecalling",
+      branchId: config.assignToBranchId || null,
+      lastActivityAt: new Date(),
+      createdBy: userId,
+    };
+
+    try {
+      const lead = await storage.createLead(leadInput);
+      await db.update(referrals).set({ resultingLeadId: lead.id, modifiedAt: new Date() })
+        .where(eq(referrals.id, referral.id));
+      return lead.id;
+    } catch (err: any) {
+      console.error("[referral-auto-lead] Error creating lead:", err.message);
+      return null;
+    }
+  }
+
+  async function checkAndTriggerReferralReward(tid: number, episodeId: number, newStatus: string) {
+    try {
+      const [episode] = await db.select().from(episodes).where(and(eq(episodes.id, episodeId), eq(episodes.tenantId, tid)));
+      if (!episode || !episode.leadId) return;
+
+      const [lead] = await db.select().from(leads).where(and(eq(leads.id, episode.leadId), eq(leads.tenantId, tid)));
+      if (!lead || !lead.referralSourceFlag || !lead.referralId) return;
+
+      const rules = await db.select().from(referralRewardRules)
+        .where(and(eq(referralRewardRules.tenantId, tid), eq(referralRewardRules.isActive, true), eq(referralRewardRules.triggerStage, newStatus)));
+      if (rules.length === 0) return;
+
+      const [referral] = await db.select().from(referrals).where(and(eq(referrals.id, lead.referralId), eq(referrals.tenantId, tid)));
+
+      for (const rule of rules) {
+        if (rule.referrerTypeFilter && referral?.referrerId) {
+          const [ref] = await db.select().from(referrers).where(and(eq(referrers.id, referral.referrerId), eq(referrers.tenantId, tid)));
+          if (ref && rule.referrerTypeFilter !== "All" && ref.type !== rule.referrerTypeFilter) continue;
+        }
+
+        const [existingLog] = await db.select().from(referralRewardLogs)
+          .where(and(
+            eq(referralRewardLogs.tenantId, tid),
+            eq(referralRewardLogs.rewardRuleId, rule.id),
+            eq(referralRewardLogs.referralId, lead.referralId),
+          ));
+        if (existingLog) continue;
+
+        await db.insert(referralRewardLogs).values({
+          tenantId: tid,
+          rewardRuleId: rule.id,
+          referralId: lead.referralId,
+          referrerId: referral?.referrerId || null,
+          leadId: lead.id,
+          episodeId,
+          triggerStage: newStatus,
+          rewardType: rule.rewardType,
+          rewardLabel: rule.rewardLabel,
+          rewardValue: rule.rewardValue,
+          status: "Pending",
+        });
+        console.log(`[referral-reward] Triggered reward rule "${rule.name}" for referral #${lead.referralId}, episode #${episodeId}`);
+      }
+    } catch (err: any) {
+      console.error("[referral-reward] Error:", err.message);
+    }
+  }
+
+  async function requireAdminRole(req: any, tid: number): Promise<void> {
+    const sessionUser = await getSessionCrmUser(req, tid);
+    if (!sessionUser) throw new Error("Unauthorized: no active session");
+    const allowed = ["SYS_ADMIN", "ADMIN", "MANAGER"];
+    if (!allowed.includes(sessionUser.roleCode)) {
+      throw new Error("Forbidden: Admin or Manager role required");
+    }
+  }
+
+  app.get("/api/referral-config", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      let config = await getReferralConfig(tid);
+      if (!config) {
+        [config] = await db.insert(referralConfig).values({
+          tenantId: tid,
+          autoCreateLead: true,
+          defaultLeadStatus: "Raw Lead Captured",
+          assignmentStrategy: "round_robin",
+          assignToUserIds: [],
+          trackReferralLeads: true,
+          trackedFunnelStages: ["Consultation Done", "Surgery Done", "Completed"],
+        }).returning();
+      }
+      res.json(config);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.put("/api/referral-config", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      await requireAdminRole(req, tid);
+      const userId = String((req as any).session?.crmUserId || "system");
+      const existing = await getReferralConfig(tid);
+      const body = req.body;
+
+      if (body.assignToUserIds && Array.isArray(body.assignToUserIds) && body.assignToUserIds.length > 0) {
+        const tenantUsers = await storage.getCrmUsers(tid);
+        const tenantUserIds = tenantUsers.map(u => u.id);
+        for (const uid of body.assignToUserIds) {
+          if (!tenantUserIds.includes(uid)) throw new Error(`User ID ${uid} does not belong to your tenant`);
+        }
+      }
+      if (body.assignToBranchId) {
+        const branches = await storage.getMasterRecords("branches", tid);
+        if (!branches.find((b: any) => b.id === body.assignToBranchId)) {
+          throw new Error("Branch does not belong to your tenant");
+        }
+      }
+
+      const merged: any = {
+        autoCreateLead: body.autoCreateLead ?? existing?.autoCreateLead ?? true,
+        defaultLeadStatus: body.defaultLeadStatus ?? existing?.defaultLeadStatus ?? "Raw Lead Captured",
+        assignmentStrategy: body.assignmentStrategy ?? existing?.assignmentStrategy ?? "round_robin",
+        assignToUserIds: body.assignToUserIds ?? existing?.assignToUserIds ?? [],
+        assignToBranchId: body.assignToBranchId !== undefined ? body.assignToBranchId : (existing?.assignToBranchId ?? null),
+        trackReferralLeads: body.trackReferralLeads ?? existing?.trackReferralLeads ?? true,
+        trackedFunnelStages: body.trackedFunnelStages ?? existing?.trackedFunnelStages ?? [],
+        modifiedAt: new Date(),
+        modifiedBy: userId,
+      };
+      if (existing) {
+        const [updated] = await db.update(referralConfig).set(merged)
+          .where(eq(referralConfig.id, existing.id)).returning();
+        res.json(updated);
+      } else {
+        const [created] = await db.insert(referralConfig).values({ ...merged, tenantId: tid }).returning();
+        res.json(created);
+      }
+    } catch (err: any) {
+      const status = err.message?.includes("Forbidden") ? 403 : 400;
+      res.status(status).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/referral-reward-rules", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const rules = await db.select().from(referralRewardRules).where(eq(referralRewardRules.tenantId, tid))
+        .orderBy(sql`${referralRewardRules.createdAt} DESC`);
+      res.json(rules);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/referral-reward-rules", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      await requireAdminRole(req, tid);
+      const userId = String((req as any).session?.crmUserId || "system");
+      const [rule] = await db.insert(referralRewardRules).values({
+        tenantId: tid,
+        name: req.body.name,
+        triggerStage: req.body.triggerStage,
+        referrerTypeFilter: req.body.referrerTypeFilter || null,
+        rewardType: req.body.rewardType || "Recognition",
+        rewardLabel: req.body.rewardLabel || null,
+        rewardValue: req.body.rewardValue || null,
+        notifyReferrer: req.body.notifyReferrer ?? false,
+        isActive: req.body.isActive ?? true,
+        modifiedBy: userId,
+      }).returning();
+      res.status(201).json(rule);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.patch("/api/referral-reward-rules/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      await requireAdminRole(req, tid);
+      const id = Number(req.params.id);
+      const userId = String((req as any).session?.crmUserId || "system");
+      const updateData: any = { ...req.body, modifiedAt: new Date(), modifiedBy: userId };
+      delete updateData.id;
+      delete updateData.tenantId;
+      delete updateData.createdAt;
+      const [rule] = await db.update(referralRewardRules).set(updateData)
+        .where(and(eq(referralRewardRules.id, id), eq(referralRewardRules.tenantId, tid))).returning();
+      if (!rule) return res.status(404).json({ message: "Rule not found" });
+      res.json(rule);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.delete("/api/referral-reward-rules/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      await requireAdminRole(req, tid);
+      const id = Number(req.params.id);
+      const [rule] = await db.delete(referralRewardRules)
+        .where(and(eq(referralRewardRules.id, id), eq(referralRewardRules.tenantId, tid))).returning();
+      if (!rule) return res.status(404).json({ message: "Rule not found" });
+      res.json({ message: "Rule deleted" });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/referral-reward-logs", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const logs = await db.select().from(referralRewardLogs).where(eq(referralRewardLogs.tenantId, tid))
+        .orderBy(sql`${referralRewardLogs.createdAt} DESC`);
+
+      const enriched = await Promise.all(logs.map(async (log) => {
+        let referrerName = null;
+        if (log.referrerId) {
+          const [ref] = await db.select().from(referrers).where(eq(referrers.id, log.referrerId));
+          if (ref) referrerName = ref.name;
+        }
+        let leadName = null;
+        if (log.leadId) {
+          const [lead] = await db.select().from(leads).where(and(eq(leads.id, log.leadId), eq(leads.tenantId, tid)));
+          if (lead) leadName = lead.name;
+        }
+        let ruleName = null;
+        const [rule] = await db.select().from(referralRewardRules).where(eq(referralRewardRules.id, log.rewardRuleId));
+        if (rule) ruleName = rule.name;
+        return { ...log, referrerName, leadName, ruleName };
+      }));
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.patch("/api/referral-reward-logs/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      await requireAdminRole(req, tid);
+      const id = Number(req.params.id);
+      const [log] = await db.update(referralRewardLogs).set({
+        status: req.body.status,
+        processedAt: req.body.status === "Processed" ? new Date() : null,
+      }).where(and(eq(referralRewardLogs.id, id), eq(referralRewardLogs.tenantId, tid))).returning();
+      if (!log) return res.status(404).json({ message: "Reward log not found" });
+      res.json(log);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
     }
