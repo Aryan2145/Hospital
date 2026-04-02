@@ -4093,7 +4093,18 @@ export async function registerRoutes(
         if (body.isActive === undefined || body.isActive === "") body.isActive = true;
       }
 
-      const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid, approvalStatus: "Pending" });
+      if (tableName === "referrers" && body.phone) {
+        const normalizedPhone = normalizePhoneNumber(body.phone);
+        const allReferrersForTenant = await db.select().from(referrers).where(eq(referrers.tenantId, tid));
+        const duplicate = allReferrersForTenant.find(r => r.phone && normalizePhoneNumber(r.phone) === normalizedPhone);
+        if (duplicate) {
+          return res.status(400).json({ message: `A referrer with mobile number ${body.phone} already exists (${duplicate.name})` });
+        }
+        body.phone = normalizedPhone || body.phone;
+      }
+
+      const autoApproveTable = tableName === "referrers";
+      const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid, approvalStatus: autoApproveTable ? "Approved" : "Pending" });
       res.status(201).json(record);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });

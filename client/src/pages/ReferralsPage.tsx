@@ -23,6 +23,9 @@ import {
   Search,
   ArrowUpDown,
   User,
+  Stethoscope,
+  Building2,
+  UserCheck,
 } from "lucide-react";
 
 const REFERRAL_CHANNELS = [
@@ -46,6 +49,18 @@ const REFERRAL_OUTCOMES = [
   "Lost",
   "Not Interested",
 ];
+
+const REFERRER_TYPES = ["Doctor", "Patient", "Hospital", "Agent", "Other"];
+
+type ReferrerMaster = {
+  id: number;
+  name: string;
+  type: string | null;
+  phone: string | null;
+  email: string | null;
+  status: string;
+  approvalStatus: string | null;
+};
 
 type ReferralRecord = {
   id: number;
@@ -92,13 +107,12 @@ export default function ReferralsPage() {
     referralChannel: "Word of Mouth",
     referralNotes: "",
     referrerId: null as number | null,
-    referrerPatientId: null as number | null,
-    referrerLeadId: null as number | null,
-    referrerExternalName: "",
-    referrerExternalPhone: "",
     outcome: "Pending",
   });
-  const [referrerMode, setReferrerMode] = useState<"patient" | "other">("patient");
+
+  const [addReferrerOpen, setAddReferrerOpen] = useState(false);
+  const [newReferrer, setNewReferrer] = useState({ name: "", phone: "", email: "", type: "Doctor" });
+  const [referrerSearch, setReferrerSearch] = useState("");
 
   const { data: referralsList = [], isLoading } = useQuery<ReferralRecord[]>({
     queryKey: ["/api/referrals"],
@@ -108,21 +122,23 @@ export default function ReferralsPage() {
     queryKey: ["/api/referrals/stats"],
   });
 
-  const { data: referrersList = [] } = useQuery<Array<{ id: number; name: string; type: string; status: string }>>({
+  const { data: referrersMaster = [] } = useQuery<ReferrerMaster[]>({
     queryKey: ["/api/masters/referrers"],
   });
 
-  type TreatedPatient = { id: string; name: string; phone: string; type: string; episodeStatus: string; patientId?: number; leadId?: number };
-  const { data: treatedPatients = [] } = useQuery<TreatedPatient[]>({
-    queryKey: ["/api/referrals/treated-patients"],
-  });
+  const activeReferrers = useMemo(() =>
+    referrersMaster.filter(r => r.status === "Active" && (r.approvalStatus === "Approved" || !r.approvalStatus)),
+    [referrersMaster]
+  );
 
-  const [patientSearch, setPatientSearch] = useState("");
-  const filteredTreatedPatients = useMemo(() => {
-    if (!patientSearch.trim()) return treatedPatients;
-    const term = patientSearch.toLowerCase();
-    return treatedPatients.filter(p => p.name.toLowerCase().includes(term) || p.phone.includes(term));
-  }, [treatedPatients, patientSearch]);
+  const filteredReferrers = useMemo(() => {
+    if (!referrerSearch.trim()) return activeReferrers;
+    const term = referrerSearch.toLowerCase();
+    return activeReferrers.filter(r =>
+      r.name.toLowerCase().includes(term) ||
+      (r.phone && r.phone.includes(term))
+    );
+  }, [activeReferrers, referrerSearch]);
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/referrals", data),
@@ -146,18 +162,28 @@ export default function ReferralsPage() {
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const addReferrerMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", "/api/masters/referrers", data),
+    onSuccess: async (res: any) => {
+      const created = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/masters/referrers"] });
+      setFormData(prev => ({ ...prev, referrerId: created.id }));
+      setAddReferrerOpen(false);
+      setNewReferrer({ name: "", phone: "", email: "", type: "Doctor" });
+      toast({ title: "Referrer added to master" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   function openCreate() {
     setEditingReferral(null);
-    setFormData({ referredName: "", referredPhone: "", referredEmail: "", referralChannel: "Word of Mouth", referralNotes: "", referrerId: null, referrerPatientId: null, referrerLeadId: null, referrerExternalName: "", referrerExternalPhone: "", outcome: "Pending" });
-    setReferrerMode("patient");
-    setPatientSearch("");
+    setFormData({ referredName: "", referredPhone: "", referredEmail: "", referralChannel: "Word of Mouth", referralNotes: "", referrerId: null, outcome: "Pending" });
+    setReferrerSearch("");
     setDialogOpen(true);
   }
 
   function openEdit(ref: ReferralRecord) {
     setEditingReferral(ref);
-    const hasExternal = (ref as any).referrerExternalName;
-    setReferrerMode(hasExternal ? "other" : "patient");
     setFormData({
       referredName: ref.referredName,
       referredPhone: ref.referredPhone,
@@ -165,23 +191,15 @@ export default function ReferralsPage() {
       referralChannel: ref.referralChannel,
       referralNotes: ref.referralNotes || "",
       referrerId: ref.referrerId,
-      referrerPatientId: ref.referrerPatientId,
-      referrerLeadId: ref.referrerLeadId,
-      referrerExternalName: (ref as any).referrerExternalName || "",
-      referrerExternalPhone: (ref as any).referrerExternalPhone || "",
       outcome: ref.outcome,
     });
-    setPatientSearch("");
+    setReferrerSearch("");
     setDialogOpen(true);
   }
 
   function handleSave() {
     if (!formData.referredName.trim() || !formData.referredPhone.trim()) {
       toast({ title: "Referred person's name and phone are required", variant: "destructive" });
-      return;
-    }
-    if (referrerMode === "other" && !formData.referrerExternalName.trim()) {
-      toast({ title: "Referrer name is required when using 'Others'", variant: "destructive" });
       return;
     }
 
@@ -192,21 +210,8 @@ export default function ReferralsPage() {
       referralChannel: formData.referralChannel,
       referralNotes: formData.referralNotes || null,
       outcome: formData.outcome,
+      referrerId: formData.referrerId,
     };
-
-    if (referrerMode === "patient") {
-      payload.referrerPatientId = formData.referrerPatientId;
-      payload.referrerLeadId = formData.referrerLeadId;
-      payload.referrerId = formData.referrerId;
-      payload.referrerExternalName = null;
-      payload.referrerExternalPhone = null;
-    } else {
-      payload.referrerExternalName = formData.referrerExternalName;
-      payload.referrerExternalPhone = formData.referrerExternalPhone || null;
-      payload.referrerPatientId = null;
-      payload.referrerLeadId = null;
-      payload.referrerId = null;
-    }
 
     if (editingReferral) {
       updateMutation.mutate({ id: editingReferral.id, data: payload });
@@ -214,6 +219,36 @@ export default function ReferralsPage() {
       createMutation.mutate(payload);
     }
   }
+
+  function handleAddReferrer() {
+    if (!newReferrer.name.trim()) {
+      toast({ title: "Referrer name is required", variant: "destructive" });
+      return;
+    }
+    if (!newReferrer.phone.trim()) {
+      toast({ title: "Mobile number is required (used as primary key for duplication check)", variant: "destructive" });
+      return;
+    }
+    const code = newReferrer.name.toUpperCase().replace(/\s+/g, "_").substring(0, 50);
+    addReferrerMutation.mutate({
+      code,
+      name: newReferrer.name,
+      phone: newReferrer.phone,
+      email: newReferrer.email || null,
+      type: newReferrer.type,
+      status: "Active",
+      displayOrder: 0,
+    });
+  }
+
+  const referrerTypeIcon = (type: string | null) => {
+    switch (type) {
+      case "Doctor": return <Stethoscope className="w-3.5 h-3.5 text-blue-500" />;
+      case "Hospital": return <Building2 className="w-3.5 h-3.5 text-purple-500" />;
+      case "Patient": return <UserCheck className="w-3.5 h-3.5 text-green-500" />;
+      default: return <User className="w-3.5 h-3.5 text-muted-foreground" />;
+    }
+  };
 
   const filteredReferrals = referralsList.filter(r => {
     if (filterOutcome !== "all" && r.outcome !== filterOutcome) return false;
@@ -477,114 +512,93 @@ export default function ReferralsPage() {
             </div>
 
             <div>
-              <Label className="mb-2 block">Referred By (Referrer)</Label>
-              <div className="flex gap-2 mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <Label>Referred By (Referrer)</Label>
                 <Button
                   type="button"
                   size="sm"
-                  variant={referrerMode === "patient" ? "default" : "outline"}
-                  onClick={() => { setReferrerMode("patient"); setFormData({ ...formData, referrerExternalName: "", referrerExternalPhone: "" }); }}
-                  data-testid="button-referrer-patient-mode"
+                  variant="outline"
+                  className="h-7 text-xs gap-1"
+                  onClick={() => { setNewReferrer({ name: "", phone: "", email: "", type: "Doctor" }); setAddReferrerOpen(true); }}
+                  data-testid="button-add-referrer"
                 >
-                  <User className="w-3.5 h-3.5 mr-1" /> Treated Patient
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={referrerMode === "other" ? "default" : "outline"}
-                  onClick={() => { setReferrerMode("other"); setFormData({ ...formData, referrerPatientId: null, referrerLeadId: null, referrerId: null }); }}
-                  data-testid="button-referrer-other-mode"
-                >
-                  <UserPlus className="w-3.5 h-3.5 mr-1" /> Others
+                  <Plus className="w-3 h-3" /> Add Referrer
                 </Button>
               </div>
-
-              {referrerMode === "patient" ? (
-                <div className="space-y-2">
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search by patient name or phone..."
-                    value={patientSearch}
-                    onChange={e => setPatientSearch(e.target.value)}
+                    placeholder="Search by name or mobile number..."
+                    value={referrerSearch}
+                    onChange={e => setReferrerSearch(e.target.value)}
+                    className="pl-8"
                     data-testid="input-referrer-search"
                   />
-                  <div className="max-h-40 overflow-y-auto border rounded-md">
-                    {filteredTreatedPatients.length === 0 ? (
-                      <div className="p-3 text-center text-sm text-muted-foreground">
-                        {treatedPatients.length === 0 ? "No treated patients found" : "No matches"}
-                      </div>
-                    ) : (
-                      filteredTreatedPatients.map(p => {
-                        const isSelected =
-                          (p.patientId && formData.referrerPatientId === p.patientId) ||
-                          (p.leadId && formData.referrerLeadId === p.leadId);
-                        return (
-                          <button
-                            key={p.id}
+                </div>
+                <div className="max-h-40 overflow-y-auto border rounded-md">
+                  {filteredReferrers.length === 0 ? (
+                    <div className="p-3 text-center text-sm text-muted-foreground">
+                      {activeReferrers.length === 0 ? (
+                        <div>
+                          <p>No referrers in master data</p>
+                          <Button
                             type="button"
-                            className={`w-full text-left px-3 py-2 text-sm border-b last:border-b-0 transition-colors ${isSelected ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted/50"}`}
-                            onClick={() => setFormData({
-                              ...formData,
-                              referrerPatientId: p.patientId || null,
-                              referrerLeadId: p.leadId || null,
-                              referrerId: null,
-                            })}
-                            data-testid={`button-select-referrer-${p.id}`}
+                            size="sm"
+                            variant="link"
+                            className="mt-1 h-auto p-0 text-xs"
+                            onClick={() => { setNewReferrer({ name: "", phone: "", email: "", type: "Doctor" }); setAddReferrerOpen(true); }}
                           >
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <span className="font-medium">{p.name}</span>
-                                {p.phone && <span className="text-muted-foreground ml-2">{p.phone}</span>}
-                              </div>
-                              <Badge variant="outline" className="text-[10px] ml-2">{p.episodeStatus}</Badge>
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                  {(formData.referrerPatientId || formData.referrerLeadId) && (
-                    <div className="flex items-center justify-between bg-primary/5 rounded px-3 py-1.5">
-                      <span className="text-sm text-primary font-medium">
-                        Selected: {treatedPatients.find(p =>
-                          (p.patientId && formData.referrerPatientId === p.patientId) ||
-                          (p.leadId && formData.referrerLeadId === p.leadId)
-                        )?.name || "—"}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 text-xs"
-                        onClick={() => setFormData({ ...formData, referrerPatientId: null, referrerLeadId: null })}
-                        data-testid="button-clear-referrer"
-                      >
-                        Clear
-                      </Button>
+                            Add your first referrer
+                          </Button>
+                        </div>
+                      ) : "No matches found"}
                     </div>
+                  ) : (
+                    filteredReferrers.map(r => {
+                      const isSelected = formData.referrerId === r.id;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          className={`w-full text-left px-3 py-2 text-sm border-b last:border-b-0 transition-colors ${isSelected ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted/50"}`}
+                          onClick={() => setFormData({ ...formData, referrerId: r.id })}
+                          data-testid={`button-select-referrer-${r.id}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              {referrerTypeIcon(r.type)}
+                              <div>
+                                <span className="font-medium">{r.name}</span>
+                                {r.phone && <span className="text-muted-foreground ml-2 text-xs">{r.phone}</span>}
+                              </div>
+                            </div>
+                            {r.type && <Badge variant="outline" className="text-[10px] ml-2">{r.type}</Badge>}
+                          </div>
+                        </button>
+                      );
+                    })
                   )}
                 </div>
-              ) : (
-                <div className="space-y-3 bg-muted/30 rounded-lg p-3">
-                  <div>
-                    <Label>Referrer Name *</Label>
-                    <Input
-                      value={formData.referrerExternalName}
-                      onChange={e => setFormData({ ...formData, referrerExternalName: e.target.value })}
-                      placeholder="Full name of the referring person"
-                      data-testid="input-referrer-external-name"
-                    />
+                {formData.referrerId && (
+                  <div className="flex items-center justify-between bg-primary/5 rounded px-3 py-1.5">
+                    <span className="text-sm text-primary font-medium flex items-center gap-1.5">
+                      {referrerTypeIcon(activeReferrers.find(r => r.id === formData.referrerId)?.type || null)}
+                      Selected: {activeReferrers.find(r => r.id === formData.referrerId)?.name || "—"}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs"
+                      onClick={() => setFormData({ ...formData, referrerId: null })}
+                      data-testid="button-clear-referrer"
+                    >
+                      Clear
+                    </Button>
                   </div>
-                  <div>
-                    <Label>Referrer Mobile Number</Label>
-                    <Input
-                      value={formData.referrerExternalPhone}
-                      onChange={e => setFormData({ ...formData, referrerExternalPhone: e.target.value })}
-                      placeholder="+91..."
-                      data-testid="input-referrer-external-phone"
-                    />
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             <div>
@@ -633,6 +647,68 @@ export default function ReferralsPage() {
               data-testid="button-save-referral"
             >
               {(createMutation.isPending || updateMutation.isPending) ? "Saving..." : editingReferral ? "Update" : "Record Referral"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addReferrerOpen} onOpenChange={setAddReferrerOpen}>
+        <DialogContent className="max-w-md" aria-describedby="add-referrer-desc">
+          <DialogHeader>
+            <DialogTitle data-testid="text-add-referrer-title">Add New Referrer</DialogTitle>
+            <p id="add-referrer-desc" className="text-sm text-muted-foreground">
+              Add a new referrer to the master data. They will be immediately available in the dropdown.
+            </p>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Referrer Name *</Label>
+              <Input
+                value={newReferrer.name}
+                onChange={e => setNewReferrer({ ...newReferrer, name: e.target.value })}
+                placeholder="Dr. Rajesh Kumar"
+                data-testid="input-new-referrer-name"
+              />
+            </div>
+            <div>
+              <Label>Mobile Number *</Label>
+              <Input
+                value={newReferrer.phone}
+                onChange={e => setNewReferrer({ ...newReferrer, phone: e.target.value })}
+                placeholder="+91 98765 43210"
+                data-testid="input-new-referrer-phone"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">Used for duplicate detection. Each mobile number can only be registered once.</p>
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input
+                value={newReferrer.email}
+                onChange={e => setNewReferrer({ ...newReferrer, email: e.target.value })}
+                placeholder="doctor@clinic.com"
+                data-testid="input-new-referrer-email"
+              />
+            </div>
+            <div>
+              <Label>Referrer Type</Label>
+              <Select value={newReferrer.type} onValueChange={v => setNewReferrer({ ...newReferrer, type: v })}>
+                <SelectTrigger data-testid="select-new-referrer-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REFERRER_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddReferrerOpen(false)} data-testid="button-cancel-add-referrer">Cancel</Button>
+            <Button
+              onClick={handleAddReferrer}
+              disabled={addReferrerMutation.isPending}
+              data-testid="button-save-new-referrer"
+            >
+              {addReferrerMutation.isPending ? "Saving..." : "Add Referrer"}
             </Button>
           </DialogFooter>
         </DialogContent>
