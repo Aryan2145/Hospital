@@ -1939,29 +1939,172 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
       content: (
         <div className="space-y-6">
           <section>
-            <h2 className="text-lg font-bold text-foreground mb-3">SMTP Email Configuration</h2>
-            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-              Configure the outbound email server for your hospital. This is used for sending appointment confirmations, password reset emails, and system notifications. Navigate to <strong>Configurations &gt; Email / SMTP Settings</strong>.
+            <h2 className="text-lg font-bold text-foreground mb-3">Overview</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              The CRM uses SMTP (Simple Mail Transfer Protocol) to send outbound emails such as <strong>Password Reset links</strong>, appointment confirmations, and system notifications. Each hospital can configure its own email settings under <strong>Configurations &gt; Email / SMTP Settings</strong>.
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Most hospitals use <strong>Google Workspace (GWS)</strong> for their email. This guide walks you through the complete setup — from generating the App Password in Google Workspace Admin to entering the details in the CRM.
             </p>
           </section>
+
           <section>
-            <h2 className="text-lg font-bold text-foreground mb-3">Server Settings</h2>
-            <FieldTable fields={[
-              { field: "SMTP Host", desc: "The mail server hostname (e.g., smtp.gmail.com, smtp.office365.com)" },
-              { field: "SMTP Port", desc: "Port number — typically 587 (TLS) or 465 (SSL)" },
-              { field: "Username", desc: "Authentication username for the SMTP server" },
-              { field: "Password", desc: "Authentication password (stored encrypted)" },
-              { field: "Security", desc: "Encryption protocol — TLS (recommended) or SSL" },
+            <h2 className="text-lg font-bold text-foreground mb-3">What You Need Before You Start</h2>
+            <ul className="list-disc ml-5 space-y-2 text-sm text-muted-foreground">
+              <li>A <strong>Google Workspace</strong> account (e.g., noreply@yourhospital.com) — this will be your sender email</li>
+              <li><strong>2-Step Verification</strong> must be turned ON for that Google account</li>
+              <li>Access to <strong>Google Workspace Admin Console</strong> (admin.google.com) if 2-Step Verification is not yet enabled</li>
+              <li><strong>Admin</strong> or <strong>System Admin</strong> role in myProSys Hospital CRM</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Part 1: Google Workspace Admin Setup</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Your Google Workspace administrator needs to complete these steps first:
+            </p>
+            <div className="bg-blue-50 dark:bg-blue-950 rounded-lg p-4 mb-4">
+              <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">Step A — Enable 2-Step Verification (Organization-wide)</h3>
+              <ol className="list-decimal ml-5 space-y-1.5 text-sm text-blue-700 dark:text-blue-300">
+                <li>Sign in to <strong>admin.google.com</strong> with your GWS admin account</li>
+                <li>Go to <strong>Security &gt; Authentication &gt; 2-Step Verification</strong></li>
+                <li>Check <strong>"Allow users to turn on 2-Step Verification"</strong></li>
+                <li>Click <strong>Save</strong></li>
+                <li>Wait a few minutes for the policy to propagate across your organization</li>
+              </ol>
+            </div>
+            <div className="bg-blue-50 dark:bg-blue-950 rounded-lg p-4 mb-4">
+              <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">Step B — Turn on 2-Step Verification for the Sender Account</h3>
+              <ol className="list-decimal ml-5 space-y-1.5 text-sm text-blue-700 dark:text-blue-300">
+                <li>Sign in to <strong>myaccount.google.com</strong> as the sender email (e.g., noreply@yourhospital.com)</li>
+                <li>Go to <strong>Security &gt; Signing in to Google &gt; 2-Step Verification</strong></li>
+                <li>Click <strong>Get Started</strong> and follow the setup wizard (phone verification)</li>
+                <li>Complete the setup — you'll need this for App Passwords</li>
+              </ol>
+            </div>
+            <div className="bg-blue-50 dark:bg-blue-950 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">Step C — Generate an App Password</h3>
+              <ol className="list-decimal ml-5 space-y-1.5 text-sm text-blue-700 dark:text-blue-300">
+                <li>While still signed in as the sender account, go to <strong>myaccount.google.com/apppasswords</strong></li>
+                <li>You may need to re-enter your password</li>
+                <li>Under <strong>"App name"</strong>, type <strong>myProSys CRM</strong> (or any name you prefer)</li>
+                <li>Click <strong>Create</strong></li>
+                <li>Google will show a <strong>16-character password</strong> (e.g., <code>abcd efgh ijkl mnop</code>)</li>
+                <li><strong>Copy this password immediately</strong> — it is shown only once</li>
+                <li>Remove the spaces — your App Password is: <code>abcdefghijklmnop</code></li>
+              </ol>
+            </div>
+            <WarningBox>The App Password is displayed only once. If you lose it, you'll need to delete the old one and generate a new one from the same page.</WarningBox>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Part 2: Enter SMTP Settings in the CRM</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Now that you have the App Password, enter the settings in the CRM:
+            </p>
+            <StepList steps={[
+              "Log in to the CRM as Admin or System Admin",
+              "Navigate to Configurations > Email / SMTP Settings",
+              "Fill in the fields as shown below",
+              "Click Save to store the configuration",
+              "Use the 'Send Test Email' button to verify the connection",
             ]} />
           </section>
+
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">SMTP Server Settings</h2>
+            <FieldTable fields={[
+              { field: "SMTP Host", desc: "smtp.gmail.com (for Google Workspace / Gmail)" },
+              { field: "SMTP Port", desc: "587 (TLS — recommended) or 465 (SSL)" },
+              { field: "Username", desc: "Your full sender email address, e.g., noreply@yourhospital.com" },
+              { field: "Password", desc: "The 16-character App Password generated in Step C above (NOT your regular Google password)" },
+              { field: "Security", desc: "TLS (recommended for port 587)" },
+            ]} />
+          </section>
+
           <section>
             <h2 className="text-lg font-bold text-foreground mb-3">Sender Information</h2>
             <FieldTable fields={[
-              { field: "From Email", desc: "The email address that appears as the sender (e.g., noreply@virocortho.com)" },
-              { field: "From Name", desc: "The display name shown in recipients' inbox (e.g., 'Viroc Hospital')" },
+              { field: "From Email", desc: "The email address recipients will see (e.g., noreply@yourhospital.com). Must match the authenticated account." },
+              { field: "From Name", desc: "The display name shown in recipients' inbox (e.g., 'Viroc Super Specialty Orthopaedic Hospital')" },
             ]} />
           </section>
-          <WarningBox>SMTP credentials are encrypted at rest. After saving, the password is never displayed in plain text — only the connection status is shown. Each hospital (tenant) has its own independent email configuration.</WarningBox>
+
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Google Workspace Quick Reference</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border border-border rounded-lg">
+                <thead>
+                  <tr className="bg-muted/50">
+                    <th className="text-left p-3 font-semibold text-foreground border-b border-border">CRM Field</th>
+                    <th className="text-left p-3 font-semibold text-foreground border-b border-border">Value for Google Workspace</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-border"><td className="p-3 text-muted-foreground">SMTP Host</td><td className="p-3 font-mono text-foreground">smtp.gmail.com</td></tr>
+                  <tr className="border-b border-border"><td className="p-3 text-muted-foreground">SMTP Port</td><td className="p-3 font-mono text-foreground">587</td></tr>
+                  <tr className="border-b border-border"><td className="p-3 text-muted-foreground">Username</td><td className="p-3 font-mono text-foreground">noreply@yourhospital.com</td></tr>
+                  <tr className="border-b border-border"><td className="p-3 text-muted-foreground">Password</td><td className="p-3 font-mono text-foreground">abcdefghijklmnop (App Password)</td></tr>
+                  <tr className="border-b border-border"><td className="p-3 text-muted-foreground">Security</td><td className="p-3 font-mono text-foreground">TLS</td></tr>
+                  <tr className="border-b border-border"><td className="p-3 text-muted-foreground">From Email</td><td className="p-3 font-mono text-foreground">noreply@yourhospital.com</td></tr>
+                  <tr><td className="p-3 text-muted-foreground">From Name</td><td className="p-3 font-mono text-foreground">Your Hospital Name</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What Emails Does the CRM Send?</h2>
+            <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+              <li><strong>Password Reset Links:</strong> When users click "Forgot Password" on the login page</li>
+              <li><strong>Appointment Confirmations:</strong> Sent to patients when appointments are booked</li>
+              <li><strong>System Notifications:</strong> Approval requests, escalation alerts</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Troubleshooting Common Errors</h2>
+            <div className="space-y-3">
+              <div className="bg-red-50 dark:bg-red-950/30 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-red-700 dark:text-red-400 mb-1">Error: "535-5.7.8 Username and Password not accepted"</h4>
+                <ul className="list-disc ml-5 space-y-1 text-sm text-red-600 dark:text-red-400">
+                  <li>You are using the regular Google password instead of the <strong>App Password</strong></li>
+                  <li>The App Password has been revoked — generate a new one</li>
+                  <li>2-Step Verification is not enabled on the sender account</li>
+                </ul>
+              </div>
+              <div className="bg-red-50 dark:bg-red-950/30 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-red-700 dark:text-red-400 mb-1">Error: "Connection timeout" or "ECONNREFUSED"</h4>
+                <ul className="list-disc ml-5 space-y-1 text-sm text-red-600 dark:text-red-400">
+                  <li>Wrong SMTP Host or Port — verify you're using <code>smtp.gmail.com</code> and port <code>587</code></li>
+                  <li>Your network/firewall may be blocking outbound SMTP connections</li>
+                </ul>
+              </div>
+              <div className="bg-red-50 dark:bg-red-950/30 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-red-700 dark:text-red-400 mb-1">Error: "App Passwords not available"</h4>
+                <ul className="list-disc ml-5 space-y-1 text-sm text-red-600 dark:text-red-400">
+                  <li>2-Step Verification is not turned on — complete Step B first</li>
+                  <li>Your Google Workspace admin has not allowed 2-Step Verification — ask them to complete Step A</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Non-Google Email Providers</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              If your hospital uses a different email provider, use these SMTP settings:
+            </p>
+            <FieldTable fields={[
+              { field: "Microsoft 365 / Outlook", desc: "Host: smtp.office365.com, Port: 587, Security: TLS" },
+              { field: "Amazon SES", desc: "Host: email-smtp.<region>.amazonaws.com, Port: 587, Security: TLS" },
+              { field: "Zoho Mail", desc: "Host: smtp.zoho.com, Port: 587, Security: TLS" },
+              { field: "Custom / Self-hosted", desc: "Use your IT team's SMTP host, port, and credentials" },
+            ]} />
+          </section>
+
+          <TipBox>We recommend creating a dedicated sender email like <strong>noreply@yourhospital.com</strong> or <strong>crm@yourhospital.com</strong> in your Google Workspace. This keeps CRM emails separate from personal mailboxes and makes it easier to manage App Passwords.</TipBox>
+          <WarningBox>SMTP credentials are encrypted at rest. After saving, the password is never displayed in plain text — only the connection status is shown. Each hospital (tenant) has its own independent email configuration. Never share App Passwords via email or chat.</WarningBox>
         </div>
       ),
     },
