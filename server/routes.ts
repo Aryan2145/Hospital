@@ -6350,6 +6350,58 @@ export async function registerRoutes(
   // REFERRAL MANAGEMENT
   // =============================================
 
+  app.get("/api/referrals/treated-patients", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const treatedStatuses = ["Surgery Done", "In Treatment", "Post Care", "Follow Up", "Completed"];
+      const treatedEpisodes = await db.select({
+        episodeId: episodes.id,
+        leadId: episodes.leadId,
+        patientId: episodes.patientId,
+        status: episodes.status,
+      }).from(episodes).where(
+        and(eq(episodes.tenantId, tid), inArray(episodes.status, treatedStatuses))
+      );
+
+      const patientIds = [...new Set(treatedEpisodes.map(e => e.patientId).filter(Boolean))] as number[];
+      const leadIds = [...new Set(treatedEpisodes.map(e => e.leadId).filter(Boolean))] as number[];
+
+      const result: Array<{ id: string; name: string; phone: string; type: string; episodeStatus: string; patientId?: number; leadId?: number }> = [];
+      const seen = new Set<string>();
+
+      if (patientIds.length > 0) {
+        const patientRows = await db.select().from(patients).where(and(eq(patients.tenantId, tid), inArray(patients.id, patientIds)));
+        for (const p of patientRows) {
+          if (!p.name) continue;
+          const ep = treatedEpisodes.find(e => e.patientId === p.id);
+          const key = `patient-${p.id}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            result.push({ id: key, name: p.name, phone: p.phone || "", type: "Patient", episodeStatus: ep?.status || "", patientId: p.id });
+          }
+        }
+      }
+
+      if (leadIds.length > 0) {
+        const leadRows = await db.select().from(leads).where(and(eq(leads.tenantId, tid), inArray(leads.id, leadIds)));
+        for (const l of leadRows) {
+          if (!l.name) continue;
+          const ep = treatedEpisodes.find(e => e.leadId === l.id);
+          const key = `lead-${l.id}`;
+          if (!seen.has(key) && !result.find(r => r.phone && r.phone === l.phone)) {
+            seen.add(key);
+            result.push({ id: key, name: l.name, phone: l.phone || "", type: "Lead", episodeStatus: ep?.status || "", leadId: l.id });
+          }
+        }
+      }
+
+      result.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.get("/api/referrals", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
@@ -6366,6 +6418,10 @@ export async function registerRoutes(
         if (r.referrerPatientId) {
           const [pat] = await db.select().from(patients).where(and(eq(patients.id, r.referrerPatientId), eq(patients.tenantId, tid)));
           if (pat) referrerPatientName = pat.name;
+        }
+        if (!referrerName && !referrerPatientName && r.referrerExternalName) {
+          referrerName = r.referrerExternalName;
+          referrerType = "External";
         }
         let resultingLeadName = null;
         let resultingLeadStatus = null;

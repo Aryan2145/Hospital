@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -22,6 +22,7 @@ import {
   Filter,
   Search,
   ArrowUpDown,
+  User,
 } from "lucide-react";
 
 const REFERRAL_CHANNELS = [
@@ -91,8 +92,13 @@ export default function ReferralsPage() {
     referralChannel: "Word of Mouth",
     referralNotes: "",
     referrerId: null as number | null,
+    referrerPatientId: null as number | null,
+    referrerLeadId: null as number | null,
+    referrerExternalName: "",
+    referrerExternalPhone: "",
     outcome: "Pending",
   });
+  const [referrerMode, setReferrerMode] = useState<"patient" | "other">("patient");
 
   const { data: referralsList = [], isLoading } = useQuery<ReferralRecord[]>({
     queryKey: ["/api/referrals"],
@@ -105,6 +111,18 @@ export default function ReferralsPage() {
   const { data: referrersList = [] } = useQuery<Array<{ id: number; name: string; type: string; status: string }>>({
     queryKey: ["/api/masters/referrers"],
   });
+
+  type TreatedPatient = { id: string; name: string; phone: string; type: string; episodeStatus: string; patientId?: number; leadId?: number };
+  const { data: treatedPatients = [] } = useQuery<TreatedPatient[]>({
+    queryKey: ["/api/referrals/treated-patients"],
+  });
+
+  const [patientSearch, setPatientSearch] = useState("");
+  const filteredTreatedPatients = useMemo(() => {
+    if (!patientSearch.trim()) return treatedPatients;
+    const term = patientSearch.toLowerCase();
+    return treatedPatients.filter(p => p.name.toLowerCase().includes(term) || p.phone.includes(term));
+  }, [treatedPatients, patientSearch]);
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/referrals", data),
@@ -130,12 +148,16 @@ export default function ReferralsPage() {
 
   function openCreate() {
     setEditingReferral(null);
-    setFormData({ referredName: "", referredPhone: "", referredEmail: "", referralChannel: "Word of Mouth", referralNotes: "", referrerId: null, outcome: "Pending" });
+    setFormData({ referredName: "", referredPhone: "", referredEmail: "", referralChannel: "Word of Mouth", referralNotes: "", referrerId: null, referrerPatientId: null, referrerLeadId: null, referrerExternalName: "", referrerExternalPhone: "", outcome: "Pending" });
+    setReferrerMode("patient");
+    setPatientSearch("");
     setDialogOpen(true);
   }
 
   function openEdit(ref: ReferralRecord) {
     setEditingReferral(ref);
+    const hasExternal = (ref as any).referrerExternalName;
+    setReferrerMode(hasExternal ? "other" : "patient");
     setFormData({
       referredName: ref.referredName,
       referredPhone: ref.referredPhone,
@@ -143,8 +165,13 @@ export default function ReferralsPage() {
       referralChannel: ref.referralChannel,
       referralNotes: ref.referralNotes || "",
       referrerId: ref.referrerId,
+      referrerPatientId: ref.referrerPatientId,
+      referrerLeadId: ref.referrerLeadId,
+      referrerExternalName: (ref as any).referrerExternalName || "",
+      referrerExternalPhone: (ref as any).referrerExternalPhone || "",
       outcome: ref.outcome,
     });
+    setPatientSearch("");
     setDialogOpen(true);
   }
 
@@ -153,10 +180,38 @@ export default function ReferralsPage() {
       toast({ title: "Referred person's name and phone are required", variant: "destructive" });
       return;
     }
-    if (editingReferral) {
-      updateMutation.mutate({ id: editingReferral.id, data: formData });
+    if (referrerMode === "other" && !formData.referrerExternalName.trim()) {
+      toast({ title: "Referrer name is required when using 'Others'", variant: "destructive" });
+      return;
+    }
+
+    const payload: any = {
+      referredName: formData.referredName,
+      referredPhone: formData.referredPhone,
+      referredEmail: formData.referredEmail || null,
+      referralChannel: formData.referralChannel,
+      referralNotes: formData.referralNotes || null,
+      outcome: formData.outcome,
+    };
+
+    if (referrerMode === "patient") {
+      payload.referrerPatientId = formData.referrerPatientId;
+      payload.referrerLeadId = formData.referrerLeadId;
+      payload.referrerId = formData.referrerId;
+      payload.referrerExternalName = null;
+      payload.referrerExternalPhone = null;
     } else {
-      createMutation.mutate(formData);
+      payload.referrerExternalName = formData.referrerExternalName;
+      payload.referrerExternalPhone = formData.referrerExternalPhone || null;
+      payload.referrerPatientId = null;
+      payload.referrerLeadId = null;
+      payload.referrerId = null;
+    }
+
+    if (editingReferral) {
+      updateMutation.mutate({ id: editingReferral.id, data: payload });
+    } else {
+      createMutation.mutate(payload);
     }
   }
 
@@ -421,37 +476,127 @@ export default function ReferralsPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Referred By (Referrer)</Label>
-                <Select
-                  value={formData.referrerId ? String(formData.referrerId) : "none"}
-                  onValueChange={v => setFormData({ ...formData, referrerId: v === "none" ? null : Number(v) })}
+            <div>
+              <Label className="mb-2 block">Referred By (Referrer)</Label>
+              <div className="flex gap-2 mb-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={referrerMode === "patient" ? "default" : "outline"}
+                  onClick={() => { setReferrerMode("patient"); setFormData({ ...formData, referrerExternalName: "", referrerExternalPhone: "" }); }}
+                  data-testid="button-referrer-patient-mode"
                 >
-                  <SelectTrigger data-testid="select-referrer">
-                    <SelectValue placeholder="Select referrer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No specific referrer</SelectItem>
-                    {referrersList.filter(r => r.status === "Active").map(r => (
-                      <SelectItem key={r.id} value={String(r.id)}>
-                        {r.name} {r.type ? `(${r.type})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <User className="w-3.5 h-3.5 mr-1" /> Treated Patient
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={referrerMode === "other" ? "default" : "outline"}
+                  onClick={() => { setReferrerMode("other"); setFormData({ ...formData, referrerPatientId: null, referrerLeadId: null, referrerId: null }); }}
+                  data-testid="button-referrer-other-mode"
+                >
+                  <UserPlus className="w-3.5 h-3.5 mr-1" /> Others
+                </Button>
               </div>
-              <div>
-                <Label>Channel</Label>
-                <Select value={formData.referralChannel} onValueChange={v => setFormData({ ...formData, referralChannel: v })}>
-                  <SelectTrigger data-testid="select-channel">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {REFERRAL_CHANNELS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+
+              {referrerMode === "patient" ? (
+                <div className="space-y-2">
+                  <Input
+                    placeholder="Search by patient name or phone..."
+                    value={patientSearch}
+                    onChange={e => setPatientSearch(e.target.value)}
+                    data-testid="input-referrer-search"
+                  />
+                  <div className="max-h-40 overflow-y-auto border rounded-md">
+                    {filteredTreatedPatients.length === 0 ? (
+                      <div className="p-3 text-center text-sm text-muted-foreground">
+                        {treatedPatients.length === 0 ? "No treated patients found" : "No matches"}
+                      </div>
+                    ) : (
+                      filteredTreatedPatients.map(p => {
+                        const isSelected =
+                          (p.patientId && formData.referrerPatientId === p.patientId) ||
+                          (p.leadId && formData.referrerLeadId === p.leadId);
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className={`w-full text-left px-3 py-2 text-sm border-b last:border-b-0 transition-colors ${isSelected ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted/50"}`}
+                            onClick={() => setFormData({
+                              ...formData,
+                              referrerPatientId: p.patientId || null,
+                              referrerLeadId: p.leadId || null,
+                              referrerId: null,
+                            })}
+                            data-testid={`button-select-referrer-${p.id}`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="font-medium">{p.name}</span>
+                                {p.phone && <span className="text-muted-foreground ml-2">{p.phone}</span>}
+                              </div>
+                              <Badge variant="outline" className="text-[10px] ml-2">{p.episodeStatus}</Badge>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                  {(formData.referrerPatientId || formData.referrerLeadId) && (
+                    <div className="flex items-center justify-between bg-primary/5 rounded px-3 py-1.5">
+                      <span className="text-sm text-primary font-medium">
+                        Selected: {treatedPatients.find(p =>
+                          (p.patientId && formData.referrerPatientId === p.patientId) ||
+                          (p.leadId && formData.referrerLeadId === p.leadId)
+                        )?.name || "—"}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={() => setFormData({ ...formData, referrerPatientId: null, referrerLeadId: null })}
+                        data-testid="button-clear-referrer"
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3 bg-muted/30 rounded-lg p-3">
+                  <div>
+                    <Label>Referrer Name *</Label>
+                    <Input
+                      value={formData.referrerExternalName}
+                      onChange={e => setFormData({ ...formData, referrerExternalName: e.target.value })}
+                      placeholder="Full name of the referring person"
+                      data-testid="input-referrer-external-name"
+                    />
+                  </div>
+                  <div>
+                    <Label>Referrer Mobile Number</Label>
+                    <Input
+                      value={formData.referrerExternalPhone}
+                      onChange={e => setFormData({ ...formData, referrerExternalPhone: e.target.value })}
+                      placeholder="+91..."
+                      data-testid="input-referrer-external-phone"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <Label>Channel</Label>
+              <Select value={formData.referralChannel} onValueChange={v => setFormData({ ...formData, referralChannel: v })}>
+                <SelectTrigger data-testid="select-channel">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REFERRAL_CHANNELS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             {editingReferral && (

@@ -1847,6 +1847,8 @@ export const referrals = pgTable("referrals", {
   referrerPatientId: integer("referrer_patient_id").references(() => patients.id),
   referrerLeadId: integer("referrer_lead_id").references(() => leads.id),
   referrerEpisodeId: integer("referrer_episode_id").references(() => episodes.id),
+  referrerExternalName: text("referrer_external_name"),
+  referrerExternalPhone: text("referrer_external_phone"),
   referredName: text("referred_name").notNull(),
   referredPhone: text("referred_phone").notNull(),
   referredEmail: text("referred_email"),
