@@ -6734,7 +6734,7 @@ export async function registerRoutes(
   }
 
   async function requireAdminRole(req: any, tid: number): Promise<void> {
-    const sessionUser = await getSessionCrmUser(req, tid);
+    const sessionUser = await getSessionCrmUserWithRole(req);
     if (!sessionUser) throw new Error("Unauthorized: no active session");
     const allowed = ["SYS_ADMIN", "ADMIN", "MANAGER"];
     if (!allowed.includes(sessionUser.roleCode)) {
