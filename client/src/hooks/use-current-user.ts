@@ -41,6 +41,8 @@ export function useCurrentUser() {
   const canViewPage = (page: string): boolean => {
     if (!isRegistered || !roleCode) return false;
 
+    if (page === "support") return true;
+
     switch (roleCode) {
       case "SYS_ADMIN":
         return true;

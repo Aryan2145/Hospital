@@ -21,6 +21,7 @@ import {
   Gift,
   CalendarDays,
   Settings2,
+  Ticket,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -64,6 +65,13 @@ const sections: { label: string; items: NavItem[] }[] = [
       { icon: Brain, label: "Intelligence Config", href: "/intelligence-config", page: "connectors" },
       { icon: Stethoscope, label: "Post-Care Protocols", href: "/post-care-protocols", page: "connectors" },
       { icon: Settings2, label: "Referral Settings", href: "/referral-config", page: "connectors" },
+    ],
+  },
+  {
+    label: "Support",
+    items: [
+      { icon: Ticket, label: "Help Tickets", href: "/support-tickets", page: "support" },
+      { icon: HelpCircle, label: "Help Center", href: "/help", page: "support" },
     ],
   },
 ];
@@ -131,23 +139,6 @@ export function Sidebar() {
             </div>
           </div>
         ))}
-      </div>
-
-      <div className="px-4 pb-2">
-        <Link href="/help">
-          <div
-            className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium cursor-pointer",
-              location.startsWith("/help")
-                ? "bg-primary text-white"
-                : "text-muted-foreground hover-elevate"
-            )}
-            data-testid="nav-help"
-          >
-            <HelpCircle className={cn("w-5 h-5", location.startsWith("/help") ? "text-white" : "text-muted-foreground")} />
-            Help & Resources
-          </div>
-        </Link>
       </div>
 
       <div className="p-4 border-t border-border bg-muted/50">

@@ -49,6 +49,9 @@ import AdminLogin from "@/pages/admin/AdminLogin";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import MetaHelpGuide from "@/pages/MetaHelpGuide";
 import HelpCenter from "@/pages/HelpCenter";
+import SupportTicketsPage from "@/pages/SupportTicketsPage";
+import SupportAdminLogin from "@/pages/support-admin/SupportAdminLogin";
+import SupportAdminDashboard from "@/pages/support-admin/SupportAdminDashboard";
 
 function TenantSuspended() {
   return (
@@ -301,6 +304,17 @@ function Router() {
       </Route>
       <Route path="/admin/payments">
         {isAuthenticated ? <SysAdminGate><AdminPayments /></SysAdminGate> : <AdminLogin />}
+      </Route>
+
+      <Route path="/support-tickets">
+        {isAuthenticated ? <RoleGate page="support"><SupportTicketsPage /></RoleGate> : <Landing />}
+      </Route>
+
+      <Route path="/support-admin/dashboard">
+        <SupportAdminDashboard />
+      </Route>
+      <Route path="/support-admin">
+        <SupportAdminLogin />
       </Route>
 
       <Route component={NotFound} />

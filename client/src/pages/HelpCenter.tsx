@@ -1,5 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useState, useMemo } from "react";
 import {
   ArrowRight,
@@ -40,6 +40,7 @@ import {
   Info,
   Menu,
   X,
+  Ticket,
 } from "lucide-react";
 import { SiFacebook, SiInstagram } from "react-icons/si";
 import { Card } from "@/components/ui/card";
@@ -2962,7 +2963,18 @@ export default function HelpCenter() {
             )}
 
             <div className="mt-10 pt-6 border-t border-border">
-              <p className="text-xs text-muted-foreground text-center">
+              <div className="flex flex-col items-center gap-3">
+                <p className="text-sm text-muted-foreground">Can't find what you need? Report an issue or request a feature.</p>
+                <Link
+                  href="/support-tickets"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition-colors"
+                  data-testid="link-report-issue"
+                >
+                  <Ticket className="w-4 h-4" />
+                  Report Issue / Request Feature
+                </Link>
+              </div>
+              <p className="text-xs text-muted-foreground text-center mt-4">
                 myProSys Hospital CRM — Help & Resources
               </p>
             </div>

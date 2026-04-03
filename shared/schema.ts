@@ -1987,6 +1987,61 @@ export const referralRewardRules = pgTable("referral_reward_rules", {
 
 export const insertReferralRewardRuleSchema = createInsertSchema(referralRewardRules).omit({ id: true, createdAt: true, modifiedAt: true });
 
+// =============================================
+// SUPPORT TICKETING SYSTEM
+// =============================================
+
+export const supportUsers = pgTable("support_users", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone"),
+  passwordHash: text("password_hash").notNull(),
+  role: text("role").notNull().default("support_agent"),
+  isActive: boolean("is_active").default(true),
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSupportUserSchema = createInsertSchema(supportUsers).omit({ id: true, createdAt: true, lastLoginAt: true });
+export type SupportUser = typeof supportUsers.$inferSelect;
+
+export const supportTickets = pgTable("support_tickets", {
+  id: serial("id").primaryKey(),
+  ticketNumber: text("ticket_number").notNull().unique(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  crmUserId: integer("crm_user_id").notNull(),
+  category: text("category").notNull(),
+  priority: text("priority").notNull().default("Medium"),
+  subject: text("subject").notNull(),
+  description: text("description").notNull(),
+  attachments: jsonb("attachments").default([]),
+  status: text("status").notNull().default("Open"),
+  assignedSupportUserId: integer("assigned_support_user_id").references(() => supportUsers.id),
+  adminPriority: text("admin_priority"),
+  closedAt: timestamp("closed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({ id: true, createdAt: true, updatedAt: true, closedAt: true });
+export type SupportTicket = typeof supportTickets.$inferSelect;
+
+export const supportTicketComments = pgTable("support_ticket_comments", {
+  id: serial("id").primaryKey(),
+  ticketId: integer("ticket_id").notNull().references(() => supportTickets.id),
+  authorType: text("author_type").notNull(),
+  authorId: integer("author_id").notNull(),
+  authorName: text("author_name"),
+  message: text("message").notNull(),
+  attachments: jsonb("attachments").default([]),
+  isInternal: boolean("is_internal").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSupportTicketCommentSchema = createInsertSchema(supportTicketComments).omit({ id: true, createdAt: true });
+export type SupportTicketComment = typeof supportTicketComments.$inferSelect;
+
 export const referralRewardLogs = pgTable("referral_reward_logs", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),

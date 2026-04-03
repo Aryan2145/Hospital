@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -8702,6 +8702,491 @@ export async function registerRoutes(
   });
 
   // Seed the database
+  // =============================================
+  // SUPPORT TICKETING SYSTEM
+  // =============================================
+
+  async function generateTicketNumber(): Promise<string> {
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, "");
+    const prefix = `TKT-${dateStr}`;
+    const result = await pool.query(
+      `SELECT COUNT(*) as cnt FROM support_tickets WHERE ticket_number LIKE $1`,
+      [`${prefix}-%`]
+    );
+    const seq = (parseInt(result.rows[0].cnt) || 0) + 1;
+    return `${prefix}-${String(seq).padStart(3, "0")}`;
+  }
+
+  function isSupportAdmin(req: any): boolean {
+    return !!(req.session as any)?.supportUserId;
+  }
+
+  function requireSupportAuth(req: any, res: any, next: any) {
+    if ((req.session as any)?.supportUserId) return next();
+    return res.status(401).json({ message: "Support authentication required" });
+  }
+
+  // --- CRM User: Create ticket ---
+  app.post("/api/support-tickets", isAuthenticated, upload.array("screenshots", 5), async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUserId = (req as any).session?.crmUserId;
+      if (!crmUserId) return res.status(401).json({ message: "Unauthorized" });
+
+      const { category, priority, subject, description } = req.body;
+      if (!category || !subject || !description) {
+        return res.status(400).json({ message: "Category, subject, and description are required" });
+      }
+
+      const attachmentUrls: string[] = [];
+      if (req.files && Array.isArray(req.files)) {
+        for (const file of req.files) {
+          const fileName = `support_${Date.now()}_${Math.random().toString(36).slice(2)}_${file.originalname}`;
+          const fs = await import("fs");
+          const path = await import("path");
+          const dir = path.join(process.cwd(), "uploads", "support");
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(path.join(dir, fileName), file.buffer);
+          attachmentUrls.push(`/uploads/support/${fileName}`);
+        }
+      }
+
+      const ticketNumber = await generateTicketNumber();
+      const [ticket] = await db.insert(supportTickets).values({
+        ticketNumber,
+        tenantId: tid,
+        crmUserId,
+        category,
+        priority: priority || "Medium",
+        subject,
+        description,
+        attachments: attachmentUrls,
+        status: "Open",
+      }).returning();
+
+      res.status(201).json(ticket);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- CRM User: List my tickets ---
+  app.get("/api/support-tickets", isAuthenticated, async (req, res) => {
+    try {
+      const crmUserId = (req as any).session?.crmUserId;
+      if (!crmUserId) return res.status(401).json({ message: "Unauthorized" });
+
+      const tickets = await db.select().from(supportTickets)
+        .where(eq(supportTickets.crmUserId, crmUserId))
+        .orderBy(sql`${supportTickets.createdAt} DESC`);
+
+      const enriched = await Promise.all(tickets.map(async (t) => {
+        let assignedName = null;
+        if (t.assignedSupportUserId) {
+          const [su] = await db.select().from(supportUsers).where(eq(supportUsers.id, t.assignedSupportUserId));
+          if (su) assignedName = su.name;
+        }
+        const commentCount = await pool.query(
+          `SELECT COUNT(*) as cnt FROM support_ticket_comments WHERE ticket_id = $1 AND is_internal = false`,
+          [t.id]
+        );
+        return { ...t, assignedName, commentCount: parseInt(commentCount.rows[0].cnt) };
+      }));
+
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- CRM User: Get ticket detail ---
+  app.get("/api/support-tickets/:id", isAuthenticated, async (req, res) => {
+    try {
+      const crmUserId = (req as any).session?.crmUserId;
+      const ticketId = Number(req.params.id);
+      const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, ticketId));
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      if (ticket.crmUserId !== crmUserId && !isSupportAdmin(req)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const comments = await db.select().from(supportTicketComments)
+        .where(and(
+          eq(supportTicketComments.ticketId, ticketId),
+          isSupportAdmin(req) ? sql`1=1` : eq(supportTicketComments.isInternal, false)
+        ))
+        .orderBy(sql`${supportTicketComments.createdAt} ASC`);
+
+      let assignedName = null;
+      if (ticket.assignedSupportUserId) {
+        const [su] = await db.select().from(supportUsers).where(eq(supportUsers.id, ticket.assignedSupportUserId));
+        if (su) assignedName = su.name;
+      }
+
+      res.json({ ...ticket, assignedName, comments });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- CRM User: Add comment to ticket ---
+  app.post("/api/support-tickets/:id/comments", isAuthenticated, upload.array("screenshots", 3), async (req, res) => {
+    try {
+      const crmUserId = (req as any).session?.crmUserId;
+      const ticketId = Number(req.params.id);
+      const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, ticketId));
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      if (ticket.crmUserId !== crmUserId) return res.status(403).json({ message: "Access denied" });
+
+      const attachmentUrls: string[] = [];
+      if (req.files && Array.isArray(req.files)) {
+        for (const file of req.files) {
+          const fileName = `support_${Date.now()}_${Math.random().toString(36).slice(2)}_${file.originalname}`;
+          const fs = await import("fs");
+          const path = await import("path");
+          const dir = path.join(process.cwd(), "uploads", "support");
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(path.join(dir, fileName), file.buffer);
+          attachmentUrls.push(`/uploads/support/${fileName}`);
+        }
+      }
+
+      const allCrmUsers = await storage.getCrmUsers(ticket.tenantId);
+      const crmUser = allCrmUsers.find(u => u.id === crmUserId);
+
+      const [comment] = await db.insert(supportTicketComments).values({
+        ticketId,
+        authorType: "crm_user",
+        authorId: crmUserId,
+        authorName: (crmUser as any)?.name || "User",
+        message: req.body.message,
+        attachments: attachmentUrls,
+        isInternal: false,
+      }).returning();
+
+      await db.update(supportTickets).set({ updatedAt: new Date() }).where(eq(supportTickets.id, ticketId));
+      res.status(201).json(comment);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- Serve uploaded support files (auth-protected) ---
+  app.use("/uploads/support", (req, res, next) => {
+    if (req.session?.userId || req.session?.supportUserId) {
+      return next();
+    }
+    res.status(401).json({ message: "Authentication required" });
+  }, (await import("express")).static(
+    (await import("path")).join(process.cwd(), "uploads", "support")
+  ));
+
+  // =============================================
+  // SUPPORT ADMIN PORTAL
+  // =============================================
+
+  // --- Support Admin: Login ---
+  app.post("/api/support-admin/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) return res.status(400).json({ message: "Email and password are required" });
+
+      const [user] = await db.select().from(supportUsers)
+        .where(and(eq(supportUsers.email, email), eq(supportUsers.isActive, true)));
+      if (!user) return res.status(401).json({ message: "Invalid credentials" });
+
+      const bcrypt = await import("bcryptjs");
+      const valid = await bcrypt.compare(password, user.passwordHash);
+      if (!valid) return res.status(401).json({ message: "Invalid credentials" });
+
+      (req.session as any).supportUserId = user.id;
+      (req.session as any).supportUserRole = user.role;
+      await db.update(supportUsers).set({ lastLoginAt: new Date() }).where(eq(supportUsers.id, user.id));
+
+      const { passwordHash: _, ...safeUser } = user;
+      res.json({ success: true, user: safeUser });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- Support Admin: Get current user ---
+  app.get("/api/support-admin/me", requireSupportAuth, async (req, res) => {
+    try {
+      const userId = (req.session as any).supportUserId;
+      const [user] = await db.select().from(supportUsers).where(eq(supportUsers.id, userId));
+      if (!user) return res.status(401).json({ message: "Session expired" });
+      const { passwordHash: _, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- Support Admin: Logout ---
+  app.post("/api/support-admin/logout", (req, res) => {
+    delete (req.session as any).supportUserId;
+    delete (req.session as any).supportUserRole;
+    res.json({ success: true });
+  });
+
+  // --- Support Admin: List all tickets ---
+  app.get("/api/support-admin/tickets", requireSupportAuth, async (req, res) => {
+    try {
+      const supportUserId = (req.session as any).supportUserId;
+      const supportRole = (req.session as any).supportUserRole;
+
+      let ticketsQuery;
+      if (supportRole === "support_admin") {
+        ticketsQuery = await db.select().from(supportTickets).orderBy(sql`${supportTickets.createdAt} DESC`);
+      } else {
+        ticketsQuery = await db.select().from(supportTickets)
+          .where(eq(supportTickets.assignedSupportUserId, supportUserId))
+          .orderBy(sql`${supportTickets.createdAt} DESC`);
+      }
+
+      const enriched = await Promise.all(ticketsQuery.map(async (t) => {
+        let assignedName = null;
+        if (t.assignedSupportUserId) {
+          const [su] = await db.select().from(supportUsers).where(eq(supportUsers.id, t.assignedSupportUserId));
+          if (su) assignedName = su.name;
+        }
+        let crmUserName = null;
+        const allCrmUsers = await storage.getCrmUsers(t.tenantId);
+        const crmUser = allCrmUsers.find(u => u.id === t.crmUserId);
+        if (crmUser) crmUserName = (crmUser as any).name;
+
+        let tenantName = null;
+        const [tenant] = await db.select().from(tenants).where(eq(tenants.id, t.tenantId));
+        if (tenant) tenantName = tenant.displayName || tenant.name;
+
+        const commentCount = await pool.query(
+          `SELECT COUNT(*) as cnt FROM support_ticket_comments WHERE ticket_id = $1`,
+          [t.id]
+        );
+        return { ...t, assignedName, crmUserName, tenantName, commentCount: parseInt(commentCount.rows[0].cnt) };
+      }));
+
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- Support Admin: Get ticket detail ---
+  app.get("/api/support-admin/tickets/:id", requireSupportAuth, async (req, res) => {
+    try {
+      const ticketId = Number(req.params.id);
+      const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, ticketId));
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+
+      const comments = await db.select().from(supportTicketComments)
+        .where(eq(supportTicketComments.ticketId, ticketId))
+        .orderBy(sql`${supportTicketComments.createdAt} ASC`);
+
+      let assignedName = null;
+      if (ticket.assignedSupportUserId) {
+        const [su] = await db.select().from(supportUsers).where(eq(supportUsers.id, ticket.assignedSupportUserId));
+        if (su) assignedName = su.name;
+      }
+      let crmUserName = null;
+      const allCrmUsers = await storage.getCrmUsers(ticket.tenantId);
+      const crmUser = allCrmUsers.find(u => u.id === ticket.crmUserId);
+      if (crmUser) crmUserName = (crmUser as any).name;
+
+      let tenantName = null;
+      const [tenant] = await db.select().from(tenants).where(eq(tenants.id, ticket.tenantId));
+      if (tenant) tenantName = tenant.displayName || tenant.name;
+
+      res.json({ ...ticket, assignedName, crmUserName, tenantName, comments });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- Support Admin: Update ticket (assign, status, priority) ---
+  app.patch("/api/support-admin/tickets/:id", requireSupportAuth, async (req, res) => {
+    try {
+      const ticketId = Number(req.params.id);
+      const body = req.body;
+      const updateData: any = { updatedAt: new Date() };
+
+      if (body.assignedSupportUserId !== undefined) updateData.assignedSupportUserId = body.assignedSupportUserId || null;
+      if (body.status) {
+        updateData.status = body.status;
+        if (body.status === "Closed" || body.status === "Resolved") {
+          updateData.closedAt = new Date();
+        }
+      }
+      if (body.adminPriority) updateData.adminPriority = body.adminPriority;
+      if (body.priority) updateData.priority = body.priority;
+
+      const [updated] = await db.update(supportTickets).set(updateData)
+        .where(eq(supportTickets.id, ticketId)).returning();
+      if (!updated) return res.status(404).json({ message: "Ticket not found" });
+
+      if (body.status || body.assignedSupportUserId !== undefined) {
+        const supportUserId = (req.session as any).supportUserId;
+        const [su] = await db.select().from(supportUsers).where(eq(supportUsers.id, supportUserId));
+        const actionParts = [];
+        if (body.status) actionParts.push(`changed status to "${body.status}"`);
+        if (body.assignedSupportUserId !== undefined) {
+          if (body.assignedSupportUserId) {
+            const [assignee] = await db.select().from(supportUsers).where(eq(supportUsers.id, body.assignedSupportUserId));
+            actionParts.push(`assigned to ${assignee?.name || "a team member"}`);
+          } else {
+            actionParts.push("unassigned ticket");
+          }
+        }
+        if (body.adminPriority) actionParts.push(`set priority to "${body.adminPriority}"`);
+
+        if (actionParts.length > 0) {
+          await db.insert(supportTicketComments).values({
+            ticketId,
+            authorType: "support_user",
+            authorId: supportUserId,
+            authorName: su?.name || "Support",
+            message: `[System] ${su?.name || "Support"} ${actionParts.join(", ")}`,
+            isInternal: false,
+          });
+        }
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- Support Admin: Add comment to ticket ---
+  app.post("/api/support-admin/tickets/:id/comments", requireSupportAuth, upload.array("screenshots", 3), async (req, res) => {
+    try {
+      const ticketId = Number(req.params.id);
+      const supportUserId = (req.session as any).supportUserId;
+      const [su] = await db.select().from(supportUsers).where(eq(supportUsers.id, supportUserId));
+
+      const attachmentUrls: string[] = [];
+      if (req.files && Array.isArray(req.files)) {
+        for (const file of req.files) {
+          const fileName = `support_${Date.now()}_${Math.random().toString(36).slice(2)}_${file.originalname}`;
+          const fs = await import("fs");
+          const path = await import("path");
+          const dir = path.join(process.cwd(), "uploads", "support");
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(path.join(dir, fileName), file.buffer);
+          attachmentUrls.push(`/uploads/support/${fileName}`);
+        }
+      }
+
+      const [comment] = await db.insert(supportTicketComments).values({
+        ticketId,
+        authorType: "support_user",
+        authorId: supportUserId,
+        authorName: su?.name || "Support",
+        message: req.body.message,
+        attachments: attachmentUrls,
+        isInternal: req.body.isInternal === true || req.body.isInternal === "true",
+      }).returning();
+
+      await db.update(supportTickets).set({ updatedAt: new Date() }).where(eq(supportTickets.id, ticketId));
+      res.status(201).json(comment);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- Support Admin: List support users ---
+  app.get("/api/support-admin/users", requireSupportAuth, async (req, res) => {
+    try {
+      const role = (req.session as any).supportUserRole;
+      if (role !== "support_admin") return res.status(403).json({ message: "Admin access required" });
+      const users = await db.select().from(supportUsers).orderBy(sql`${supportUsers.createdAt} DESC`);
+      res.json(users.map(u => { const { passwordHash: _, ...safe } = u; return safe; }));
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- Support Admin: Create support user ---
+  app.post("/api/support-admin/users", requireSupportAuth, async (req, res) => {
+    try {
+      const role = (req.session as any).supportUserRole;
+      if (role !== "support_admin") return res.status(403).json({ message: "Admin access required" });
+
+      const { name, email, phone, password, userRole } = req.body;
+      if (!name || !email || !password) return res.status(400).json({ message: "Name, email, and password are required" });
+
+      const [existing] = await db.select().from(supportUsers).where(eq(supportUsers.email, email));
+      if (existing) return res.status(400).json({ message: "A user with this email already exists" });
+
+      const bcrypt = await import("bcryptjs");
+      const hash = await bcrypt.hash(password, 10);
+
+      const [user] = await db.insert(supportUsers).values({
+        name,
+        email,
+        phone: phone || null,
+        passwordHash: hash,
+        role: userRole || "support_agent",
+      }).returning();
+
+      const { passwordHash: _, ...safeUser } = user;
+      res.status(201).json(safeUser);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- Support Admin: Update support user ---
+  app.patch("/api/support-admin/users/:id", requireSupportAuth, async (req, res) => {
+    try {
+      const role = (req.session as any).supportUserRole;
+      if (role !== "support_admin") return res.status(403).json({ message: "Admin access required" });
+
+      const id = Number(req.params.id);
+      const updateData: any = {};
+      if (req.body.name) updateData.name = req.body.name;
+      if (req.body.email) updateData.email = req.body.email;
+      if (req.body.phone !== undefined) updateData.phone = req.body.phone;
+      if (req.body.isActive !== undefined) updateData.isActive = req.body.isActive;
+      if (req.body.role) updateData.role = req.body.role;
+      if (req.body.password) {
+        const bcrypt = await import("bcryptjs");
+        updateData.passwordHash = await bcrypt.hash(req.body.password, 10);
+      }
+
+      const [user] = await db.update(supportUsers).set(updateData)
+        .where(eq(supportUsers.id, id)).returning();
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      const { passwordHash: _, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- Seed default support admin ---
+  try {
+    const [existingAdmin] = await db.select().from(supportUsers)
+      .where(eq(supportUsers.email, "support@rgbindia.com"));
+    if (!existingAdmin) {
+      const bcrypt = await import("bcryptjs");
+      const hash = await bcrypt.hash("RGBSupport@123", 10);
+      await db.insert(supportUsers).values({
+        name: "RGB Support Admin",
+        email: "support@rgbindia.com",
+        phone: "+919033050100",
+        passwordHash: hash,
+        role: "support_admin",
+      });
+      console.log("[seed] Default support admin created: support@rgbindia.com / RGBSupport@123");
+    }
+  } catch (err: any) {
+    console.error("[seed] Error seeding support admin:", err.message);
+  }
+
   await seedDatabase();
   await ensurePatientsForConvertedLeads();
   await ensureSuperAdmin();
