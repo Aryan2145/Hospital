@@ -4015,14 +4015,53 @@ export async function registerRoutes(
     }
   });
 
+  const TEMPLATE_FK_FRIENDLY: Record<string, string> = {
+    stateId: "state",
+    countryId: "country",
+    cityId: "city",
+    organisationId: "organisation",
+    branchId: "branch",
+    treatmentDepartmentId: "treatmentDepartment",
+    categoryId: "category",
+    defaultNearestBranchId: "defaultNearestBranch",
+    crmUserId: "crmUser",
+    callingLineId: "callingLine",
+    departmentId: "department",
+    designationId: "designation",
+    employmentTypeId: "employmentType",
+    systemRoleId: "systemRole",
+    doctorId: "doctor",
+  };
+
+  const FK_FRIENDLY_TO_ID: Record<string, string> = {};
+  for (const [idField, friendly] of Object.entries(TEMPLATE_FK_FRIENDLY)) {
+    FK_FRIENDLY_TO_ID[friendly.toLowerCase()] = idField;
+  }
+
   app.get("/api/masters/:tableName/template", isAuthenticated, async (req, res) => {
     const tableName = req.params.tableName as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
-    const csvData = stringify([
-      { code: "SAMPLE_CODE", name: "Sample Name", status: "Active", displayOrder: 1 },
-    ], { header: true, columns: ["code", "name", "status", "displayOrder"] });
+
+    const baseColumns = ["code", "name", "status", "displayOrder"];
+    const extraFieldKeys = IMPORT_EXTRA_FIELDS[tableName] || [];
+    const allColumns = [...baseColumns];
+    const sampleRow: Record<string, any> = { code: "SAMPLE_CODE", name: "Sample Name", status: "Active", displayOrder: 1 };
+
+    for (const fieldKey of extraFieldKeys) {
+      const colName = TEMPLATE_FK_FRIENDLY[fieldKey] || fieldKey;
+      allColumns.push(colName);
+      if (REF_FIELD_TABLES[fieldKey]) {
+        sampleRow[colName] = `Enter ${colName} name or code`;
+      } else if (["isTerminal", "isBusinessAchieved", "requiresNextTask", "allowNurtureOption", "serviceable", "isPrimary"].includes(fieldKey)) {
+        sampleRow[colName] = "true";
+      } else {
+        sampleRow[colName] = "";
+      }
+    }
+
+    const csvData = stringify([sampleRow], { header: true, columns: allColumns });
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="${tableName}_template.csv"`);
     res.send(csvData);
@@ -4128,6 +4167,18 @@ export async function registerRoutes(
 
       const extraFieldKeys = IMPORT_EXTRA_FIELDS[tableName] || [];
 
+      const REQUIRED_FK_FIELDS: Record<string, string[]> = {
+        cities: ["stateId"],
+        pinCodes: ["cityId"],
+        areas: ["cityId"],
+        branches: ["organisationId"],
+        opdTimings: ["doctorId", "branchId"],
+        doctorLeaveExceptions: ["doctorId"],
+        leadSources: ["categoryId"],
+        userLineAssignments: ["crmUserId", "callingLineId"],
+      };
+      const requiredFks = REQUIRED_FK_FIELDS[tableName] || [];
+
       let successCount = 0;
       let failureCount = 0;
       let duplicateCount = 0;
@@ -4163,8 +4214,14 @@ export async function registerRoutes(
           };
 
           for (const fieldKey of extraFieldKeys) {
-            const csvValue = (row[fieldKey] || "").trim();
-            if (!csvValue) continue;
+            const friendlyName = TEMPLATE_FK_FRIENDLY[fieldKey] || fieldKey;
+            const csvValue = (row[fieldKey] || row[friendlyName] || "").trim();
+            if (!csvValue) {
+              if (requiredFks.includes(fieldKey)) {
+                recordData[`_unresolved_${fieldKey}`] = `(missing - required)`;
+              }
+              continue;
+            }
 
             if (REF_FIELD_TABLES[fieldKey]) {
               const resolvedId = await resolveRefField(fieldKey, csvValue, tenantId);
@@ -4187,10 +4244,15 @@ export async function registerRoutes(
           if (unresolvedKeys.length > 0) {
             const details = unresolvedKeys.map(k => {
               const field = k.replace("_unresolved_", "");
-              return `${field}="${recordData[k]}" not found in tenant`;
+              const friendlyCol = TEMPLATE_FK_FRIENDLY[field] || field;
+              const val = recordData[k];
+              if (val === "(missing - required)") {
+                return `"${friendlyCol}" column is required but missing from CSV`;
+              }
+              return `${friendlyCol}="${val}" not found in tenant`;
             }).join("; ");
             failureCount++;
-            errors.push({ row: i + 2, message: `Required reference not found: ${details}` });
+            errors.push({ row: i + 2, message: details });
             continue;
           }
 
