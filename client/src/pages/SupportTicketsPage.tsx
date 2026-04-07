@@ -115,19 +115,19 @@ export default function SupportTicketsPage() {
           </div>
 
           <div className="grid grid-cols-3 gap-4 mb-6">
-            <Card>
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("open")} data-testid="stat-card-open">
               <CardContent className="p-4 text-center">
                 <div className="text-2xl font-bold text-blue-600">{openTickets.length}</div>
                 <div className="text-sm text-muted-foreground">Open</div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("open")} data-testid="stat-card-in-progress">
               <CardContent className="p-4 text-center">
                 <div className="text-2xl font-bold text-amber-600">{openTickets.filter(t => t.status === "In Progress").length}</div>
                 <div className="text-sm text-muted-foreground">In Progress</div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("closed")} data-testid="stat-card-resolved">
               <CardContent className="p-4 text-center">
                 <div className="text-2xl font-bold text-green-600">{closedTickets.length}</div>
                 <div className="text-sm text-muted-foreground">Resolved</div>

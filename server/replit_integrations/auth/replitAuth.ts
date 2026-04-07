@@ -44,24 +44,31 @@ export async function setupAuth(app: Express) {
 
       const normalizedMobile = mobile.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
 
-      const [user] = await db.select().from(crmUsers).where(
+      let allMatches = await db.select().from(crmUsers).where(
         eq(crmUsers.phone, normalizedMobile)
       );
 
-      if (!user && normalizedMobile.length === 10) {
-        const [userWithPrefix] = await db.select().from(crmUsers).where(
+      if (allMatches.length === 0 && normalizedMobile.length === 10) {
+        allMatches = await db.select().from(crmUsers).where(
           eq(crmUsers.phone, `+91${normalizedMobile}`)
         );
-        if (userWithPrefix) {
-          return await tryLogin(userWithPrefix, password, req, res);
-        }
       }
 
-      if (!user) {
+      if (allMatches.length === 0) {
         return res.status(401).json({ message: "Invalid mobile number or password" });
       }
 
-      return await tryLogin(user, password, req, res);
+      for (const candidate of allMatches) {
+        if (!candidate.isActive || candidate.status !== "Active") continue;
+        if (!candidate.passwordHash) continue;
+        if (candidate.lockedUntil && new Date(candidate.lockedUntil) > new Date()) continue;
+        const isValid = await bcrypt.compare(password, candidate.passwordHash);
+        if (isValid) {
+          return await tryLogin(candidate, password, req, res);
+        }
+      }
+
+      return await tryLogin(allMatches[0], password, req, res);
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({ message: "Login failed" });
