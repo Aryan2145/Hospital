@@ -755,6 +755,12 @@ export default function EpisodeDetailPage() {
                               "{event.stageRemarks}"
                             </p>
                           )}
+                          {event.surgeryDate && (
+                            <div className="flex items-center gap-1.5 mt-1.5 text-xs bg-violet-50 dark:bg-violet-950/30 rounded px-2 py-1 w-fit" data-testid={`timeline-surgery-date-${idx}`}>
+                              <CalendarDays className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+                              <span className="font-medium text-violet-700 dark:text-violet-300">Surgery Date: {fmtDateTime(event.surgeryDate)}</span>
+                            </div>
+                          )}
                           {event.statusTransition && (
                             <div className="flex items-center gap-1.5 mt-1.5">
                               <Badge variant="outline" className={cn("text-[10px] py-0 h-5", getStatusColor(event.statusTransition.from))}>
@@ -1968,6 +1974,7 @@ interface JourneyEvent {
   statusTransition?: { from: string; to: string };
   newStatus?: string;
   isTerminal?: boolean;
+  surgeryDate?: string;
 }
 
 function buildJourneyTimeline(episode: any, auditLogs: AuditLogEntry[]): JourneyEvent[] {
@@ -2013,6 +2020,7 @@ function buildJourneyTimeline(episode: any, auditLogs: AuditLogEntry[]): Journey
         statusTransition: { from: fromStatus, to: toStatus },
         newStatus: toStatus,
         isTerminal: terminalStatuses.includes(toStatus),
+        surgeryDate: toStatus === "Surgery Scheduled" ? episode.surgeryDate : undefined,
       });
     }
   }
