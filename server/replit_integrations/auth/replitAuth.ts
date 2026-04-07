@@ -7,6 +7,7 @@ import { db } from "../../db";
 import { crmUsers, tenants, tenantSettings, systemRoles } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { sendPasswordResetEmail, TenantSmtpConfig } from "../../email";
+import { sendPasswordResetSMS, isMSG91Configured } from "../../sms";
 
 export function getSession() {
   const sessionTtl = 24 * 60 * 60 * 1000;
@@ -279,11 +280,11 @@ export async function setupAuth(app: Express) {
       const found2 = await db.select().from(crmUsers).where(eq(crmUsers.phone, normalizedMobile));
       candidates.push(...found2);
 
-      let user = candidates.find(u => u.email && u.tenantId) || candidates.find(u => u.email) || candidates[0] || null;
+      let user = candidates.find(u => u.tenantId) || candidates[0] || null;
       console.log(`[forgot-password] Found ${candidates.length} users for mobile ${normalizedMobile}, selected userId=${user?.id}, tenantId=${user?.tenantId}, email=${user?.email}`);
 
-      if (!user || !user.email) {
-        return res.json({ success: true, message: "If an account with that mobile number exists and has an email, a reset link has been sent.", email: null });
+      if (!user) {
+        return res.json({ success: true, message: "If an account with that mobile number exists, a reset link has been sent.", channel: "none" });
       }
 
       const token = crypto.randomBytes(32).toString("hex");
@@ -296,7 +297,6 @@ export async function setupAuth(app: Express) {
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const resetLink = `${baseUrl}/reset-password?token=${token}`;
 
-      let tenantSmtp: TenantSmtpConfig | null = null;
       let hospitalName = "Hospital CRM";
 
       if (user.tenantId) {
@@ -304,7 +304,33 @@ export async function setupAuth(app: Express) {
         if (tenant) {
           hospitalName = tenant.displayName || tenant.name;
         }
+      }
 
+      const userPhone = user.phone || `+91${normalizedMobile}`;
+
+      if (isMSG91Configured()) {
+        try {
+          await sendPasswordResetSMS(userPhone, user.name, resetLink, hospitalName);
+          const maskedPhone = userPhone.replace(/(\d{2})\d+(\d{2})$/, "$1******$2");
+          return res.json({ success: true, message: "Password reset link has been sent to your registered mobile number.", phone: maskedPhone, channel: "sms" });
+        } catch (smsErr: any) {
+          console.error("[forgot-password] SMS send error, falling back to email:", smsErr.message);
+        }
+      }
+
+      if (!user.email) {
+        if (isMSG91Configured()) {
+          await db.update(crmUsers)
+            .set({ resetToken: null, resetTokenExpiry: null })
+            .where(eq(crmUsers.id, user.id));
+          return res.status(500).json({ message: "Unable to send reset link. Please contact your administrator." });
+        }
+        return res.json({ success: true, message: "If an account with that mobile number exists, a reset link has been sent.", channel: "none" });
+      }
+
+      let tenantSmtp: TenantSmtpConfig | null = null;
+
+      if (user.tenantId) {
         const settings = await db.select({
           settingKey: tenantSettings.settingKey,
           settingValue: tenantSettings.settingValue,
@@ -340,11 +366,11 @@ export async function setupAuth(app: Express) {
           .set({ resetToken: null, resetTokenExpiry: null })
           .where(eq(crmUsers.id, user.id));
         const detail = emailErr.message || "Unknown error";
-        return res.status(500).json({ message: `Unable to send reset email: ${detail}` });
+        return res.status(500).json({ message: `Unable to send reset link: ${detail}` });
       }
 
       const maskedEmail = user.email.replace(/^(.{2})(.*)(@.*)$/, (_, start, middle, domain) => start + middle.replace(/./g, "*") + domain);
-      res.json({ success: true, message: "Password reset link has been sent.", email: maskedEmail });
+      res.json({ success: true, message: "Password reset link has been sent to your email.", email: maskedEmail, channel: "email" });
     } catch (error) {
       console.error("Forgot password error:", error);
       res.status(500).json({ message: "Failed to process request. Please try again." });

@@ -12,6 +12,8 @@ export default function ForgotPassword() {
   const [isLoading, setIsLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [sentEmail, setSentEmail] = useState("");
+  const [sentPhone, setSentPhone] = useState("");
+  const [sentChannel, setSentChannel] = useState<"sms" | "email" | "none">("none");
 
   const { data: tenant } = useQuery<any>({
     queryKey: ["/api/tenants/current"],
@@ -45,6 +47,8 @@ export default function ForgotPassword() {
 
       setSent(true);
       if (data.email) setSentEmail(data.email);
+      if (data.phone) setSentPhone(data.phone);
+      if (data.channel) setSentChannel(data.channel);
     } catch (err) {
       setError("Connection error. Please try again.");
     } finally {
@@ -73,7 +77,7 @@ export default function ForgotPassword() {
           <div className="space-y-6 max-w-lg">
             <h1 className="text-4xl font-bold leading-tight">Password Recovery</h1>
             <p className="text-lg text-blue-100 leading-relaxed">
-              Enter your registered mobile number and we'll send a password reset link to your registered email address.
+              Enter your registered mobile number and we'll send a password reset link to your registered mobile number via SMS.
             </p>
           </div>
         </div>
@@ -89,11 +93,15 @@ export default function ForgotPassword() {
               <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
                 <CheckCircle className="w-8 h-8 text-green-600" />
               </div>
-              <h2 className="text-2xl font-bold text-gray-900" data-testid="text-reset-sent">Check Your Email</h2>
+              <h2 className="text-2xl font-bold text-gray-900" data-testid="text-reset-sent">
+                {sentChannel === "sms" ? "Check Your Phone" : "Check Your Email"}
+              </h2>
               <p className="text-gray-500">
-                {sentEmail
-                  ? <>We have sent a Password Reset Link to <strong className="text-gray-700">{sentEmail}</strong>.</>
-                  : "If an account with that mobile number exists and has a registered email, we've sent a password reset link."
+                {sentChannel === "sms" && sentPhone
+                  ? <>A password reset link has been sent to your registered mobile number <strong className="text-gray-700">{sentPhone}</strong>.</>
+                  : sentEmail
+                    ? <>We have sent a Password Reset Link to <strong className="text-gray-700">{sentEmail}</strong>.</>
+                    : "If an account with that mobile number exists, a reset link has been sent."
                 }
               </p>
               <p className="text-sm text-gray-400">The link will expire in 1 hour.</p>
