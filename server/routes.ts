@@ -6729,7 +6729,7 @@ export async function registerRoutes(
     }
   }
 
-  async function requireAdminRole(req: any, tid: number): Promise<void> {
+  async function requireAdminOrManagerRole(req: any): Promise<void> {
     const sessionUser = await getSessionCrmUserWithRole(req);
     if (!sessionUser) throw new Error("Unauthorized: no active session");
     const allowed = ["SYS_ADMIN", "ADMIN", "MANAGER"];
@@ -6762,7 +6762,7 @@ export async function registerRoutes(
   app.put("/api/referral-config", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      await requireAdminRole(req, tid);
+      await requireAdminOrManagerRole(req);
       const userId = String((req as any).session?.crmUserId || "system");
       const existing = await getReferralConfig(tid);
       const body = req.body;
@@ -6820,7 +6820,7 @@ export async function registerRoutes(
   app.post("/api/referral-reward-rules", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      await requireAdminRole(req, tid);
+      await requireAdminOrManagerRole(req);
       const userId = String((req as any).session?.crmUserId || "system");
       const [rule] = await db.insert(referralRewardRules).values({
         tenantId: tid,
@@ -6843,7 +6843,7 @@ export async function registerRoutes(
   app.patch("/api/referral-reward-rules/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      await requireAdminRole(req, tid);
+      await requireAdminOrManagerRole(req);
       const id = Number(req.params.id);
       const userId = String((req as any).session?.crmUserId || "system");
       const updateData: any = { ...req.body, modifiedAt: new Date(), modifiedBy: userId };
@@ -6862,7 +6862,7 @@ export async function registerRoutes(
   app.delete("/api/referral-reward-rules/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      await requireAdminRole(req, tid);
+      await requireAdminOrManagerRole(req);
       const id = Number(req.params.id);
       const [rule] = await db.delete(referralRewardRules)
         .where(and(eq(referralRewardRules.id, id), eq(referralRewardRules.tenantId, tid))).returning();
@@ -6904,7 +6904,7 @@ export async function registerRoutes(
   app.patch("/api/referral-reward-logs/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      await requireAdminRole(req, tid);
+      await requireAdminOrManagerRole(req);
       const id = Number(req.params.id);
       const [log] = await db.update(referralRewardLogs).set({
         status: req.body.status,
