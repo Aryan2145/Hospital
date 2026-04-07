@@ -12,7 +12,7 @@ import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCateg
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import { desc, eq, and, sql, count, gte, lte, isNull, inArray } from "drizzle-orm";
+import { desc, eq, and, or, sql, count, gte, lte, isNull, inArray } from "drizzle-orm";
 import { encryptValue, decryptValue, isEncrypted } from "./crypto";
 
 const PHI_FIELDS_TO_MASK = [
@@ -9079,26 +9079,30 @@ export async function registerRoutes(
     }
   });
 
-  // --- CRM User: List my tickets ---
+  // --- CRM User: List my tickets (cross-tenant by same person's phone/email) ---
   app.get("/api/support-tickets", isAuthenticated, async (req, res) => {
     try {
       const crmUserId = (req as any).session?.crmUserId;
-      const tenantId = (req as any).session?.tenantId;
       if (!crmUserId) return res.status(401).json({ message: "Unauthorized" });
 
-      const sessionUser = await getSessionCrmUserWithRole(req);
-      const isAdminRole = sessionUser && ["SYS_ADMIN", "ADMIN", "MANAGER"].includes(sessionUser.roleCode);
+      const [currentUser] = await db.select({ phone: crmUsers.phone, email: crmUsers.email })
+        .from(crmUsers).where(eq(crmUsers.id, crmUserId));
 
-      let tickets;
-      if (isAdminRole && tenantId) {
-        tickets = await db.select().from(supportTickets)
-          .where(eq(supportTickets.tenantId, tenantId))
-          .orderBy(sql`${supportTickets.createdAt} DESC`);
-      } else {
-        tickets = await db.select().from(supportTickets)
-          .where(eq(supportTickets.crmUserId, crmUserId))
-          .orderBy(sql`${supportTickets.createdAt} DESC`);
+      let allMyUserIds: number[] = [crmUserId];
+      if (currentUser) {
+        const conditions: any[] = [];
+        if (currentUser.phone) conditions.push(eq(crmUsers.phone, currentUser.phone));
+        if (currentUser.email) conditions.push(eq(crmUsers.email, currentUser.email));
+        if (conditions.length > 0) {
+          const matchingUsers = await db.select({ id: crmUsers.id }).from(crmUsers)
+            .where(or(...conditions));
+          allMyUserIds = [...new Set(matchingUsers.map(u => u.id))];
+        }
       }
+
+      const tickets = await db.select().from(supportTickets)
+        .where(inArray(supportTickets.crmUserId, allMyUserIds))
+        .orderBy(sql`${supportTickets.createdAt} DESC`);
 
       const enriched = await Promise.all(tickets.map(async (t) => {
         let assignedName = null;
@@ -9110,12 +9114,12 @@ export async function registerRoutes(
           `SELECT COUNT(*) as cnt FROM support_ticket_comments WHERE ticket_id = $1 AND is_internal = false`,
           [t.id]
         );
-        let createdByName = null;
+        let hospitalName = null;
         if (t.crmUserId !== crmUserId) {
-          const [u] = await db.select({ name: crmUsers.name }).from(crmUsers).where(eq(crmUsers.id, t.crmUserId));
-          if (u) createdByName = u.name;
+          const tenantResult = await pool.query(`SELECT t.name FROM tenants t JOIN crm_users u ON u.tenant_id = t.id WHERE u.id = $1`, [t.crmUserId]);
+          if (tenantResult.rows[0]) hospitalName = tenantResult.rows[0].name;
         }
-        return { ...t, assignedName, createdByName, commentCount: parseInt(commentCount.rows[0].cnt) };
+        return { ...t, assignedName, hospitalName, commentCount: parseInt(commentCount.rows[0].cnt) };
       }));
 
       res.json(enriched);
@@ -9124,18 +9128,28 @@ export async function registerRoutes(
     }
   });
 
-  // --- CRM User: Get ticket detail ---
+  // --- CRM User: Get ticket detail (cross-tenant for same person) ---
   app.get("/api/support-tickets/:id", isAuthenticated, async (req, res) => {
     try {
       const crmUserId = (req as any).session?.crmUserId;
-      const tenantId = (req as any).session?.tenantId;
       const ticketId = Number(req.params.id);
       const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, ticketId));
       if (!ticket) return res.status(404).json({ message: "Ticket not found" });
-      const sessionUser = await getSessionCrmUserWithRole(req);
-      const isAdminRole = sessionUser && ["SYS_ADMIN", "ADMIN", "MANAGER"].includes(sessionUser.roleCode);
-      const isSameTenant = tenantId && ticket.tenantId === tenantId;
-      if (ticket.crmUserId !== crmUserId && !isSupportAdmin(req) && !(isAdminRole && isSameTenant)) {
+
+      let hasAccess = ticket.crmUserId === crmUserId || isSupportAdmin(req);
+      if (!hasAccess) {
+        const [currentUser] = await db.select({ phone: crmUsers.phone, email: crmUsers.email })
+          .from(crmUsers).where(eq(crmUsers.id, crmUserId));
+        if (currentUser) {
+          const [ticketCreator] = await db.select({ phone: crmUsers.phone, email: crmUsers.email })
+            .from(crmUsers).where(eq(crmUsers.id, ticket.crmUserId));
+          if (ticketCreator) {
+            hasAccess = !!(currentUser.phone && currentUser.phone === ticketCreator.phone) ||
+                        !!(currentUser.email && currentUser.email === ticketCreator.email);
+          }
+        }
+      }
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
