@@ -822,7 +822,7 @@ export async function registerRoutes(
         roleCode: systemRoles.code,
       })
       .from(crmUsers)
-      .leftJoin(systemRoles, eq(crmUsers.systemRoleId, systemRoles.id))
+      .leftJoin(systemRoles, and(eq(crmUsers.systemRoleId, systemRoles.id), eq(systemRoles.tenantId, sessionTid)))
       .where(and(eq(crmUsers.id, sessionCrmUserId), eq(crmUsers.tenantId, sessionTid)))
       .limit(1);
     if (!rows.length) return null;
