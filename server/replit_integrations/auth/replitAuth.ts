@@ -319,10 +319,10 @@ export async function setupAuth(app: Express) {
       }
 
       if (!user.email) {
+        await db.update(crmUsers)
+          .set({ resetToken: null, resetTokenExpiry: null })
+          .where(eq(crmUsers.id, user.id));
         if (isMSG91Configured()) {
-          await db.update(crmUsers)
-            .set({ resetToken: null, resetTokenExpiry: null })
-            .where(eq(crmUsers.id, user.id));
           return res.status(500).json({ message: "Unable to send reset link. Please contact your administrator." });
         }
         return res.json({ success: true, message: "If an account with that mobile number exists, a reset link has been sent.", channel: "none" });

@@ -94,7 +94,7 @@ export default function ForgotPassword() {
                 <CheckCircle className="w-8 h-8 text-green-600" />
               </div>
               <h2 className="text-2xl font-bold text-gray-900" data-testid="text-reset-sent">
-                {sentChannel === "sms" ? "Check Your Phone" : "Check Your Email"}
+                {sentChannel === "sms" ? "Check Your Phone" : sentChannel === "email" ? "Check Your Email" : "Reset Link Sent"}
               </h2>
               <p className="text-gray-500">
                 {sentChannel === "sms" && sentPhone
