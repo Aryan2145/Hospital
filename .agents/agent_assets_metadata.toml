@@ -18,3 +18,9 @@ id = "GYjHwfosjEeu24tVU7JXV"
 uri = "file://Viroc_Scope_vs_CRM_Delivery.csv"
 type = "table"
 title = "Viroc Scope vs CRM Delivery - Comprehensive Comparison"
+
+[[outputs]]
+id = "jnzdLM7ju9lho0GTSBVTY"
+uri = "file://.local/sales-page-prompt.md"
+type = "text"
+title = "myProSys Hospital CRM — Sales Page Prompt (for new project)"
