@@ -6084,7 +6084,7 @@ export async function registerRoutes(
         WHERE e.tenant_id = $1
           AND e.status = 'Surgery Scheduled'
           AND e.surgery_date IS NOT NULL
-          AND e.surgery_date >= NOW()
+          AND e.surgery_date >= CURRENT_DATE
           ${filters}
         ORDER BY e.surgery_date ASC`,
         params
