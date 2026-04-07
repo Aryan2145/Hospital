@@ -815,16 +815,19 @@ export async function registerRoutes(
     const sessionCrmUserId = (req as any).session?.crmUserId;
     if (!sessionCrmUserId) return null;
     const sessionTid = (req as any).session?.tenantId || defaultTid;
-    const allCrmUsers = await storage.getCrmUsers(sessionTid);
-    const crmUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
-    if (!crmUser) return null;
-    let roleCode = "";
-    if (crmUser.systemRoleId) {
-      const allRoles = await storage.getMasterRecords("systemRoles", sessionTid);
-      const role = allRoles.find((r: any) => r.id === crmUser.systemRoleId);
-      if (role) roleCode = (role as any).code || "";
-    }
-    return { id: crmUser.id, name: (crmUser as any).name || "", roleCode, employeeName: (crmUser as any).name || "" };
+    const rows = await db
+      .select({
+        id: crmUsers.id,
+        name: crmUsers.name,
+        roleCode: systemRoles.code,
+      })
+      .from(crmUsers)
+      .leftJoin(systemRoles, eq(crmUsers.systemRoleId, systemRoles.id))
+      .where(and(eq(crmUsers.id, sessionCrmUserId), eq(crmUsers.tenantId, sessionTid)))
+      .limit(1);
+    if (!rows.length) return null;
+    const row = rows[0];
+    return { id: row.id, name: row.name || "", roleCode: row.roleCode || "", employeeName: row.name || "" };
   }
 
   // --- /api/me: Get current user's CRM profile with role ---
@@ -4224,16 +4227,9 @@ export async function registerRoutes(
   });
 
   async function requireAdminRole(req: any, res: any, tenantId: number): Promise<boolean> {
-    const sessionCrmUserId = req.session?.crmUserId;
-    if (!sessionCrmUserId) { res.status(403).json({ message: "Not a CRM user" }); return false; }
-    const allCrmUsers = await storage.getCrmUsers(tenantId);
-    const currentUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
-    if (!currentUser) { res.status(403).json({ message: "Not a CRM user" }); return false; }
-    if (currentUser.systemRoleId) {
-      const allRoles = await storage.getMasterRecords("systemRoles", tenantId);
-      const role = allRoles.find(r => r.id === currentUser.systemRoleId);
-      if (role && ((role as any).code === "SYS_ADMIN" || (role as any).code === "ADMIN")) return true;
-    }
+    const sessionUser = await getSessionCrmUserWithRole(req);
+    if (!sessionUser) { res.status(403).json({ message: "Not a CRM user" }); return false; }
+    if (sessionUser.roleCode === "SYS_ADMIN" || sessionUser.roleCode === "ADMIN") return true;
     res.status(403).json({ message: "Admin access required" });
     return false;
   }
