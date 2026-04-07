@@ -3913,6 +3913,67 @@ export async function registerRoutes(
     res.json(MASTER_CATEGORIES);
   });
 
+  app.get("/api/masters/pending-approvals", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const allPending: any[] = [];
+      for (const [tableKey, pgTable] of Object.entries(MASTER_TABLE_REGISTRY)) {
+        try {
+          const result = await pool.query(
+            `SELECT * FROM "${pgTable}" WHERE tenant_id = $1 AND approval_status = 'Pending' ORDER BY created_at DESC`,
+            [tid]
+          );
+          result.rows.forEach((row: any) => {
+            allPending.push({
+              ...storage.mapRowToMaster(row),
+              _tableName: tableKey,
+              _tableLabel: tableKey.replace(/([A-Z])/g, " $1").replace(/^./, (s: string) => s.toUpperCase()),
+            });
+          });
+        } catch {}
+      }
+      res.json(allPending);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/masters/bulk-approval", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      if (!(await requireAdminRole(req, res, tid))) return;
+      const { items } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ message: "items array is required" });
+      }
+      let approvedCount = 0;
+      let rejectedCount = 0;
+      const errors: string[] = [];
+      for (const item of items) {
+        const { tableName, id, action } = item;
+        if (!tableName || !id || !["approve", "reject"].includes(action)) {
+          errors.push(`Invalid item: ${JSON.stringify(item)}`);
+          continue;
+        }
+        if (!MASTER_TABLE_REGISTRY[tableName]) {
+          errors.push(`Unknown table: ${tableName}`);
+          continue;
+        }
+        try {
+          const newStatus = action === "approve" ? "Approved" : "Rejected";
+          await storage.updateMasterRecord(tableName, Number(id), { approvalStatus: newStatus }, tid);
+          if (action === "approve") approvedCount++;
+          else rejectedCount++;
+        } catch (err: any) {
+          errors.push(`${tableName}#${id}: ${err.message}`);
+        }
+      }
+      res.json({ approvedCount, rejectedCount, errors });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.get(api.masters.list.path, isAuthenticated, async (req, res) => {
     const tableName = req.params.tableName as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
@@ -3984,6 +4045,66 @@ export async function registerRoutes(
     }
   });
 
+  const IMPORT_EXTRA_FIELDS: Record<string, string[]> = {
+    states: ["countryId"],
+    cities: ["stateId"],
+    areas: ["cityId", "pinCode", "serviceable", "defaultNearestBranchId"],
+    branches: ["organisationId", "cityId", "address", "phone"],
+    callingLines: ["phoneNumber", "provider"],
+    userLineAssignments: ["crmUserId", "callingLineId", "isPrimary"],
+    crmUsers: ["email", "phone", "branchId", "departmentId", "designationId", "employmentTypeId", "systemRoleId", "accessScopeType", "phiAccessLevel", "isActive"],
+    doctors: ["specialization", "qualification", "branchId", "treatmentDepartmentId", "phone", "email"],
+    opdTimings: ["doctorId", "branchId", "dayOfWeek", "startTime", "endTime", "maxPatients", "slotDuration"],
+    doctorLeaveExceptions: ["doctorId", "leaveDate", "leaveEndDate", "reason"],
+    leadSources: ["categoryId"],
+    referrers: ["type", "phone", "email"],
+    corporateInsurances: ["type"],
+    conversionStages: ["isTerminal", "isBusinessAchieved"],
+    leadStatuses: ["isTerminal", "isBusinessAchieved", "requiresNextTask", "allowNurtureOption", "defaultOwnerRole"],
+    templates: ["channel", "subject", "body"],
+    holidays: ["holidayDate"],
+    tags: ["color"],
+    slaRules: ["triggerEvent", "timeLimitMinutes", "appliesToRole", "escalationRole"],
+    reminderPolicies: ["offsetMinutes", "channel", "fallbackChannel"],
+    dataRetentionPolicies: ["entityType", "retentionMonths", "action"],
+  };
+
+  const REF_FIELD_TABLES: Record<string, string> = {
+    stateId: "states",
+    countryId: "countries",
+    cityId: "cities",
+    organisationId: "organisations",
+    branchId: "branches",
+    treatmentDepartmentId: "treatment_departments",
+    categoryId: "lead_source_categories",
+    defaultNearestBranchId: "branches",
+    crmUserId: "crm_users",
+    callingLineId: "calling_lines",
+    departmentId: "administrative_departments",
+    designationId: "designations",
+    employmentTypeId: "employment_types",
+    systemRoleId: "system_roles",
+    doctorId: "doctors",
+  };
+
+  async function resolveRefField(fieldName: string, value: string, tenantId: number): Promise<number | null> {
+    const refTable = REF_FIELD_TABLES[fieldName];
+    if (!refTable) return null;
+    const numVal = parseInt(value);
+    if (!isNaN(numVal)) {
+      const check = await pool.query(
+        `SELECT id FROM "${refTable}" WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
+        [tenantId, numVal]
+      );
+      return check.rows[0]?.id || null;
+    }
+    const result = await pool.query(
+      `SELECT id FROM "${refTable}" WHERE tenant_id = $1 AND (UPPER(code) = UPPER($2) OR UPPER(name) = UPPER($2)) LIMIT 1`,
+      [tenantId, value.trim()]
+    );
+    return result.rows[0]?.id || null;
+  }
+
   app.post("/api/masters/:tableName/import", isAuthenticated, upload.single("file"), async (req, res) => {
     const tableName = req.params.tableName as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
@@ -3995,6 +4116,7 @@ export async function registerRoutes(
 
     const tenantId = await getDefaultTenantId(req);
     const fileName = req.file.originalname;
+    const autoApprove = tableName === "referrers";
 
     try {
       const csvContent = req.file.buffer.toString("utf-8");
@@ -4002,6 +4124,8 @@ export async function registerRoutes(
 
       const existingRecords = await storage.getMasterRecords(tableName, tenantId);
       const existingCodes = new Set(existingRecords.map(r => r.code?.toUpperCase()));
+
+      const extraFieldKeys = IMPORT_EXTRA_FIELDS[tableName] || [];
 
       let successCount = 0;
       let failureCount = 0;
@@ -4028,13 +4152,37 @@ export async function registerRoutes(
         }
 
         try {
-          await storage.createMasterRecord(tableName, {
+          const recordData: Record<string, any> = {
             tenantId,
             code,
             name,
             status,
             displayOrder,
-          });
+            approvalStatus: autoApprove ? "Approved" : "Pending",
+          };
+
+          for (const fieldKey of extraFieldKeys) {
+            const csvValue = (row[fieldKey] || "").trim();
+            if (!csvValue) continue;
+
+            if (REF_FIELD_TABLES[fieldKey]) {
+              const resolvedId = await resolveRefField(fieldKey, csvValue, tenantId);
+              if (resolvedId) {
+                recordData[fieldKey] = resolvedId;
+              } else {
+                errors.push({ row: i + 2, message: `Could not resolve ${fieldKey} "${csvValue}" — skipping field` });
+              }
+            } else if (["isTerminal", "isBusinessAchieved", "requiresNextTask", "allowNurtureOption", "serviceable"].includes(fieldKey)) {
+              recordData[fieldKey] = ["true", "1", "yes"].includes(csvValue.toLowerCase());
+            } else if (["timeLimitMinutes", "offsetMinutes", "retentionMonths", "maxPatients", "slotDuration"].includes(fieldKey)) {
+              const numVal = parseInt(csvValue);
+              if (!isNaN(numVal)) recordData[fieldKey] = numVal;
+            } else {
+              recordData[fieldKey] = csvValue;
+            }
+          }
+
+          await storage.createMasterRecord(tableName, recordData);
           existingCodes.add(code.toUpperCase());
           successCount++;
         } catch (err: any) {
@@ -4063,6 +4211,7 @@ export async function registerRoutes(
         failureCount,
         duplicateCount,
         errors: errors.slice(0, 20),
+        sentToApproval: !autoApprove,
       });
     } catch (err: any) {
       res.status(400).json({ message: `CSV parse error: ${err.message}` });
@@ -4177,30 +4326,6 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/masters/pending-approvals", isAuthenticated, async (req, res) => {
-    try {
-      const tid = await getDefaultTenantId(req);
-      const allPending: any[] = [];
-      for (const [tableKey, pgTable] of Object.entries(MASTER_TABLE_REGISTRY)) {
-        try {
-          const result = await pool.query(
-            `SELECT * FROM "${pgTable}" WHERE tenant_id = $1 AND approval_status = 'Pending' ORDER BY created_at DESC`,
-            [tid]
-          );
-          result.rows.forEach((row: any) => {
-            allPending.push({
-              ...storage.mapRowToMaster(row),
-              _tableName: tableKey,
-              _tableLabel: tableKey.replace(/([A-Z])/g, " $1").replace(/^./, (s: string) => s.toUpperCase()),
-            });
-          });
-        } catch {}
-      }
-      res.json(allPending);
-    } catch (err: any) {
-      res.status(500).json({ message: humanizeError(err) });
-    }
-  });
 
   // =============================================
   // CRM USER MANAGEMENT ROUTES

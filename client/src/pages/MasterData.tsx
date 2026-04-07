@@ -66,6 +66,7 @@ interface ImportResult {
   failureCount: number;
   duplicateCount: number;
   errors: { row: number; message: string }[];
+  sentToApproval?: boolean;
 }
 
 interface ImportLog {
@@ -399,6 +400,46 @@ export default function MasterData() {
     enabled: !selectedCategory,
   });
 
+  const [selectedPendingIds, setSelectedPendingIds] = useState<Set<string>>(new Set());
+
+  const togglePendingSelection = (key: string) => {
+    setSelectedPendingIds(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleAllPending = () => {
+    if (selectedPendingIds.size === pendingApprovals.length) {
+      setSelectedPendingIds(new Set());
+    } else {
+      setSelectedPendingIds(new Set(pendingApprovals.map((item: any) => `${item._tableName}-${item.id}`)));
+    }
+  };
+
+  const bulkApprovalMutation = useMutation({
+    mutationFn: async ({ action }: { action: "approve" | "reject" }) => {
+      const items = Array.from(selectedPendingIds).map(key => {
+        const [tableName, ...idParts] = key.split("-");
+        return { tableName, id: Number(idParts.join("-")), action };
+      });
+      const res = await apiRequest("POST", "/api/masters/bulk-approval", { items });
+      return res.json();
+    },
+    onSuccess: (result, { action }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/masters"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/masters/pending-approvals"] });
+      setSelectedPendingIds(new Set());
+      const count = action === "approve" ? result.approvedCount : result.rejectedCount;
+      toast({ title: `${count} record(s) ${action === "approve" ? "approved" : "rejected"}` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
@@ -417,11 +458,13 @@ export default function MasterData() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/masters", selectedTable] });
       queryClient.invalidateQueries({ queryKey: ["/api/masters", selectedTable, "import-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/masters/pending-approvals"] });
       setImportResult(result);
       setShowImportResult(true);
+      const approvalMsg = result.sentToApproval ? " and sent to approval queue" : "";
       toast({
         title: "Import Complete",
-        description: `${result.successCount} of ${result.totalRows} records imported`,
+        description: `${result.successCount} of ${result.totalRows} records imported${approvalMsg}`,
       });
     },
     onError: (err: any) => {
@@ -630,6 +673,33 @@ export default function MasterData() {
                         Pending Approvals ({pendingApprovals.length})
                       </h3>
                     </div>
+                    {selectedPendingIds.size > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-blue-700 dark:text-blue-400">{selectedPendingIds.size} selected</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs bg-green-50 border-green-300 text-green-700 hover:bg-green-100"
+                          onClick={() => bulkApprovalMutation.mutate({ action: "approve" })}
+                          disabled={bulkApprovalMutation.isPending}
+                          data-testid="button-bulk-approve"
+                        >
+                          <Check className="h-3 w-3 mr-1" />
+                          Approve Selected
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs bg-red-50 border-red-300 text-red-700 hover:bg-red-100"
+                          onClick={() => bulkApprovalMutation.mutate({ action: "reject" })}
+                          disabled={bulkApprovalMutation.isPending}
+                          data-testid="button-bulk-reject"
+                        >
+                          <X className="h-3 w-3 mr-1" />
+                          Reject Selected
+                        </Button>
+                      </div>
+                    )}
                   </div>
                   <p className="text-xs text-blue-700 dark:text-blue-400 mb-3">
                     New master data records awaiting approval before they become available in the system.
@@ -637,6 +707,15 @@ export default function MasterData() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-8">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 accent-blue-600 cursor-pointer"
+                            checked={pendingApprovals.length > 0 && selectedPendingIds.size === pendingApprovals.length}
+                            onChange={toggleAllPending}
+                            data-testid="checkbox-select-all-pending"
+                          />
+                        </TableHead>
                         <TableHead className="text-xs">Table</TableHead>
                         <TableHead className="text-xs">Code</TableHead>
                         <TableHead className="text-xs">Name</TableHead>
@@ -645,44 +724,56 @@ export default function MasterData() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pendingApprovals.map((item: any) => (
-                        <TableRow key={`${item._tableName}-${item.id}`} data-testid={`row-pending-${item._tableName}-${item.id}`}>
-                          <TableCell className="text-xs">
-                            <Badge variant="secondary" className="text-[10px]">{item._tableLabel}</Badge>
-                          </TableCell>
-                          <TableCell className="text-xs font-mono">{item.code}</TableCell>
-                          <TableCell className="text-xs font-medium">{item.name}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {fmtDate(item.createdAt)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs"
-                                onClick={() => approveMutation.mutate({ tableName: item._tableName, id: item.id })}
-                                disabled={approveMutation.isPending}
-                                data-testid={`button-approve-pending-${item.id}`}
-                              >
-                                <Check className="h-3 w-3 mr-1" />
-                                Approve
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs"
-                                onClick={() => rejectMutation.mutate({ tableName: item._tableName, id: item.id })}
-                                disabled={rejectMutation.isPending}
-                                data-testid={`button-reject-pending-${item.id}`}
-                              >
-                                <X className="h-3 w-3 mr-1" />
-                                Reject
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {pendingApprovals.map((item: any) => {
+                        const itemKey = `${item._tableName}-${item.id}`;
+                        return (
+                          <TableRow key={itemKey} data-testid={`row-pending-${item._tableName}-${item.id}`}>
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-gray-300 accent-blue-600 cursor-pointer"
+                                checked={selectedPendingIds.has(itemKey)}
+                                onChange={() => togglePendingSelection(itemKey)}
+                                data-testid={`checkbox-pending-${item._tableName}-${item.id}`}
+                              />
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              <Badge variant="secondary" className="text-[10px]">{item._tableLabel}</Badge>
+                            </TableCell>
+                            <TableCell className="text-xs font-mono">{item.code}</TableCell>
+                            <TableCell className="text-xs font-medium">{item.name}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {fmtDate(item.createdAt)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  onClick={() => approveMutation.mutate({ tableName: item._tableName, id: item.id })}
+                                  disabled={approveMutation.isPending}
+                                  data-testid={`button-approve-pending-${item.id}`}
+                                >
+                                  <Check className="h-3 w-3 mr-1" />
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  onClick={() => rejectMutation.mutate({ tableName: item._tableName, id: item.id })}
+                                  disabled={rejectMutation.isPending}
+                                  data-testid={`button-reject-pending-${item.id}`}
+                                >
+                                  <X className="h-3 w-3 mr-1" />
+                                  Reject
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </Card>
@@ -1397,6 +1488,13 @@ export default function MasterData() {
                   <p className="text-xl font-semibold mt-1 text-red-600" data-testid="text-failure-count">{importResult.failureCount}</p>
                 </Card>
               </div>
+
+              {importResult.sentToApproval && importResult.successCount > 0 && (
+                <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-800 dark:bg-blue-950/30 dark:border-blue-900 dark:text-blue-300" data-testid="text-approval-queue-notice">
+                  <ShieldCheck className="h-4 w-4 flex-shrink-0" />
+                  <span>{importResult.successCount} record(s) have been sent to the approval queue. An admin must approve them before they become active.</span>
+                </div>
+              )}
 
               {importResult.errors.length > 0 && (
                 <div>
