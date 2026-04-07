@@ -9021,11 +9021,22 @@ export async function registerRoutes(
   app.get("/api/support-tickets", isAuthenticated, async (req, res) => {
     try {
       const crmUserId = (req as any).session?.crmUserId;
+      const tenantId = (req as any).session?.tenantId;
       if (!crmUserId) return res.status(401).json({ message: "Unauthorized" });
 
-      const tickets = await db.select().from(supportTickets)
-        .where(eq(supportTickets.crmUserId, crmUserId))
-        .orderBy(sql`${supportTickets.createdAt} DESC`);
+      const sessionUser = await getSessionCrmUserWithRole(req);
+      const isAdminRole = sessionUser && ["SYS_ADMIN", "ADMIN", "MANAGER"].includes(sessionUser.roleCode);
+
+      let tickets;
+      if (isAdminRole && tenantId) {
+        tickets = await db.select().from(supportTickets)
+          .where(eq(supportTickets.tenantId, tenantId))
+          .orderBy(sql`${supportTickets.createdAt} DESC`);
+      } else {
+        tickets = await db.select().from(supportTickets)
+          .where(eq(supportTickets.crmUserId, crmUserId))
+          .orderBy(sql`${supportTickets.createdAt} DESC`);
+      }
 
       const enriched = await Promise.all(tickets.map(async (t) => {
         let assignedName = null;
@@ -9037,7 +9048,12 @@ export async function registerRoutes(
           `SELECT COUNT(*) as cnt FROM support_ticket_comments WHERE ticket_id = $1 AND is_internal = false`,
           [t.id]
         );
-        return { ...t, assignedName, commentCount: parseInt(commentCount.rows[0].cnt) };
+        let createdByName = null;
+        if (t.crmUserId !== crmUserId) {
+          const [u] = await db.select({ name: crmUsers.name }).from(crmUsers).where(eq(crmUsers.id, t.crmUserId));
+          if (u) createdByName = u.name;
+        }
+        return { ...t, assignedName, createdByName, commentCount: parseInt(commentCount.rows[0].cnt) };
       }));
 
       res.json(enriched);
@@ -9050,10 +9066,14 @@ export async function registerRoutes(
   app.get("/api/support-tickets/:id", isAuthenticated, async (req, res) => {
     try {
       const crmUserId = (req as any).session?.crmUserId;
+      const tenantId = (req as any).session?.tenantId;
       const ticketId = Number(req.params.id);
       const [ticket] = await db.select().from(supportTickets).where(eq(supportTickets.id, ticketId));
       if (!ticket) return res.status(404).json({ message: "Ticket not found" });
-      if (ticket.crmUserId !== crmUserId && !isSupportAdmin(req)) {
+      const sessionUser = await getSessionCrmUserWithRole(req);
+      const isAdminRole = sessionUser && ["SYS_ADMIN", "ADMIN", "MANAGER"].includes(sessionUser.roleCode);
+      const isSameTenant = tenantId && ticket.tenantId === tenantId;
+      if (ticket.crmUserId !== crmUserId && !isSupportAdmin(req) && !(isAdminRole && isSameTenant)) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -9070,7 +9090,13 @@ export async function registerRoutes(
         if (su) assignedName = su.name;
       }
 
-      res.json({ ...ticket, assignedName, comments });
+      let createdByName = null;
+      if (ticket.crmUserId !== crmUserId) {
+        const [u] = await db.select({ name: crmUsers.name }).from(crmUsers).where(eq(crmUsers.id, ticket.crmUserId));
+        if (u) createdByName = u.name;
+      }
+
+      res.json({ ...ticket, assignedName, createdByName, comments });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

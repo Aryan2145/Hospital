@@ -58,6 +58,7 @@ type TicketType = {
   subject: string;
   description: string;
   attachments: string[];
+  createdByName?: string | null;
   status: string;
   assignedName: string | null;
   adminPriority: string | null;
@@ -215,6 +216,7 @@ function TicketList({ tickets, isLoading, onSelect, emptyText }: {
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                       <span>{ticket.category}</span>
                       <span>{fmtDate(ticket.createdAt)}</span>
+                      {ticket.createdByName && <span>By: {ticket.createdByName}</span>}
                       {ticket.assignedName && <span>Assigned: {ticket.assignedName}</span>}
                       {ticket.commentCount > 0 && (
                         <span className="flex items-center gap-0.5">
@@ -463,6 +465,7 @@ function TicketDetailView({ ticketId, onBack, toast }: { ticketId: number; onBac
 
                   <div className="flex items-center gap-4 text-xs text-muted-foreground border-t pt-3">
                     <span>Created: {fmtDateTime(ticket.createdAt)}</span>
+                    {ticket.createdByName && <span>Raised by: <strong>{ticket.createdByName}</strong></span>}
                     <span>Updated: {fmtDateTime(ticket.updatedAt)}</span>
                     {ticket.assignedName && <span>Assigned to: <strong>{ticket.assignedName}</strong></span>}
                     {ticket.closedAt && <span>Closed: {fmtDateTime(ticket.closedAt)}</span>}
