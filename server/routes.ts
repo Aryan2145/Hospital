@@ -5733,7 +5733,7 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const episodeId = Number(req.params.id);
       const oldEpisode = await storage.getEpisode(episodeId, tid);
-      const body = coerceDateFields(req.body, ["startDate", "endDate", "nextActionDate", "slaDeadline", "estimateSharedAt", "discountApprovedAt", "preauthSubmittedAt"]);
+      const body = coerceDateFields(req.body, ["startDate", "endDate", "nextActionDate", "slaDeadline", "estimateSharedAt", "discountApprovedAt", "preauthSubmittedAt", "surgeryDate"]);
       const terminalStatuses = ["Completed", "Discontinued"];
       if (body.status && terminalStatuses.includes(body.status) && !body.endDate) {
         body.endDate = new Date();
@@ -5829,6 +5829,32 @@ export async function registerRoutes(
         }
       }
 
+      if (oldEpisode && body.status === "Surgery Scheduled" && body.surgeryAlertUserId && oldEpisode.leadId) {
+        try {
+          const alertUserCheck = await pool.query(`SELECT id FROM crm_users WHERE id = $1 AND tenant_id = $2`, [body.surgeryAlertUserId, tid]);
+          if (alertUserCheck.rows.length === 0) {
+            return res.status(400).json({ message: "Invalid surgery alert user" });
+          }
+          const surgeryDateVal = body.surgeryDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+          const leadRow = await pool.query(`SELECT name FROM leads WHERE id = $1 AND tenant_id = $2`, [oldEpisode.leadId, tid]);
+          const patientName = leadRow.rows[0]?.name || "Patient";
+          const surgeryDateStr = new Date(surgeryDateVal).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+          await storage.createTask({
+            tenantId: tid,
+            leadId: oldEpisode.leadId,
+            title: `Surgery Alert: ${patientName} scheduled on ${surgeryDateStr}`,
+            description: `Surgery scheduled for ${patientName} (Episode: ${oldEpisode.episodeName}). ${stageRemarksVal ? `Remarks: ${stageRemarksVal}` : ""}`,
+            priority: "High",
+            dueDate: new Date(surgeryDateVal),
+            assignedCrmUserId: body.surgeryAlertUserId,
+            status: "Pending",
+            createdBy: userId,
+          } as any);
+        } catch (taskErr) {
+          console.error("[surgery-alert] Error creating task:", taskErr);
+        }
+      }
+
       if (body.insuranceApplicable && oldEpisode?.leadId) {
         try {
           await computeAndUpdateTemperature(oldEpisode.leadId, tid, "Insurance Approved", userId, episodeId, "Episode");
@@ -5867,6 +5893,66 @@ export async function registerRoutes(
       res.json(ep);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // SURGERY CALENDAR
+  // =============================================
+
+  app.get("/api/surgery-calendar", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const branchId = req.query.branchId ? Number(req.query.branchId) : null;
+      const doctorId = req.query.doctorId ? Number(req.query.doctorId) : null;
+      const departmentId = req.query.departmentId ? Number(req.query.departmentId) : null;
+
+      let filters = "";
+      const params: any[] = [tid];
+      let paramIdx = 2;
+
+      if (branchId) {
+        filters += ` AND e.branch_id = $${paramIdx}`;
+        params.push(branchId);
+        paramIdx++;
+      }
+      if (doctorId) {
+        filters += ` AND (e.surgery_doctor_id = $${paramIdx} OR e.doctor_id = $${paramIdx})`;
+        params.push(doctorId);
+        paramIdx++;
+      }
+      if (departmentId) {
+        filters += ` AND e.treatment_department_id = $${paramIdx}`;
+        params.push(departmentId);
+        paramIdx++;
+      }
+
+      const surgeries = (await pool.query(
+        `SELECT e.id, e.episode_name, e.surgery_date, e.status, e.surgery_doctor_id,
+          e.doctor_id, e.treatment_department_id, e.branch_id, e.lead_id,
+          l.name as patient_name, l.phone_e164 as patient_phone,
+          d.name as doctor_name, sd.name as surgery_doctor_name,
+          td.name as department_name, b.name as branch_name,
+          au.name as alert_user_name
+        FROM episodes e
+        LEFT JOIN leads l ON e.lead_id = l.id
+        LEFT JOIN doctors d ON e.doctor_id = d.id
+        LEFT JOIN doctors sd ON e.surgery_doctor_id = sd.id
+        LEFT JOIN treatment_departments td ON e.treatment_department_id = td.id
+        LEFT JOIN branches b ON e.branch_id = b.id
+        LEFT JOIN crm_users au ON e.surgery_alert_user_id = au.id
+        WHERE e.tenant_id = $1
+          AND e.status = 'Surgery Scheduled'
+          AND e.surgery_date IS NOT NULL
+          AND e.surgery_date >= NOW()
+          ${filters}
+        ORDER BY e.surgery_date ASC`,
+        params
+      )).rows;
+
+      res.json(surgeries);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
@@ -7575,6 +7661,29 @@ export async function registerRoutes(
         [tid, todayISO]
       )).rows;
 
+      let conversionRatios = null;
+      if (isManagement || isManager) {
+        const ratioResult = (await pool.query(
+          `SELECT
+            COUNT(*) FILTER (WHERE e.status IN ('Treatment Planning','Surgery Scheduled','Surgery Done','In Treatment','Post Care','Follow Up','Completed','Discontinued')) as treatment_planned_count,
+            COUNT(*) FILTER (WHERE e.status IN ('Surgery Scheduled','Surgery Done','In Treatment','Post Care','Follow Up','Completed')) as surgery_scheduled_count,
+            COUNT(*) FILTER (WHERE e.status IN ('Surgery Done','In Treatment','Post Care','Follow Up','Completed')) as surgery_done_count
+          FROM episodes e WHERE e.tenant_id = $1`,
+          [tid]
+        )).rows;
+        const r = ratioResult[0] || {};
+        const tp = Number(r.treatment_planned_count) || 0;
+        const ss = Number(r.surgery_scheduled_count) || 0;
+        const sd = Number(r.surgery_done_count) || 0;
+        conversionRatios = {
+          treatmentPlannedCount: tp,
+          surgeryScheduledCount: ss,
+          surgeryDoneCount: sd,
+          treatmentToSurgeryRatio: tp > 0 ? Math.round((ss / tp) * 100) : 0,
+          surgeryToCompletionRatio: ss > 0 ? Math.round((sd / ss) * 100) : 0,
+        };
+      }
+
       let teamStats = null;
       let teamOverdueActions = null;
       if (isManagement || isManager) {
@@ -7706,6 +7815,7 @@ export async function registerRoutes(
         teamOverdueActions,
         recentActivities,
         individualPerformance,
+        conversionRatios,
       });
     } catch (err: any) {
       console.error("Dashboard stats error:", err);

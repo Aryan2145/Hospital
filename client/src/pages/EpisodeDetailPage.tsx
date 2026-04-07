@@ -209,6 +209,9 @@ export default function EpisodeDetailPage() {
   const [stageChangeTarget, setStageChangeTarget] = useState<string | null>(null);
   const [stageRemarks, setStageRemarks] = useState("");
   const [stageChangeOpen, setStageChangeOpen] = useState(false);
+  const [surgeryDate, setSurgeryDate] = useState("");
+  const [surgeryTime, setSurgeryTime] = useState("");
+  const [surgeryAlertUserId, setSurgeryAlertUserId] = useState<string>("");
 
   const clinicalNotesMutation = useMutation({
     mutationFn: async (data: { diagnosis: string; treatmentPlan: string; notes: string; editReason: string }) => {
@@ -331,20 +334,31 @@ export default function EpisodeDetailPage() {
   const handleStatusChange = (newStatus: string) => {
     setStageChangeTarget(newStatus);
     setStageRemarks("");
+    setSurgeryDate("");
+    setSurgeryTime("");
+    setSurgeryAlertUserId("");
     setStageChangeOpen(true);
   };
 
   const confirmStageChange = () => {
     if (!stageChangeTarget || stageRemarks.trim().length < 5) return;
-    updateEpisode.mutate(
-      { id: episode.id, status: stageChangeTarget, stageRemarks: stageRemarks.trim() },
-      {
+    if (stageChangeTarget === "Surgery Scheduled" && !surgeryDate) return;
+    const payload: any = { id: episode.id, status: stageChangeTarget, stageRemarks: stageRemarks.trim() };
+    if (stageChangeTarget === "Surgery Scheduled") {
+      const dateTimeStr = surgeryTime ? `${surgeryDate}T${surgeryTime}` : `${surgeryDate}T09:00`;
+      payload.surgeryDate = new Date(dateTimeStr).toISOString();
+      if (surgeryAlertUserId) payload.surgeryAlertUserId = Number(surgeryAlertUserId);
+    }
+    updateEpisode.mutate(payload, {
         onSuccess: () => {
           toast({ title: "Status updated" });
           queryClient.invalidateQueries({ queryKey: ["/api/episodes", episodeId] });
           setStageChangeOpen(false);
           setStageChangeTarget(null);
           setStageRemarks("");
+          setSurgeryDate("");
+          setSurgeryTime("");
+          setSurgeryAlertUserId("");
         },
         onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
       }
@@ -540,6 +554,22 @@ export default function EpisodeDetailPage() {
                       data-testid="select-surgery-doctor"
                     />
                   </div>
+                  {episode.surgeryDate && (
+                    <div className="col-span-2 p-3 bg-violet-50 dark:bg-violet-950/20 rounded-lg border border-violet-200 dark:border-violet-800" data-testid="card-surgery-schedule-info">
+                      <div className="flex items-center gap-2 mb-1">
+                        <CalendarClock className="w-4 h-4 text-violet-600" />
+                        <span className="text-xs font-semibold text-violet-700 dark:text-violet-300">Surgery Scheduled</span>
+                      </div>
+                      <p className="text-sm font-medium text-foreground" data-testid="text-surgery-date">
+                        {fmtDateTime(episode.surgeryDate)}
+                      </p>
+                      {episode.surgeryAlertUserId && (
+                        <p className="text-xs text-muted-foreground mt-1" data-testid="text-surgery-alert-user">
+                          Alert: {crmUsers.find((u: any) => u.id === episode.surgeryAlertUserId)?.name || `User #${episode.surgeryAlertUserId}`}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Post-Care Doctor</Label>
                     <SearchableSelect
@@ -804,31 +834,72 @@ export default function EpisodeDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={stageChangeOpen} onOpenChange={(open) => { if (!open) { setStageChangeOpen(false); setStageChangeTarget(null); setStageRemarks(""); } }}>
-        <DialogContent>
+      <Dialog open={stageChangeOpen} onOpenChange={(open) => { if (!open) { setStageChangeOpen(false); setStageChangeTarget(null); setStageRemarks(""); setSurgeryDate(""); setSurgeryTime(""); setSurgeryAlertUserId(""); } }}>
+        <DialogContent className={stageChangeTarget === "Surgery Scheduled" ? "max-w-lg" : ""}>
           <DialogHeader>
-            <DialogTitle>Stage Transition Remarks</DialogTitle>
+            <DialogTitle>{stageChangeTarget === "Surgery Scheduled" ? "Schedule Surgery" : "Stage Transition Remarks"}</DialogTitle>
             <DialogDescription>
-              Moving from <span className="font-semibold">{episode.status}</span> to <span className="font-semibold">{stageChangeTarget}</span>. Please provide remarks for this stage change.
+              Moving from <span className="font-semibold">{episode.status}</span> to <span className="font-semibold">{stageChangeTarget}</span>.
+              {stageChangeTarget === "Surgery Scheduled" ? " Please provide surgery details." : " Please provide remarks for this stage change."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label className="text-sm">Remarks (required)</Label>
-            <Textarea
-              value={stageRemarks}
-              onChange={(e) => setStageRemarks(e.target.value)}
-              placeholder="Enter remarks for this stage transition (min 5 characters)..."
-              className="text-sm min-h-[80px] resize-none"
-              data-testid="textarea-stage-remarks"
-            />
-            {stageRemarks.trim().length > 0 && stageRemarks.trim().length < 5 && (
-              <p className="text-xs text-destructive" data-testid="text-stage-remarks-error">Remarks must be at least 5 characters</p>
+          <div className="space-y-4">
+            {stageChangeTarget === "Surgery Scheduled" && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">Surgery Date <span className="text-destructive">*</span></Label>
+                    <Input
+                      type="date"
+                      value={surgeryDate}
+                      onChange={(e) => setSurgeryDate(e.target.value)}
+                      min={new Date().toISOString().split("T")[0]}
+                      className="text-sm"
+                      data-testid="input-surgery-date"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">Surgery Time</Label>
+                    <Input
+                      type="time"
+                      value={surgeryTime}
+                      onChange={(e) => setSurgeryTime(e.target.value)}
+                      className="text-sm"
+                      data-testid="input-surgery-time"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Alert / Notify User</Label>
+                  <SearchableSelect
+                    value={surgeryAlertUserId}
+                    onValueChange={setSurgeryAlertUserId}
+                    options={(crmUsers || []).map((u: any) => ({ value: String(u.id), label: u.name || u.email }))}
+                    placeholder="Select user to receive surgery alert..."
+                    data-testid="select-surgery-alert-user"
+                  />
+                  <p className="text-xs text-muted-foreground">A task will be auto-created for this user with the surgery date.</p>
+                </div>
+              </>
             )}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Remarks (required)</Label>
+              <Textarea
+                value={stageRemarks}
+                onChange={(e) => setStageRemarks(e.target.value)}
+                placeholder="Enter remarks for this stage transition (min 5 characters)..."
+                className="text-sm min-h-[80px] resize-none"
+                data-testid="textarea-stage-remarks"
+              />
+              {stageRemarks.trim().length > 0 && stageRemarks.trim().length < 5 && (
+                <p className="text-xs text-destructive" data-testid="text-stage-remarks-error">Remarks must be at least 5 characters</p>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button
               variant="ghost"
-              onClick={() => { setStageChangeOpen(false); setStageChangeTarget(null); setStageRemarks(""); }}
+              onClick={() => { setStageChangeOpen(false); setStageChangeTarget(null); setStageRemarks(""); setSurgeryDate(""); setSurgeryTime(""); setSurgeryAlertUserId(""); }}
               disabled={updateEpisode.isPending}
               data-testid="button-cancel-stage-change"
             >
@@ -836,10 +907,10 @@ export default function EpisodeDetailPage() {
             </Button>
             <Button
               onClick={confirmStageChange}
-              disabled={stageRemarks.trim().length < 5 || updateEpisode.isPending}
+              disabled={stageRemarks.trim().length < 5 || (stageChangeTarget === "Surgery Scheduled" && !surgeryDate) || updateEpisode.isPending}
               data-testid="button-confirm-stage-change"
             >
-              {updateEpisode.isPending ? "Updating..." : "Confirm"}
+              {updateEpisode.isPending ? "Updating..." : stageChangeTarget === "Surgery Scheduled" ? "Schedule Surgery" : "Confirm"}
             </Button>
           </DialogFooter>
         </DialogContent>

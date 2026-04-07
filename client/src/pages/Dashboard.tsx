@@ -265,6 +265,61 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
         </Card>
       </div>
 
+      {dashStats.conversionRatios && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card data-testid="card-treatment-to-surgery-ratio">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Target className="h-4 w-4 text-violet-500" />
+                Treatment Planned → Surgery Scheduled
+              </CardTitle>
+              <CardDescription className="text-xs">Conversion from treatment planning to surgery scheduling</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end gap-3">
+                <span className="text-3xl font-bold text-violet-600" data-testid="text-treatment-surgery-ratio">
+                  {dashStats.conversionRatios.treatmentToSurgeryRatio}%
+                </span>
+                <span className="text-xs text-muted-foreground mb-1">
+                  {dashStats.conversionRatios.surgeryScheduledCount} of {dashStats.conversionRatios.treatmentPlannedCount} episodes
+                </span>
+              </div>
+              <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-violet-500 rounded-full transition-all"
+                  style={{ width: `${Math.min(dashStats.conversionRatios.treatmentToSurgeryRatio, 100)}%` }}
+                />
+              </div>
+            </CardContent>
+          </Card>
+          <Card data-testid="card-surgery-to-done-ratio">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                Surgery Scheduled → Surgery Done
+              </CardTitle>
+              <CardDescription className="text-xs">Completion rate of scheduled surgeries</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end gap-3">
+                <span className="text-3xl font-bold text-emerald-600" data-testid="text-surgery-done-ratio">
+                  {dashStats.conversionRatios.surgeryToCompletionRatio}%
+                </span>
+                <span className="text-xs text-muted-foreground mb-1">
+                  {dashStats.conversionRatios.surgeryDoneCount} of {dashStats.conversionRatios.surgeryScheduledCount} surgeries
+                </span>
+              </div>
+              <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all"
+                  style={{ width: `${Math.min(dashStats.conversionRatios.surgeryToCompletionRatio, 100)}%` }}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {intelligenceStats && <IntelligenceOverview stats={intelligenceStats} navigate={navigate} />}
 
       <QuickActionsCard navigate={navigate} totalLeads={totalLeads} role="management" />
@@ -342,6 +397,45 @@ function ManagerDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, userNam
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {dashStats.conversionRatios && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card data-testid="card-mgr-treatment-to-surgery-ratio">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Target className="h-4 w-4 text-violet-500" />
+                Treatment Planned → Surgery Scheduled
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end gap-3">
+                <span className="text-3xl font-bold text-violet-600">{dashStats.conversionRatios.treatmentToSurgeryRatio}%</span>
+                <span className="text-xs text-muted-foreground mb-1">{dashStats.conversionRatios.surgeryScheduledCount} of {dashStats.conversionRatios.treatmentPlannedCount}</span>
+              </div>
+              <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${Math.min(dashStats.conversionRatios.treatmentToSurgeryRatio, 100)}%` }} />
+              </div>
+            </CardContent>
+          </Card>
+          <Card data-testid="card-mgr-surgery-to-done-ratio">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                Surgery Scheduled → Surgery Done
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-end gap-3">
+                <span className="text-3xl font-bold text-emerald-600">{dashStats.conversionRatios.surgeryToCompletionRatio}%</span>
+                <span className="text-xs text-muted-foreground mb-1">{dashStats.conversionRatios.surgeryDoneCount} of {dashStats.conversionRatios.surgeryScheduledCount}</span>
+              </div>
+              <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.min(dashStats.conversionRatios.surgeryToCompletionRatio, 100)}%` }} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {dashStats.teamStats && dashStats.teamStats.length > 0 && (

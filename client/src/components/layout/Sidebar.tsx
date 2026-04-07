@@ -22,6 +22,7 @@ import {
   CalendarDays,
   Settings2,
   Ticket,
+  CalendarClock,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -48,6 +49,7 @@ const sections: { label: string; items: NavItem[] }[] = [
       { icon: Calendar, label: "Appointments", href: "/appointments", page: "appointments" },
       { icon: HeartPulse, label: "Consultation Episodes", href: "/transactions", page: "transactions" },
       { icon: Gift, label: "Referrals", href: "/referrals", page: "transactions" },
+      { icon: CalendarClock, label: "Surgery Schedule", href: "/surgery-calendar", page: "transactions" },
     ],
   },
   {

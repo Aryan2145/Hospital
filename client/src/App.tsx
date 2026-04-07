@@ -52,6 +52,7 @@ import HelpCenter from "@/pages/HelpCenter";
 import SupportTicketsPage from "@/pages/SupportTicketsPage";
 import SupportAdminLogin from "@/pages/support-admin/SupportAdminLogin";
 import SupportAdminDashboard from "@/pages/support-admin/SupportAdminDashboard";
+import SurgeryCalendarPage from "@/pages/SurgeryCalendarPage";
 
 function TenantSuspended() {
   return (
@@ -234,6 +235,12 @@ function Router() {
       <Route path="/referrals">
         {isAuthenticated ? (
           <RoleGate page="transactions"><ReferralsPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/surgery-calendar">
+        {isAuthenticated ? (
+          <RoleGate page="transactions"><SurgeryCalendarPage /></RoleGate>
         ) : <Landing />}
       </Route>
 
