@@ -4048,6 +4048,7 @@ export async function registerRoutes(
   const IMPORT_EXTRA_FIELDS: Record<string, string[]> = {
     states: ["countryId"],
     cities: ["stateId"],
+    pinCodes: ["cityId"],
     areas: ["cityId", "pinCode", "serviceable", "defaultNearestBranchId"],
     branches: ["organisationId", "cityId", "address", "phone"],
     callingLines: ["phoneNumber", "provider"],
@@ -4170,7 +4171,7 @@ export async function registerRoutes(
               if (resolvedId) {
                 recordData[fieldKey] = resolvedId;
               } else {
-                errors.push({ row: i + 2, message: `Could not resolve ${fieldKey} "${csvValue}" — skipping field` });
+                recordData[`_unresolved_${fieldKey}`] = csvValue;
               }
             } else if (["isTerminal", "isBusinessAchieved", "requiresNextTask", "allowNurtureOption", "serviceable"].includes(fieldKey)) {
               recordData[fieldKey] = ["true", "1", "yes"].includes(csvValue.toLowerCase());
@@ -4180,6 +4181,17 @@ export async function registerRoutes(
             } else {
               recordData[fieldKey] = csvValue;
             }
+          }
+
+          const unresolvedKeys = Object.keys(recordData).filter(k => k.startsWith("_unresolved_"));
+          if (unresolvedKeys.length > 0) {
+            const details = unresolvedKeys.map(k => {
+              const field = k.replace("_unresolved_", "");
+              return `${field}="${recordData[k]}" not found in tenant`;
+            }).join("; ");
+            failureCount++;
+            errors.push({ row: i + 2, message: `Required reference not found: ${details}` });
+            continue;
           }
 
           await storage.createMasterRecord(tableName, recordData);
