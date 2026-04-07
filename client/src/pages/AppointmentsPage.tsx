@@ -1141,20 +1141,51 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                   </div>
                 ) : availability.data && availability.data.slots.length > 0 ? (
                   <div className="space-y-2 mt-1">
-                    <div className="grid grid-cols-2 gap-2">
-                      {availability.data.slots.map((slot: any) => (
-                        <Button key={slot.startTime} variant={bookSlot === slot.startTime ? "default" : "outline"} size="sm" className="text-xs" disabled={slot.availableCount <= 0} onClick={() => { setBookSlot(slot.startTime); setBookManualTime(""); }} data-testid={`book-slot-${slot.startTime}`}>
-                          <Clock className="w-3 h-3 mr-1" />{slot.startTime} - {slot.endTime}
-                          <Badge variant="outline" className="ml-1 text-[10px]">{slot.availableCount} left</Badge>
-                        </Button>
-                      ))}
-                    </div>
-                    {!bookSlot && (
-                      <div>
-                        <p className="text-xs text-muted-foreground">Or enter time manually:</p>
-                        <Input type="time" value={bookManualTime} onChange={(e) => setBookManualTime(e.target.value)} className="mt-1" data-testid="book-input-time-manual" />
+                    <div className="pointer-events-none select-none">
+                      <p className="text-[10px] text-muted-foreground mb-1 flex items-center gap-1">
+                        <Info className="w-3 h-3" />
+                        OPD Schedule — {availability.data.dayOfWeek || ""}
+                      </p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {availability.data.slots.map((slot: any) => (
+                          <div key={slot.startTime} className={cn("flex items-center gap-1.5 px-2 py-1 rounded border text-xs", slot.availableCount <= 0 ? "bg-muted/50 opacity-50" : "bg-background")} data-testid={`book-schedule-${slot.startTime}`}>
+                            <Clock className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                            <span>{slot.startTime} - {slot.endTime}</span>
+                            <Badge variant="outline" className={cn("ml-auto text-[10px]", slot.availableCount <= 0 ? "text-destructive" : "text-green-600")}>
+                              {slot.availableCount <= 0 ? "Full" : `${slot.availableCount} left`}
+                            </Badge>
+                          </div>
+                        ))}
                       </div>
-                    )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Pick a time slot:</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {availability.data.slots.filter((slot: any) => slot.availableCount > 0).map((slot: any) => (
+                          <Button
+                            key={slot.startTime}
+                            variant={bookSlot === slot.startTime ? "default" : "outline"}
+                            size="sm"
+                            className="text-xs"
+                            onClick={() => {
+                              if (bookSlot === slot.startTime) {
+                                setBookSlot("");
+                              } else {
+                                setBookSlot(slot.startTime);
+                                setBookManualTime("");
+                              }
+                            }}
+                            data-testid={`book-slot-${slot.startTime}`}
+                          >
+                            <Clock className="w-3 h-3 mr-1" />{slot.startTime}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Or enter time manually:</p>
+                      <Input type="time" value={bookManualTime} onChange={(e) => { setBookManualTime(e.target.value); setBookSlot(""); }} className="mt-1" data-testid="book-input-time-manual" />
+                    </div>
                   </div>
                 ) : (
                   <div>
