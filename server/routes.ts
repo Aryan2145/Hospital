@@ -5783,6 +5783,13 @@ export async function registerRoutes(
         }
       }
 
+      if (body.status === "Surgery Scheduled" && body.surgeryAlertUserId) {
+        const alertUserCheck = await pool.query(`SELECT id FROM crm_users WHERE id = $1 AND tenant_id = $2`, [body.surgeryAlertUserId, tid]);
+        if (alertUserCheck.rows.length === 0) {
+          return res.status(400).json({ message: "Invalid surgery alert user" });
+        }
+      }
+
       const stageRemarksVal = body.stageRemarks;
       delete body.stageRemarks;
 
@@ -5831,10 +5838,6 @@ export async function registerRoutes(
 
       if (oldEpisode && body.status === "Surgery Scheduled" && body.surgeryAlertUserId && oldEpisode.leadId) {
         try {
-          const alertUserCheck = await pool.query(`SELECT id FROM crm_users WHERE id = $1 AND tenant_id = $2`, [body.surgeryAlertUserId, tid]);
-          if (alertUserCheck.rows.length === 0) {
-            return res.status(400).json({ message: "Invalid surgery alert user" });
-          }
           const surgeryDateVal = body.surgeryDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
           const leadRow = await pool.query(`SELECT name FROM leads WHERE id = $1 AND tenant_id = $2`, [oldEpisode.leadId, tid]);
           const patientName = leadRow.rows[0]?.name || "Patient";
