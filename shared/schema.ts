@@ -1238,6 +1238,9 @@ export const episodes = pgTable("episodes", {
   finalQuote: integer("final_quote"),
   actualBill: integer("actual_bill"),
   variance: integer("variance"),
+  initialApprovalAmount: integer("initial_approval_amount"),
+  roomTypeId: integer("room_type_id"),
+  roomNumber: text("room_number"),
   revenueProbability: integer("revenue_probability"),
   expectedRevenueAmount: integer("expected_revenue_amount"),
   lostAtStage: text("lost_at_stage"),
@@ -1744,6 +1747,50 @@ export interface MasterRecord {
 }
 
 // Master table registry mapping names to drizzle table references
+// =============================================
+// FINANCIALS MASTERS
+// =============================================
+export const roomTypes = pgTable("room_types", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  approvalStatus: text("approval_status").default("Approved"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const costHeads = pgTable("cost_heads", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  treatmentDepartmentId: integer("treatment_department_id").references(() => treatmentDepartments.id),
+  status: text("status").notNull().default("Active"),
+  displayOrder: integer("display_order").default(0),
+  approvalStatus: text("approval_status").default("Approved"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+  modifiedBy: varchar("modified_by"),
+});
+
+export const episodeQuoteItems = pgTable("episode_quote_items", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  episodeId: integer("episode_id").notNull().references(() => episodes.id),
+  costHeadId: integer("cost_head_id").notNull().references(() => costHeads.id),
+  amount: integer("amount").notNull().default(0),
+  remarks: text("remarks"),
+  displayOrder: integer("display_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+});
+
 export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   countries: "countries",
   states: "states",
@@ -1802,6 +1849,8 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   rejectionReasons: "rejection_reasons",
   consultationOutcomes: "consultation_outcomes",
   consultationOutcomeRemarks: "consultation_outcome_remarks",
+  roomTypes: "room_types",
+  costHeads: "cost_heads",
 };
 
 // =============================================

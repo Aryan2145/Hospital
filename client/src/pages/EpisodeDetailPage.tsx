@@ -60,6 +60,9 @@ import {
   HeartPulse,
   CalendarDays,
   Gift,
+  Trash2,
+  BedDouble,
+  Receipt,
 } from "lucide-react";
 
 interface AuditLogEntry {
@@ -1360,14 +1363,11 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
   const queryClient = useQueryClient();
   const { isAdmin } = useCurrentUser();
 
-  const initialQuote = episode.initialQuote ?? episode.originalQuotedAmount ?? episode.estimatedCost ?? 0;
+  const initialQuote = episode.initialQuote || 0;
   const isDiscountApproved = episode.discountStatus === "Approved";
-  const approvedDiscount = isDiscountApproved ? (episode.approvedDiscount ?? episode.discountAmount ?? 0) : 0;
-  const finalQuote = isDiscountApproved 
-    ? (episode.finalQuote ?? episode.finalEstimatedAmount ?? Math.max(0, initialQuote - approvedDiscount))
-    : initialQuote;
-  const actualBill = episode.actualBill ?? episode.actualCost ?? 0;
-  const variance = episode.variance ?? (finalQuote - actualBill);
+  const approvedDiscount = isDiscountApproved ? (episode.approvedDiscount || 0) : 0;
+  const finalQuote = isDiscountApproved ? Math.max(0, initialQuote - approvedDiscount) : initialQuote;
+  const actualBill = episode.actualBill || 0;
 
   const isApproved = episode.discountStatus === "Approved";
   const isDraft = !episode.discountStatus || episode.discountStatus === "Draft";
@@ -1376,13 +1376,22 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
 
   const [localInitialQuote, setLocalInitialQuote] = useState<number>(initialQuote);
   const [localDiscountPercent, setLocalDiscountPercent] = useState<number>(episode.discountPercent ?? 0);
-  const [localDiscountAmount, setLocalDiscountAmount] = useState<number>(episode.discountAmount ?? approvedDiscount);
+  const [localDiscountAmount, setLocalDiscountAmount] = useState<number>(episode.discountAmount ?? 0);
   const [localDiscountNotes, setLocalDiscountNotes] = useState<string>(episode.discountNotes || "");
   const [localActualBill, setLocalActualBill] = useState<number>(actualBill);
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [revokeReason, setRevokeReason] = useState("");
+  const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
 
-  const localFinalQuote = isDiscountApproved ? Math.max(0, localInitialQuote - localDiscountAmount) : localInitialQuote;
+  useEffect(() => {
+    setLocalInitialQuote(episode.initialQuote || 0);
+    setLocalDiscountPercent(episode.discountPercent ?? 0);
+    setLocalDiscountAmount(episode.discountAmount ?? 0);
+    setLocalDiscountNotes(episode.discountNotes || "");
+    setLocalActualBill(episode.actualBill || 0);
+  }, [episode.initialQuote, episode.discountPercent, episode.discountAmount, episode.discountNotes, episode.actualBill]);
+
+  const localFinalQuote = isDiscountApproved ? Math.max(0, localInitialQuote - approvedDiscount) : localInitialQuote;
   const localVariance = localFinalQuote - localActualBill;
 
   const handlePercentChange = (pct: number) => {
@@ -1409,7 +1418,7 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
         discountPercent: localDiscountPercent,
         discountAmount: localDiscountAmount,
         discountNotes: localDiscountNotes,
-        discountType: "Percentage",
+        discountType: localDiscountPercent > 0 ? "Percentage" : "Flat",
       });
       return res.json();
     },
@@ -1451,7 +1460,7 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
   };
 
   const handleSaveInitialQuote = () => {
-    onUpdate({ initialQuote: localInitialQuote });
+    onUpdate({ initialQuote: localInitialQuote, originalQuotedAmount: localInitialQuote });
   };
 
   const discountStatusBadge = isApproved
@@ -1464,8 +1473,51 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
 
   const fieldsReadOnly = isApproved;
 
+  const { data: quoteItems = [] } = useQuery<any[]>({
+    queryKey: ["/api/episodes", episode.id, "quote-items"],
+    queryFn: async () => {
+      const res = await fetch(`/api/episodes/${episode.id}/quote-items`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: costHeadsList = [] } = useQuery<any[]>({
+    queryKey: ["/api/masters/costHeads"],
+  });
+
+  const { data: roomTypesList = [] } = useQuery<any[]>({
+    queryKey: ["/api/masters/roomTypes"],
+  });
+
+  const [localRoomTypeId, setLocalRoomTypeId] = useState<string>(episode.roomTypeId ? String(episode.roomTypeId) : "");
+  const [localRoomNumber, setLocalRoomNumber] = useState<string>(episode.roomNumber || "");
+
+  useEffect(() => {
+    setLocalRoomTypeId(episode.roomTypeId ? String(episode.roomTypeId) : "");
+    setLocalRoomNumber(episode.roomNumber || "");
+  }, [episode.roomTypeId, episode.roomNumber]);
+
+  const handleSaveRoom = () => {
+    onUpdate({
+      roomTypeId: localRoomTypeId ? Number(localRoomTypeId) : null,
+      roomNumber: localRoomNumber || null,
+    });
+  };
+
+  const roomChanged = (localRoomTypeId !== (episode.roomTypeId ? String(episode.roomTypeId) : "")) ||
+    (localRoomNumber !== (episode.roomNumber || ""));
+
   return (
     <div className="space-y-4">
+      <QuotationSection
+        episode={episode}
+        quoteItems={quoteItems}
+        costHeadsList={costHeadsList}
+        quoteDialogOpen={quoteDialogOpen}
+        setQuoteDialogOpen={setQuoteDialogOpen}
+      />
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="p-4" data-testid="card-quote-billing">
           <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
@@ -1480,16 +1532,19 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
                   type="number"
                   value={localInitialQuote || ""}
                   onChange={(e) => handleInitialQuoteChange(Number(e.target.value) || 0)}
-                  disabled={fieldsReadOnly}
+                  disabled={fieldsReadOnly || quoteItems.length > 0}
                   className="text-xs"
                   data-testid="input-initial-quote"
                 />
-                {localInitialQuote !== initialQuote && !fieldsReadOnly && (
+                {localInitialQuote !== initialQuote && !fieldsReadOnly && quoteItems.length === 0 && (
                   <Button size="sm" variant="outline" onClick={handleSaveInitialQuote} disabled={isPending} data-testid="button-save-initial-quote">
                     <Save className="w-3 h-3" />
                   </Button>
                 )}
               </div>
+              {quoteItems.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">Auto-calculated from quotation items</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -1652,33 +1707,70 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
         </Card>
       </div>
 
-      <Card className="p-4" data-testid="card-financial-revenue">
-        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-primary" />
-          Revenue Projection
-        </h3>
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground w-32 shrink-0">Probability</span>
-            <div className="flex items-center gap-2 flex-1">
-              {episode.revenueProbability != null ? (
-                <>
-                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className={cn("h-full rounded-full transition-all", episode.revenueProbability >= 70 ? "bg-green-500" : episode.revenueProbability >= 40 ? "bg-amber-500" : "bg-red-500")}
-                      style={{ width: `${episode.revenueProbability}%` }}
-                    />
-                  </div>
-                  <span className="text-xs font-medium text-foreground">{episode.revenueProbability}%</span>
-                </>
-              ) : (
-                <span className="text-xs text-muted-foreground">Not calculated</span>
-              )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="p-4" data-testid="card-room-allocation">
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <BedDouble className="w-4 h-4 text-primary" />
+            Room Allocation
+          </h3>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Room Type</Label>
+              <SearchableSelect
+                value={localRoomTypeId}
+                onValueChange={(val) => setLocalRoomTypeId(val || "")}
+                options={(roomTypesList as any[]).filter((r: any) => r.status === "Active" && r.approvalStatus === "Approved").map((r: any) => ({ value: String(r.id), label: r.name }))}
+                placeholder="Select room type"
+                triggerClassName="text-xs"
+                data-testid="select-room-type"
+              />
             </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Room Number (optional)</Label>
+              <Input
+                value={localRoomNumber}
+                onChange={(e) => setLocalRoomNumber(e.target.value)}
+                placeholder="e.g., 301-A"
+                className="text-xs"
+                data-testid="input-room-number"
+              />
+            </div>
+            {roomChanged && (
+              <Button size="sm" onClick={handleSaveRoom} disabled={isPending} data-testid="button-save-room">
+                <Save className="w-3 h-3 mr-1" /> Save Room Details
+              </Button>
+            )}
           </div>
-          <InfoRow label="Expected Revenue" value={episode.expectedRevenueAmount ? `₹${episode.expectedRevenueAmount.toLocaleString()}` : null} />
-        </div>
-      </Card>
+        </Card>
+
+        <Card className="p-4" data-testid="card-financial-revenue">
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-primary" />
+            Revenue Projection
+          </h3>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground w-32 shrink-0">Probability</span>
+              <div className="flex items-center gap-2 flex-1">
+                {episode.revenueProbability != null ? (
+                  <>
+                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full transition-all", episode.revenueProbability >= 70 ? "bg-green-500" : episode.revenueProbability >= 40 ? "bg-amber-500" : "bg-red-500")}
+                        style={{ width: `${episode.revenueProbability}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-medium text-foreground">{episode.revenueProbability}%</span>
+                  </>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Not calculated</span>
+                )}
+              </div>
+            </div>
+            <InfoRow label="Expected Revenue" value={episode.expectedRevenueAmount ? `₹${episode.expectedRevenueAmount.toLocaleString()}` : null} />
+          </div>
+        </Card>
+      </div>
 
       <Dialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
         <DialogContent>
@@ -1710,6 +1802,207 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function QuotationSection({ episode, quoteItems, costHeadsList, quoteDialogOpen, setQuoteDialogOpen }: {
+  episode: any;
+  quoteItems: any[];
+  costHeadsList: any[];
+  quoteDialogOpen: boolean;
+  setQuoteDialogOpen: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const activeCostHeads = (costHeadsList as any[]).filter((ch: any) => ch.status === "Active" && ch.approvalStatus === "Approved");
+  const deptCostHeads = episode.treatmentDepartmentId
+    ? activeCostHeads.filter((ch: any) => !ch.treatmentDepartmentId || ch.treatmentDepartmentId === episode.treatmentDepartmentId)
+    : activeCostHeads;
+
+  const [rows, setRows] = useState<Array<{ costHeadId: string; amount: string; remarks: string }>>([]);
+
+  useEffect(() => {
+    if (quoteDialogOpen) {
+      if (quoteItems.length > 0) {
+        setRows(quoteItems.map((qi: any) => ({
+          costHeadId: String(qi.costHeadId),
+          amount: String(qi.amount),
+          remarks: qi.remarks || "",
+        })));
+      } else {
+        setRows([{ costHeadId: "", amount: "", remarks: "" }]);
+      }
+    }
+  }, [quoteDialogOpen, quoteItems]);
+
+  const addRow = () => setRows([...rows, { costHeadId: "", amount: "", remarks: "" }]);
+  const removeRow = (idx: number) => {
+    if (rows.length <= 1) return;
+    setRows(rows.filter((_, i) => i !== idx));
+  };
+  const updateRow = (idx: number, field: string, value: string) => {
+    const updated = [...rows];
+    updated[idx] = { ...updated[idx], [field]: value };
+    setRows(updated);
+  };
+
+  const runningTotal = rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+
+  const saveQuote = useMutation({
+    mutationFn: async () => {
+      const validItems = rows.filter(r => r.costHeadId && Number(r.amount) > 0);
+      const res = await apiRequest("POST", `/api/episodes/${episode.id}/quote-items`, {
+        items: validItems.map(r => ({
+          costHeadId: Number(r.costHeadId),
+          amount: Number(r.amount),
+          remarks: r.remarks || null,
+        })),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Quotation saved" });
+      setQuoteDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id, "quote-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id] });
+    },
+    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const quoteTotal = quoteItems.reduce((sum: number, qi: any) => sum + (qi.amount || 0), 0);
+
+  return (
+    <Card className="p-4" data-testid="card-quotation">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Receipt className="w-4 h-4 text-primary" />
+          Quotation
+        </h3>
+        <Button size="sm" onClick={() => setQuoteDialogOpen(true)} data-testid="button-create-quote">
+          <Plus className="w-3 h-3 mr-1" />
+          {quoteItems.length > 0 ? "Edit Quote" : "Create Quote"}
+        </Button>
+      </div>
+
+      {quoteItems.length > 0 ? (
+        <div className="space-y-2">
+          <div className="border border-border rounded-md overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">#</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Cost Head</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Amount (₹)</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {quoteItems.map((qi: any, idx: number) => (
+                  <tr key={qi.id} className="border-t border-border" data-testid={`row-quote-item-${qi.id}`}>
+                    <td className="px-3 py-2 text-muted-foreground">{idx + 1}</td>
+                    <td className="px-3 py-2 font-medium">{qi.costHeadName}</td>
+                    <td className="px-3 py-2 text-right">₹{(qi.amount || 0).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{qi.remarks || "—"}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-border bg-muted/30">
+                  <td colSpan={2} className="px-3 py-2 font-semibold text-right">Total</td>
+                  <td className="px-3 py-2 text-right font-bold text-primary">₹{quoteTotal.toLocaleString()}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">No quotation items yet. Click "Create Quote" to add itemized costs.</p>
+      )}
+
+      <Dialog open={quoteDialogOpen} onOpenChange={setQuoteDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{quoteItems.length > 0 ? "Edit Quotation" : "Create Quotation"}</DialogTitle>
+            <DialogDescription>Add cost heads and amounts for this episode.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {rows.map((row, idx) => (
+              <div key={idx} className="flex items-start gap-2" data-testid={`quote-row-${idx}`}>
+                <div className="flex-1 min-w-[140px]">
+                  {idx === 0 && <Label className="text-xs text-muted-foreground mb-1 block">Cost Head</Label>}
+                  <SearchableSelect
+                    value={row.costHeadId}
+                    onValueChange={(val) => updateRow(idx, "costHeadId", val || "")}
+                    options={deptCostHeads.map((ch: any) => ({ value: String(ch.id), label: ch.name }))}
+                    placeholder="Select cost head"
+                    triggerClassName="text-xs"
+                    data-testid={`select-cost-head-${idx}`}
+                  />
+                </div>
+                <div className="w-32">
+                  {idx === 0 && <Label className="text-xs text-muted-foreground mb-1 block">Amount (₹)</Label>}
+                  <Input
+                    type="number"
+                    value={row.amount}
+                    onChange={(e) => updateRow(idx, "amount", e.target.value)}
+                    placeholder="0"
+                    className="text-xs"
+                    data-testid={`input-quote-amount-${idx}`}
+                  />
+                </div>
+                <div className="flex-1 min-w-[100px]">
+                  {idx === 0 && <Label className="text-xs text-muted-foreground mb-1 block">Remarks</Label>}
+                  <Input
+                    value={row.remarks}
+                    onChange={(e) => updateRow(idx, "remarks", e.target.value)}
+                    placeholder="Optional"
+                    className="text-xs"
+                    data-testid={`input-quote-remarks-${idx}`}
+                  />
+                </div>
+                <div className={idx === 0 ? "mt-5" : ""}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeRow(idx)}
+                    disabled={rows.length <= 1}
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                    data-testid={`button-remove-row-${idx}`}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+
+            <Button variant="outline" size="sm" onClick={addRow} className="w-full" data-testid="button-add-quote-row">
+              <Plus className="w-3 h-3 mr-1" /> Add Row
+            </Button>
+
+            <div className="border-t border-border pt-3 flex items-center justify-between">
+              <span className="text-sm font-semibold">Total</span>
+              <span className="text-lg font-bold text-primary" data-testid="text-quote-total">
+                ₹{runningTotal.toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQuoteDialogOpen(false)} data-testid="button-cancel-quote">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => saveQuote.mutate()}
+              disabled={saveQuote.isPending || rows.every(r => !r.costHeadId || !Number(r.amount))}
+              data-testid="button-save-quote"
+            >
+              {saveQuote.isPending ? "Saving..." : "Save Quotation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
 
@@ -1861,7 +2154,28 @@ function InsuranceTab({
               {episode.preauthSubmittedAt && (
                 <InfoRow label="Submitted At" value={fmtDateTime(episode.preauthSubmittedAt)} />
               )}
-              <InfoRow label="Approved Amount" value={episode.preauthApprovedAmount ? `₹${episode.preauthApprovedAmount.toLocaleString()}` : null} />
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Initial Approval Amount (₹)</Label>
+                <Input
+                  type="number"
+                  value={episode.initialApprovalAmount || ""}
+                  onChange={(e) => onUpdate({ initialApprovalAmount: Number(e.target.value) || null })}
+                  placeholder="Amount initially approved"
+                  className="text-xs"
+                  data-testid="input-initial-approval-amount"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Final Approved Amount (₹)</Label>
+                <Input
+                  type="number"
+                  value={episode.preauthApprovedAmount || ""}
+                  onChange={(e) => onUpdate({ preauthApprovedAmount: Number(e.target.value) || null })}
+                  placeholder="Final approved amount"
+                  className="text-xs"
+                  data-testid="input-preauth-approved-amount"
+                />
+              </div>
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <Label className="text-xs text-muted-foreground">Rejection Reason</Label>

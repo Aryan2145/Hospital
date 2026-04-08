@@ -217,6 +217,10 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "retentionMonths", label: "Retention Period (months)", type: "number" },
     { key: "action", label: "Action", type: "select", options: ["archive", "anonymize", "delete"] },
   ],
+
+  costHeads: [
+    { key: "treatmentDepartmentId", label: "Treatment Department", type: "ref", refTable: "treatmentDepartments" },
+  ],
 };
 
 export default function MasterData() {

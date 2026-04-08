@@ -315,4 +315,11 @@ export const MASTER_CATEGORIES = [
       { key: "rejectionReasons", label: "Rejection Reason" },
     ]
   },
+  {
+    category: "Financials",
+    tables: [
+      { key: "roomTypes", label: "Room Type" },
+      { key: "costHeads", label: "Cost Head" },
+    ]
+  },
 ];

@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -5963,11 +5963,11 @@ export async function registerRoutes(
 
       if (body.initialQuote !== undefined || body.approvedDiscount !== undefined) {
         const iq = body.initialQuote ?? oldEpisode?.initialQuote ?? 0;
-        const ad = body.approvedDiscount ?? oldEpisode?.approvedDiscount ?? 0;
+        const discountStatus = oldEpisode?.discountStatus || "Draft";
+        const ad = discountStatus === "Approved" ? (body.approvedDiscount ?? oldEpisode?.approvedDiscount ?? 0) : 0;
         body.finalQuote = Math.max(0, iq - ad);
         body.initialQuote = iq;
-        body.approvedDiscount = ad;
-        body.estimatedCost = iq;
+        body.originalQuotedAmount = iq;
         body.finalEstimatedAmount = body.finalQuote;
       }
 
@@ -7384,24 +7384,20 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Cannot modify an approved discount. Revoke approval first." });
       }
 
-      const baseAmount = originalQuotedAmount || oldEpisode.originalQuotedAmount || oldEpisode.estimatedCost || 0;
+      const baseAmount = originalQuotedAmount || oldEpisode.initialQuote || oldEpisode.originalQuotedAmount || oldEpisode.estimatedCost || 0;
 
       let calcPercent = discountPercent || 0;
       let calcAmount = discountAmount || 0;
-      let finalAmount = baseAmount;
 
       if (discountType === "Percentage") {
         calcPercent = Math.min(100, Math.max(0, discountPercent || 0));
         calcAmount = Math.round(baseAmount * calcPercent / 100);
-        finalAmount = baseAmount - calcAmount;
-      } else if (discountType === "Flat") {
+      } else {
         calcAmount = Math.min(baseAmount, Math.max(0, discountAmount || 0));
         calcPercent = baseAmount > 0 ? Math.round((calcAmount / baseAmount) * 100) : 0;
-        finalAmount = baseAmount - calcAmount;
       }
 
       const updates: Record<string, any> = {
-        originalQuotedAmount: baseAmount,
         discountApplied: true,
         discountType,
         discountPercent: calcPercent,
@@ -7410,8 +7406,9 @@ export async function registerRoutes(
         discountNotes: discountNotes.trim(),
         discountStatus: "Pending",
         initialQuote: baseAmount,
-        finalEstimatedAmount: baseAmount,
+        originalQuotedAmount: baseAmount,
         finalQuote: baseAmount,
+        finalEstimatedAmount: baseAmount,
       };
 
       await storage.updateEpisode(episodeId, tid, updates);
@@ -7425,7 +7422,7 @@ export async function registerRoutes(
         entityId: episodeId,
         action: "discount_submitted",
         oldValues: { discountStatus: oldEpisode.discountStatus, discountAmount: oldEpisode.discountAmount },
-        newValues: { discountStatus: "Pending", discountAmount: calcAmount, discountPercent: calcPercent, finalAmount },
+        newValues: { discountStatus: "Pending", discountAmount: calcAmount, discountPercent: calcPercent },
         changedFields: "discountStatus,discountAmount,discountPercent,finalEstimatedAmount",
         performedBy: userName,
         performedByCrmUserId: crmUser?.id,
@@ -7459,9 +7456,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Discount is already approved" });
       }
 
-      const userName = crmUser?.employeeName || req.user?.email || "System";
-      const discountAmt = oldEpisode.discountAmount || oldEpisode.approvedDiscount || 0;
-      const baseAmt = oldEpisode.originalQuotedAmount || oldEpisode.initialQuote || oldEpisode.estimatedCost || 0;
+      const userName = crmUser?.employeeName || crmUser?.name || req.user?.email || "System";
+      const discountAmt = oldEpisode.discountAmount || 0;
+      const baseAmt = oldEpisode.initialQuote || oldEpisode.originalQuotedAmount || oldEpisode.estimatedCost || 0;
       const newFinalQuote = Math.max(0, baseAmt - discountAmt);
       const updateFields: Record<string, any> = {
         discountStatus: "Approved",
@@ -7470,7 +7467,6 @@ export async function registerRoutes(
         negotiationStatus: "Approved",
         approvedDiscount: discountAmt,
         finalQuote: newFinalQuote,
-        estimatedCost: baseAmt,
         finalEstimatedAmount: newFinalQuote,
       };
       if (oldEpisode.actualBill != null) {
@@ -7517,8 +7513,8 @@ export async function registerRoutes(
       const oldEpisode = await storage.getEpisode(episodeId, tid);
       if (!oldEpisode) return res.status(404).json({ message: "Episode not found" });
 
-      const userName = crmUser?.employeeName || req.user?.email || "System";
-      const baseAmt = oldEpisode.originalQuotedAmount || oldEpisode.initialQuote || oldEpisode.estimatedCost || 0;
+      const userName = crmUser?.employeeName || crmUser?.name || req.user?.email || "System";
+      const baseAmt = oldEpisode.initialQuote || oldEpisode.originalQuotedAmount || oldEpisode.estimatedCost || 0;
       const revokeFields: Record<string, any> = {
         discountStatus: "Draft",
         discountApprovedBy: null,
@@ -7548,6 +7544,128 @@ export async function registerRoutes(
 
       const freshEp = await storage.getEpisode(episodeId, tid);
       res.json(freshEp);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // EPISODE QUOTE ITEMS
+  // =============================================
+
+  app.get("/api/episodes/:id/quote-items", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+      const items = await db.select().from(episodeQuoteItems)
+        .where(and(eq(episodeQuoteItems.tenantId, tid), eq(episodeQuoteItems.episodeId, episodeId)))
+        .orderBy(episodeQuoteItems.displayOrder);
+      const enriched = [];
+      for (const item of items) {
+        const ch = await db.select().from(costHeads).where(and(eq(costHeads.id, item.costHeadId), eq(costHeads.tenantId, tid))).limit(1);
+        enriched.push({ ...item, costHeadName: ch[0]?.name || "Unknown" });
+      }
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/episodes/:id/quote-items", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+      const ep = await storage.getEpisode(episodeId, tid);
+      if (!ep) return res.status(404).json({ message: "Episode not found" });
+
+      const { items } = req.body;
+      if (!items || !Array.isArray(items)) {
+        return res.status(400).json({ message: "items array is required" });
+      }
+
+      await db.delete(episodeQuoteItems)
+        .where(and(eq(episodeQuoteItems.tenantId, tid), eq(episodeQuoteItems.episodeId, episodeId)));
+
+      let total = 0;
+      const crmUser = await getSessionCrmUserWithRole(req);
+      const userName = crmUser?.name || "System";
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (!item.costHeadId || !item.amount) continue;
+        const chCheck = await db.select().from(costHeads).where(and(eq(costHeads.id, Number(item.costHeadId)), eq(costHeads.tenantId, tid))).limit(1);
+        if (chCheck.length === 0) continue;
+        const amt = Math.max(0, Math.round(Number(item.amount)));
+        total += amt;
+        await db.insert(episodeQuoteItems).values({
+          tenantId: tid,
+          episodeId,
+          costHeadId: Number(item.costHeadId),
+          amount: amt,
+          remarks: item.remarks || null,
+          displayOrder: i + 1,
+          createdBy: userName,
+        });
+      }
+
+      const updateFields: Record<string, any> = {
+        initialQuote: total,
+        originalQuotedAmount: total,
+      };
+      if (ep.discountStatus !== "Approved") {
+        updateFields.finalQuote = total;
+        updateFields.finalEstimatedAmount = total;
+      } else {
+        const disc = ep.approvedDiscount || 0;
+        updateFields.finalQuote = Math.max(0, total - disc);
+        updateFields.finalEstimatedAmount = Math.max(0, total - disc);
+      }
+      if (ep.actualBill != null) {
+        updateFields.variance = (updateFields.finalQuote || total) - (ep.actualBill || 0);
+      }
+      await storage.updateEpisode(episodeId, tid, updateFields);
+
+      const saved = await db.select().from(episodeQuoteItems)
+        .where(and(eq(episodeQuoteItems.tenantId, tid), eq(episodeQuoteItems.episodeId, episodeId)))
+        .orderBy(episodeQuoteItems.displayOrder);
+      res.json({ items: saved, total });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.delete("/api/episodes/:id/quote-items/:itemId", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+      const itemId = Number(req.params.itemId);
+
+      await db.delete(episodeQuoteItems)
+        .where(and(eq(episodeQuoteItems.id, itemId), eq(episodeQuoteItems.tenantId, tid), eq(episodeQuoteItems.episodeId, episodeId)));
+
+      const remaining = await db.select().from(episodeQuoteItems)
+        .where(and(eq(episodeQuoteItems.tenantId, tid), eq(episodeQuoteItems.episodeId, episodeId)));
+      const total = remaining.reduce((sum, i) => sum + (i.amount || 0), 0);
+
+      const ep = await storage.getEpisode(episodeId, tid);
+      const updateFields: Record<string, any> = {
+        initialQuote: total,
+        originalQuotedAmount: total,
+      };
+      if (ep && ep.discountStatus !== "Approved") {
+        updateFields.finalQuote = total;
+        updateFields.finalEstimatedAmount = total;
+      } else if (ep) {
+        const disc = ep.approvedDiscount || 0;
+        updateFields.finalQuote = Math.max(0, total - disc);
+        updateFields.finalEstimatedAmount = Math.max(0, total - disc);
+      }
+      if (ep?.actualBill != null) {
+        updateFields.variance = (updateFields.finalQuote || total) - (ep.actualBill || 0);
+      }
+      await storage.updateEpisode(episodeId, tid, updateFields);
+
+      res.json({ success: true, total });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
