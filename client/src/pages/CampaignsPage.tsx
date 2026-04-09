@@ -278,7 +278,11 @@ export default function CampaignsPage() {
     },
     onSuccess: async (campaign: any) => {
       if (formCreativeLinks.length > 0) {
-        try { await apiRequest("POST", `/api/campaigns/${campaign.id}/links`, formCreativeLinks); } catch {}
+        try {
+          await apiRequest("POST", `/api/campaigns/${campaign.id}/links`, formCreativeLinks);
+        } catch (e: any) {
+          toast({ title: "Campaign created but links failed to save", description: e.message, variant: "destructive" });
+        }
       }
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
       toast({ title: "Campaign created" });
@@ -293,7 +297,11 @@ export default function CampaignsPage() {
       return res.json();
     },
     onSuccess: async (_: any, variables: { id: number; data: any }) => {
-      try { await apiRequest("POST", `/api/campaigns/${variables.id}/links`, formCreativeLinks); } catch {}
+      try {
+        await apiRequest("POST", `/api/campaigns/${variables.id}/links`, formCreativeLinks);
+      } catch (e: any) {
+        toast({ title: "Campaign updated but links failed to save", description: e.message, variant: "destructive" });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${variables.id}/links`] });
       toast({ title: "Campaign updated" });

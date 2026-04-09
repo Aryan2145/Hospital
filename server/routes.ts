@@ -6652,7 +6652,6 @@ export async function registerRoutes(
 
   const CAMPAIGN_LINK_TYPES = ["Poster", "Reel", "Video", "Ad Creative", "Landing Page", "Other"];
   const EVENT_LINK_TYPES = ["Registration Form", "Landing Page", "Poster", "Invitation", "Brochure", "Video", "Other"];
-  const ALL_LINK_TYPES = [...new Set([...CAMPAIGN_LINK_TYPES, ...EVENT_LINK_TYPES])];
 
   function validateResourceUrl(url: string): boolean {
     try {
@@ -6703,7 +6702,7 @@ export async function registerRoutes(
       const created = [];
       for (let i = 0; i < linksPayload.length; i++) {
         const { linkType, label, url } = linksPayload[i];
-        if (!ALL_LINK_TYPES.includes(linkType)) return res.status(400).json({ message: `Invalid linkType: ${linkType}` });
+        if (!CAMPAIGN_LINK_TYPES.includes(linkType)) return res.status(400).json({ message: `Invalid campaign linkType: ${linkType}. Must be one of: ${CAMPAIGN_LINK_TYPES.join(", ")}` });
         if (!url || !validateResourceUrl(url)) return res.status(400).json({ message: "URL must be a valid http or https URL" });
         const [link] = await db.insert(resourceLinks).values({
           tenantId: tid, entityType: "campaign", entityId, linkType, label: label || null, url, displayOrder: i, createdBy: userId,
@@ -6759,7 +6758,7 @@ export async function registerRoutes(
       const created = [];
       for (let i = 0; i < linksPayload.length; i++) {
         const { linkType, label, url } = linksPayload[i];
-        if (!ALL_LINK_TYPES.includes(linkType)) return res.status(400).json({ message: `Invalid linkType: ${linkType}` });
+        if (!EVENT_LINK_TYPES.includes(linkType)) return res.status(400).json({ message: `Invalid event linkType: ${linkType}. Must be one of: ${EVENT_LINK_TYPES.join(", ")}` });
         if (!url || !validateResourceUrl(url)) return res.status(400).json({ message: "URL must be a valid http or https URL" });
         const [link] = await db.insert(resourceLinks).values({
           tenantId: tid, entityType: "event", entityId, linkType, label: label || null, url, displayOrder: i, createdBy: userId,

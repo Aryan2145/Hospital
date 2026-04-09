@@ -109,7 +109,11 @@ export default function EventsPage() {
     },
     onSuccess: async (event: any) => {
       if (formResourceLinks.length > 0) {
-        try { await apiRequest("POST", `/api/events/${event.id}/links`, formResourceLinks); } catch {}
+        try {
+          await apiRequest("POST", `/api/events/${event.id}/links`, formResourceLinks);
+        } catch (e: any) {
+          toast({ title: "Event created but links failed to save", description: e.message, variant: "destructive" });
+        }
       }
       queryClient.invalidateQueries({ queryKey: ["/api/events"] });
       queryClient.invalidateQueries({ queryKey: ["/api/events/stats"] });
@@ -125,7 +129,11 @@ export default function EventsPage() {
       return id;
     },
     onSuccess: async (eventId: number) => {
-      try { await apiRequest("POST", `/api/events/${eventId}/links`, formResourceLinks); } catch {}
+      try {
+        await apiRequest("POST", `/api/events/${eventId}/links`, formResourceLinks);
+      } catch (e: any) {
+        toast({ title: "Event updated but links failed to save", description: e.message, variant: "destructive" });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/events"] });
       queryClient.invalidateQueries({ queryKey: ["/api/events/stats"] });
       queryClient.invalidateQueries({ queryKey: [`/api/events/${eventId}/links`] });
