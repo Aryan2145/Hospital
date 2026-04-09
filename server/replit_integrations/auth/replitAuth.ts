@@ -61,7 +61,7 @@ export async function setupAuth(app: Express) {
 
       console.log(`[login] Found ${allMatches.length} user(s) for mobile ${normalizedMobile}: ${allMatches.map(u => `id=${u.id}/t=${u.tenantId}`).join(", ")}`);
 
-      const activeMatches = allMatches.filter(u => u.isActive && u.status === "Active" && u.passwordHash);
+      const activeMatches = allMatches.filter(u => u.isActive && u.status === "Active" && u.passwordHash).sort((a, b) => a.tenantId - b.tenantId);
       if (activeMatches.length === 0) {
         const inactiveUser = allMatches.find(u => !u.isActive || u.status !== "Active");
         if (inactiveUser) {
