@@ -19,7 +19,7 @@ import {
   ExternalLink, Zap,
 } from "lucide-react";
 import { fmtDate } from "@/lib/date-utils";
-import { ResourceLinksSection } from "@/components/ResourceLinksSection";
+import { ResourceLinksSection, ResourceLinksInlineEditor } from "@/components/ResourceLinksSection";
 
 interface Campaign {
   id: number;
@@ -216,6 +216,7 @@ export default function CampaignsPage() {
   const [formIsActive, setFormIsActive] = useState("true");
   const [formUtmTerm, setFormUtmTerm] = useState("");
   const [formUtmContent, setFormUtmContent] = useState("");
+  const [formCreativeLinks, setFormCreativeLinks] = useState<{ linkType: string; label: string; url: string }[]>([]);
 
   const { data: campaigns, isLoading } = useQuery<Campaign[]>({
     queryKey: ["/api/campaigns"],
@@ -275,7 +276,10 @@ export default function CampaignsPage() {
       const res = await apiRequest("POST", "/api/campaigns", data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async (campaign: any) => {
+      if (formCreativeLinks.length > 0) {
+        try { await apiRequest("POST", `/api/campaigns/${campaign.id}/links`, formCreativeLinks); } catch {}
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
       toast({ title: "Campaign created" });
       closeDialog();
@@ -288,8 +292,10 @@ export default function CampaignsPage() {
       const res = await apiRequest("PATCH", `/api/campaigns/${id}`, data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async (_: any, variables: { id: number; data: any }) => {
+      try { await apiRequest("POST", `/api/campaigns/${variables.id}/links`, formCreativeLinks); } catch {}
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${variables.id}/links`] });
       toast({ title: "Campaign updated" });
       closeDialog();
     },
@@ -314,6 +320,7 @@ export default function CampaignsPage() {
     setFormIsActive("true");
     setFormUtmTerm("");
     setFormUtmContent("");
+    setFormCreativeLinks([]);
     setDialogOpen(true);
   };
 
@@ -335,6 +342,11 @@ export default function CampaignsPage() {
     setFormIsActive(c.isActive === false ? "false" : "true");
     setFormUtmTerm(c.utmTerm || "");
     setFormUtmContent(c.utmContent || "");
+    setFormCreativeLinks([]);
+    fetch(`/api/campaigns/${c.id}/links`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then((links: any[]) => setFormCreativeLinks(links.map((l: any) => ({ linkType: l.linkType, label: l.label || "", url: l.url }))))
+      .catch(() => {});
     setDialogOpen(true);
   };
 
@@ -920,6 +932,14 @@ export default function CampaignsPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div>
+                <ResourceLinksInlineEditor
+                  entityType="campaign"
+                  links={formCreativeLinks}
+                  onChange={setFormCreativeLinks}
+                />
               </div>
 
               <Button

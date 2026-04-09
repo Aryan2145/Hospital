@@ -28,6 +28,7 @@ import {
   Pencil,
   Eye,
 } from "lucide-react";
+import { ResourceLinksInlineEditor } from "@/components/ResourceLinksSection";
 
 const EVENT_TYPES = ["Health Camp", "Seminar", "Webinar", "Workshop", "Community Outreach", "Other"];
 const EVENT_STATUSES = ["Draft", "Published", "Ongoing", "Completed", "Cancelled"];
@@ -91,6 +92,7 @@ export default function EventsPage() {
     notes: "",
     status: "Draft",
   });
+  const [formResourceLinks, setFormResourceLinks] = useState<{ linkType: string; label: string; url: string }[]>([]);
 
   const { data: eventsList = [], isLoading } = useQuery<EventRecord[]>({
     queryKey: ["/api/events"],
@@ -101,8 +103,14 @@ export default function EventsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/events", data),
-    onSuccess: () => {
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/events", data);
+      return res.json();
+    },
+    onSuccess: async (event: any) => {
+      if (formResourceLinks.length > 0) {
+        try { await apiRequest("POST", `/api/events/${event.id}/links`, formResourceLinks); } catch {}
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/events"] });
       queryClient.invalidateQueries({ queryKey: ["/api/events/stats"] });
       setDialogOpen(false);
@@ -112,10 +120,15 @@ export default function EventsPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => apiRequest("PATCH", `/api/events/${id}`, data),
-    onSuccess: () => {
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      await apiRequest("PATCH", `/api/events/${id}`, data);
+      return id;
+    },
+    onSuccess: async (eventId: number) => {
+      try { await apiRequest("POST", `/api/events/${eventId}/links`, formResourceLinks); } catch {}
       queryClient.invalidateQueries({ queryKey: ["/api/events"] });
       queryClient.invalidateQueries({ queryKey: ["/api/events/stats"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/events/${eventId}/links`] });
       setDialogOpen(false);
       toast({ title: "Event updated" });
     },
@@ -135,6 +148,7 @@ export default function EventsPage() {
   function openCreate() {
     setEditingEvent(null);
     setFormData({ name: "", type: "Health Camp", description: "", venue: "", location: "", startDate: "", endDate: "", maxCapacity: "", organizer: "", budget: "", contactPhone: "", contactEmail: "", notes: "", status: "Draft" });
+    setFormResourceLinks([]);
     setDialogOpen(true);
   }
 
@@ -156,6 +170,11 @@ export default function EventsPage() {
       notes: evt.notes || "",
       status: evt.status,
     });
+    setFormResourceLinks([]);
+    fetch(`/api/events/${evt.id}/links`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then((links: any[]) => setFormResourceLinks(links.map((l: any) => ({ linkType: l.linkType, label: l.label || "", url: l.url }))))
+      .catch(() => {});
     setDialogOpen(true);
   }
 
@@ -482,6 +501,12 @@ export default function EventsPage() {
               <Label>Notes</Label>
               <Textarea value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} placeholder="Additional notes..." rows={2} data-testid="input-notes" />
             </div>
+
+            <ResourceLinksInlineEditor
+              entityType="event"
+              links={formResourceLinks}
+              onChange={setFormResourceLinks}
+            />
           </div>
 
           <DialogFooter>

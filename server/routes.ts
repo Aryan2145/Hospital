@@ -8,7 +8,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db, pool } from "./db";
-import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks, doctorLeaveExceptions, slaRules, reminderPolicies, dataRetentionPolicies } from "@shared/schema";
+import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, campaigns, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks, doctorLeaveExceptions, slaRules, reminderPolicies, dataRetentionPolicies } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -6650,21 +6650,9 @@ export async function registerRoutes(
   // RESOURCE LINKS (Campaign & Event Creatives)
   // =============================================
 
-  app.get("/api/resource-links/:entityType/:entityId", isAuthenticated, async (req, res) => {
-    try {
-      const tid = await getDefaultTenantId(req);
-      const { entityType, entityId } = req.params;
-      const links = await db.select().from(resourceLinks).where(
-        and(eq(resourceLinks.tenantId, tid), eq(resourceLinks.entityType, entityType), eq(resourceLinks.entityId, Number(entityId)))
-      ).orderBy(resourceLinks.createdAt);
-      res.json(links);
-    } catch (err: any) {
-      res.status(500).json({ message: humanizeError(err) });
-    }
-  });
-
-  const VALID_ENTITY_TYPES = ["campaign", "event"];
-  const VALID_LINK_TYPES = ["Poster", "Reel", "Video", "Landing Page", "Registration Form", "Creative", "Other"];
+  const CAMPAIGN_LINK_TYPES = ["Poster", "Reel", "Video", "Ad Creative", "Landing Page", "Other"];
+  const EVENT_LINK_TYPES = ["Registration Form", "Landing Page", "Poster", "Invitation", "Brochure", "Video", "Other"];
+  const ALL_LINK_TYPES = [...new Set([...CAMPAIGN_LINK_TYPES, ...EVENT_LINK_TYPES])];
 
   function validateResourceUrl(url: string): boolean {
     try {
@@ -6675,53 +6663,124 @@ export async function registerRoutes(
     }
   }
 
-  app.post("/api/resource-links", isAuthenticated, async (req, res) => {
+  async function verifyEntityOwnership(entityType: string, entityId: number, tid: number): Promise<boolean> {
+    if (entityType === "campaign") {
+      const [c] = await db.select({ id: campaigns.id }).from(campaigns).where(and(eq(campaigns.id, entityId), eq(campaigns.tenantId, tid)));
+      return !!c;
+    } else if (entityType === "event") {
+      const [e] = await db.select({ id: events.id }).from(events).where(and(eq(events.id, entityId), eq(events.tenantId, tid)));
+      return !!e;
+    }
+    return false;
+  }
+
+  app.get("/api/campaigns/:id/links", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      const { entityType, entityId, linkType, label, url } = req.body;
-      if (!VALID_ENTITY_TYPES.includes(entityType)) return res.status(400).json({ message: "entityType must be 'campaign' or 'event'" });
-      if (!VALID_LINK_TYPES.includes(linkType)) return res.status(400).json({ message: `linkType must be one of: ${VALID_LINK_TYPES.join(", ")}` });
-      if (!url || !validateResourceUrl(url)) return res.status(400).json({ message: "URL must be a valid http or https URL" });
-      const eid = Number(entityId);
-      if (!Number.isFinite(eid) || eid <= 0) return res.status(400).json({ message: "Invalid entityId" });
-      const parsed = insertResourceLinkSchema.parse({ entityType, entityId: eid, linkType, label: label || null, url, tenantId: tid });
-      const [link] = await db.insert(resourceLinks).values(parsed).returning();
-      res.status(201).json(link);
+      const entityId = Number(req.params.id);
+      if (!Number.isFinite(entityId) || entityId <= 0) return res.status(400).json({ message: "Invalid campaign id" });
+      if (!(await verifyEntityOwnership("campaign", entityId, tid))) return res.status(404).json({ message: "Campaign not found" });
+      const links = await db.select().from(resourceLinks).where(
+        and(eq(resourceLinks.tenantId, tid), eq(resourceLinks.entityType, "campaign"), eq(resourceLinks.entityId, entityId))
+      ).orderBy(resourceLinks.displayOrder, resourceLinks.createdAt);
+      res.json(links);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/campaigns/:id/links", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const entityId = Number(req.params.id);
+      if (!Number.isFinite(entityId) || entityId <= 0) return res.status(400).json({ message: "Invalid campaign id" });
+      if (!(await verifyEntityOwnership("campaign", entityId, tid))) return res.status(404).json({ message: "Campaign not found" });
+      const userId = String((req as any).session?.crmUserId || "system");
+      const linksPayload = Array.isArray(req.body) ? req.body : [req.body];
+      await db.delete(resourceLinks).where(
+        and(eq(resourceLinks.tenantId, tid), eq(resourceLinks.entityType, "campaign"), eq(resourceLinks.entityId, entityId))
+      );
+      const created = [];
+      for (let i = 0; i < linksPayload.length; i++) {
+        const { linkType, label, url } = linksPayload[i];
+        if (!ALL_LINK_TYPES.includes(linkType)) return res.status(400).json({ message: `Invalid linkType: ${linkType}` });
+        if (!url || !validateResourceUrl(url)) return res.status(400).json({ message: "URL must be a valid http or https URL" });
+        const [link] = await db.insert(resourceLinks).values({
+          tenantId: tid, entityType: "campaign", entityId, linkType, label: label || null, url, displayOrder: i, createdBy: userId,
+        }).returning();
+        created.push(link);
+      }
+      res.status(201).json(created);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
     }
   });
 
-  app.patch("/api/resource-links/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/campaigns/:id/links", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: "Invalid id" });
-      const { linkType, label, url } = req.body;
-      if (linkType !== undefined && !VALID_LINK_TYPES.includes(linkType)) return res.status(400).json({ message: `linkType must be one of: ${VALID_LINK_TYPES.join(", ")}` });
-      if (url !== undefined && !validateResourceUrl(url)) return res.status(400).json({ message: "URL must be a valid http or https URL" });
-      const [updated] = await db.update(resourceLinks).set({
-        ...(linkType !== undefined ? { linkType } : {}),
-        ...(label !== undefined ? { label } : {}),
-        ...(url !== undefined ? { url } : {}),
-      }).where(and(eq(resourceLinks.id, id), eq(resourceLinks.tenantId, tid))).returning();
-      if (!updated) return res.status(404).json({ message: "Resource link not found" });
-      res.json(updated);
+      const entityId = Number(req.params.id);
+      if (!Number.isFinite(entityId) || entityId <= 0) return res.status(400).json({ message: "Invalid campaign id" });
+      await db.delete(resourceLinks).where(
+        and(eq(resourceLinks.tenantId, tid), eq(resourceLinks.entityType, "campaign"), eq(resourceLinks.entityId, entityId))
+      );
+      res.json({ message: "All campaign links deleted" });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/events/:id/links", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const entityId = Number(req.params.id);
+      if (!Number.isFinite(entityId) || entityId <= 0) return res.status(400).json({ message: "Invalid event id" });
+      if (!(await verifyEntityOwnership("event", entityId, tid))) return res.status(404).json({ message: "Event not found" });
+      const links = await db.select().from(resourceLinks).where(
+        and(eq(resourceLinks.tenantId, tid), eq(resourceLinks.entityType, "event"), eq(resourceLinks.entityId, entityId))
+      ).orderBy(resourceLinks.displayOrder, resourceLinks.createdAt);
+      res.json(links);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/events/:id/links", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const entityId = Number(req.params.id);
+      if (!Number.isFinite(entityId) || entityId <= 0) return res.status(400).json({ message: "Invalid event id" });
+      if (!(await verifyEntityOwnership("event", entityId, tid))) return res.status(404).json({ message: "Event not found" });
+      const userId = String((req as any).session?.crmUserId || "system");
+      const linksPayload = Array.isArray(req.body) ? req.body : [req.body];
+      await db.delete(resourceLinks).where(
+        and(eq(resourceLinks.tenantId, tid), eq(resourceLinks.entityType, "event"), eq(resourceLinks.entityId, entityId))
+      );
+      const created = [];
+      for (let i = 0; i < linksPayload.length; i++) {
+        const { linkType, label, url } = linksPayload[i];
+        if (!ALL_LINK_TYPES.includes(linkType)) return res.status(400).json({ message: `Invalid linkType: ${linkType}` });
+        if (!url || !validateResourceUrl(url)) return res.status(400).json({ message: "URL must be a valid http or https URL" });
+        const [link] = await db.insert(resourceLinks).values({
+          tenantId: tid, entityType: "event", entityId, linkType, label: label || null, url, displayOrder: i, createdBy: userId,
+        }).returning();
+        created.push(link);
+      }
+      res.status(201).json(created);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
     }
   });
 
-  app.delete("/api/resource-links/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/events/:id/links", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: "Invalid id" });
-      const [deleted] = await db.delete(resourceLinks).where(
-        and(eq(resourceLinks.id, id), eq(resourceLinks.tenantId, tid))
-      ).returning();
-      if (!deleted) return res.status(404).json({ message: "Resource link not found" });
-      res.json({ message: "Deleted" });
+      const entityId = Number(req.params.id);
+      if (!Number.isFinite(entityId) || entityId <= 0) return res.status(400).json({ message: "Invalid event id" });
+      await db.delete(resourceLinks).where(
+        and(eq(resourceLinks.tenantId, tid), eq(resourceLinks.entityType, "event"), eq(resourceLinks.entityId, entityId))
+      );
+      res.json({ message: "All event links deleted" });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

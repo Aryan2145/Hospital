@@ -2101,6 +2101,8 @@ export const resourceLinks = pgTable("resource_links", {
   linkType: text("link_type").notNull(),
   label: text("label"),
   url: text("url").notNull(),
+  displayOrder: integer("display_order").default(0),
+  createdBy: varchar("created_by"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
