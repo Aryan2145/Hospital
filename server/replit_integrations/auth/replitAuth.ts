@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { db } from "../../db";
 import { crmUsers, tenants, tenantSettings, systemRoles } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { sendPasswordResetEmail, TenantSmtpConfig } from "../../email";
 import { sendPasswordResetSMS, isMSG91Configured } from "../../sms";
 
@@ -55,22 +55,88 @@ export async function setupAuth(app: Express) {
       }
 
       if (allMatches.length === 0) {
+        console.log(`[login] No user found for mobile ${normalizedMobile}`);
         return res.status(401).json({ message: "Invalid mobile number or password" });
       }
 
-      for (const candidate of allMatches) {
-        if (!candidate.isActive || candidate.status !== "Active") continue;
-        if (!candidate.passwordHash) continue;
+      console.log(`[login] Found ${allMatches.length} user(s) for mobile ${normalizedMobile}: ${allMatches.map(u => `id=${u.id}/t=${u.tenantId}`).join(", ")}`);
+
+      const activeMatches = allMatches.filter(u => u.isActive && u.status === "Active" && u.passwordHash);
+      if (activeMatches.length === 0) {
+        const inactiveUser = allMatches.find(u => !u.isActive || u.status !== "Active");
+        if (inactiveUser) {
+          return res.status(403).json({ message: "Your account is inactive. Contact your administrator." });
+        }
+        return res.status(401).json({ message: "Password not set. Contact your administrator." });
+      }
+
+      const lockedUser = activeMatches.find(u => u.lockedUntil && new Date(u.lockedUntil) > new Date());
+      if (lockedUser && activeMatches.length === 1) {
+        const remainingMin = Math.ceil((new Date(lockedUser.lockedUntil!).getTime() - Date.now()) / 60000);
+        return res.status(423).json({ message: `Account locked due to too many failed attempts. Try again in ${remainingMin} minute(s).` });
+      }
+
+      const ipKey = req.ip || "unknown";
+      const ratEntry = LOGIN_RATE_LIMIT.get(ipKey);
+      if (ratEntry && Date.now() < ratEntry.resetAt && ratEntry.count > 20) {
+        return res.status(429).json({ message: "Too many login attempts from this IP. Please try again later." });
+      }
+      if (!ratEntry || Date.now() > ratEntry.resetAt) {
+        LOGIN_RATE_LIMIT.set(ipKey, { count: 1, resetAt: Date.now() + 900000 });
+      } else {
+        ratEntry.count++;
+      }
+
+      for (const candidate of activeMatches) {
         if (candidate.lockedUntil && new Date(candidate.lockedUntil) > new Date()) continue;
-        const isValid = await bcrypt.compare(password, candidate.passwordHash);
+        const isValid = await bcrypt.compare(password, candidate.passwordHash!);
         if (isValid) {
-          return await tryLogin(candidate, password, req, res);
+          await db.update(crmUsers).set({
+            failedLoginAttempts: 0,
+            lockedUntil: null,
+            lastLoginAt: new Date(),
+          }).where(eq(crmUsers.id, candidate.id));
+
+          (req.session as any).crmUserId = candidate.id;
+          (req.session as any).tenantId = candidate.tenantId;
+
+          return req.session.save((err: any) => {
+            if (err) {
+              console.error("[login] Session save error:", err);
+              return res.status(500).json({ message: "Login failed" });
+            }
+            console.log(`[login] Success: userId=${candidate.id}, tenantId=${candidate.tenantId}`);
+            res.json({
+              success: true,
+              user: {
+                id: String(candidate.id),
+                name: candidate.name,
+                email: candidate.email,
+                phone: candidate.phone,
+              },
+            });
+          });
         }
       }
 
-      return await tryLogin(allMatches[0], password, req, res);
+      const firstActive = activeMatches[0];
+      await db.update(crmUsers).set({
+        failedLoginAttempts: sql`COALESCE(${crmUsers.failedLoginAttempts}, 0) + 1`,
+      }).where(eq(crmUsers.id, firstActive.id));
+
+      const [updated] = await db.select({ attempts: crmUsers.failedLoginAttempts }).from(crmUsers).where(eq(crmUsers.id, firstActive.id));
+      const attempts = updated?.attempts || 1;
+      console.log(`[login] Failed: userId=${firstActive.id}, attempts=${attempts}`);
+
+      if (attempts >= MAX_LOGIN_ATTEMPTS) {
+        await db.update(crmUsers).set({
+          lockedUntil: new Date(Date.now() + LOCKOUT_DURATION_MS),
+        }).where(eq(crmUsers.id, firstActive.id));
+        return res.status(423).json({ message: "Account locked due to too many failed attempts. Try again in 15 minutes." });
+      }
+      return res.status(401).json({ message: "Invalid mobile number or password" });
     } catch (error) {
-      console.error("Login error:", error);
+      console.error("[login] Error:", error);
       res.status(500).json({ message: "Login failed" });
     }
   });
@@ -270,6 +336,80 @@ export async function setupAuth(app: Express) {
       res.clearCookie("connect.sid");
       res.json({ success: true });
     });
+  });
+
+  app.post("/api/auth/change-password", isAuthenticated, async (req, res) => {
+    try {
+      const crmUserId = (req.session as any).crmUserId;
+      const { currentPassword, newPassword } = req.body;
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: "Current password and new password are required" });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: "New password must be at least 6 characters" });
+      }
+
+      const [user] = await db.select().from(crmUsers).where(eq(crmUsers.id, crmUserId));
+      if (!user || !user.passwordHash) {
+        return res.status(400).json({ message: "Unable to change password" });
+      }
+
+      const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!isValid) {
+        return res.status(401).json({ message: "Current password is incorrect" });
+      }
+
+      const hash = await hashPassword(newPassword);
+      await db.update(crmUsers).set({ passwordHash: hash }).where(eq(crmUsers.id, crmUserId));
+
+      res.json({ success: true, message: "Password changed successfully" });
+    } catch (error) {
+      console.error("Change password error:", error);
+      res.status(500).json({ message: "Failed to change password" });
+    }
+  });
+
+  app.post("/api/auth/admin-reset-password", isAuthenticated, async (req, res) => {
+    try {
+      const crmUserId = (req.session as any).crmUserId;
+      const tenantId = (req.session as any).tenantId;
+
+      const [currentUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, crmUserId));
+      if (!currentUser || !currentUser.systemRoleId) {
+        return res.status(403).json({ message: "Only administrators can reset passwords" });
+      }
+      const [role] = await db.select().from(systemRoles).where(eq(systemRoles.id, currentUser.systemRoleId));
+      if (!role || !["SYS_ADMIN", "ADMIN"].includes(role.code)) {
+        return res.status(403).json({ message: "Only administrators can reset passwords" });
+      }
+
+      const { userId, newPassword } = req.body;
+      if (!userId || !newPassword) {
+        return res.status(400).json({ message: "User ID and new password are required" });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: "New password must be at least 6 characters" });
+      }
+
+      const [targetUser] = await db.select().from(crmUsers).where(
+        and(eq(crmUsers.id, Number(userId)), eq(crmUsers.tenantId, tenantId))
+      );
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const hash = await hashPassword(newPassword);
+      await db.update(crmUsers).set({
+        passwordHash: hash,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      }).where(eq(crmUsers.id, targetUser.id));
+
+      res.json({ success: true, message: `Password reset for ${targetUser.name}` });
+    } catch (error) {
+      console.error("Admin reset password error:", error);
+      res.status(500).json({ message: "Failed to reset password" });
+    }
   });
 
   app.post("/api/auth/forgot-password", async (req, res) => {

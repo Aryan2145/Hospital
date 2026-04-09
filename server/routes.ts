@@ -9659,6 +9659,8 @@ export async function registerRoutes(
   await clearStaleConnectorMetrics();
   await fixPendingApprovalStatus();
   await ensureLeadSourcesExist();
+  await ensureRoomTypesExist();
+  await ensureCostHeadsExist();
   await ensureCrmTeamDepartments();
   await consolidateDuplicateTeams();
   return httpServer;
@@ -9901,6 +9903,48 @@ async function provisionNewTenant(tid: number) {
     await safe(() => db.insert(conversionStages).values({ tenantId: tid, ...cs, status: "Active", displayOrder: i + 1, approvalStatus: "Approved" }));
   }
 
+  const defaultRoomTypes = [
+    { code: "GENERAL", name: "General", order: 1 },
+    { code: "SEMI_SPL", name: "Semi-Special", order: 2 },
+    { code: "SMALL_AC_SPL", name: "Small AC Special", order: 3 },
+    { code: "AC_SPECIAL", name: "AC Special", order: 4 },
+    { code: "DELUXE", name: "Deluxe", order: 5 },
+    { code: "SUITE", name: "Suite", order: 6 },
+  ];
+  for (const rt of defaultRoomTypes) {
+    await safe(() => db.insert(roomTypes).values({
+      tenantId: tid, code: rt.code, name: rt.name,
+      status: "Active", displayOrder: rt.order, approvalStatus: "Approved",
+    }));
+  }
+
+  const commonCostHeads = [
+    { code: "HOSPITAL_BILL", name: "Hospital Bill", order: 1 },
+    { code: "IMPLANT_BILL", name: "Implant Bill", order: 2 },
+    { code: "MEDICINE", name: "Medicine", order: 3 },
+    { code: "PRE_OP", name: "Pre-Op Investigation", order: 4 },
+    { code: "PHYSIO", name: "Physiotherapy", order: 5 },
+    { code: "EXTRA_MEDICAL", name: "Extra Medical Management", order: 6 },
+    { code: "SURGEON_FEE", name: "Surgeon Fee", order: 7 },
+    { code: "ANAESTHESIA", name: "Anaesthesia Charges", order: 8 },
+    { code: "OT_CHARGES", name: "OT / Operation Theatre Charges", order: 9 },
+    { code: "ICU_CHARGES", name: "ICU Charges", order: 10 },
+    { code: "ROOM_RENT", name: "Room Rent", order: 11 },
+    { code: "NURSING", name: "Nursing Charges", order: 12 },
+    { code: "BLOOD_BANK", name: "Blood Bank Charges", order: 13 },
+    { code: "CONSUMABLES", name: "Consumables & Disposables", order: 14 },
+    { code: "DIAGNOSTIC", name: "Diagnostic / Imaging", order: 15 },
+    { code: "LAB_CHARGES", name: "Laboratory Charges", order: 16 },
+    { code: "CONSULTATION", name: "Consultation Fee", order: 17 },
+    { code: "MISC", name: "Miscellaneous", order: 18 },
+  ];
+  for (const ch of commonCostHeads) {
+    await safe(() => db.insert(costHeads).values({
+      tenantId: tid, code: ch.code, name: ch.name,
+      status: "Active", displayOrder: ch.order, approvalStatus: "Approved",
+    }));
+  }
+
   console.log(`Provisioned new tenant #${tid} with all master data`);
 }
 
@@ -9930,6 +9974,7 @@ async function ensureSuperAdmin() {
       { code: "DEMO-MGR", name: "Neha Kapoor", email: "manager@demohospital.com", phone: "+919876500002", roleCode: "MANAGER" },
       { code: "DEMO-AGT", name: "Ravi Joshi", email: "agent@demohospital.com", phone: "+919876500003", roleCode: "AGENT" },
       { code: "DEMO-CNS", name: "Priya Desai", email: "counsellor@demohospital.com", phone: "+919876500004", roleCode: "COUNSELLOR" },
+      { code: "NEHA-S", name: "Neha Sharma", email: "neha.sharma@viroc.in", phone: "+919227473123", roleCode: "MANAGER" },
     ];
     if (virocTenant) {
       const virocRoles = await db.select().from(systemRoles).where(eq(systemRoles.tenantId, 4));
@@ -10002,33 +10047,19 @@ async function ensureSuperAdmin() {
       console.log("Super Admin user created.");
     }
 
-    const defaultHash = await hashPassword(defaultPassword);
-    const bcrypt = await import("bcryptjs");
     const allUsers = await db.select().from(crmUsers).where(eq(crmUsers.status, "Active"));
     let fixedCount = 0;
     for (const user of allUsers) {
       const updates: Record<string, any> = {};
-      if (!user.passwordHash) {
-        updates.passwordHash = defaultHash;
-      } else {
-        const matches = await bcrypt.compare(defaultPassword, user.passwordHash);
-        if (!matches) {
-          updates.passwordHash = defaultHash;
-        }
-      }
       if (user.phone && !user.phone.startsWith("+91") && user.phone.replace(/\D/g, "").length === 10) {
         updates.phone = "+91" + user.phone.replace(/\D/g, "");
-      }
-      if (user.failedLoginAttempts && user.failedLoginAttempts > 0) {
-        updates.failedLoginAttempts = 0;
-        updates.lockedUntil = null;
       }
       if (Object.keys(updates).length > 0) {
         await db.update(crmUsers).set(updates).where(eq(crmUsers.id, user.id));
         fixedCount++;
       }
     }
-    if (fixedCount > 0) console.log(`Fixed ${fixedCount} CRM user(s) (password/phone/lockout)`);
+    if (fixedCount > 0) console.log(`Fixed ${fixedCount} CRM user(s) (phone format)`);
   } catch (err) {
     console.error("Error ensuring super admin:", err);
   }
@@ -10055,6 +10086,142 @@ async function ensureLeadSourcesExist() {
     }
   } catch (err) {
     console.error("Error ensuring lead sources:", err);
+  }
+}
+
+async function ensureRoomTypesExist() {
+  try {
+    const allTenants = await db.select().from(tenants);
+    const defaultRoomTypes = [
+      { code: "GENERAL", name: "General", order: 1 },
+      { code: "SEMI_SPL", name: "Semi-Special", order: 2 },
+      { code: "SMALL_AC_SPL", name: "Small AC Special", order: 3 },
+      { code: "AC_SPECIAL", name: "AC Special", order: 4 },
+      { code: "DELUXE", name: "Deluxe", order: 5 },
+      { code: "SUITE", name: "Suite", order: 6 },
+    ];
+    for (const tenant of allTenants) {
+      for (const rt of defaultRoomTypes) {
+        const existing = await db.select().from(roomTypes)
+          .where(and(eq(roomTypes.tenantId, tenant.id), eq(roomTypes.code, rt.code)));
+        if (existing.length === 0) {
+          await db.insert(roomTypes).values({
+            tenantId: tenant.id, code: rt.code, name: rt.name,
+            status: "Active", displayOrder: rt.order, approvalStatus: "Approved",
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error ensuring room types:", err);
+  }
+}
+
+async function ensureCostHeadsExist() {
+  try {
+    const allTenants = await db.select().from(tenants);
+    const commonCostHeads = [
+      { code: "HOSPITAL_BILL", name: "Hospital Bill", order: 1 },
+      { code: "IMPLANT_BILL", name: "Implant Bill", order: 2 },
+      { code: "MEDICINE", name: "Medicine", order: 3 },
+      { code: "PRE_OP", name: "Pre-Op Investigation", order: 4 },
+      { code: "PHYSIO", name: "Physiotherapy", order: 5 },
+      { code: "EXTRA_MEDICAL", name: "Extra Medical Management", order: 6 },
+      { code: "SURGEON_FEE", name: "Surgeon Fee", order: 7 },
+      { code: "ANAESTHESIA", name: "Anaesthesia Charges", order: 8 },
+      { code: "OT_CHARGES", name: "OT / Operation Theatre Charges", order: 9 },
+      { code: "ICU_CHARGES", name: "ICU Charges", order: 10 },
+      { code: "ROOM_RENT", name: "Room Rent", order: 11 },
+      { code: "NURSING", name: "Nursing Charges", order: 12 },
+      { code: "BLOOD_BANK", name: "Blood Bank Charges", order: 13 },
+      { code: "CONSUMABLES", name: "Consumables & Disposables", order: 14 },
+      { code: "DIAGNOSTIC", name: "Diagnostic / Imaging", order: 15 },
+      { code: "LAB_CHARGES", name: "Laboratory Charges", order: 16 },
+      { code: "CONSULTATION", name: "Consultation Fee", order: 17 },
+      { code: "MISC", name: "Miscellaneous", order: 18 },
+    ];
+    for (const tenant of allTenants) {
+      for (const ch of commonCostHeads) {
+        const existing = await db.select().from(costHeads)
+          .where(and(eq(costHeads.tenantId, tenant.id), eq(costHeads.code, ch.code)));
+        if (existing.length === 0) {
+          await db.insert(costHeads).values({
+            tenantId: tenant.id, code: ch.code, name: ch.name,
+            status: "Active", displayOrder: ch.order, approvalStatus: "Approved",
+          });
+        }
+      }
+    }
+
+    const specialtyCostHeads: Record<string, { code: string; name: string; order: number }[]> = {
+      "JOINT_REPL": [
+        { code: "JR_PROSTHESIS", name: "Joint Prosthesis / Implant", order: 20 },
+        { code: "JR_REHAB", name: "Post-Surgery Rehabilitation", order: 21 },
+      ],
+      "SPINE_SURG": [
+        { code: "SP_CAGE_SCREWS", name: "Spine Cages & Pedicle Screws", order: 20 },
+        { code: "SP_NEURO_MON", name: "Neuro Monitoring", order: 21 },
+      ],
+      "SPORTS_INJ": [
+        { code: "SI_ARTHROSCOPY", name: "Arthroscopy Equipment", order: 20 },
+        { code: "SI_SPORTS_REHAB", name: "Sports Rehabilitation", order: 21 },
+      ],
+      "TRAUMA": [
+        { code: "TR_FIXATION", name: "Fracture Fixation Hardware", order: 20 },
+        { code: "TR_CAST", name: "Cast / Splint Material", order: 21 },
+      ],
+      "PAIN_MGMT": [
+        { code: "PM_INJECTION", name: "Pain Block / Injection", order: 20 },
+        { code: "PM_THERAPY", name: "Pain Therapy Sessions", order: 21 },
+      ],
+      "FOOT_ANKLE": [
+        { code: "FA_ORTHOTICS", name: "Custom Orthotics / Insoles", order: 20 },
+      ],
+      "CARDIO": [
+        { code: "CD_STENT", name: "Stent / Cardiac Implant", order: 20 },
+        { code: "CD_CATHLAB", name: "Cath Lab Charges", order: 21 },
+      ],
+      "NEURO": [
+        { code: "NR_NEURO_IMG", name: "Neuro Imaging (MRI/CT)", order: 20 },
+      ],
+      "GEN_SURG": [
+        { code: "GS_LAPAROSCOPY", name: "Laparoscopy Equipment", order: 20 },
+      ],
+      "INT_MED": [
+        { code: "IM_IV_THERAPY", name: "IV Therapy / Infusion", order: 20 },
+      ],
+      "PAED": [
+        { code: "PD_NICU", name: "NICU Charges", order: 20 },
+      ],
+      "DERM": [
+        { code: "DR_PROCEDURE", name: "Derma Procedure Charges", order: 20 },
+      ],
+    };
+
+    for (const tenant of allTenants) {
+      const depts = await db.select().from(treatmentDepartments)
+        .where(eq(treatmentDepartments.tenantId, tenant.id));
+      for (const dept of depts) {
+        const deptCostHeads = specialtyCostHeads[(dept as any).code];
+        if (!deptCostHeads) continue;
+        for (const ch of deptCostHeads) {
+          const existing = await db.select().from(costHeads)
+            .where(and(
+              eq(costHeads.tenantId, tenant.id),
+              eq(costHeads.code, ch.code),
+            ));
+          if (existing.length === 0) {
+            await db.insert(costHeads).values({
+              tenantId: tenant.id, code: ch.code, name: ch.name,
+              treatmentDepartmentId: dept.id,
+              status: "Active", displayOrder: ch.order, approvalStatus: "Approved",
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error ensuring cost heads:", err);
   }
 }
 

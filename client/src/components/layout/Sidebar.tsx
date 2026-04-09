@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 import { 
   LayoutDashboard, 
   Users, 
@@ -23,12 +24,17 @@ import {
   Settings2,
   Ticket,
   CalendarClock,
+  KeyRound,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useTenantBranding } from "@/hooks/use-tenant-branding";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 
 type NavItem = { icon: any; label: string; href: string; page: string };
 
@@ -83,6 +89,12 @@ export function Sidebar() {
   const { logout, user } = useAuth();
   const { crmUser, roleName, roleCode, canViewPage } = useCurrentUser();
   const { displayName: tenantDisplayName, logoUrl: tenantLogo } = useTenantBranding();
+  const { toast } = useToast();
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [cpCurrent, setCpCurrent] = useState("");
+  const [cpNew, setCpNew] = useState("");
+  const [cpConfirm, setCpConfirm] = useState("");
+  const [cpLoading, setCpLoading] = useState(false);
 
   const displayName = crmUser?.name || `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User";
   const displayEmail = crmUser?.email || user?.email || "";
@@ -166,17 +178,91 @@ export function Sidebar() {
           </div>
         </div>
         <p className="text-xs text-muted-foreground truncate mb-2 px-1" data-testid="text-user-email">{displayEmail}</p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => logout()}
-          className="w-full"
-          data-testid="button-logout"
-        >
-          <LogOut className="w-3.5 h-3.5 mr-2" />
-          Sign Out
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowChangePassword(true)}
+            className="flex-1"
+            data-testid="button-change-password"
+          >
+            <KeyRound className="w-3.5 h-3.5 mr-1" />
+            Password
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => logout()}
+            className="flex-1"
+            data-testid="button-logout"
+          >
+            <LogOut className="w-3.5 h-3.5 mr-1" />
+            Sign Out
+          </Button>
+        </div>
       </div>
+
+      <Dialog open={showChangePassword} onOpenChange={setShowChangePassword}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Change Password</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (cpNew !== cpConfirm) {
+                toast({ title: "Passwords do not match", variant: "destructive" });
+                return;
+              }
+              if (cpNew.length < 6) {
+                toast({ title: "Password must be at least 6 characters", variant: "destructive" });
+                return;
+              }
+              setCpLoading(true);
+              try {
+                const res = await fetch("/api/auth/change-password", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify({ currentPassword: cpCurrent, newPassword: cpNew }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                  toast({ title: data.message || "Failed to change password", variant: "destructive" });
+                } else {
+                  toast({ title: "Password changed successfully" });
+                  setShowChangePassword(false);
+                  setCpCurrent("");
+                  setCpNew("");
+                  setCpConfirm("");
+                }
+              } catch {
+                toast({ title: "Failed to change password", variant: "destructive" });
+              } finally {
+                setCpLoading(false);
+              }
+            }}
+            className="space-y-4"
+            data-testid="form-change-password"
+          >
+            <div>
+              <Label htmlFor="cp-current">Current Password</Label>
+              <Input id="cp-current" type="password" value={cpCurrent} onChange={(e) => setCpCurrent(e.target.value)} required data-testid="input-current-password" />
+            </div>
+            <div>
+              <Label htmlFor="cp-new">New Password</Label>
+              <Input id="cp-new" type="password" value={cpNew} onChange={(e) => setCpNew(e.target.value)} required minLength={6} data-testid="input-new-password" />
+            </div>
+            <div>
+              <Label htmlFor="cp-confirm">Confirm New Password</Label>
+              <Input id="cp-confirm" type="password" value={cpConfirm} onChange={(e) => setCpConfirm(e.target.value)} required minLength={6} data-testid="input-confirm-password" />
+            </div>
+            <Button type="submit" className="w-full" disabled={cpLoading} data-testid="button-submit-change-password">
+              {cpLoading ? "Changing..." : "Change Password"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
