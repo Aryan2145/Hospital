@@ -2093,6 +2093,21 @@ export const supportTicketComments = pgTable("support_ticket_comments", {
 export const insertSupportTicketCommentSchema = createInsertSchema(supportTicketComments).omit({ id: true, createdAt: true });
 export type SupportTicketComment = typeof supportTicketComments.$inferSelect;
 
+export const resourceLinks = pgTable("resource_links", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  entityType: text("entity_type").notNull(),
+  entityId: integer("entity_id").notNull(),
+  linkType: text("link_type").notNull(),
+  label: text("label"),
+  url: text("url").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertResourceLinkSchema = createInsertSchema(resourceLinks).omit({ id: true, createdAt: true });
+export type InsertResourceLink = z.infer<typeof insertResourceLinkSchema>;
+export type ResourceLink = typeof resourceLinks.$inferSelect;
+
 export const referralRewardLogs = pgTable("referral_reward_logs", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),

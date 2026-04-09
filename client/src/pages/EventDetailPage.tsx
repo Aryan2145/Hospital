@@ -29,6 +29,7 @@ import {
   User,
   TrendingUp,
 } from "lucide-react";
+import { ResourceLinksSection } from "@/components/ResourceLinksSection";
 
 const ATTENDANCE_STATUSES = ["Registered", "Confirmed", "Attended", "No-Show", "Cancelled"];
 const REG_SOURCES = ["Walk-in", "Phone", "Website", "Social Media", "Referral", "Other"];
@@ -323,6 +324,12 @@ export default function EventDetailPage() {
                 )}
               </div>
               {event.description && <p className="mt-3 text-sm text-muted-foreground border-t pt-3">{event.description}</p>}
+            </CardContent>
+          </Card>
+
+          <Card className="mb-6">
+            <CardContent className="p-4">
+              <ResourceLinksSection entityType="event" entityId={eventId} />
             </CardContent>
           </Card>
 

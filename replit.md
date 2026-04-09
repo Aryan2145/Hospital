@@ -27,7 +27,8 @@ The platform is built with a modern web stack:
 - **Post-Care Follow-Up Protocols:** Configurable step-based task chains triggered by episode status.
 - **Referral Management:** Tracks patient referrals, allows lead creation from referrals, and includes configurable reward rules based on episode stages.
 - **Help Ticketing System:** In-app bug reporting and feature requests for CRM users with a dedicated Support Admin Portal for ticket management, assignment, and team management.
-- **Event Management:** Tracks events (webinars, health camps) and registrations, allowing attendee management and conversion to leads.
+- **Event Management:** Tracks events (webinars, health camps) and registrations, allowing attendee management and conversion to leads. Includes resource links for creative assets.
+- **Campaign & Event Resource Links:** Polymorphic `resource_links` table supporting Google Drive URLs for campaign/event creatives (Poster, Reel, Video, Landing Page, Registration Form, Creative, Other). Accessible via "Resources" tab in Campaign detail dialog and Resource Links card on Event detail page. Server-side URL validation enforces http/https only.
 - **Quotation Builder:** Itemized quotation system within episodes, integrated with cost heads and discount workflows.
 - **Room Allocation:** Tracks room type and number for episodes.
 - **Insurance Pre-Auth Enhancement:** Includes fields for initial and final approval amounts.

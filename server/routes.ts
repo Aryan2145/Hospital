@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -6641,6 +6641,87 @@ export async function registerRoutes(
       }
 
       res.json({ message: `${registrationIds.length} registrations updated`, attendedDelta });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // RESOURCE LINKS (Campaign & Event Creatives)
+  // =============================================
+
+  app.get("/api/resource-links/:entityType/:entityId", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const { entityType, entityId } = req.params;
+      const links = await db.select().from(resourceLinks).where(
+        and(eq(resourceLinks.tenantId, tid), eq(resourceLinks.entityType, entityType), eq(resourceLinks.entityId, Number(entityId)))
+      ).orderBy(resourceLinks.createdAt);
+      res.json(links);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  const VALID_ENTITY_TYPES = ["campaign", "event"];
+  const VALID_LINK_TYPES = ["Poster", "Reel", "Video", "Landing Page", "Registration Form", "Creative", "Other"];
+
+  function validateResourceUrl(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === "https:" || parsed.protocol === "http:";
+    } catch {
+      return false;
+    }
+  }
+
+  app.post("/api/resource-links", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const { entityType, entityId, linkType, label, url } = req.body;
+      if (!VALID_ENTITY_TYPES.includes(entityType)) return res.status(400).json({ message: "entityType must be 'campaign' or 'event'" });
+      if (!VALID_LINK_TYPES.includes(linkType)) return res.status(400).json({ message: `linkType must be one of: ${VALID_LINK_TYPES.join(", ")}` });
+      if (!url || !validateResourceUrl(url)) return res.status(400).json({ message: "URL must be a valid http or https URL" });
+      const eid = Number(entityId);
+      if (!Number.isFinite(eid) || eid <= 0) return res.status(400).json({ message: "Invalid entityId" });
+      const parsed = insertResourceLinkSchema.parse({ entityType, entityId: eid, linkType, label: label || null, url, tenantId: tid });
+      const [link] = await db.insert(resourceLinks).values(parsed).returning();
+      res.status(201).json(link);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.patch("/api/resource-links/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: "Invalid id" });
+      const { linkType, label, url } = req.body;
+      if (linkType !== undefined && !VALID_LINK_TYPES.includes(linkType)) return res.status(400).json({ message: `linkType must be one of: ${VALID_LINK_TYPES.join(", ")}` });
+      if (url !== undefined && !validateResourceUrl(url)) return res.status(400).json({ message: "URL must be a valid http or https URL" });
+      const [updated] = await db.update(resourceLinks).set({
+        ...(linkType !== undefined ? { linkType } : {}),
+        ...(label !== undefined ? { label } : {}),
+        ...(url !== undefined ? { url } : {}),
+      }).where(and(eq(resourceLinks.id, id), eq(resourceLinks.tenantId, tid))).returning();
+      if (!updated) return res.status(404).json({ message: "Resource link not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.delete("/api/resource-links/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: "Invalid id" });
+      const [deleted] = await db.delete(resourceLinks).where(
+        and(eq(resourceLinks.id, id), eq(resourceLinks.tenantId, tid))
+      ).returning();
+      if (!deleted) return res.status(404).json({ message: "Resource link not found" });
+      res.json({ message: "Deleted" });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

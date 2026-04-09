@@ -19,6 +19,7 @@ import {
   ExternalLink, Zap,
 } from "lucide-react";
 import { fmtDate } from "@/lib/date-utils";
+import { ResourceLinksSection } from "@/components/ResourceLinksSection";
 
 interface Campaign {
   id: number;
@@ -605,6 +606,7 @@ export default function CampaignsPage() {
                   <TabsList className="w-full">
                     <TabsTrigger value="details" className="flex-1" data-testid="tab-details">Details</TabsTrigger>
                     <TabsTrigger value="utm" className="flex-1" data-testid="tab-utm">UTM Parameters</TabsTrigger>
+                    <TabsTrigger value="resources" className="flex-1" data-testid="tab-resources">Resources</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="details" className="space-y-4 mt-4">
@@ -686,6 +688,10 @@ export default function CampaignsPage() {
                         </div>
                       </div>
                     )}
+                  </TabsContent>
+
+                  <TabsContent value="resources" className="mt-4">
+                    <ResourceLinksSection entityType="campaign" entityId={detailCampaign.id} />
                   </TabsContent>
                 </Tabs>
               </>
