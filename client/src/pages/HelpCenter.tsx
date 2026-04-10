@@ -41,6 +41,12 @@ import {
   Menu,
   X,
   Ticket,
+  Scissors,
+  Link2,
+  BedDouble,
+  Receipt,
+  LifeBuoy,
+  MessageSquare,
 } from "lucide-react";
 import { SiFacebook, SiInstagram } from "react-icons/si";
 import { Card } from "@/components/ui/card";
@@ -304,6 +310,9 @@ const HELP_SECTIONS: HelpSection[] = [
       { id: "consultation-log", title: "Consultation Log & Outcomes", icon: ClipboardList },
       { id: "clinical-tab", title: "Clinical Information", icon: Stethoscope },
       { id: "financial-tab", title: "Financial & Billing", icon: FileText },
+      { id: "quotation-builder", title: "Quotation Builder", icon: Receipt },
+      { id: "room-allocation", title: "Room Allocation", icon: BedDouble },
+      { id: "surgery-scheduling", title: "Surgery Scheduling", icon: Scissors },
       { id: "insurance-tab", title: "Insurance & Pre-Auth", icon: Shield },
       { id: "family-tab", title: "Family & Decision Status", icon: Users },
       { id: "treatment-planning", title: "Treatment Planning", icon: FileText },
@@ -338,6 +347,7 @@ const HELP_SECTIONS: HelpSection[] = [
       { id: "creating-events", title: "Creating Events", icon: CalendarDays },
       { id: "registrations", title: "Registrations & Attendance", icon: Users },
       { id: "convert-to-lead", title: "Converting Attendees to Leads", icon: ArrowRight },
+      { id: "event-resources", title: "Event Resource Links", icon: Link2 },
     ],
   },
   {
@@ -347,6 +357,7 @@ const HELP_SECTIONS: HelpSection[] = [
     topics: [
       { id: "campaign-setup", title: "Campaign Setup", icon: Megaphone },
       { id: "campaign-dashboard", title: "Campaign Dashboard & Stats", icon: LayoutDashboard },
+      { id: "campaign-resources", title: "Campaign Resource Links", icon: Link2 },
       { id: "naming-conventions", title: "Naming Conventions", icon: FileText },
       { id: "utm-tracking", title: "UTM Tracking", icon: ExternalLink },
       { id: "meta-integration", title: "Connecting Meta to CRM", icon: SiFacebook, isExternal: true, href: "/help/meta-integration" },
@@ -381,6 +392,7 @@ const HELP_SECTIONS: HelpSection[] = [
     icon: LayoutDashboard,
     topics: [
       { id: "role-dashboards", title: "Role-Based Dashboards", icon: LayoutDashboard },
+      { id: "surgery-calendar", title: "Surgery Calendar", icon: CalendarDays },
       { id: "telephony-reports", title: "Telephony Reports", icon: Phone },
     ],
   },
@@ -404,7 +416,18 @@ const HELP_SECTIONS: HelpSection[] = [
     topics: [
       { id: "creating-users", title: "Creating CRM Users", icon: UserCheck },
       { id: "role-assignment", title: "Role & Access Assignment", icon: Shield },
+      { id: "password-management", title: "Password Reset & Management", icon: KeyRound },
       { id: "branch-management", title: "Branch Management", icon: Settings },
+    ],
+  },
+  {
+    id: "help-ticketing",
+    title: "Help & Support Tickets",
+    icon: LifeBuoy,
+    topics: [
+      { id: "submitting-tickets", title: "Submitting Support Tickets", icon: Ticket },
+      { id: "tracking-tickets", title: "Tracking Your Tickets", icon: ClipboardList },
+      { id: "admin-ticket-mgmt", title: "Admin Ticket Management", icon: Settings },
     ],
   },
 ];
@@ -466,6 +489,20 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
             ]} />
           </section>
           <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Forgot Password</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              If you forget your password, you can reset it from the login page:
+            </p>
+            <StepList steps={[
+              "Click 'Forgot Password?' on the login screen",
+              "Enter your registered mobile number",
+              "Choose your preferred reset method: Email or SMS",
+              "Email: A password reset link is sent to your registered email address. Click the link to set a new password.",
+              "SMS: A temporary password is sent to your mobile number via SMS. Use it to log in, then change your password.",
+            ]} />
+            <TipBox>If you don't receive the reset email, check your spam folder. If SMS is not available, contact your administrator who can reset your password directly from Team Management.</TipBox>
+          </section>
+          <section>
             <h2 className="text-lg font-bold text-foreground mb-3">Account Security</h2>
             <ul className="space-y-2">
               <li className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -479,6 +516,10 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               <li className="flex items-start gap-2 text-sm text-muted-foreground">
                 <Shield className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                 <span><strong>Stay Logged In:</strong> When you see the inactivity warning, click "Stay Logged In" to extend your session.</span>
+              </li>
+              <li className="flex items-start gap-2 text-sm text-muted-foreground">
+                <KeyRound className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>Change Password:</strong> You can change your password anytime from your profile. Go to your user menu and select "Change Password." Enter your current password and set a new one.</span>
               </li>
             </ul>
           </section>
@@ -1197,6 +1238,12 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
             </div>
           </section>
           <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Quotation Builder Integration</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              The Financial tab includes a Quotation Builder that lets you create itemized cost breakdowns using Cost Heads from master data (e.g., Surgery Charges, Room Charges, Implant Cost, Pharmacy). The total from the quotation feeds directly into the Initial Quote field. See the dedicated <strong>Quotation Builder</strong> topic for full details.
+            </p>
+          </section>
+          <section>
             <h2 className="text-lg font-bold text-foreground mb-3">Revenue Tracking</h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
               The Financial tab also contributes to pipeline value and realized revenue calculations on the dashboard. The Initial Quote feeds into the pipeline value, and the Actual Bill feeds into realized revenue once the episode is completed.
@@ -1357,6 +1404,135 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               The system calculates a revenue probability percentage for each episode based on the treatment type, current conversion stage, and historical conversion data. This powers the pipeline value calculations on the dashboard and helps managers forecast revenue.
             </p>
           </section>
+        </div>
+      ),
+    },
+    "episodes/quotation-builder": {
+      title: "Quotation Builder",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is the Quotation Builder?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Quotation Builder allows counsellors to create detailed, itemized cost breakdowns for a patient's treatment. Instead of a single lump-sum quote, you can list individual cost items — each linked to a Cost Head from master data — giving the patient a transparent view of what they are paying for.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Creating a Quotation</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Quotation Builder is available on the Financial tab of the Episode Detail page.
+            </p>
+            <StepList steps={[
+              "Open the Episode Detail page and navigate to the Financial tab",
+              "Scroll to the Quotation Builder section",
+              "Click 'Add Item' to add a line item to the quotation",
+              "Select a Cost Head (e.g., Surgery Charges, Room Charges, Anaesthesia, Implant Cost, Pharmacy, Investigation, Physiotherapy)",
+              "Enter the amount for that item and an optional description",
+              "Repeat to add all applicable cost items",
+              "The total is automatically calculated as the sum of all line items",
+              "Save the quotation — the total feeds into the episode's Initial Quote field",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Quotation Item Fields</h2>
+            <FieldTable fields={[
+              { field: "Cost Head", desc: "Category of the charge — selected from the Cost Heads master table (e.g., Surgery Charges, Room Charges, Implant Cost)" },
+              { field: "Description", desc: "Optional free-text description of the charge (e.g., 'Ceramic knee implant — Smith & Nephew')" },
+              { field: "Amount (₹)", desc: "The amount for this line item" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Managing Cost Heads</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Cost Heads are managed in the Master Data section. Common cost heads include Surgery Charges, Room Charges, Anaesthesia, Investigation, Pharmacy, Implant Cost, Physiotherapy, Doctor Fees, and Miscellaneous. Admins can add new cost heads through the master data workflow with approval.
+            </p>
+          </section>
+          <TipBox>Use the Quotation Builder for every treatment plan to give patients a clear, professional cost breakdown. This builds trust and reduces billing disputes later.</TipBox>
+        </div>
+      ),
+    },
+    "episodes/room-allocation": {
+      title: "Room Allocation",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Room Allocation for Episodes</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              When a patient is admitted for treatment, you can assign a room type and room number to their episode. This is tracked on the Clinical tab of the Episode Detail page.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Room Allocation Fields</h2>
+            <FieldTable fields={[
+              { field: "Room Type", desc: "Category of room — selected from the Room Types master table (e.g., General Ward, Semi-Private, Private, Deluxe, Suite, ICU, HDU, NICU, Day Care)" },
+              { field: "Room Number", desc: "Specific room number or identifier within the hospital" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Managing Room Types</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Room Types are managed in the Master Data section. The system comes pre-configured with common room types (General Ward, Semi-Private, Private, Deluxe, Suite, ICU, HDU, NICU, Day Care). Admins can add additional room types through the master data workflow.
+            </p>
+          </section>
+          <TipBox>Room allocation helps track bed utilization and is especially useful for billing — different room types have different daily charges which can be added as a line item in the Quotation Builder.</TipBox>
+        </div>
+      ),
+    },
+    "episodes/surgery-scheduling": {
+      title: "Surgery Scheduling",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Scheduling a Surgery</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              When an episode reaches the treatment planning or surgery scheduling phase, you can schedule the surgery date and time directly from the Episode Detail page.
+            </p>
+            <StepList steps={[
+              "Open the Episode Detail page",
+              "Click the 'Schedule Surgery' button (available when the episode is in Treatment Planning or later stages)",
+              "A scheduling dialog opens with the following fields",
+              "Select the surgery date and time",
+              "Assign the operating surgeon (defaults to the episode's Surgery Doctor if set)",
+              "Select the surgery type and operating theatre/room if applicable",
+              "Add any pre-operative notes or special instructions",
+              "Optionally set surgery alerts for the team",
+              "Click 'Schedule' to confirm — the episode status automatically moves to 'Surgery Scheduled'",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Surgery Details Display</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Once a surgery is scheduled, the details are prominently displayed on the Episode Detail page in a highlighted card showing:
+            </p>
+            <FieldTable fields={[
+              { field: "Surgery Date & Time", desc: "The scheduled date and time of the procedure" },
+              { field: "Operating Surgeon", desc: "The doctor performing the surgery" },
+              { field: "Status", desc: "Surgery Scheduled, Surgery Done, or Cancelled" },
+              { field: "Pre-Op Notes", desc: "Any special instructions or preparation notes" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Automated Actions</h2>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>A high-priority task is auto-created for surgery preparation</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>The surgery appears on the Surgery Calendar for team visibility</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>Surgery date and time are shown in the patient journey timeline</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>Episode status transitions to "Surgery Scheduled" automatically</span>
+              </li>
+            </ul>
+          </section>
+          <WarningBox>Surgery scheduling validates that all required fields (date, time, surgeon) are provided. The system prevents scheduling surgeries in the past.</WarningBox>
         </div>
       ),
     },
@@ -1625,6 +1801,54 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
         </div>
       ),
     },
+    "events/event-resources": {
+      title: "Event Resource Links",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What are Event Resource Links?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Resource Links allow you to attach external URLs to events — such as registration forms, landing pages, posters, invitations, brochures, and videos. These links are shared across the team so everyone has quick access to event materials.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Available Link Types</h2>
+            <FieldTable fields={[
+              { field: "Registration Form", desc: "Link to the event's registration form (Google Form, Typeform, etc.)" },
+              { field: "Landing Page", desc: "Event landing page or microsite URL" },
+              { field: "Poster", desc: "Link to the event poster creative (Google Drive, Canva, etc.)" },
+              { field: "Invitation", desc: "Digital invitation or e-invite link" },
+              { field: "Brochure", desc: "Event brochure or information document" },
+              { field: "Video", desc: "Promotional video or event teaser" },
+              { field: "Other", desc: "Any other type of resource link" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Adding Resource Links</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Resource links can be added when creating or editing an event:
+            </p>
+            <StepList steps={[
+              "Open the Create Event or Edit Event dialog",
+              "Scroll to the 'Resource Links' section at the bottom",
+              "Click 'Add Link' to add a new resource link",
+              "Select the link type from the dropdown",
+              "Enter the URL (must be a valid http or https URL)",
+              "Optionally add a custom label for the link",
+              "Add more links as needed — you can reorder them by drag or remove them",
+              "Save the event — all links are saved along with the event",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Viewing Resource Links</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              On the Event Detail page, resource links appear in a dedicated "Resource Links" card. Each link shows its type icon, label, and a clickable URL that opens in a new browser tab. This makes it easy for anyone on the team to quickly access event materials.
+            </p>
+          </section>
+          <TipBox>Use Google Drive or similar cloud storage to host your event creatives, then add the shareable links here. This ensures everyone on the team has access to the latest versions.</TipBox>
+        </div>
+      ),
+    },
     "campaigns/campaign-setup": {
       title: "Campaign Setup",
       content: (
@@ -1695,14 +1919,64 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
           <section>
             <h2 className="text-lg font-bold text-foreground mb-3">Campaign Detail View</h2>
             <p className="text-sm text-muted-foreground leading-relaxed mb-3">
-              Click any campaign to open its detail dialog with two tabs:
+              Click any campaign to open its detail dialog with three tabs:
             </p>
             <FieldTable fields={[
               { field: "Details Tab", desc: "Full metadata — platform, objective, funnel stage, channel, target audience, budget, dates, and name breakdown" },
+              { field: "Resources Tab", desc: "View all attached resource links (Posters, Reels, Videos, Ad Creatives, Landing Pages) with clickable URLs. Add or manage links from the Edit dialog." },
               { field: "UTM Parameters Tab", desc: "View and copy individual UTM parameters or the full UTM query string for tracking URLs" },
             ]} />
           </section>
           <TipBox>The auto-increment feature automatically suggests the next ad number (Ad2, Ad3, etc.) when you create a campaign with the same platform, objective, and month as an existing one.</TipBox>
+        </div>
+      ),
+    },
+    "campaigns/campaign-resources": {
+      title: "Campaign Resource Links",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What are Campaign Resource Links?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Campaign Resource Links let you attach external URLs to campaigns — such as ad creatives, posters, reels, videos, and landing pages. This keeps all campaign assets organized and accessible to everyone on the marketing team.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Available Link Types</h2>
+            <FieldTable fields={[
+              { field: "Poster", desc: "Static image creative — poster or banner design" },
+              { field: "Reel", desc: "Short-form video content (Instagram Reels, YouTube Shorts)" },
+              { field: "Video", desc: "Full-length video ad or promotional content" },
+              { field: "Ad Creative", desc: "General ad creative asset — carousel images, display ads, etc." },
+              { field: "Landing Page", desc: "The campaign's landing page or lead capture page URL" },
+              { field: "Other", desc: "Any other type of campaign resource" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Adding Resource Links to Campaigns</h2>
+            <StepList steps={[
+              "Open the Create Campaign or Edit Campaign dialog",
+              "Scroll to the 'Creative / Resource Links' section",
+              "Click 'Add Link' to add a resource",
+              "Select the type (Poster, Reel, Video, Ad Creative, Landing Page, Other)",
+              "Paste the URL — must be a valid http or https URL (e.g., Google Drive link, Canva share URL)",
+              "Optionally add a descriptive label (e.g., 'Main Banner v2')",
+              "Add as many links as needed",
+              "Save the campaign — links are saved automatically",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Viewing Campaign Resources</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              When you open a campaign's detail dialog, the Resources tab shows all attached links. Each link displays:
+            </p>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li>A type icon indicating the kind of resource (Poster, Reel, Video, etc.)</li>
+              <li>The label or URL as the display text</li>
+              <li>A clickable link that opens in a new browser tab</li>
+            </ul>
+          </section>
+          <TipBox>Store your campaign creatives on Google Drive and add the shareable links here. This way, the entire team can access the latest ad assets without searching through email or chat.</TipBox>
         </div>
       ),
     },
@@ -1869,15 +2143,22 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               For bulk setup or updates, you can import records from a CSV file:
             </p>
             <StepList steps={[
-              "Download the template CSV for the target master table",
+              "Download the template CSV for the target master table — the template uses friendly, human-readable column names (e.g., 'Treatment Name' instead of 'name')",
               "Fill in the data following the template format",
               "Upload the CSV file using the Import button",
-              "The system validates each row and reports any errors",
-              "Valid records are submitted to the Approval Queue",
-              "Approved records become active in the system",
+              "The system validates each row and provides clear, descriptive error messages if any rows fail validation",
+              "Valid records are submitted to the Approval Queue for review",
+              "An Admin or Manager reviews and approves the imported records",
+              "Approved records become active in the system immediately",
             ]} />
           </section>
-          <TipBox>Always use the provided template when importing data. Column headers and formats must match exactly for the import to succeed.</TipBox>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Import Error Handling</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              If any rows fail validation during import, the system provides clear error messages using friendly field names (e.g., "Treatment Name is required" instead of technical column names). This makes it easy to identify and fix issues in your CSV before re-uploading.
+            </p>
+          </section>
+          <TipBox>Always use the provided template when importing data. The templates include all required and optional columns with friendly names that match what you see in the CRM interface.</TipBox>
         </div>
       ),
     },
@@ -2308,7 +2589,53 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               { field: "My Recent Activity", desc: "Chronological activity feed" },
             ]} />
           </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Conversion Ratios</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              The dashboard includes key conversion ratios that track surgical pipeline efficiency:
+            </p>
+            <FieldTable fields={[
+              { field: "Treatment Planned → Surgery Scheduled %", desc: "Percentage of episodes that move from treatment planning to having a surgery date confirmed. Indicates how effectively patients are being converted from plan to commitment." },
+              { field: "Surgery Scheduled → Surgery Done %", desc: "Percentage of scheduled surgeries that are actually completed. Tracks follow-through and identifies drop-offs or cancellations." },
+            ]} />
+          </section>
           <TipBox>The "My Today's Tasks" and "My Overdue Tasks" cards appear on every role's dashboard. Use them in morning huddles to review what needs to be done today.</TipBox>
+        </div>
+      ),
+    },
+    "dashboards/surgery-calendar": {
+      title: "Surgery Calendar",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Surgery Calendar Overview</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Surgery Calendar provides a visual calendar view of all upcoming scheduled surgeries. It helps surgical teams, counsellors, and administrators plan resources, avoid scheduling conflicts, and maintain oversight of the surgery pipeline.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Accessing the Surgery Calendar</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Navigate to <strong>Reports & Dashboards &gt; Surgery Calendar</strong> to access the calendar view. The calendar shows all future scheduled surgeries with key details.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Calendar Features</h2>
+            <FieldTable fields={[
+              { field: "Monthly/Weekly View", desc: "Switch between monthly and weekly calendar views to see surgeries at different granularity" },
+              { field: "Surgery Cards", desc: "Each scheduled surgery appears as a card on the calendar showing patient name, procedure type, and surgeon" },
+              { field: "Branch Filter", desc: "Filter surgeries by hospital branch" },
+              { field: "Doctor Filter", desc: "Filter by the operating surgeon" },
+              { field: "Department Filter", desc: "Filter by treatment department" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Surgery Details</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Click on any surgery card in the calendar to see full details including the patient name, episode reference, surgery type, scheduled date and time, operating surgeon, and pre-operative notes. You can navigate directly to the episode detail page from the calendar.
+            </p>
+          </section>
+          <TipBox>Use the Surgery Calendar in daily morning huddles to review the day's surgical schedule. Filter by your branch to see only relevant surgeries.</TipBox>
         </div>
       ),
     },
@@ -2590,6 +2917,54 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
         </div>
       ),
     },
+    "user-management/password-management": {
+      title: "Password Reset & Management",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Self-Service Password Reset</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Users can reset their own password from the login page using the "Forgot Password?" link. The system supports two delivery methods:
+            </p>
+            <FieldTable fields={[
+              { field: "Email Reset", desc: "A password reset link is sent to the user's registered email address. The link expires after a set period for security." },
+              { field: "SMS Reset", desc: "A temporary password is sent to the user's registered mobile number via SMS. The user can log in with the temporary password and then change it." },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Admin Password Reset</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Admins can reset a user's password directly from the Team Management page. This is useful when:
+            </p>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li>A user has lost access to both their email and phone</li>
+              <li>A new employee needs initial credentials set up</li>
+              <li>An account needs to be unlocked after too many failed attempts</li>
+            </ul>
+            <StepList steps={[
+              "Navigate to Team Management (Admin only)",
+              "Find the user whose password needs resetting",
+              "Click the 'Reset Password' action on their row",
+              "Enter the new password and confirm it",
+              "The password is updated immediately — inform the user of their new credentials securely",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Change Password (Logged-In Users)</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Any logged-in user can change their own password:
+            </p>
+            <StepList steps={[
+              "Click on your user profile or the Change Password option in the user menu",
+              "Enter your current (old) password",
+              "Enter and confirm your new password",
+              "Click 'Change Password' to save",
+            ]} />
+          </section>
+          <WarningBox>When performing an admin password reset, communicate the new password to the user through a secure channel (in person or phone call). Never send passwords via email or chat.</WarningBox>
+        </div>
+      ),
+    },
     "user-management/branch-management": {
       title: "Branch Management",
       content: (
@@ -2615,6 +2990,116 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               The multi-branch architecture supports a Hub & Spoke model — a central hospital (hub) with satellite clinics or outreach centers (spokes). Each spoke operates as a branch with its own team and data, while the hub maintains centralized dashboards, reporting, and administration.
             </p>
           </section>
+        </div>
+      ),
+    },
+    "help-ticketing/submitting-tickets": {
+      title: "Submitting Support Tickets",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What are Support Tickets?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Help Ticketing System allows any CRM user to report bugs, request new features, or ask for help directly within the platform. Tickets are tracked, assigned, and resolved by the support team — no external email or phone calls needed.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Creating a New Ticket</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Navigate to <strong>Support &gt; Support Tickets</strong> from the sidebar, or click the "Report Issue / Request Feature" link at the bottom of any Help Centre article.
+            </p>
+            <StepList steps={[
+              "Click 'New Ticket' to open the submission form",
+              "Select the ticket type: Bug Report or Feature Request",
+              "Enter a clear, descriptive title summarizing the issue or request",
+              "Provide detailed description — include steps to reproduce for bugs, or a clear explanation of the desired feature",
+              "Set the priority level (Low, Medium, High, Critical)",
+              "Submit the ticket — you will receive a unique ticket number (e.g., TKT-001)",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Ticket Fields</h2>
+            <FieldTable fields={[
+              { field: "Type", desc: "Bug Report (something is broken) or Feature Request (something new is needed)" },
+              { field: "Title", desc: "Brief summary of the issue or request" },
+              { field: "Description", desc: "Detailed explanation with context, steps to reproduce, and expected vs actual behavior" },
+              { field: "Priority", desc: "Low (cosmetic), Medium (usable workaround), High (blocking workflow), Critical (system down)" },
+              { field: "Status", desc: "Auto-set to 'Open' on creation. Updated by the support team as work progresses." },
+            ]} />
+          </section>
+          <TipBox>For bug reports, include as much detail as possible — the page where the issue occurs, what you clicked, what you expected to happen, and what actually happened. Screenshots help too.</TipBox>
+        </div>
+      ),
+    },
+    "help-ticketing/tracking-tickets": {
+      title: "Tracking Your Tickets",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Viewing Your Tickets</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Support Tickets page shows all tickets you have submitted. You can see the status, priority, creation date, and any responses from the support team.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Ticket Statuses</h2>
+            <div className="space-y-2">
+              {[
+                { status: "Open", desc: "Ticket has been submitted and is awaiting review", color: "bg-blue-50" },
+                { status: "In Progress", desc: "Support team is actively working on this ticket", color: "bg-amber-50" },
+                { status: "Resolved", desc: "The issue has been fixed or the feature has been implemented", color: "bg-green-50" },
+                { status: "Closed", desc: "Ticket has been completed and closed", color: "bg-gray-50" },
+              ].map((item, i) => (
+                <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${item.color}`}>
+                  <span className="text-sm font-semibold text-foreground min-w-[100px]">{item.status}</span>
+                  <span className="text-xs text-muted-foreground">— {item.desc}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Clickable Ticket Numbers</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Each ticket has a unique ticket number (e.g., TKT-001) that is clickable. Click the ticket number to open the full ticket detail view with the complete conversation history, status updates, and any resolution notes.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Ticket Visibility</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              You can see all tickets that you have created, regardless of which team member is handling them. Managers can also see tickets submitted by members of their team. Admins have visibility into all tickets within their hospital.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "help-ticketing/admin-ticket-mgmt": {
+      title: "Admin Ticket Management",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Support Admin Portal</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Admins and designated support staff have access to the Support Admin Portal where they can manage all incoming tickets across the hospital.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Admin Capabilities</h2>
+            <FieldTable fields={[
+              { field: "View All Tickets", desc: "See every ticket submitted by any user within the hospital" },
+              { field: "Assign Tickets", desc: "Assign tickets to specific support team members for resolution" },
+              { field: "Update Status", desc: "Move tickets through the workflow: Open → In Progress → Resolved → Closed" },
+              { field: "Add Responses", desc: "Add resolution notes and communicate updates back to the ticket creator" },
+              { field: "Priority Management", desc: "Escalate or de-escalate ticket priority based on impact assessment" },
+              { field: "Team Management", desc: "Manage the support team roster and ticket assignment rules" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Ticket Creator Information</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Each ticket displays who created it, including their name and role. This helps the support team understand the context and prioritize accordingly — for example, a critical bug reported by a Manager affecting their team may need faster attention than a cosmetic request.
+            </p>
+          </section>
+          <TipBox>Review and triage new tickets daily. Acknowledging tickets quickly (even before resolving them) improves user satisfaction and trust in the support system.</TipBox>
         </div>
       ),
     },
