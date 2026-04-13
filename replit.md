@@ -17,7 +17,7 @@ The platform is built with a modern web stack:
 **Key Features & Design Patterns:**
 - **Patient Journey Management:** Distinct workflows for Leads (pre-consultation) and Episodes (post-consultation treatment). Includes a unified 12-stage funnel display.
 - **Master Data Management:** Over 50 tables with approval workflows and bulk import/export. Includes configurable consultation outcomes, post-care protocols, room types, and cost heads.
-- **Role-Based Access Control (RBAC):** 4-tier hierarchy (SYS_ADMIN, ADMIN, MANAGER, AGENT/COUNSELLOR) with granular PHI access levels.
+- **Role-Based Access Control (RBAC):** Full 12-role system: SYS_ADMIN, ADMIN, MANAGER, COUNSELLOR, AGENT (Patient Coordinator), TELECALLER, RECEPTIONIST, BILLING, INSURANCE_DESK, DOCTOR, MEDICAL_ASSISTANT, MIS_VIEWER. Permissions stored in `role_permissions` table (per tenant, per role, per module). User-level overrides in `user_permission_overrides` (with optional expiry). Frontend `canViewPage()` and `canViewEpisodeTab()` hooks enforce role-based visibility. Access Control page at `/access-control` (Admin+ only). Episode tabs filtered per role (BILLING sees clinical+financial, DOCTOR sees clinical+family, etc.).
 - **Intuitive UI:** Kanban workspace, responsive design, and a System Admin Panel for managing hospitals and subscriptions.
 - **Dynamic Branding:** Per-tenant customization of logos, favicons, display names, and color schemes.
 - **Intelligent Automation:**
@@ -34,6 +34,7 @@ The platform is built with a modern web stack:
 - **Room Allocation:** Tracks room type and number for episodes.
 - **Insurance Pre-Auth Enhancement:** Includes fields for initial and final approval amounts.
 - **Discount Calculation:** Simplified logic ensuring consistent application of approved discounts.
+- **In-App Notifications:** `in_app_notifications` table stores per-user notifications (type, title, body, link). Notification bell in sidebar header with unread count badge. Triggered when discount requests are submitted — notifies all configured `tenant_discount_approvers`. Email alert also sent via `sendDiscountApprovalEmail()`. APIs: GET /api/notifications, GET /api/notifications/unread-count, POST /api/notifications/:id/read, POST /api/notifications/read-all.
 - **Lead & Episode Enhancements:** Duplicate validation, clinical notes with audit trails, negotiation discount approval, and lead merge.
 - **Workflows:** Check-in integration, doctor availability, and detailed patient journey timelines.
 - **Dashboards:** 3-Tier Role-based dashboards provide tailored analytics, including "My Today's Tasks," "My Overdue Tasks," "Team Overdue Tasks," "Call Performance," "Lead Sources," "Episode Progress," "Revenue Pipeline," and "Conversion Funnel." Also includes Treatment Planned→Surgery Scheduled % and Surgery Scheduled→Surgery Done % conversion ratios.

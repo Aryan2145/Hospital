@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -14,6 +14,7 @@ import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { desc, eq, and, or, sql, count, gte, lte, isNull, inArray } from "drizzle-orm";
 import { encryptValue, decryptValue, isEncrypted } from "./crypto";
+import { sendDiscountApprovalEmail } from "./email";
 
 const PHI_FIELDS_TO_MASK = [
   "phoneE164", "phone_e164", "mobileNormalized", "mobile_normalized",
@@ -50,6 +51,268 @@ function applyPhiMasking(data: any, level: string): any {
     }
   }
   return result;
+}
+
+// =============================================
+// PERMISSION FRAMEWORK
+// =============================================
+
+// Module permission matrix: roleCode → module → {canView, canCreate, canEdit, canDelete}
+const DEFAULT_ROLE_PERMISSIONS: Record<string, Record<string, { canView: boolean; canCreate: boolean; canEdit: boolean; canDelete: boolean }>> = {
+  SYS_ADMIN: {
+    dashboard: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    leads: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    episodes: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    appointments: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    campaigns: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    transactions: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    team: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    masters: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    connectors: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    branding: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    settings: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    quotation: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    insurance: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    reports: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+  },
+  ADMIN: {
+    dashboard: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    leads: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    episodes: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    appointments: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    campaigns: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    transactions: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    team: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    masters: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    connectors: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    branding: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    settings: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    quotation: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    insurance: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+    reports: { canView: true, canCreate: true, canEdit: true, canDelete: true },
+  },
+  MANAGER: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    episodes: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    appointments: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    campaigns: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    transactions: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    insurance: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    reports: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+  },
+  COUNSELLOR: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    episodes: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    appointments: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    transactions: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    insurance: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    reports: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+  },
+  AGENT: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    episodes: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    appointments: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    transactions: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    reports: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+  },
+  TELECALLER: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    episodes: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    appointments: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    transactions: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    reports: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+  },
+  RECEPTIONIST: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: true, canCreate: true, canEdit: false, canDelete: false },
+    episodes: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    appointments: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    transactions: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    reports: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+  },
+  BILLING: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    episodes: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    appointments: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    transactions: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    reports: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+  },
+  INSURANCE_DESK: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    episodes: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    appointments: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    transactions: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    insurance: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    reports: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+  },
+  DOCTOR: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    episodes: { canView: true, canCreate: false, canEdit: true, canDelete: false },
+    appointments: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    transactions: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    reports: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+  },
+  MEDICAL_ASSISTANT: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    episodes: { canView: true, canCreate: false, canEdit: true, canDelete: false },
+    appointments: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    transactions: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    reports: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+  },
+  MIS_VIEWER: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    episodes: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    appointments: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    campaigns: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    transactions: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    reports: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+  },
+};
+
+// Seed role_permissions for all roles for a given tenant
+async function seedRolePermissions(tenantId: number): Promise<void> {
+  const modules = ["dashboard", "leads", "episodes", "appointments", "campaigns", "transactions", "team", "masters", "connectors", "branding", "settings", "quotation", "insurance", "reports"];
+  for (const [roleCode, perms] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+    for (const module of modules) {
+      const p = perms[module] || { canView: false, canCreate: false, canEdit: false, canDelete: false };
+      await db.insert(rolePermissions)
+        .values({ tenantId, roleCode, module, canView: p.canView, canCreate: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete })
+        .onConflictDoNothing();
+    }
+  }
+}
+
+// Check if a user has a specific permission (module + action), respecting user overrides
+// action: "canView" | "canCreate" | "canEdit" | "canDelete"
+async function hasPermission(req: any, module: string, action: "canView" | "canCreate" | "canEdit" | "canDelete"): Promise<boolean> {
+  try {
+    const crmUser = await getSessionCrmUserWithRole(req);
+    if (!crmUser) return false;
+    if (crmUser.roleCode === "SYS_ADMIN") return true;
+    // Check user-level overrides first (they take priority over role defaults)
+    const tid = await getDefaultTenantId(req);
+    const now = new Date();
+    const overrides = await db.select()
+      .from(userPermissionOverrides)
+      .where(and(
+        eq(userPermissionOverrides.crmUserId, crmUser.id),
+        eq(userPermissionOverrides.tenantId, tid),
+        eq(userPermissionOverrides.module, module),
+        eq(userPermissionOverrides.action, action),
+        or(isNull(userPermissionOverrides.expiresAt), gte(userPermissionOverrides.expiresAt, now))
+      ))
+      .limit(1);
+    if (overrides.length > 0) return overrides[0].isGranted;
+    // Fall back to role permission defaults
+    const [rolePerm] = await db.select()
+      .from(rolePermissions)
+      .where(and(
+        eq(rolePermissions.tenantId, tid),
+        eq(rolePermissions.roleCode, crmUser.roleCode),
+        eq(rolePermissions.module, module)
+      ))
+      .limit(1);
+    if (rolePerm) return (rolePerm as any)[action] === true;
+    // Fall back to in-memory defaults if DB not seeded
+    return DEFAULT_ROLE_PERMISSIONS[crmUser.roleCode]?.[module]?.[action] ?? false;
+  } catch {
+    return false;
+  }
+}
+
+// Send in-app notification to a list of crm user IDs
+async function sendInAppNotification(tenantId: number, crmUserIds: number[], type: string, title: string, body: string, opts?: { entityType?: string; entityId?: number; link?: string }) {
+  for (const uid of crmUserIds) {
+    await db.insert(inAppNotifications).values({
+      tenantId, crmUserId: uid, type, title, body,
+      entityType: opts?.entityType, entityId: opts?.entityId, link: opts?.link,
+      isRead: false,
+    });
+  }
 }
 
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -256,8 +519,17 @@ async function seedDatabase() {
     await db.insert(systemRoles).values({ tenantId: tid, code: "SYS_ADMIN", name: "System Admin", status: "Active", displayOrder: 0 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "ADMIN", name: "Admin", status: "Active", displayOrder: 1 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "MANAGER", name: "Manager", status: "Active", displayOrder: 2 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "AGENT", name: "Agent", status: "Active", displayOrder: 3 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "AGENT", name: "Patient Coordinator", status: "Active", displayOrder: 3 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "COUNSELLOR", name: "Counsellor", status: "Active", displayOrder: 4 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "TELECALLER", name: "Telecaller", status: "Active", displayOrder: 5 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "RECEPTIONIST", name: "Receptionist", status: "Active", displayOrder: 6 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "BILLING", name: "Billing Executive", status: "Active", displayOrder: 7 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "INSURANCE_DESK", name: "Insurance Desk", status: "Active", displayOrder: 8 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "DOCTOR", name: "Doctor", status: "Active", displayOrder: 9 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "MEDICAL_ASSISTANT", name: "Medical Assistant", status: "Active", displayOrder: 10 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "MIS_VIEWER", name: "MIS Viewer", status: "Active", displayOrder: 11 });
+    // Seed role permissions for all roles
+    await seedRolePermissions(tid);
 
     // Calling Lines
     await db.insert(callingLines).values({ tenantId: tid, code: "MAIN", name: "Main Reception (+91 6356300400)", status: "Active", displayOrder: 1 });
@@ -8256,6 +8528,45 @@ export async function registerRoutes(
       });
 
       const freshEp = await storage.getEpisode(episodeId, tid);
+
+      // Notify all configured discount approvers (in-app + email)
+      try {
+        const approvers = await db.select({ crmUserId: tenantDiscountApprovers.crmUserId })
+          .from(tenantDiscountApprovers)
+          .where(eq(tenantDiscountApprovers.tenantId, tid));
+        const approverIds = approvers.map(a => a.crmUserId);
+        if (approverIds.length > 0) {
+          const patientName = freshEp && (freshEp as any).patientName ? (freshEp as any).patientName : `Episode #${episodeId}`;
+          await sendInAppNotification(
+            tid, approverIds,
+            "discount_request",
+            "Discount Approval Required",
+            `${userName} requested ${calcPercent}% discount (₹${calcAmount.toLocaleString("en-IN")}) for ${patientName}. Please review and approve or reject.`,
+            { entityType: "episode", entityId: episodeId, link: `/transactions/${episodeId}` }
+          );
+          // Email approvers
+          const approverEmails = await db.select({ email: crmUsers.email, name: crmUsers.name })
+            .from(crmUsers)
+            .where(inArray(crmUsers.id, approverIds));
+          for (const approver of approverEmails) {
+            if (approver.email) {
+              sendDiscountApprovalEmail({
+                to: approver.email,
+                approverName: approver.name,
+                requestedBy: userName,
+                patientName,
+                episodeId,
+                discountPercent: calcPercent,
+                discountAmount: calcAmount,
+                discountNotes: discountNotes.trim(),
+              }).catch((e: any) => console.error("Discount email error:", e.message));
+            }
+          }
+        }
+      } catch (notifErr: any) {
+        console.error("Discount notification error:", notifErr.message);
+      }
+
       res.json(freshEp);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
@@ -10572,6 +10883,279 @@ export async function registerRoutes(
   } catch (err: any) {
     console.error("[seed] Error seeding support admin:", err.message);
   }
+
+  // ─── RBAC: Role Permissions CRUD ─────────────────────────────────────────
+  app.get("/api/admin/role-permissions", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admin users can manage role permissions" });
+      }
+      const rows = await db.select().from(rolePermissions).where(eq(rolePermissions.tenantId, tid));
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.put("/api/admin/role-permissions/:roleCode/:module", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admin users can manage role permissions" });
+      }
+      const { roleCode, module } = req.params;
+      const { canView, canCreate, canEdit, canDelete } = req.body;
+      const [existing] = await db.select({ id: rolePermissions.id })
+        .from(rolePermissions)
+        .where(and(eq(rolePermissions.tenantId, tid), eq(rolePermissions.roleCode, roleCode), eq(rolePermissions.module, module)));
+      if (existing) {
+        const [updated] = await db.update(rolePermissions)
+          .set({ canView: !!canView, canCreate: !!canCreate, canEdit: !!canEdit, canDelete: !!canDelete })
+          .where(eq(rolePermissions.id, existing.id))
+          .returning();
+        return res.json(updated);
+      }
+      const [created] = await db.insert(rolePermissions)
+        .values({ tenantId: tid, roleCode, module, canView: !!canView, canCreate: !!canCreate, canEdit: !!canEdit, canDelete: !!canDelete })
+        .returning();
+      res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // ─── RBAC: User Permission Overrides ────────────────────────────────────
+  app.get("/api/admin/user-permission-overrides/:crmUserId", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admin users can view permission overrides" });
+      }
+      const targetUserId = Number(req.params.crmUserId);
+      const rows = await db.select().from(userPermissionOverrides)
+        .where(and(eq(userPermissionOverrides.tenantId, tid), eq(userPermissionOverrides.crmUserId, targetUserId)));
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/admin/user-permission-overrides", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admin users can set permission overrides" });
+      }
+      const { crmUserId, module, action, isGranted, expiresAt, reason } = req.body;
+      if (!crmUserId || !module || !action) {
+        return res.status(400).json({ message: "crmUserId, module, and action are required" });
+      }
+      const [existing] = await db.select({ id: userPermissionOverrides.id })
+        .from(userPermissionOverrides)
+        .where(and(
+          eq(userPermissionOverrides.tenantId, tid),
+          eq(userPermissionOverrides.crmUserId, Number(crmUserId)),
+          eq(userPermissionOverrides.module, module),
+          eq(userPermissionOverrides.action, action)
+        ));
+      if (existing) {
+        const [updated] = await db.update(userPermissionOverrides)
+          .set({ isGranted: !!isGranted, expiresAt: expiresAt ? new Date(expiresAt) : null, reason: reason || null, createdBy: crmUser.id })
+          .where(eq(userPermissionOverrides.id, existing.id))
+          .returning();
+        return res.json(updated);
+      }
+      const [created] = await db.insert(userPermissionOverrides)
+        .values({
+          tenantId: tid, crmUserId: Number(crmUserId), module, action,
+          isGranted: !!isGranted, expiresAt: expiresAt ? new Date(expiresAt) : null,
+          reason: reason || null, createdBy: crmUser.id
+        })
+        .returning();
+      res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.delete("/api/admin/user-permission-overrides/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admin users can remove permission overrides" });
+      }
+      const id = Number(req.params.id);
+      await db.delete(userPermissionOverrides)
+        .where(and(eq(userPermissionOverrides.id, id), eq(userPermissionOverrides.tenantId, tid)));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // ─── In-App Notifications ─────────────────────────────────────────────────
+  app.get("/api/notifications", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser) return res.status(403).json({ message: "Not authorized" });
+      const rows = await db.select().from(inAppNotifications)
+        .where(and(
+          eq(inAppNotifications.tenantId, tid),
+          eq(inAppNotifications.crmUserId, crmUser.id)
+        ))
+        .orderBy(desc(inAppNotifications.createdAt))
+        .limit(50);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/notifications/unread-count", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser) return res.json({ count: 0 });
+      const [row] = await db.select({ count: count() }).from(inAppNotifications)
+        .where(and(
+          eq(inAppNotifications.tenantId, tid),
+          eq(inAppNotifications.crmUserId, crmUser.id),
+          eq(inAppNotifications.isRead, false)
+        ));
+      res.json({ count: Number(row?.count || 0) });
+    } catch (err: any) {
+      res.json({ count: 0 });
+    }
+  });
+
+  app.post("/api/notifications/:id/read", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser) return res.status(403).json({ message: "Not authorized" });
+      await db.update(inAppNotifications)
+        .set({ isRead: true })
+        .where(and(
+          eq(inAppNotifications.id, Number(req.params.id)),
+          eq(inAppNotifications.tenantId, tid),
+          eq(inAppNotifications.crmUserId, crmUser.id)
+        ));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/notifications/read-all", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser) return res.status(403).json({ message: "Not authorized" });
+      await db.update(inAppNotifications)
+        .set({ isRead: true })
+        .where(and(
+          eq(inAppNotifications.tenantId, tid),
+          eq(inAppNotifications.crmUserId, crmUser.id),
+          eq(inAppNotifications.isRead, false)
+        ));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // ─── Discount Approver Configuration ────────────────────────────────────
+  app.get("/api/admin/discount-approvers", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admin users can view discount approvers" });
+      }
+      const rows = await db.select({
+        id: tenantDiscountApprovers.id,
+        crmUserId: tenantDiscountApprovers.crmUserId,
+        name: crmUsers.name,
+        email: crmUsers.email,
+        designation: crmUsers.designation,
+      })
+        .from(tenantDiscountApprovers)
+        .leftJoin(crmUsers, eq(crmUsers.id, tenantDiscountApprovers.crmUserId))
+        .where(eq(tenantDiscountApprovers.tenantId, tid));
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/admin/discount-approvers", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admin users can configure discount approvers" });
+      }
+      const { crmUserId } = req.body;
+      if (!crmUserId) return res.status(400).json({ message: "crmUserId is required" });
+      const [existing] = await db.select({ id: tenantDiscountApprovers.id })
+        .from(tenantDiscountApprovers)
+        .where(and(eq(tenantDiscountApprovers.tenantId, tid), eq(tenantDiscountApprovers.crmUserId, Number(crmUserId))));
+      if (existing) return res.status(409).json({ message: "User is already a discount approver" });
+      const [created] = await db.insert(tenantDiscountApprovers)
+        .values({ tenantId: tid, crmUserId: Number(crmUserId) })
+        .returning();
+      res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.delete("/api/admin/discount-approvers/:crmUserId", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admin users can configure discount approvers" });
+      }
+      await db.delete(tenantDiscountApprovers)
+        .where(and(eq(tenantDiscountApprovers.tenantId, tid), eq(tenantDiscountApprovers.crmUserId, Number(req.params.crmUserId))));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // ─── My Effective Permissions (for frontend canViewPage checks) ──────────
+  app.get("/api/my-permissions", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser) return res.status(403).json({ message: "Not authorized" });
+
+      const MODULES = ["dashboard", "leads", "episodes", "appointments", "campaigns", "transactions", "team", "masters", "connectors", "branding", "settings", "quotation", "insurance", "reports"];
+      const PERM_KEYS: Array<["view" | "create" | "edit" | "delete", "canView" | "canCreate" | "canEdit" | "canDelete"]> = [
+        ["view", "canView"], ["create", "canCreate"], ["edit", "canEdit"], ["delete", "canDelete"],
+      ];
+
+      const result: Record<string, Record<string, boolean>> = {};
+      for (const mod of MODULES) {
+        result[mod] = {};
+        for (const [key, action] of PERM_KEYS) {
+          result[mod][key] = await hasPermission(req, mod, action);
+        }
+      }
+      res.json({ roleCode: crmUser.roleCode, permissions: result });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
 
   await seedDatabase();
   await ensurePatientsForConvertedLeads();

@@ -26,6 +26,9 @@ import {
   CalendarClock,
   KeyRound,
   UserCheck,
+  Bell,
+  CheckCheck,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -36,6 +39,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { formatDistanceToNow } from "date-fns";
 
 type NavItem = { icon: any; label: string; href: string; page: string };
 
@@ -76,6 +83,7 @@ const sections: { label: string; items: NavItem[] }[] = [
       { icon: Stethoscope, label: "Post-Care Protocols", href: "/post-care-protocols", page: "connectors" },
       { icon: Settings2, label: "Referral Settings", href: "/referral-config", page: "connectors" },
       { icon: UserCheck, label: "Discount Approvers", href: "/discount-approvers", page: "connectors" },
+      { icon: ShieldCheck, label: "Access Control", href: "/access-control", page: "access-control" },
     ],
   },
   {
@@ -86,6 +94,126 @@ const sections: { label: string; items: NavItem[] }[] = [
     ],
   },
 ];
+
+interface NotificationItem {
+  id: number;
+  type: string;
+  title: string;
+  body: string;
+  payload: any;
+  link: string | null;
+  entityType: string | null;
+  entityId: number | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
+function NotificationBell() {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+
+  const { data: countData } = useQuery<{ count: number }>({
+    queryKey: ["/api/notifications/unread-count"],
+    refetchInterval: 30000,
+    staleTime: 10000,
+  });
+
+  const { data: notifications } = useQuery<NotificationItem[]>({
+    queryKey: ["/api/notifications"],
+    enabled: open,
+    staleTime: 5000,
+  });
+
+  const markRead = useMutation({
+    mutationFn: (id: number) => apiRequest("POST", `/api/notifications/${id}/read`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+      qc.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
+
+  const markAllRead = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/notifications/read-all"),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+      qc.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
+
+  const unreadCount = countData?.count ?? 0;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className="relative p-1.5 rounded-md hover:bg-muted transition-colors"
+          data-testid="button-notifications"
+          title="Notifications"
+        >
+          <Bell className="w-4 h-4 text-muted-foreground" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-orange-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="right" align="end" className="w-80 p-0" sideOffset={8}>
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <span className="font-semibold text-sm">Notifications</span>
+          {unreadCount > 0 && (
+            <button
+              className="text-xs text-primary hover:underline flex items-center gap-1"
+              onClick={() => markAllRead.mutate()}
+              data-testid="button-mark-all-read"
+            >
+              <CheckCheck className="w-3.5 h-3.5" />
+              Mark all read
+            </button>
+          )}
+        </div>
+        <div className="max-h-80 overflow-y-auto divide-y">
+          {!notifications || notifications.length === 0 ? (
+            <div className="px-4 py-8 text-center text-muted-foreground text-sm">
+              No notifications yet
+            </div>
+          ) : (
+            notifications.map((n) => (
+              <div
+                key={n.id}
+                className={cn(
+                  "px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors",
+                  !n.isRead && "bg-blue-50/60"
+                )}
+                onClick={() => {
+                  if (!n.isRead) markRead.mutate(n.id);
+                  if (n.link) {
+                    window.location.href = n.link;
+                    setOpen(false);
+                  }
+                }}
+                data-testid={`notification-item-${n.id}`}
+              >
+                <div className="flex items-start gap-2">
+                  {!n.isRead && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 flex-shrink-0" />
+                  )}
+                  <div className={cn("flex-1", n.isRead && "pl-3.5")}>
+                    <p className="text-xs font-semibold text-foreground">{n.title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.body}</p>
+                    <p className="text-[10px] text-muted-foreground/70 mt-1">
+                      {n.createdAt ? formatDistanceToNow(new Date(n.createdAt), { addSuffix: true }) : ""}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function Sidebar() {
   const [location] = useLocation();
@@ -111,19 +239,22 @@ export function Sidebar() {
 
   return (
     <div className="h-screen w-64 bg-card border-r border-border flex flex-col z-20">
-      <div className="p-6 border-b border-border/50">
-        <div className="flex items-center gap-3">
-          {tenantLogo ? (
-            <img src={tenantLogo} alt="Logo" className="h-10 max-w-[40px] object-contain rounded-xl" data-testid="img-sidebar-logo" />
-          ) : (
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center shadow-lg shadow-primary/20">
-              <Activity className="w-6 h-6 text-white" />
+      <div className="px-6 py-4 border-b border-border/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {tenantLogo ? (
+              <img src={tenantLogo} alt="Logo" className="h-10 max-w-[40px] object-contain rounded-xl" data-testid="img-sidebar-logo" />
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center shadow-lg shadow-primary/20">
+                <Activity className="w-6 h-6 text-white" />
+              </div>
+            )}
+            <div>
+              <h1 className="font-bold text-lg tracking-tight leading-tight" style={{color: 'hsl(208, 79%, 28%)'}} data-testid="text-sidebar-brand">{tenantDisplayName}</h1>
+              <p className="text-xs text-muted-foreground font-medium">Hospital CRM</p>
             </div>
-          )}
-          <div>
-            <h1 className="font-bold text-lg tracking-tight leading-tight" style={{color: 'hsl(208, 79%, 28%)'}} data-testid="text-sidebar-brand">{tenantDisplayName}</h1>
-            <p className="text-xs text-muted-foreground font-medium">Hospital CRM</p>
           </div>
+          <NotificationBell />
         </div>
       </div>
 

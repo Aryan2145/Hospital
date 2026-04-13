@@ -198,7 +198,7 @@ export default function EpisodeDetailPage() {
   const updateEpisode = useUpdateEpisode();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { roleCode } = useCurrentUser();
+  const { roleCode, canViewEpisodeTab } = useCurrentUser();
 
   const { data: clinicalEditRolesData } = useQuery<{ allowedRoles: string[] }>({
     queryKey: ["/api/episodes/clinical-notes-edit-roles"],
@@ -493,24 +493,36 @@ export default function EpisodeDetailPage() {
 
         <LogAndNextActionCard episode={episode} />
 
-        <Tabs defaultValue="clinical" className="w-full" data-testid="episode-tabs">
+        <Tabs
+          defaultValue={canViewEpisodeTab("clinical") ? "clinical" : canViewEpisodeTab("financial") ? "financial" : "insurance"}
+          className="w-full"
+          data-testid="episode-tabs"
+        >
           <TabsList className="w-full justify-start gap-1 flex-wrap" data-testid="episode-tabs-list">
-            <TabsTrigger value="clinical" data-testid="tab-clinical">
-              <Stethoscope className="w-3.5 h-3.5 mr-1.5" />
-              Clinical
-            </TabsTrigger>
-            <TabsTrigger value="financial" data-testid="tab-financial">
-              <IndianRupee className="w-3.5 h-3.5 mr-1.5" />
-              Financial
-            </TabsTrigger>
-            <TabsTrigger value="insurance" data-testid="tab-insurance">
-              <Shield className="w-3.5 h-3.5 mr-1.5" />
-              Insurance
-            </TabsTrigger>
-            <TabsTrigger value="family" data-testid="tab-family">
-              <Users className="w-3.5 h-3.5 mr-1.5" />
-              Family Status
-            </TabsTrigger>
+            {canViewEpisodeTab("clinical") && (
+              <TabsTrigger value="clinical" data-testid="tab-clinical">
+                <Stethoscope className="w-3.5 h-3.5 mr-1.5" />
+                Clinical
+              </TabsTrigger>
+            )}
+            {canViewEpisodeTab("financial") && (
+              <TabsTrigger value="financial" data-testid="tab-financial">
+                <IndianRupee className="w-3.5 h-3.5 mr-1.5" />
+                Financial
+              </TabsTrigger>
+            )}
+            {canViewEpisodeTab("insurance") && (
+              <TabsTrigger value="insurance" data-testid="tab-insurance">
+                <Shield className="w-3.5 h-3.5 mr-1.5" />
+                Insurance
+              </TabsTrigger>
+            )}
+            {canViewEpisodeTab("family") && (
+              <TabsTrigger value="family" data-testid="tab-family">
+                <Users className="w-3.5 h-3.5 mr-1.5" />
+                Family Status
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="clinical" className="mt-4 space-y-4" data-testid="tab-content-clinical">

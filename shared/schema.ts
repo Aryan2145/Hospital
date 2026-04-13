@@ -2173,6 +2173,69 @@ export const insertTenantDiscountApproverSchema = createInsertSchema(tenantDisco
 export type InsertTenantDiscountApprover = z.infer<typeof insertTenantDiscountApproverSchema>;
 export type TenantDiscountApprover = typeof tenantDiscountApprovers.$inferSelect;
 
+// =============================================
+// ROLE PERMISSIONS
+// =============================================
+export const rolePermissions = pgTable("role_permissions", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  roleCode: text("role_code").notNull(),
+  module: text("module").notNull(),
+  canView: boolean("can_view").notNull().default(false),
+  canCreate: boolean("can_create").notNull().default(false),
+  canEdit: boolean("can_edit").notNull().default(false),
+  canDelete: boolean("can_delete").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  uniqueRolePerm: uniqueIndex("role_permissions_tenant_role_module_unique").on(table.tenantId, table.roleCode, table.module),
+}));
+
+export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({ id: true, createdAt: true });
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+export type RolePermission = typeof rolePermissions.$inferSelect;
+
+// =============================================
+// USER PERMISSION OVERRIDES
+// =============================================
+export const userPermissionOverrides = pgTable("user_permission_overrides", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  crmUserId: integer("crm_user_id").notNull().references(() => crmUsers.id),
+  module: text("module").notNull(),
+  action: text("action").notNull(),
+  isGranted: boolean("is_granted").notNull(),
+  reason: text("reason"),
+  expiresAt: timestamp("expires_at"),
+  createdBy: integer("created_by").references(() => crmUsers.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertUserPermissionOverrideSchema = createInsertSchema(userPermissionOverrides).omit({ id: true, createdAt: true });
+export type InsertUserPermissionOverride = z.infer<typeof insertUserPermissionOverrideSchema>;
+export type UserPermissionOverride = typeof userPermissionOverrides.$inferSelect;
+
+// =============================================
+// IN-APP NOTIFICATIONS
+// =============================================
+export const inAppNotifications = pgTable("in_app_notifications", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  crmUserId: integer("crm_user_id").notNull().references(() => crmUsers.id),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  entityType: text("entity_type"),
+  entityId: integer("entity_id"),
+  link: text("link"),
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertInAppNotificationSchema = createInsertSchema(inAppNotifications).omit({ id: true, createdAt: true });
+export type InsertInAppNotification = z.infer<typeof insertInAppNotificationSchema>;
+export type InAppNotification = typeof inAppNotifications.$inferSelect;
+
+// =============================================
 export const referralRewardLogs = pgTable("referral_reward_logs", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),

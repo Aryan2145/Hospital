@@ -27,6 +27,26 @@ export interface MeResponse {
   authEmail?: string;
 }
 
+export interface ModulePermissions {
+  view: boolean;
+  create: boolean;
+  edit: boolean;
+  delete: boolean;
+}
+
+export interface MyPermissionsResponse {
+  roleCode: string;
+  permissions: Record<string, ModulePermissions>;
+}
+
+export function useMyPermissions() {
+  return useQuery<MyPermissionsResponse>({
+    queryKey: ["/api/my-permissions"],
+    retry: false,
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
 export function useCurrentUser() {
   const { data, isLoading, error } = useQuery<MeResponse>({
     queryKey: ["/api/me"],
@@ -41,22 +61,74 @@ export function useCurrentUser() {
   const canViewPage = (page: string): boolean => {
     if (!isRegistered || !roleCode) return false;
 
+    // Support pages are visible to all registered users
     if (page === "support") return true;
 
+    // SYS_ADMIN sees everything
+    if (roleCode === "SYS_ADMIN") return true;
+
     switch (roleCode) {
-      case "SYS_ADMIN":
-        return true;
       case "ADMIN":
-        return ["dashboard", "leads", "appointments", "campaigns", "transactions", "team", "masters", "connectors", "branding", "email-settings", "whatsapp-settings"].includes(page);
+        return [
+          "dashboard", "leads", "episodes", "appointments", "campaigns",
+          "transactions", "team", "masters", "connectors", "branding",
+          "email-settings", "whatsapp-settings", "settings", "quotation",
+          "insurance", "reports", "access-control",
+        ].includes(page);
+
       case "MANAGER":
-        return ["dashboard", "leads", "appointments", "campaigns", "transactions", "team"].includes(page);
-      case "TELECALLER":
-        return ["dashboard", "appointments"].includes(page);
-      case "MEDICAL_ASSISTANT":
-        return ["dashboard", "transactions"].includes(page);
-      case "AGENT":
+        return [
+          "dashboard", "leads", "episodes", "appointments", "campaigns",
+          "transactions", "team", "quotation", "insurance", "reports",
+        ].includes(page);
+
       case "COUNSELLOR":
-        return ["dashboard", "leads", "appointments", "transactions"].includes(page);
+        return [
+          "dashboard", "leads", "episodes", "appointments",
+          "transactions", "quotation", "insurance", "reports",
+        ].includes(page);
+
+      case "AGENT":
+        return [
+          "dashboard", "leads", "episodes", "appointments",
+          "transactions", "reports",
+        ].includes(page);
+
+      case "TELECALLER":
+        return [
+          "dashboard", "leads", "appointments",
+        ].includes(page);
+
+      case "RECEPTIONIST":
+        return [
+          "dashboard", "leads", "appointments",
+        ].includes(page);
+
+      case "BILLING":
+        return [
+          "dashboard", "episodes", "transactions", "quotation", "reports",
+        ].includes(page);
+
+      case "INSURANCE_DESK":
+        return [
+          "dashboard", "episodes", "insurance", "quotation",
+        ].includes(page);
+
+      case "DOCTOR":
+        return [
+          "dashboard", "episodes", "appointments", "reports",
+        ].includes(page);
+
+      case "MEDICAL_ASSISTANT":
+        return [
+          "dashboard", "episodes", "appointments", "reports",
+        ].includes(page);
+
+      case "MIS_VIEWER":
+        return [
+          "dashboard", "campaigns", "reports",
+        ].includes(page);
+
       default:
         return false;
     }
@@ -65,7 +137,41 @@ export function useCurrentUser() {
   const isSysAdmin = roleCode === "SYS_ADMIN";
   const isAdmin = roleCode === "ADMIN" || roleCode === "SYS_ADMIN";
   const isManager = roleCode === "MANAGER";
+  const isClinical = roleCode === "DOCTOR" || roleCode === "MEDICAL_ASSISTANT";
+  const isBilling = roleCode === "BILLING";
+  const isInsurance = roleCode === "INSURANCE_DESK";
   const tenantSuspended = data?.tenantSubscriptionStatus === "Suspended";
+
+  // Tab names: clinical, financial, insurance, family
+  const canViewEpisodeTab = (tab: string): boolean => {
+    if (!roleCode) return false;
+    // Full access roles
+    if (["SYS_ADMIN", "ADMIN", "MANAGER", "COUNSELLOR"].includes(roleCode)) return true;
+
+    switch (roleCode) {
+      case "AGENT":
+        // Can see clinical and family but NOT financial or insurance
+        return ["clinical", "family"].includes(tab);
+      case "BILLING":
+        // Billing focuses on financial tab + basic clinical
+        return ["clinical", "financial"].includes(tab);
+      case "INSURANCE_DESK":
+        // Insurance desk sees insurance + limited financial (read-only quotation)
+        return ["clinical", "financial", "insurance"].includes(tab);
+      case "DOCTOR":
+      case "MEDICAL_ASSISTANT":
+        // Clinical staff see clinical + family, not financial/insurance
+        return ["clinical", "family"].includes(tab);
+      case "TELECALLER":
+      case "RECEPTIONIST":
+        // Very limited — only the clinical overview
+        return tab === "clinical";
+      case "MIS_VIEWER":
+        return false;
+      default:
+        return false;
+    }
+  };
 
   return {
     meData: data,
@@ -78,7 +184,11 @@ export function useCurrentUser() {
     isSysAdmin,
     isAdmin,
     isManager,
+    isClinical,
+    isBilling,
+    isInsurance,
     tenantSuspended,
     canViewPage,
+    canViewEpisodeTab,
   };
 }

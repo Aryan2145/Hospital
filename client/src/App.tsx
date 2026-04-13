@@ -55,6 +55,7 @@ import SupportAdminLogin from "@/pages/support-admin/SupportAdminLogin";
 import SupportAdminDashboard from "@/pages/support-admin/SupportAdminDashboard";
 import SurgeryCalendarPage from "@/pages/SurgeryCalendarPage";
 import ContactDirectoryPage from "@/pages/ContactDirectoryPage";
+import AccessControlPage from "@/pages/AccessControlPage";
 
 function TenantSuspended() {
   return (
@@ -237,6 +238,12 @@ function Router() {
       <Route path="/discount-approvers">
         {isAuthenticated ? (
           <RoleGate page="connectors"><DiscountApproversPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/access-control">
+        {isAuthenticated ? (
+          <RoleGate page="access-control"><AccessControlPage /></RoleGate>
         ) : <Landing />}
       </Route>
 
