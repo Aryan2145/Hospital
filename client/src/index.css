@@ -10,13 +10,13 @@
 
   /* Viroc Medical Theme */
   --background: 0 0% 98%;          /* Clean neutral white */
-  --foreground: 215 28% 17%;      /* Dark slate for text */
+  --foreground: 215 28% 12%;      /* Dark slate for text - darkened */
 
   --card: 0 0% 100%;
-  --card-foreground: 215 28% 17%;
+  --card-foreground: 215 28% 12%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 215 28% 17%;
+  --popover-foreground: 215 28% 12%;
 
   /* Primary Viroc Blue #0f4c81 -> HSL 208 79% 28% */
   --primary: 208 79% 28%;
@@ -24,11 +24,11 @@
 
   /* Secondary - neutral gray instead of blue-tinted */
   --secondary: 220 14% 96%;
-  --secondary-foreground: 215 28% 17%;
+  --secondary-foreground: 215 28% 12%;
 
   /* Muted */
   --muted: 210 40% 96.1%;
-  --muted-foreground: 215 16% 47%;
+  --muted-foreground: 215 20% 35%;
 
   /* Accent Viroc Orange #ff8c00 -> HSL 33 100% 50% */
   --accent: 33 100% 50%;
