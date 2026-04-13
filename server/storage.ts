@@ -345,8 +345,14 @@ export class DatabaseStorage implements IStorage {
 
   async addContactPersonToLead(leadId: number, tenantId: number, data: any): Promise<LeadContactPerson> {
     let cpId = data.contactPersonId;
-    if (!cpId) {
-      // Create a new contact person first
+    if (cpId) {
+      // Verify the existing contact person belongs to the same tenant (security check)
+      const [existingCp] = await db.select({ id: contactPersons.id })
+        .from(contactPersons)
+        .where(and(eq(contactPersons.id, Number(cpId)), eq(contactPersons.tenantId, tenantId)));
+      if (!existingCp) throw new Error("Contact person not found or belongs to a different tenant");
+    } else {
+      // Create a new contact person for this tenant
       const [newCp] = await db.insert(contactPersons).values({
         tenantId,
         name: data.name,

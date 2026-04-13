@@ -8,7 +8,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db, pool } from "./db";
-import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, campaigns, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks, doctorLeaveExceptions, slaRules, reminderPolicies, dataRetentionPolicies } from "@shared/schema";
+import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, campaigns, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks, doctorLeaveExceptions, slaRules, reminderPolicies, dataRetentionPolicies, contactPersons, leadContactPersons } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -1632,16 +1632,43 @@ export async function registerRoutes(
         });
       }
 
-      const lead = await storage.createLead(input);
-
-      // Atomically create any inline contact persons and link them to the lead
-      for (const cpData of inlineContacts) {
-        try {
-          await storage.addContactPersonToLead(lead.id, tid, cpData);
-        } catch (cpErr: any) {
-          console.warn("Failed to link inline contact person:", cpErr.message);
+      // Create lead and inline contact persons in a single transaction
+      const lead = await db.transaction(async (tx) => {
+        const [newLead] = await tx.insert(leads).values(input as any).returning();
+        for (const cpData of inlineContacts) {
+          let cpId = cpData.contactPersonId;
+          if (cpId) {
+            // Verify tenant ownership of existing contact person
+            const [existingCp] = await tx.select({ id: contactPersons.id })
+              .from(contactPersons)
+              .where(and(eq(contactPersons.id, Number(cpId)), eq(contactPersons.tenantId, tid)));
+            if (!existingCp) throw new Error(`Contact person ${cpId} not found in this tenant`);
+          } else {
+            // Create new contact person
+            const [newCp] = await tx.insert(contactPersons).values({
+              tenantId: tid,
+              name: cpData.name,
+              phoneE164: cpData.phoneE164 || null,
+              whatsappNumber: cpData.whatsappNumber || null,
+              email: cpData.email || null,
+              relationship: cpData.relationship || "Other",
+            }).returning();
+            cpId = newCp.id;
+          }
+          await tx.insert(leadContactPersons).values({
+            tenantId: tid,
+            leadId: newLead.id,
+            contactPersonId: cpId,
+            relationship: cpData.relationship || "Other",
+            isPrimary: cpData.isPrimary || false,
+            isBillingContact: cpData.isBillingContact || false,
+            isEmergencyContact: cpData.isEmergencyContact || false,
+            isWhatsAppConsentHolder: cpData.isWhatsAppConsentHolder || false,
+            isAppointmentCoordinator: cpData.isAppointmentCoordinator || false,
+          });
         }
-      }
+        return newLead;
+      });
 
       res.status(201).json(lead);
     } catch (err: any) {
@@ -4730,7 +4757,10 @@ export async function registerRoutes(
     }
   });
 
-  // Patient-side contact-person endpoints (using lead_contact_persons via lead-to-patient link)
+  // =============================================
+  // PATIENT CONTACT-PERSON MANAGEMENT
+  // Works through lead_contact_persons linked to the patient's episode leads
+  // =============================================
   app.get("/api/patients/:id/contact-persons", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
@@ -4775,6 +4805,67 @@ export async function registerRoutes(
       res.json(applyPhiMasking(result, phiLevel));
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // POST /api/patients/:id/contact-persons - link a contact person to patient via their lead
+  app.post("/api/patients/:id/contact-persons", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const patientId = Number(req.params.id);
+      // Verify patient belongs to this tenant
+      const [patient] = await db.select({ id: patients.id }).from(patients)
+        .where(and(eq(patients.id, patientId), eq(patients.tenantId, tid)));
+      if (!patient) return res.status(404).json({ message: "Patient not found" });
+      // Find the primary lead for this patient via episodes
+      const episodeRows = await pool.query(
+        `SELECT e.lead_id FROM episodes e WHERE e.patient_id = $1 AND e.tenant_id = $2 AND e.lead_id IS NOT NULL ORDER BY e.created_at DESC LIMIT 1`,
+        [patientId, tid]
+      );
+      if (episodeRows.rows.length === 0) {
+        return res.status(400).json({ message: "Patient has no associated lead. Add contact persons to the lead instead." });
+      }
+      const leadId = episodeRows.rows[0].lead_id;
+      // If contactPersonId provided, verify tenant ownership
+      if (req.body.contactPersonId) {
+        const [cp] = await db.select({ id: contactPersons.id }).from(contactPersons)
+          .where(and(eq(contactPersons.id, Number(req.body.contactPersonId)), eq(contactPersons.tenantId, tid)));
+        if (!cp) return res.status(403).json({ message: "Contact person not found or access denied" });
+      }
+      const link = await storage.addContactPersonToLead(leadId, tid, req.body);
+      res.status(201).json(link);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // DELETE /api/patients/:id/contact-persons/:linkId - unlink contact person from patient's lead
+  app.delete("/api/patients/:id/contact-persons/:linkId", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      // Verify the link belongs to this tenant
+      const [existingLink] = await db.select().from(leadContactPersons)
+        .where(and(eq(leadContactPersons.id, Number(req.params.linkId)), eq(leadContactPersons.tenantId, tid)));
+      if (!existingLink) return res.status(404).json({ message: "Contact person link not found" });
+      await storage.removeLeadContactPerson(Number(req.params.linkId), tid);
+      res.status(204).send();
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // PATCH /api/patients/:id/contact-persons/:linkId - update link flags
+  app.patch("/api/patients/:id/contact-persons/:linkId", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const [existingLink] = await db.select().from(leadContactPersons)
+        .where(and(eq(leadContactPersons.id, Number(req.params.linkId)), eq(leadContactPersons.tenantId, tid)));
+      if (!existingLink) return res.status(404).json({ message: "Contact person link not found" });
+      const parsed = insertLeadContactPersonSchema.partial().parse(req.body);
+      const link = await storage.updateLeadContactPerson(Number(req.params.linkId), tid, parsed);
+      res.json(link);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
     }
   });
 
@@ -4940,6 +5031,16 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const leadId = Number(req.params.id);
+      // Verify lead belongs to this tenant
+      const [lead] = await db.select({ id: leads.id }).from(leads)
+        .where(and(eq(leads.id, leadId), eq(leads.tenantId, tid)));
+      if (!lead) return res.status(404).json({ message: "Lead not found" });
+      // If contactPersonId provided, verify it belongs to this tenant
+      if (req.body.contactPersonId) {
+        const [cp] = await db.select({ id: contactPersons.id }).from(contactPersons)
+          .where(and(eq(contactPersons.id, Number(req.body.contactPersonId)), eq(contactPersons.tenantId, tid)));
+        if (!cp) return res.status(403).json({ message: "Contact person not found or access denied" });
+      }
       const parsed = insertLeadContactPersonSchema.parse({ ...req.body, tenantId: tid, leadId });
       const link = await storage.addLeadContactPerson(parsed);
       res.status(201).json(link);
@@ -4951,6 +5052,10 @@ export async function registerRoutes(
   app.patch("/api/leads/:id/contact-persons/:linkId", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
+      // Verify the link belongs to this tenant
+      const [existingLink] = await db.select().from(leadContactPersons)
+        .where(and(eq(leadContactPersons.id, Number(req.params.linkId)), eq(leadContactPersons.tenantId, tid)));
+      if (!existingLink) return res.status(404).json({ message: "Contact person link not found" });
       const parsed = insertLeadContactPersonSchema.partial().parse(req.body);
       const link = await storage.updateLeadContactPerson(Number(req.params.linkId), tid, parsed);
       res.json(link);
@@ -4962,6 +5067,10 @@ export async function registerRoutes(
   app.delete("/api/leads/:id/contact-persons/:linkId", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
+      // Verify the link belongs to this tenant
+      const [existingLink] = await db.select().from(leadContactPersons)
+        .where(and(eq(leadContactPersons.id, Number(req.params.linkId)), eq(leadContactPersons.tenantId, tid)));
+      if (!existingLink) return res.status(404).json({ message: "Contact person link not found" });
       await storage.removeLeadContactPerson(Number(req.params.linkId), tid);
       res.status(204).send();
     } catch (err: any) {

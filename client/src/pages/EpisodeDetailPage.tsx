@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,7 @@ import { getStatusColor, getValidEpisodeTransitions } from "@/lib/lead-status";
 import { format, formatDistanceToNow } from "date-fns";
 import { fmtDate, fmtDateTime, fmtTime } from "@/lib/date-utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
@@ -2202,9 +2203,13 @@ function InsuranceTab({
   );
 }
 
-function ContactPersonsReadOnlyList({ leadId }: { leadId?: number }) {
+const EP_RELATIONSHIP_OPTIONS = ["Self","Spouse","Parent","Child","Sibling","Guardian","Friend","Colleague","Caregiver","Power of Attorney","Other"];
+
+function PatientContactPersonsPanel({ leadId, patientId }: { leadId?: number; patientId?: number }) {
+  const { toast } = useToast();
+  const qk = leadId ? ["/api/leads", leadId, "contact-persons"] : null;
   const { data: contactLinks = [], isLoading } = useQuery<any[]>({
-    queryKey: ["/api/leads", leadId, "contact-persons"],
+    queryKey: qk || [],
     queryFn: async () => {
       if (!leadId) return [];
       const res = await fetch(`/api/leads/${leadId}/contact-persons`, { credentials: "include" });
@@ -2213,35 +2218,154 @@ function ContactPersonsReadOnlyList({ leadId }: { leadId?: number }) {
     },
     enabled: !!leadId,
   });
-  if (!leadId || (isLoading && contactLinks.length === 0)) return null;
-  if (!isLoading && contactLinks.length === 0) return (
-    <p className="text-xs text-muted-foreground italic">No contact persons linked to this lead.</p>
-  );
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "", phoneE164: "", whatsappNumber: "", email: "", relationship: "Other",
+    isPrimary: false, isBillingContact: false, isEmergencyContact: false,
+    isWhatsAppConsentHolder: false, isAppointmentCoordinator: false,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async (data: any) => {
+      let cpId: number | undefined;
+      const cpRes = await apiRequest("POST", "/api/contact-persons", {
+        name: data.name, phoneE164: data.phoneE164 || null,
+        whatsappNumber: data.whatsappNumber || null, email: data.email || null,
+        relationship: data.relationship,
+      });
+      const cp = await cpRes.json();
+      cpId = cp.id;
+      await apiRequest("POST", `/api/leads/${leadId}/contact-persons`, {
+        contactPersonId: cpId, relationship: data.relationship,
+        isPrimary: data.isPrimary, isBillingContact: data.isBillingContact,
+        isEmergencyContact: data.isEmergencyContact,
+        isWhatsAppConsentHolder: data.isWhatsAppConsentHolder,
+        isAppointmentCoordinator: data.isAppointmentCoordinator,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk! });
+      toast({ title: "Contact person added" });
+      setShowForm(false);
+      setFormData({ name: "", phoneE164: "", whatsappNumber: "", email: "", relationship: "Other",
+        isPrimary: false, isBillingContact: false, isEmergencyContact: false,
+        isWhatsAppConsentHolder: false, isAppointmentCoordinator: false });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: async (linkId: number) => {
+      await apiRequest("DELETE", `/api/leads/${leadId}/contact-persons/${linkId}`, null);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk! });
+      toast({ title: "Contact person removed" });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  if (!leadId) return <p className="text-xs text-muted-foreground italic">No lead linked to this episode.</p>;
+
   return (
-    <div className="space-y-2">
-      {contactLinks.map((link: any) => (
-        <div key={link.id} className="bg-muted/40 rounded p-2 text-[11px]" data-testid={`ep-contact-person-${link.id}`}>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-medium text-foreground">{link.contactPerson?.name}</span>
-            {link.relationship && <Badge variant="outline" className="text-[9px] py-0 px-1">{link.relationship}</Badge>}
-            {link.isPrimary && <Badge variant="outline" className="text-[9px] py-0 px-1 text-primary border-primary/30">Primary</Badge>}
-            {link.isBillingContact && <Badge variant="outline" className="text-[9px] py-0 px-1">Billing</Badge>}
-            {link.isEmergencyContact && <Badge variant="outline" className="text-[9px] py-0 px-1">Emergency</Badge>}
-            {link.isWhatsAppConsentHolder && <Badge variant="outline" className="text-[9px] py-0 px-1">WA Consent</Badge>}
-            {link.isAppointmentCoordinator && <Badge variant="outline" className="text-[9px] py-0 px-1">Appt Coord</Badge>}
+    <div className="space-y-3" data-testid="patient-contact-persons-panel">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{contactLinks.length} contact person{contactLinks.length !== 1 ? "s" : ""}</span>
+        <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1"
+          onClick={() => setShowForm(s => !s)} data-testid="button-add-patient-cp">
+          <Plus className="w-3 h-3" /> Add
+        </Button>
+      </div>
+
+      {showForm && (
+        <Card className="p-3 border-primary/20 bg-primary/5 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="col-span-2">
+              <Label className="text-[10px] text-muted-foreground">Full Name *</Label>
+              <Input value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
+                placeholder="Name" className="h-7 text-xs mt-0.5" data-testid="input-ep-cp-name" />
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Phone</Label>
+              <Input value={formData.phoneE164} onChange={e => setFormData(p => ({ ...p, phoneE164: e.target.value }))}
+                placeholder="+91..." className="h-7 text-xs mt-0.5" data-testid="input-ep-cp-phone" />
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Relationship</Label>
+              <Select value={formData.relationship} onValueChange={v => setFormData(p => ({ ...p, relationship: v }))}>
+                <SelectTrigger className="h-7 text-xs mt-0.5" data-testid="select-ep-cp-rel">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EP_RELATIONSHIP_OPTIONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          {link.contactPerson?.phoneE164 && (
-            <p className="flex items-center gap-1 mt-0.5 text-muted-foreground">
-              <Phone className="w-2.5 h-2.5" />{link.contactPerson.phoneE164}
-            </p>
-          )}
-          {link.contactPerson?.email && (
-            <p className="flex items-center gap-1 text-muted-foreground">
-              <Mail className="w-2.5 h-2.5" />{link.contactPerson.email}
-            </p>
-          )}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {([
+              { key: "isPrimary", label: "Primary" },
+              { key: "isBillingContact", label: "Billing" },
+              { key: "isEmergencyContact", label: "Emergency" },
+              { key: "isWhatsAppConsentHolder", label: "WA Consent" },
+              { key: "isAppointmentCoordinator", label: "Appt Coord" },
+            ] as const).map(({ key, label }) => (
+              <label key={key} className="flex items-center gap-1 text-[10px] cursor-pointer"
+                data-testid={`ep-cp-toggle-${key}`}>
+                <Switch checked={(formData as any)[key]}
+                  onCheckedChange={v => setFormData(p => ({ ...p, [key]: v }))}
+                  className="scale-75" />
+                {label}
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" className="h-7 text-xs" onClick={() => addMutation.mutate(formData)}
+              disabled={!formData.name.trim() || addMutation.isPending}
+              data-testid="button-ep-cp-save">Add</Button>
+            <Button size="sm" variant="ghost" className="h-7 text-xs"
+              onClick={() => setShowForm(false)} data-testid="button-ep-cp-cancel">Cancel</Button>
+          </div>
+        </Card>
+      )}
+
+      {isLoading ? <p className="text-xs text-muted-foreground">Loading...</p> :
+        contactLinks.length === 0 ? <p className="text-xs text-muted-foreground italic">No contact persons linked to this lead.</p> :
+        <div className="space-y-2">
+          {contactLinks.map((link: any) => (
+            <div key={link.id} className="bg-muted/40 rounded p-2 text-[11px] flex items-start justify-between gap-2"
+              data-testid={`ep-contact-person-${link.id}`}>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-medium text-foreground">{link.contactPerson?.name}</span>
+                  {link.relationship && <Badge variant="outline" className="text-[9px] py-0 px-1">{link.relationship}</Badge>}
+                  {link.isPrimary && <Badge variant="outline" className="text-[9px] py-0 px-1 text-primary border-primary/30">Primary</Badge>}
+                  {link.isBillingContact && <Badge variant="outline" className="text-[9px] py-0 px-1">Billing</Badge>}
+                  {link.isEmergencyContact && <Badge variant="outline" className="text-[9px] py-0 px-1">Emergency</Badge>}
+                  {link.isWhatsAppConsentHolder && <Badge variant="outline" className="text-[9px] py-0 px-1">WA Consent</Badge>}
+                  {link.isAppointmentCoordinator && <Badge variant="outline" className="text-[9px] py-0 px-1">Appt Coord</Badge>}
+                </div>
+                {link.contactPerson?.phoneE164 && (
+                  <p className="flex items-center gap-1 mt-0.5 text-muted-foreground">
+                    <Phone className="w-2.5 h-2.5" />{link.contactPerson.phoneE164}
+                  </p>
+                )}
+                {link.contactPerson?.email && (
+                  <p className="flex items-center gap-1 text-muted-foreground">
+                    <Mail className="w-2.5 h-2.5" />{link.contactPerson.email}
+                  </p>
+                )}
+              </div>
+              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0 text-destructive"
+                onClick={() => removeMutation.mutate(link.id)}
+                disabled={removeMutation.isPending}
+                data-testid={`button-ep-remove-cp-${link.id}`}>
+                ×
+              </Button>
+            </div>
+          ))}
         </div>
-      ))}
+      }
     </div>
   );
 }
@@ -2326,7 +2450,7 @@ function FamilyTab({ episode, onUpdate, isPending }: { episode: any; onUpdate: (
             <Users className="w-4 h-4 text-primary" />
             Contact Persons
           </h3>
-          <ContactPersonsReadOnlyList leadId={episode.leadId} />
+          <PatientContactPersonsPanel leadId={episode.leadId} patientId={episode.patientId} />
         </Card>
       )}
     </div>
