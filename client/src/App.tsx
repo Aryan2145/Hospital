@@ -53,6 +53,7 @@ import SupportTicketsPage from "@/pages/SupportTicketsPage";
 import SupportAdminLogin from "@/pages/support-admin/SupportAdminLogin";
 import SupportAdminDashboard from "@/pages/support-admin/SupportAdminDashboard";
 import SurgeryCalendarPage from "@/pages/SurgeryCalendarPage";
+import ContactDirectoryPage from "@/pages/ContactDirectoryPage";
 
 function TenantSuspended() {
   return (
@@ -322,6 +323,12 @@ function Router() {
       </Route>
       <Route path="/support-admin">
         <SupportAdminLogin />
+      </Route>
+
+      <Route path="/contact-directory">
+        {isAuthenticated ? (
+          <RoleGate page="leads"><ContactDirectoryPage /></RoleGate>
+        ) : <Landing />}
       </Route>
 
       <Route component={NotFound} />

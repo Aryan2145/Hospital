@@ -13,6 +13,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertLeadSchema, InsertLead } from "@shared/schema";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
@@ -878,7 +879,7 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
             name="phoneE164"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Phone Number *</FormLabel>
+                <FormLabel>Phone Number</FormLabel>
                 <FormControl>
                   <Input
                     placeholder="e.g. 9876543210"
@@ -930,6 +931,28 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
                     </AlertDescription>
                   </Alert>
                 )}
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="phoneOwnerRelationship"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Phone Belongs To</FormLabel>
+                <Select value={field.value || "Self"} onValueChange={field.onChange}>
+                  <FormControl>
+                    <SelectTrigger data-testid="select-phone-owner-relationship">
+                      <SelectValue placeholder="Self" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {["Self","Spouse","Parent","Child","Sibling","Guardian","Friend","Caregiver","Other"].map(r => (
+                      <SelectItem key={r} value={r}>{r}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
               </FormItem>
             )}
           />

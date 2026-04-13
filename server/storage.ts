@@ -14,10 +14,13 @@ import {
   tenants, tenantSettings, leads, tasks, activities, campaigns, crmUsers, systemRoles,
   patients, contacts, patientContactLinks, appointments, episodes, auditLogs,
   opdTimings, doctorLeaveExceptions, doctors, platformConnectors, branches,
+  contactPersons, leadContactPersons,
   type Tenant, type InsertTenant,
   type Patient, type InsertPatient,
   type Contact, type InsertContact,
   type PatientContactLink, type InsertPatientContactLink,
+  type ContactPerson, type InsertContactPerson,
+  type LeadContactPerson, type InsertLeadContactPerson,
   type Lead, type InsertLead, type UpdateLeadRequest,
   type Task, type InsertTask, type UpdateTaskRequest,
   type Activity, type InsertActivity,
@@ -59,6 +62,17 @@ export interface IStorage {
   deleteContact(id: number, tenantId: number): Promise<void>;
   linkPatientContact(data: InsertPatientContactLink): Promise<PatientContactLink>;
   unlinkPatientContact(patientId: number, contactId: number, tenantId: number): Promise<void>;
+  // Contact Persons
+  getContactPersons(tenantId: number, search?: string): Promise<ContactPerson[]>;
+  getContactPerson(id: number, tenantId: number): Promise<ContactPerson | undefined>;
+  createContactPerson(data: InsertContactPerson): Promise<ContactPerson>;
+  updateContactPerson(id: number, tenantId: number, data: Partial<InsertContactPerson>): Promise<ContactPerson>;
+  deleteContactPerson(id: number, tenantId: number): Promise<void>;
+  getLeadContactPersons(leadId: number, tenantId: number): Promise<(LeadContactPerson & { contactPerson: ContactPerson })[]>;
+  addLeadContactPerson(data: InsertLeadContactPerson): Promise<LeadContactPerson>;
+  updateLeadContactPerson(id: number, tenantId: number, data: Partial<InsertLeadContactPerson>): Promise<LeadContactPerson>;
+  removeLeadContactPerson(id: number, tenantId: number): Promise<void>;
+  findLeadByContactPhone(tenantId: number, phoneE164: string): Promise<Lead | undefined>;
   // CRM Users
   getCrmUsers(tenantId: number): Promise<CrmUser[]>;
   getCrmUser(id: number, tenantId: number): Promise<CrmUser | undefined>;
@@ -253,6 +267,94 @@ export class DatabaseStorage implements IStorage {
         eq(patientContactLinks.contactId, contactId),
         eq(patientContactLinks.tenantId, tenantId)
       ));
+  }
+
+  // --- Contact Persons ---
+  async getContactPersons(tenantId: number, search?: string): Promise<ContactPerson[]> {
+    const rows = await db.select().from(contactPersons)
+      .where(eq(contactPersons.tenantId, tenantId))
+      .orderBy(desc(contactPersons.createdAt));
+    if (!search) return rows;
+    const q = search.toLowerCase();
+    return rows.filter(r =>
+      r.name.toLowerCase().includes(q) ||
+      (r.phoneE164 && r.phoneE164.includes(q)) ||
+      (r.email && r.email.toLowerCase().includes(q))
+    );
+  }
+
+  async getContactPerson(id: number, tenantId: number): Promise<ContactPerson | undefined> {
+    const [row] = await db.select().from(contactPersons)
+      .where(and(eq(contactPersons.id, id), eq(contactPersons.tenantId, tenantId)));
+    return row;
+  }
+
+  async createContactPerson(data: InsertContactPerson): Promise<ContactPerson> {
+    const [row] = await db.insert(contactPersons).values(data).returning();
+    return row;
+  }
+
+  async updateContactPerson(id: number, tenantId: number, data: Partial<InsertContactPerson>): Promise<ContactPerson> {
+    const [row] = await db.update(contactPersons)
+      .set({ ...data, modifiedAt: new Date() })
+      .where(and(eq(contactPersons.id, id), eq(contactPersons.tenantId, tenantId)))
+      .returning();
+    if (!row) throw new Error("Contact person not found");
+    return row;
+  }
+
+  async deleteContactPerson(id: number, tenantId: number): Promise<void> {
+    await db.delete(leadContactPersons)
+      .where(and(eq(leadContactPersons.contactPersonId, id), eq(leadContactPersons.tenantId, tenantId)));
+    await db.delete(contactPersons)
+      .where(and(eq(contactPersons.id, id), eq(contactPersons.tenantId, tenantId)));
+  }
+
+  async getLeadContactPersons(leadId: number, tenantId: number): Promise<(LeadContactPerson & { contactPerson: ContactPerson })[]> {
+    const links = await db.select().from(leadContactPersons)
+      .where(and(eq(leadContactPersons.leadId, leadId), eq(leadContactPersons.tenantId, tenantId)))
+      .orderBy(desc(leadContactPersons.isPrimary), leadContactPersons.id);
+    const result: (LeadContactPerson & { contactPerson: ContactPerson })[] = [];
+    for (const link of links) {
+      const [cp] = await db.select().from(contactPersons)
+        .where(eq(contactPersons.id, link.contactPersonId));
+      if (cp) result.push({ ...link, contactPerson: cp });
+    }
+    return result;
+  }
+
+  async addLeadContactPerson(data: InsertLeadContactPerson): Promise<LeadContactPerson> {
+    const [row] = await db.insert(leadContactPersons).values(data).returning();
+    return row;
+  }
+
+  async updateLeadContactPerson(id: number, tenantId: number, data: Partial<InsertLeadContactPerson>): Promise<LeadContactPerson> {
+    const [row] = await db.update(leadContactPersons)
+      .set(data)
+      .where(and(eq(leadContactPersons.id, id), eq(leadContactPersons.tenantId, tenantId)))
+      .returning();
+    if (!row) throw new Error("Lead contact person link not found");
+    return row;
+  }
+
+  async removeLeadContactPerson(id: number, tenantId: number): Promise<void> {
+    await db.delete(leadContactPersons)
+      .where(and(eq(leadContactPersons.id, id), eq(leadContactPersons.tenantId, tenantId)));
+  }
+
+  async findLeadByContactPhone(tenantId: number, phoneE164: string): Promise<Lead | undefined> {
+    const links = await db.select().from(leadContactPersons)
+      .where(eq(leadContactPersons.tenantId, tenantId));
+    for (const link of links) {
+      const [cp] = await db.select().from(contactPersons)
+        .where(and(eq(contactPersons.id, link.contactPersonId), eq(contactPersons.phoneE164, phoneE164)));
+      if (cp) {
+        const [lead] = await db.select().from(leads)
+          .where(and(eq(leads.id, link.leadId), eq(leads.tenantId, tenantId)));
+        if (lead) return lead;
+      }
+    }
+    return undefined;
   }
 
   // --- CRM Users ---

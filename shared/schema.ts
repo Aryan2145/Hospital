@@ -887,6 +887,39 @@ export const patients = pgTable("patients", {
   modifiedBy: varchar("modified_by"),
 });
 
+// --- Contact Persons (people who can be linked to multiple leads/patients) ---
+export const contactPersons = pgTable("contact_persons", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  phoneE164: text("phone_e164"),
+  whatsappNumber: text("whatsapp_number"),
+  email: text("email"),
+  gender: text("gender"),
+  relationship: text("relationship"),
+  notes: text("notes"),
+  status: text("status").notNull().default("Active"),
+  createdAt: timestamp("created_at").defaultNow(),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+});
+
+// --- Lead-Contact Person Mapping ---
+export const leadContactPersons = pgTable("lead_contact_persons", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  leadId: integer("lead_id").notNull().references(() => leads.id),
+  contactPersonId: integer("contact_person_id").notNull().references(() => contactPersons.id),
+  relationship: text("relationship").default("Other"),
+  isPrimary: boolean("is_primary").default(false),
+  isBillingContact: boolean("is_billing_contact").default(false),
+  isEmergencyContact: boolean("is_emergency_contact").default(false),
+  isWhatsAppConsentHolder: boolean("is_whatsapp_consent_holder").default(false),
+  isAppointmentCoordinator: boolean("is_appointment_coordinator").default(false),
+  notes: text("notes"),
+  status: text("status").notNull().default("Active"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // --- Contacts (phone/email/address records) ---
 export const contacts = pgTable("contacts", {
   id: serial("id").primaryKey(),
@@ -968,7 +1001,8 @@ export const leads = pgTable("leads", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
   name: text("name").notNull(),
-  phoneE164: text("phone_e164").notNull(),
+  phoneE164: text("phone_e164"),
+  phoneOwnerRelationship: text("phone_owner_relationship").default("Self"),
   mobileNormalized: text("mobile_normalized"),
   email: text("email"),
   status: text("status").notNull().default("Raw Lead Captured"),
@@ -1543,6 +1577,8 @@ export const insertTenantSchema = createInsertSchema(tenants).omit({ id: true, c
 export const insertPatientSchema = createInsertSchema(patients).omit({ id: true, createdAt: true, modifiedAt: true });
 export const insertContactSchema = createInsertSchema(contacts).omit({ id: true, createdAt: true, modifiedAt: true });
 export const insertPatientContactLinkSchema = createInsertSchema(patientContactLinks).omit({ id: true, createdAt: true });
+export const insertContactPersonSchema = createInsertSchema(contactPersons).omit({ id: true, createdAt: true, modifiedAt: true });
+export const insertLeadContactPersonSchema = createInsertSchema(leadContactPersons).omit({ id: true, createdAt: true });
 export const insertLeadSchema = createInsertSchema(leads).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertActivitySchema = createInsertSchema(activities).omit({ id: true, createdAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
@@ -1693,6 +1729,10 @@ export type Contact = typeof contacts.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
 export type PatientContactLink = typeof patientContactLinks.$inferSelect;
 export type InsertPatientContactLink = z.infer<typeof insertPatientContactLinkSchema>;
+export type ContactPerson = typeof contactPersons.$inferSelect;
+export type InsertContactPerson = z.infer<typeof insertContactPersonSchema>;
+export type LeadContactPerson = typeof leadContactPersons.$inferSelect;
+export type InsertLeadContactPerson = z.infer<typeof insertLeadContactPersonSchema>;
 export type Lead = typeof leads.$inferSelect;
 export type InsertLead = z.infer<typeof insertLeadSchema>;
 export type UpdateLeadRequest = Partial<InsertLead>;

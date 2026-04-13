@@ -25,6 +25,7 @@ import {
   Ticket,
   CalendarClock,
   KeyRound,
+  UserCheck,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -56,6 +57,7 @@ const sections: { label: string; items: NavItem[] }[] = [
       { icon: HeartPulse, label: "Consultation Episodes", href: "/transactions", page: "transactions" },
       { icon: Gift, label: "Referrals", href: "/referrals", page: "transactions" },
       { icon: CalendarClock, label: "Surgery Schedule", href: "/surgery-calendar", page: "transactions" },
+      { icon: UserCheck, label: "Contact Directory", href: "/contact-directory", page: "leads" },
     ],
   },
   {

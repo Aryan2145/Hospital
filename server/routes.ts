@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -3516,6 +3516,17 @@ export async function registerRoutes(
               if (matchedLead) break;
             }
           }
+          // Also check contact persons linked to leads
+          if (!matchedLead) {
+            matchedLead = await storage.findLeadByContactPhone(tid, clientNumber) || null;
+          }
+          if (!matchedLead) {
+            const altFormats = getPhoneVariants(clientNumber);
+            for (const alt of altFormats) {
+              const cpLead = await storage.findLeadByContactPhone(tid, alt);
+              if (cpLead) { matchedLead = cpLead; break; }
+            }
+          }
         }
 
         let matchedCrmUser = null;
@@ -4656,6 +4667,126 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       await storage.unlinkPatientContact(Number(req.params.patientId), Number(req.params.contactId), tid);
       res.status(204).send();
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // CONTACT PERSONS ROUTES
+  // =============================================
+  app.get("/api/contact-persons", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const search = req.query.search as string | undefined;
+      const result = await storage.getContactPersons(tid, search);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/contact-persons/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const cp = await storage.getContactPerson(Number(req.params.id), tid);
+      if (!cp) return res.status(404).json({ message: "Contact person not found" });
+      res.json(cp);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/contact-persons", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const parsed = insertContactPersonSchema.parse({ ...req.body, tenantId: tid });
+      const cp = await storage.createContactPerson(parsed);
+      res.status(201).json(cp);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.patch("/api/contact-persons/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const parsed = insertContactPersonSchema.partial().parse(req.body);
+      const cp = await storage.updateContactPerson(Number(req.params.id), tid, parsed);
+      res.json(cp);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.delete("/api/contact-persons/:id", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      await storage.deleteContactPerson(Number(req.params.id), tid);
+      res.status(204).send();
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // Lead → Contact Person linking
+  app.get("/api/leads/:id/contact-persons", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const result = await storage.getLeadContactPersons(Number(req.params.id), tid);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/leads/:id/contact-persons", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const leadId = Number(req.params.id);
+      const parsed = insertLeadContactPersonSchema.parse({ ...req.body, tenantId: tid, leadId });
+      const link = await storage.addLeadContactPerson(parsed);
+      res.status(201).json(link);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.patch("/api/leads/:id/contact-persons/:linkId", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const parsed = insertLeadContactPersonSchema.partial().parse(req.body);
+      const link = await storage.updateLeadContactPerson(Number(req.params.linkId), tid, parsed);
+      res.json(link);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.delete("/api/leads/:id/contact-persons/:linkId", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      await storage.removeLeadContactPerson(Number(req.params.linkId), tid);
+      res.status(204).send();
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // Get leads linked to a contact person
+  app.get("/api/contact-persons/:id/leads", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const cpId = Number(req.params.id);
+      const result = await pool.query(
+        `SELECT lcp.*, l.name as "leadName", l.status as "leadStatus", l.phone_e164 as "leadPhone"
+         FROM lead_contact_persons lcp
+         JOIN leads l ON l.id = lcp.lead_id
+         WHERE lcp.contact_person_id = $1 AND lcp.tenant_id = $2
+         ORDER BY lcp.id DESC`,
+        [cpId, tid]
+      );
+      res.json(result.rows);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

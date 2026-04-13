@@ -25,6 +25,7 @@ The platform is built with a modern web stack:
     - **Automated Nurture Engine:** Manages lead nurturing with task chains, escalations, and automated status updates.
 - **Consultation Log (Episode):** Configurable consultation outcomes with per-outcome remark chips and automated episode closure for certain outcomes.
 - **Post-Care Follow-Up Protocols:** Configurable step-based task chains triggered by episode status.
+- **Multi-Contact Person Model:** `contact_persons` table stores reusable contact entities (name, phone, WhatsApp, email). `lead_contact_persons` mapping table links contacts to leads with 5 role flags: isPrimary, isBillingContact, isEmergencyContact, isWhatsAppConsentHolder, isAppointmentCoordinator. `leads.phoneE164` is now nullable with `phoneOwnerRelationship` field. Global Contact Directory page at `/contact-directory`. Callyzer webhook now also matches calls against contact person phones. ContactPersonsPanel added to Lead Detail page right sidebar.
 - **Referral Management:** Tracks patient referrals, allows lead creation from referrals, and includes configurable reward rules based on episode stages.
 - **Help Ticketing System:** In-app bug reporting and feature requests for CRM users with a dedicated Support Admin Portal for ticket management, assignment, and team management.
 - **Event Management:** Tracks events (webinars, health camps) and registrations, allowing attendee management and conversion to leads. Includes resource links for creative assets.

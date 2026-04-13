@@ -61,7 +61,21 @@ import {
   ShieldCheck,
   Bell,
   BellOff,
+  UserCheck,
+  Plus,
+  Pencil,
+  Trash2,
+  Star,
+  CreditCard,
+  Ambulance,
+  MessageSquareDot,
+  Landmark,
 } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 const LEAD_FUNNEL_STAGES = [
   "Raw Lead Captured",
@@ -208,6 +222,7 @@ export default function LeadDetailPage() {
           <TasksPanel leadId={lead.id} />
           <OwnershipCard lead={lead} />
           <QuickActions lead={lead} />
+          <ContactPersonsPanel leadId={lead.id} />
           <TemperatureHistory leadId={lead.id} />
           <HandoverHistory leadId={lead.id} />
           <CommunicationPreferencesPanel leadId={lead.id} />
@@ -1934,6 +1949,296 @@ function ConsentBadge({ lead }: { lead: any }) {
           </p>
         )}
       </Card>
+    </div>
+  );
+}
+
+const RELATIONSHIP_OPTIONS = [
+  "Self", "Spouse", "Parent", "Child", "Sibling", "Guardian",
+  "Friend", "Colleague", "Caregiver", "Power of Attorney", "Other"
+];
+
+function ContactPersonsPanel({ leadId }: { leadId: number }) {
+  const { toast } = useToast();
+  const [showForm, setShowForm] = useState(false);
+  const [editingLink, setEditingLink] = useState<any>(null);
+  const [formData, setFormData] = useState({
+    name: "", phoneE164: "", whatsappNumber: "", email: "", relationship: "Other",
+    isPrimary: false, isBillingContact: false, isEmergencyContact: false,
+    isWhatsAppConsentHolder: false, isAppointmentCoordinator: false, notes: "",
+  });
+
+  const { data: contactLinks = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/leads", leadId, "contact-persons"],
+    queryFn: async () => {
+      const res = await fetch(`/api/leads/${leadId}/contact-persons`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      name: "", phoneE164: "", whatsappNumber: "", email: "", relationship: "Other",
+      isPrimary: false, isBillingContact: false, isEmergencyContact: false,
+      isWhatsAppConsentHolder: false, isAppointmentCoordinator: false, notes: "",
+    });
+    setEditingLink(null);
+    setShowForm(false);
+  };
+
+  const addMutation = useMutation({
+    mutationFn: async (data: any) => {
+      let cpId = data.contactPersonId;
+      if (!cpId) {
+        const cpRes = await apiRequest("POST", "/api/contact-persons", {
+          name: data.name, phoneE164: data.phoneE164 || null,
+          whatsappNumber: data.whatsappNumber || null, email: data.email || null,
+          relationship: data.relationship,
+        });
+        const cp = await cpRes.json();
+        cpId = cp.id;
+      }
+      const res = await apiRequest("POST", `/api/leads/${leadId}/contact-persons`, {
+        contactPersonId: cpId, relationship: data.relationship,
+        isPrimary: data.isPrimary, isBillingContact: data.isBillingContact,
+        isEmergencyContact: data.isEmergencyContact,
+        isWhatsAppConsentHolder: data.isWhatsAppConsentHolder,
+        isAppointmentCoordinator: data.isAppointmentCoordinator,
+        notes: data.notes || null,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads", leadId, "contact-persons"] });
+      toast({ title: "Contact person added" });
+      resetForm();
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: any) => {
+      await apiRequest("PATCH", `/api/leads/${leadId}/contact-persons/${editingLink.id}`, {
+        relationship: data.relationship,
+        isPrimary: data.isPrimary, isBillingContact: data.isBillingContact,
+        isEmergencyContact: data.isEmergencyContact,
+        isWhatsAppConsentHolder: data.isWhatsAppConsentHolder,
+        isAppointmentCoordinator: data.isAppointmentCoordinator,
+        notes: data.notes || null,
+      });
+      if (editingLink.contactPerson) {
+        await apiRequest("PATCH", `/api/contact-persons/${editingLink.contactPersonId}`, {
+          name: data.name, phoneE164: data.phoneE164 || null,
+          whatsappNumber: data.whatsappNumber || null, email: data.email || null,
+        });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads", leadId, "contact-persons"] });
+      toast({ title: "Contact person updated" });
+      resetForm();
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: async (linkId: number) => {
+      await apiRequest("DELETE", `/api/leads/${leadId}/contact-persons/${linkId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads", leadId, "contact-persons"] });
+      toast({ title: "Contact person removed" });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const startEdit = (link: any) => {
+    setEditingLink(link);
+    setFormData({
+      name: link.contactPerson?.name || "",
+      phoneE164: link.contactPerson?.phoneE164 || "",
+      whatsappNumber: link.contactPerson?.whatsappNumber || "",
+      email: link.contactPerson?.email || "",
+      relationship: link.relationship || "Other",
+      isPrimary: link.isPrimary || false,
+      isBillingContact: link.isBillingContact || false,
+      isEmergencyContact: link.isEmergencyContact || false,
+      isWhatsAppConsentHolder: link.isWhatsAppConsentHolder || false,
+      isAppointmentCoordinator: link.isAppointmentCoordinator || false,
+      notes: link.notes || "",
+    });
+    setShowForm(true);
+  };
+
+  const handleSubmit = () => {
+    if (!formData.name.trim()) {
+      toast({ title: "Name is required", variant: "destructive" });
+      return;
+    }
+    if (editingLink) {
+      updateMutation.mutate(formData);
+    } else {
+      addMutation.mutate(formData);
+    }
+  };
+
+  const FlagBadge = ({ flag, icon: Icon, label }: { flag: boolean; icon: any; label: string }) =>
+    flag ? (
+      <Badge variant="outline" className="text-[9px] py-0 px-1 gap-0.5 text-primary border-primary/30">
+        <Icon className="w-2.5 h-2.5" /> {label}
+      </Badge>
+    ) : null;
+
+  return (
+    <div className="p-4 border-b border-border" data-testid="contact-persons-panel">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-sm text-foreground flex items-center gap-2">
+          <UserCheck className="w-4 h-4 text-primary" />
+          Contact Persons ({contactLinks.length})
+        </h3>
+        <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1"
+          onClick={() => { setEditingLink(null); resetForm(); setShowForm(true); }}
+          data-testid="button-add-contact-person"
+        >
+          <Plus className="w-3 h-3" /> Add
+        </Button>
+      </div>
+
+      {showForm && (
+        <Card className="p-3 mb-3 border-primary/20 bg-primary/5">
+          <h4 className="text-xs font-semibold text-foreground mb-2">
+            {editingLink ? "Edit Contact Person" : "Add Contact Person"}
+          </h4>
+          <div className="space-y-2">
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Full Name *</Label>
+              <Input value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
+                placeholder="Contact name" className="h-7 text-xs mt-0.5" data-testid="input-cp-name" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Phone</Label>
+                <Input value={formData.phoneE164} onChange={e => setFormData(p => ({ ...p, phoneE164: e.target.value }))}
+                  placeholder="+91..." className="h-7 text-xs mt-0.5" data-testid="input-cp-phone" />
+              </div>
+              <div>
+                <Label className="text-[10px] text-muted-foreground">WhatsApp</Label>
+                <Input value={formData.whatsappNumber} onChange={e => setFormData(p => ({ ...p, whatsappNumber: e.target.value }))}
+                  placeholder="+91..." className="h-7 text-xs mt-0.5" data-testid="input-cp-whatsapp" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Email</Label>
+              <Input value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))}
+                placeholder="email@example.com" className="h-7 text-xs mt-0.5" type="email" data-testid="input-cp-email" />
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Relationship</Label>
+              <Select value={formData.relationship} onValueChange={v => setFormData(p => ({ ...p, relationship: v }))}>
+                <SelectTrigger className="h-7 text-xs mt-0.5" data-testid="select-cp-relationship">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RELATIONSHIP_OPTIONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Notes</Label>
+              <Textarea value={formData.notes} onChange={e => setFormData(p => ({ ...p, notes: e.target.value }))}
+                placeholder="Optional notes" className="text-xs mt-0.5 min-h-[50px]" data-testid="textarea-cp-notes" />
+            </div>
+            <div className="space-y-1.5 pt-1">
+              <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Roles</Label>
+              {[
+                { key: "isPrimary", label: "Primary Contact" },
+                { key: "isBillingContact", label: "Billing Contact" },
+                { key: "isEmergencyContact", label: "Emergency Contact" },
+                { key: "isWhatsAppConsentHolder", label: "WhatsApp Consent" },
+                { key: "isAppointmentCoordinator", label: "Appointment Coordinator" },
+              ].map(({ key, label }) => (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="text-[11px] text-foreground">{label}</span>
+                  <Switch
+                    checked={(formData as any)[key]}
+                    onCheckedChange={v => setFormData(p => ({ ...p, [key]: v }))}
+                    data-testid={`switch-cp-${key}`}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button size="sm" className="flex-1 h-7 text-xs" onClick={handleSubmit}
+                disabled={addMutation.isPending || updateMutation.isPending}
+                data-testid="button-save-contact-person"
+              >
+                {editingLink ? "Save Changes" : "Add Contact Person"}
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={resetForm}
+                data-testid="button-cancel-contact-person"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {isLoading ? (
+        <p className="text-xs text-muted-foreground">Loading...</p>
+      ) : contactLinks.length === 0 && !showForm ? (
+        <p className="text-xs text-muted-foreground">No contact persons linked. Add one to track family members, caregivers, or billing contacts.</p>
+      ) : (
+        <div className="space-y-2">
+          {contactLinks.map((link: any) => (
+            <Card key={link.id} className="p-2.5" data-testid={`card-contact-person-${link.id}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-medium text-foreground">{link.contactPerson?.name}</span>
+                    {link.relationship && (
+                      <Badge variant="outline" className="text-[9px] py-0 px-1">{link.relationship}</Badge>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    <FlagBadge flag={link.isPrimary} icon={Star} label="Primary" />
+                    <FlagBadge flag={link.isBillingContact} icon={CreditCard} label="Billing" />
+                    <FlagBadge flag={link.isEmergencyContact} icon={Ambulance} label="Emergency" />
+                    <FlagBadge flag={link.isWhatsAppConsentHolder} icon={MessageSquareDot} label="WA Consent" />
+                    <FlagBadge flag={link.isAppointmentCoordinator} icon={Landmark} label="Appt Coord" />
+                  </div>
+                  {link.contactPerson?.phoneE164 && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                      <Phone className="w-2.5 h-2.5" /> {link.contactPerson.phoneE164}
+                    </p>
+                  )}
+                  {link.contactPerson?.email && (
+                    <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <Mail className="w-2.5 h-2.5" /> {link.contactPerson.email}
+                    </p>
+                  )}
+                  {link.notes && (
+                    <p className="text-[10px] text-muted-foreground italic mt-0.5">{link.notes}</p>
+                  )}
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => startEdit(link)}
+                    data-testid={`button-edit-cp-${link.id}`}>
+                    <Pencil className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                    onClick={() => removeMutation.mutate(link.id)}
+                    disabled={removeMutation.isPending}
+                    data-testid={`button-remove-cp-${link.id}`}>
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
