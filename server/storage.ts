@@ -311,8 +311,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteContactPerson(id: number, tenantId: number): Promise<void> {
+    // Remove all links before deleting the contact person (FK safety)
     await db.delete(leadContactPersons)
       .where(and(eq(leadContactPersons.contactPersonId, id), eq(leadContactPersons.tenantId, tenantId)));
+    await db.delete(patientContactLinks)
+      .where(and(eq(patientContactLinks.contactPersonId, id), eq(patientContactLinks.tenantId, tenantId)));
     await db.delete(contactPersons)
       .where(and(eq(contactPersons.id, id), eq(contactPersons.tenantId, tenantId)));
   }

@@ -1822,22 +1822,28 @@ export async function registerRoutes(
       }
 
       const oldLead = await storage.getLead(leadId);
-      let lead = await storage.updateLead(leadId, input);
 
-      // Reachability guard: if phoneE164 was cleared, verify a contact person still has a phone
-      if (input.phoneE164 === null || input.phoneE164 === "") {
+      // Pre-write reachability guard: validate BEFORE updating lead to keep the write atomic
+      // (only relevant when phoneE164 is being cleared)
+      if ("phoneE164" in input && (input.phoneE164 === null || input.phoneE164 === "")) {
         const tidForCheck = await getDefaultTenantId(req);
-        try {
-          await assertLeadReachable(leadId, tidForCheck);
-        } catch {
-          // Rollback: restore previous phone
-          await storage.updateLead(leadId, { phoneE164: oldLead?.phoneE164 });
+        const cpRows = await pool.query(
+          `SELECT cp.phone_e164 FROM lead_contact_persons lcp
+           JOIN contact_persons cp ON cp.id = lcp.contact_person_id
+           WHERE lcp.lead_id = $1 AND lcp.tenant_id = $2
+           AND cp.phone_e164 IS NOT NULL AND cp.phone_e164 != ''
+           LIMIT 1`,
+          [leadId, tidForCheck]
+        );
+        if (cpRows.rows.length === 0) {
           return res.status(400).json({
             message: "Cannot remove the phone number — the lead would have no reachable contact. Add a contact person with a phone first.",
             field: "phoneE164",
           });
         }
       }
+
+      let lead = await storage.updateLead(leadId, input);
 
       if (input.status === "Nurture" && oldLead?.status !== "Nurture") {
         try {
