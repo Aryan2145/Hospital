@@ -379,8 +379,10 @@ const HELP_SECTIONS: HelpSection[] = [
     icon: Settings,
     topics: [
       { id: "connectors", title: "Connectors Setup", icon: Plug },
+      { id: "meta-integration", title: "Connecting Meta to CRM", icon: SiFacebook, isExternal: true, href: "/help/meta-integration" },
       { id: "email-settings", title: "Email / SMTP Settings", icon: Bell },
       { id: "whatsapp-settings", title: "WhatsApp Business Settings", icon: Phone },
+      { id: "wati-whatsapp", title: "Connecting WhatsApp via WATI", icon: MessageSquare },
       { id: "branding", title: "Branding Customization", icon: Paintbrush },
       { id: "intelligence-config", title: "Intelligence Config", icon: Brain },
       { id: "sla-reminders", title: "SLA & Reminder Policies", icon: Bell },
@@ -2427,6 +2429,49 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
             </p>
           </section>
           <TipBox>WhatsApp message templates must be approved by Meta before they can be used. Create templates in the Meta Business Manager and reference them here by template name.</TipBox>
+        </div>
+      ),
+    },
+    "configurations/wati-whatsapp": {
+      title: "Connecting WhatsApp via WATI",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is WATI?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              WATI is a WhatsApp Business API provider used to connect your hospital's WhatsApp number for automated messaging, patient follow-ups, and appointment reminders.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Setup Requirements</h2>
+            <FieldTable fields={[
+              { field: "WATI Account", desc: "An active WATI account with your hospital's WhatsApp number onboarded" },
+              { field: "API Credentials", desc: "Your WATI API token / access key for CRM integration" },
+              { field: "Approved Templates", desc: "Pre-approved message templates for reminders, confirmations, and follow-ups" },
+              { field: "Verified Number", desc: "A WhatsApp Business number already verified inside WATI" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">How to Connect WATI</h2>
+            <StepList steps={[
+              "Log in to your WATI dashboard",
+              "Copy the API token or access key from the WATI developer/integration settings",
+              "Open the CRM and go to Configurations > WhatsApp Business Settings",
+              "Select WATI as the provider if available, or enter the WATI credentials in the WhatsApp configuration form",
+              "Paste the API token, business/account details, and the verified phone number information",
+              "Save the configuration",
+              "Use the Send Test Message button to confirm messages are delivered successfully",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Best Practices</h2>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li>Use approved WhatsApp templates for all automated messages</li>
+              <li>Keep your WATI API token secure and never share it in chat or email</li>
+              <li>Ensure the WhatsApp number is monitored by your support or communication team</li>
+            </ul>
+          </section>
+          <TipBox>If you are using WATI specifically for WhatsApp communication, coordinate template approvals and sender number setup with your WATI account manager before enabling the integration in the CRM.</TipBox>
         </div>
       ),
     },
