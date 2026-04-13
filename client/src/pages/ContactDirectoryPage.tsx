@@ -353,25 +353,15 @@ function ContactPersonDetail({ person, onEdit, onDelete, deleting }: {
     },
   });
 
-  // Derive linked patients from linked leads (via episodes)
+  // Linked patients: direct (patientContactLinks) + lead-derived (via episodes)
   const { data: linkedPatients = [] } = useQuery<any[]>({
     queryKey: ["/api/contact-persons", person.id, "patients"],
     queryFn: async () => {
-      if (linkedLeads.length === 0) return [];
-      const leadIds = linkedLeads.map((l: any) => l.lead_id || l.leadId).filter(Boolean);
-      if (leadIds.length === 0) return [];
-      const res = await fetch(`/api/episodes?leadIds=${leadIds.join(",")}&limit=100`, { credentials: "include" });
+      const res = await fetch(`/api/contact-persons/${person.id}/patients`, { credentials: "include" });
       if (!res.ok) return [];
-      const episodes = await res.json();
-      // Deduplicate by patientId
-      const seen = new Set<number>();
-      return (Array.isArray(episodes) ? episodes : episodes.episodes || []).filter((ep: any) => {
-        if (!ep.patientId || seen.has(ep.patientId)) return false;
-        seen.add(ep.patientId);
-        return true;
-      });
+      return res.json();
     },
-    enabled: linkedLeads.length > 0,
+    enabled: true,
   });
 
   const infoRow = (label: string, value: any, icon?: any) => {

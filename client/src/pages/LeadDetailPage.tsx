@@ -394,7 +394,12 @@ function LeadHeader({ lead, onBack }: { lead: any; onBack: () => void }) {
 
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground ml-2">
           <Phone className="w-3 h-3" />
-          <span data-testid="text-phone">{lead.phoneE164}</span>
+          <span data-testid="text-phone">{lead.phoneE164 || <span className="italic">No direct phone</span>}</span>
+          {lead.phoneOwnerRelationship && lead.phoneOwnerRelationship !== "Self" && (
+            <Badge variant="outline" className="text-[9px] py-0 px-1" data-testid="badge-phone-owner-rel">
+              {lead.phoneOwnerRelationship}
+            </Badge>
+          )}
         </div>
 
         {lead.email && (
@@ -1962,6 +1967,8 @@ function ContactPersonsPanel({ leadId, lead }: { leadId: number; lead?: any }) {
   const { toast } = useToast();
   const [showForm, setShowForm] = useState(false);
   const [editingLink, setEditingLink] = useState<any>(null);
+  const [editingPhoneOwner, setEditingPhoneOwner] = useState(false);
+  const [phoneOwnerRel, setPhoneOwnerRel] = useState(lead?.phoneOwnerRelationship || "Self");
   const [formData, setFormData] = useState({
     name: "", phoneE164: "", whatsappNumber: "", email: "", relationship: "Other",
     isPrimary: false, isBillingContact: false, isEmergencyContact: false,
@@ -2057,6 +2064,19 @@ function ContactPersonsPanel({ leadId, lead }: { leadId: number; lead?: any }) {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const updatePhoneOwnerMutation = useMutation({
+    mutationFn: async (relationship: string) => {
+      const res = await apiRequest("PATCH", `/api/leads/${leadId}`, { phoneOwnerRelationship: relationship });
+      if (!res.ok) throw new Error("Failed to update");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads", leadId] });
+      toast({ title: "Phone owner relationship updated" });
+      setEditingPhoneOwner(false);
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const startEdit = (link: any) => {
     setEditingLink(link);
     setFormData({
@@ -2108,6 +2128,44 @@ function ContactPersonsPanel({ leadId, lead }: { leadId: number; lead?: any }) {
           <Plus className="w-3 h-3" /> Add
         </Button>
       </div>
+
+      {/* phoneOwnerRelationship quick-edit — shown when lead has a direct phone */}
+      {lead?.phoneE164 && (
+        <div className="mb-3 flex items-center gap-2 text-[11px]" data-testid="phone-owner-rel-section">
+          <Phone className="w-3 h-3 text-muted-foreground shrink-0" />
+          <span className="text-muted-foreground shrink-0">Phone owned by:</span>
+          {editingPhoneOwner ? (
+            <>
+              <Select value={phoneOwnerRel} onValueChange={setPhoneOwnerRel}>
+                <SelectTrigger className="h-6 text-[10px] flex-1" data-testid="select-phone-owner-rel">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RELATIONSHIP_OPTIONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Button size="sm" className="h-6 text-[10px] px-2"
+                onClick={() => updatePhoneOwnerMutation.mutate(phoneOwnerRel)}
+                disabled={updatePhoneOwnerMutation.isPending}
+                data-testid="button-save-phone-owner-rel">Save</Button>
+              <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2"
+                onClick={() => { setEditingPhoneOwner(false); setPhoneOwnerRel(lead.phoneOwnerRelationship || "Self"); }}
+                data-testid="button-cancel-phone-owner-rel">✕</Button>
+            </>
+          ) : (
+            <>
+              <Badge variant="outline" className="text-[9px] py-0 px-1" data-testid="badge-display-phone-owner-rel">
+                {lead.phoneOwnerRelationship || "Self"}
+              </Badge>
+              <Button size="sm" variant="ghost" className="h-5 w-5 p-0"
+                onClick={() => { setPhoneOwnerRel(lead.phoneOwnerRelationship || "Self"); setEditingPhoneOwner(true); }}
+                data-testid="button-edit-phone-owner-rel">
+                <Pencil className="w-3 h-3" />
+              </Button>
+            </>
+          )}
+        </div>
+      )}
 
       {showForm && (
         <Card className="p-3 mb-3 border-primary/20 bg-primary/5">

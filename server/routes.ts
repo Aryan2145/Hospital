@@ -5042,13 +5042,20 @@ export async function registerRoutes(
       );
       const countMap = new Map<number, number>();
       countResult.rows.forEach((r: any) => countMap.set(Number(r.contact_person_id), Number(r.cnt)));
-      // Patient count: via episodes linked to leads that have this contact person
+      // Patient count: via episodes (lead-derived) UNION direct patient_contact_links
       const patCountResult = await pool.query(
-        `SELECT lcp.contact_person_id, COUNT(DISTINCT e.patient_id) as cnt
-         FROM lead_contact_persons lcp
-         JOIN episodes e ON e.lead_id = lcp.lead_id AND e.patient_id IS NOT NULL
-         WHERE lcp.tenant_id = $1
-         GROUP BY lcp.contact_person_id`,
+        `SELECT contact_person_id, SUM(cnt) as cnt FROM (
+           SELECT lcp.contact_person_id, COUNT(DISTINCT e.patient_id) as cnt
+           FROM lead_contact_persons lcp
+           JOIN episodes e ON e.lead_id = lcp.lead_id AND e.patient_id IS NOT NULL
+           WHERE lcp.tenant_id = $1
+           GROUP BY lcp.contact_person_id
+           UNION ALL
+           SELECT pcl.contact_person_id, COUNT(DISTINCT pcl.patient_id) as cnt
+           FROM patient_contact_links pcl
+           WHERE pcl.tenant_id = $1 AND pcl.contact_person_id IS NOT NULL
+           GROUP BY pcl.contact_person_id
+         ) sub GROUP BY contact_person_id`,
         [tid]
       );
       const patCountMap = new Map<number, number>();
@@ -5157,12 +5164,18 @@ export async function registerRoutes(
   app.patch("/api/leads/:id/contact-persons/:linkId", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      // Verify the link belongs to this tenant
+      const leadId = Number(req.params.id);
+      const linkId = Number(req.params.linkId);
+      // Verify the link belongs to THIS lead and this tenant (IDOR protection)
       const [existingLink] = await db.select().from(leadContactPersons)
-        .where(and(eq(leadContactPersons.id, Number(req.params.linkId)), eq(leadContactPersons.tenantId, tid)));
+        .where(and(
+          eq(leadContactPersons.id, linkId),
+          eq(leadContactPersons.tenantId, tid),
+          eq(leadContactPersons.leadId, leadId)
+        ));
       if (!existingLink) return res.status(404).json({ message: "Contact person link not found" });
       const parsed = insertLeadContactPersonSchema.partial().parse(req.body);
-      const link = await storage.updateLeadContactPerson(Number(req.params.linkId), tid, parsed);
+      const link = await storage.updateLeadContactPerson(linkId, tid, parsed);
       res.json(link);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
@@ -5174,13 +5187,17 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const leadId = Number(req.params.id);
       const linkId = Number(req.params.linkId);
-      // Verify the link belongs to this tenant
+      // Verify the link belongs to THIS lead and this tenant (IDOR protection)
       const [existingLink] = await db.select().from(leadContactPersons)
-        .where(and(eq(leadContactPersons.id, linkId), eq(leadContactPersons.tenantId, tid)));
+        .where(and(
+          eq(leadContactPersons.id, linkId),
+          eq(leadContactPersons.tenantId, tid),
+          eq(leadContactPersons.leadId, leadId)
+        ));
       if (!existingLink) return res.status(404).json({ message: "Contact person link not found" });
-      // Reachability guard: simulate removal and check if lead still has a reachable phone
+      // Reachability guard: simulate removal and check if the VERIFIED lead still has a reachable phone
       try {
-        await assertLeadReachable(leadId, tid, linkId);
+        await assertLeadReachable(existingLink.leadId, tid, linkId);
       } catch (reachErr: any) {
         return res.status(400).json({ message: reachErr.message });
       }
@@ -5208,6 +5225,36 @@ export async function registerRoutes(
       const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId || 0));
       const phiLevel = crmUser?.phiAccessLevel || "Masked";
       res.json(applyPhiMasking(result.rows, phiLevel));
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // GET /api/contact-persons/:id/patients - all patients linked to a contact person
+  // Includes: lead-derived (episodes) + patient-direct (patientContactLinks)
+  app.get("/api/contact-persons/:id/patients", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const cpId = Number(req.params.id);
+      const rows = await pool.query(
+        `SELECT DISTINCT p.id, p.first_name, p.last_name, p.tenant_id,
+                'lead' as link_source
+         FROM lead_contact_persons lcp
+         JOIN episodes e ON e.lead_id = lcp.lead_id AND e.patient_id IS NOT NULL
+         JOIN patients p ON p.id = e.patient_id
+         WHERE lcp.contact_person_id = $1 AND lcp.tenant_id = $2
+         UNION
+         SELECT DISTINCT p.id, p.first_name, p.last_name, p.tenant_id,
+                'patient' as link_source
+         FROM patient_contact_links pcl
+         JOIN patients p ON p.id = pcl.patient_id
+         WHERE pcl.contact_person_id = $1 AND pcl.tenant_id = $2`,
+        [cpId, tid]
+      );
+      const sessionCrmUserId = (req as any).session?.crmUserId;
+      const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId || 0));
+      const phiLevel = crmUser?.phiAccessLevel || "Masked";
+      res.json(applyPhiMasking(rows.rows, phiLevel));
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
