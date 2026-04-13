@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { getStatusColor, getPriorityColor, getLeadTemperature, getTemperatureColor } from "@/lib/lead-status";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import { fmtDate, fmtDateTime, fmtDateTimeShort, fmtDateShort } from "@/lib/date-utils";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { JourneySnapshot, TreatmentJourneyTimeline, UnifiedJourneyTimeline } from "@/components/leads/JourneyView";
@@ -1974,6 +1974,8 @@ function ContactPersonsPanel({ leadId, lead }: { leadId: number; lead?: any }) {
     isPrimary: false, isBillingContact: false, isEmergencyContact: false,
     isWhatsAppConsentHolder: false, isAppointmentCoordinator: false, notes: "",
   });
+  const [cpPhoneMatch, setCpPhoneMatch] = useState<any>(null);
+  const cpPhoneDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const { data: contactLinks = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/leads", leadId, "contact-persons"],
@@ -1992,6 +1994,33 @@ function ContactPersonsPanel({ leadId, lead }: { leadId: number; lead?: any }) {
     });
     setEditingLink(null);
     setShowForm(false);
+    setCpPhoneMatch(null);
+  };
+
+  const handleCpPhoneChange = (phone: string) => {
+    setFormData(p => ({ ...p, phoneE164: phone }));
+    setCpPhoneMatch(null);
+    if (cpPhoneDebounceRef.current) clearTimeout(cpPhoneDebounceRef.current);
+    if (phone.length >= 7) {
+      cpPhoneDebounceRef.current = setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/contact-persons/search?phone=${encodeURIComponent(phone)}`, { credentials: "include" });
+          if (res.ok) {
+            const results = await res.json();
+            if (Array.isArray(results) && results.length > 0) setCpPhoneMatch(results[0]);
+          }
+        } catch {}
+      }, 500);
+    }
+  };
+
+  const reuseExistingCp = (cp: any) => {
+    setFormData(p => ({
+      ...p, name: cp.name, phoneE164: cp.phoneE164 || p.phoneE164,
+      whatsappNumber: cp.whatsappNumber || "", email: cp.email || "",
+      contactPersonId: cp.id,
+    }));
+    setCpPhoneMatch(null);
   };
 
   const addMutation = useMutation({

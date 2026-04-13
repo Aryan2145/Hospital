@@ -663,6 +663,7 @@ async function ensurePatientsForConvertedLeads() {
 }
 
 // Shared reachability validator: lead must have phone or linked contact with phone
+// Uses only parameterized SQL (no string interpolation) to prevent injection
 async function assertLeadReachable(leadId: number, tenantId: number, excludeLinkId?: number): Promise<void> {
   const rows = await pool.query(
     `SELECT l.phone_e164 FROM leads l WHERE l.id = $1 AND l.tenant_id = $2`,
@@ -671,17 +672,55 @@ async function assertLeadReachable(leadId: number, tenantId: number, excludeLink
   if (!rows.rows.length) throw new Error("Lead not found");
   const phoneE164 = rows.rows[0].phone_e164;
   if (phoneE164 && phoneE164.trim()) return; // Direct phone present — always reachable
-  // Check contact persons linked to this lead for a phone
-  const cpRows = await pool.query(
-    `SELECT cp.phone_e164 FROM lead_contact_persons lcp
+  // Check contact persons linked to this lead for a phone (exclude specific link if provided)
+  const params: any[] = [leadId, tenantId];
+  let sql = `SELECT cp.phone_e164 FROM lead_contact_persons lcp
      JOIN contact_persons cp ON cp.id = lcp.contact_person_id
-     WHERE lcp.lead_id = $1 AND lcp.tenant_id = $2
-     ${excludeLinkId ? `AND lcp.id != ${excludeLinkId}` : ""}`,
-    [leadId, tenantId]
-  );
+     WHERE lcp.lead_id = $1 AND lcp.tenant_id = $2`;
+  if (excludeLinkId !== undefined) {
+    params.push(excludeLinkId);
+    sql += ` AND lcp.id != $${params.length}`;
+  }
+  const cpRows = await pool.query(sql, params);
   const hasContactPhone = cpRows.rows.some((r: any) => r.phone_e164 && r.phone_e164.trim());
   if (!hasContactPhone) {
     throw new Error("A lead must have at least one reachable phone number — either a direct phone or via a linked contact person.");
+  }
+}
+
+// Assert that a contact person phone update won't make any linked lead unreachable
+// Called when updating/clearing a contact person's phone
+async function assertContactPersonPhoneUpdateSafe(contactPersonId: number, tenantId: number, newPhone: string | null | undefined): Promise<void> {
+  // Only check if phone is being removed/cleared
+  if (newPhone && newPhone.trim()) return;
+  // Find all leads linked to this contact person
+  const linkedLeads = await pool.query(
+    `SELECT DISTINCT lcp.lead_id FROM lead_contact_persons lcp
+     WHERE lcp.contact_person_id = $1 AND lcp.tenant_id = $2`,
+    [contactPersonId, tenantId]
+  );
+  for (const row of linkedLeads.rows) {
+    const leadId = row.lead_id;
+    // Check if this lead has any other reachable phone (own phone or another contact with phone)
+    const reachCheck = await pool.query(
+      `SELECT l.phone_e164,
+              (SELECT COUNT(*) FROM lead_contact_persons lcp2
+               JOIN contact_persons cp2 ON cp2.id = lcp2.contact_person_id
+               WHERE lcp2.lead_id = l.id AND lcp2.tenant_id = l.tenant_id
+               AND lcp2.contact_person_id != $1
+               AND cp2.phone_e164 IS NOT NULL AND cp2.phone_e164 != '') as other_cp_phones
+       FROM leads l WHERE l.id = $2 AND l.tenant_id = $3`,
+      [contactPersonId, leadId, tenantId]
+    );
+    if (reachCheck.rows.length === 0) continue;
+    const lead = reachCheck.rows[0];
+    const hasDirectPhone = lead.phone_e164 && lead.phone_e164.trim();
+    const hasOtherCpPhone = Number(lead.other_cp_phones) > 0;
+    if (!hasDirectPhone && !hasOtherCpPhone) {
+      throw new Error(
+        `Removing this phone would leave Lead #${leadId} with no reachable phone. Update the lead's direct phone or add another contact person with a phone first.`
+      );
+    }
   }
 }
 
@@ -5030,6 +5069,34 @@ export async function registerRoutes(
   // =============================================
   // CONTACT PERSONS ROUTES
   // =============================================
+  // GET /api/contact-persons/search?phone=... — find contact persons by phone (for duplicate reuse)
+  app.get("/api/contact-persons/search", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const phone = String(req.query.phone || "").trim();
+      if (!phone || phone.length < 6) return res.json([]);
+      const rows = await pool.query(
+        `SELECT id, name, phone_e164, whatsapp_number, email, relationship, status
+         FROM contact_persons
+         WHERE tenant_id = $1 AND (phone_e164 ILIKE $2 OR phone_e164 = $3)
+         AND status != 'Inactive'
+         LIMIT 5`,
+        [tid, `%${phone}%`, phone]
+      );
+      const sessionCrmUserId = (req as any).session?.crmUserId;
+      const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId || 0));
+      const phiLevel = crmUser?.phiAccessLevel || "Masked";
+      const result = rows.rows.map((r: any) => ({
+        id: r.id, name: r.name, phoneE164: r.phone_e164,
+        whatsappNumber: r.whatsapp_number, email: r.email,
+        relationship: r.relationship, status: r.status,
+      }));
+      res.json(applyPhiMasking(result, phiLevel));
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.get("/api/contact-persons", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
@@ -5102,8 +5169,17 @@ export async function registerRoutes(
   app.patch("/api/contact-persons/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
+      const cpId = Number(req.params.id);
+      // Reachability guard: if phone is being cleared, ensure no linked lead loses its last reachable phone
+      if ("phoneE164" in req.body && (!req.body.phoneE164 || !String(req.body.phoneE164).trim())) {
+        try {
+          await assertContactPersonPhoneUpdateSafe(cpId, tid, req.body.phoneE164);
+        } catch (reachErr: any) {
+          return res.status(400).json({ message: reachErr.message });
+        }
+      }
       const parsed = insertContactPersonSchema.partial().parse(req.body);
-      const cp = await storage.updateContactPerson(Number(req.params.id), tid, parsed);
+      const cp = await storage.updateContactPerson(cpId, tid, parsed);
       res.json(cp);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
@@ -5113,7 +5189,14 @@ export async function registerRoutes(
   app.delete("/api/contact-persons/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      await storage.deleteContactPerson(Number(req.params.id), tid);
+      const cpId = Number(req.params.id);
+      // Reachability guard: treat delete as clearing phone (same effect on linked leads)
+      try {
+        await assertContactPersonPhoneUpdateSafe(cpId, tid, null);
+      } catch (reachErr: any) {
+        return res.status(400).json({ message: reachErr.message });
+      }
+      await storage.deleteContactPerson(cpId, tid);
       res.status(204).send();
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
