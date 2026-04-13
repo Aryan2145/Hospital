@@ -4401,7 +4401,19 @@ export async function registerRoutes(
   app.get("/api/crm-users/active", isAuthenticated, async (req, res) => {
     const tid = await getDefaultTenantId(req);
     const users = await storage.getCrmUsers(tid);
-    res.json(users.filter(u => u.isActive && u.code !== "SUPERADMIN"));
+    const active = users.filter(u => u.isActive && u.code !== "SUPERADMIN");
+    // Enrich with role info via a single JOIN query
+    const enriched = await db.execute(sql`
+      SELECT cu.id, sr.name AS "roleName", sr.code AS "roleCode"
+      FROM crm_users cu
+      LEFT JOIN system_roles sr ON cu.system_role_id = sr.id
+      WHERE cu.tenant_id = ${tid} AND cu.is_active = true
+    `);
+    const roleMap: Record<number, { roleName: string | null; roleCode: string | null }> = {};
+    for (const row of enriched.rows as any[]) {
+      roleMap[row.id] = { roleName: row.roleName ?? null, roleCode: row.roleCode ?? null };
+    }
+    res.json(active.map(u => ({ ...u, ...(roleMap[u.id] ?? { roleName: null, roleCode: null }) })));
   });
 
   // Helper: get the default tenant ID

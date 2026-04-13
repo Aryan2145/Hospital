@@ -18,6 +18,8 @@ import { ShieldCheck, UserCog, Plus, Trash2, Save, Users, AlertTriangle, Info, S
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
 const ROLE_CODES = [
   { code: "SYS_ADMIN", label: "System Admin" },
   { code: "ADMIN", label: "Admin" },
@@ -51,8 +53,15 @@ const MODULES = [
 ];
 
 const PERMS = ["canView", "canCreate", "canEdit", "canDelete"] as const;
-const PERM_LABELS: Record<string, string> = { canView: "View", canCreate: "Create", canEdit: "Edit", canDelete: "Delete" };
-const ACTION_LABELS: Record<string, string> = { canView: "View", canCreate: "Create", canEdit: "Edit", canDelete: "Delete" };
+type PermKey = typeof PERMS[number];
+const PERM_LABELS: Record<PermKey, string> = {
+  canView: "View",
+  canCreate: "Create",
+  canEdit: "Edit",
+  canDelete: "Delete",
+};
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface RolePermRow {
   id: number;
@@ -65,14 +74,16 @@ interface RolePermRow {
   canDelete: boolean;
 }
 
-interface CrmUserBasic {
+interface CrmUserEnriched {
   id: number;
   name: string;
   email: string | null;
   isActive: boolean;
   systemRoleId: number | null;
-  roleName?: string | null;
-  roleCode?: string | null;
+  phiAccessLevel: string;
+  accessScopeType: string;
+  roleName: string | null;
+  roleCode: string | null;
 }
 
 interface DiscountApprover {
@@ -94,24 +105,43 @@ interface UserPermissionOverride {
   createdAt: string | null;
 }
 
+interface OverrideFormState {
+  module: string;
+  action: string;
+  isGranted: boolean;
+  reason: string;
+  expiresAt: string;
+}
+
+interface OverridePayload {
+  crmUserId: number;
+  module: string;
+  action: string;
+  isGranted: boolean;
+  reason: string | null;
+  expiresAt: string | null;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export default function AccessControlPage() {
-  const { isAdmin, crmUser: me } = useCurrentUser();
+  const { isAdmin } = useCurrentUser();
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  // Role Permissions tab state
+  // Role Permissions tab
   const [selectedRole, setSelectedRole] = useState("ADMIN");
   const [pendingChanges, setPendingChanges] = useState<Record<string, Record<string, boolean>>>({});
 
-  // Discount Approvers tab state
+  // Discount Approvers tab
   const [addApproverOpen, setAddApproverOpen] = useState(false);
   const [selectedApproverUserId, setSelectedApproverUserId] = useState("");
 
-  // User Overrides tab state
+  // User Overrides tab
   const [userSearch, setUserSearch] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [addOverrideOpen, setAddOverrideOpen] = useState(false);
-  const [overrideForm, setOverrideForm] = useState({
+  const [overrideForm, setOverrideForm] = useState<OverrideFormState>({
     module: "",
     action: "canView",
     isGranted: true,
@@ -120,12 +150,13 @@ export default function AccessControlPage() {
   });
 
   // ── Queries ────────────────────────────────────────────────────────────
+
   const { data: rolePerms } = useQuery<RolePermRow[]>({
     queryKey: ["/api/admin/role-permissions"],
     enabled: isAdmin,
   });
 
-  const { data: teamUsers } = useQuery<CrmUserBasic[]>({
+  const { data: teamUsers } = useQuery<CrmUserEnriched[]>({
     queryKey: ["/api/crm-users/active"],
     enabled: isAdmin,
   });
@@ -139,17 +170,19 @@ export default function AccessControlPage() {
     queryKey: ["/api/admin/user-permission-overrides", selectedUserId],
     enabled: isAdmin && selectedUserId !== null,
     queryFn: async () => {
-      const res = await fetch(`/api/admin/user-permission-overrides/${selectedUserId}`, { credentials: "include" });
+      const res = await fetch(`/api/admin/user-permission-overrides/${selectedUserId}`, {
+        credentials: "include",
+      });
       if (!res.ok) throw new Error("Failed to load overrides");
-      return res.json();
+      return res.json() as Promise<UserPermissionOverride[]>;
     },
   });
 
-  // ── Role permissions helpers ───────────────────────────────────────────
+  // ── Role permission helpers ────────────────────────────────────────────
+
   const permMap: Record<string, Record<string, boolean>> = {};
-  (rolePerms || []).forEach(row => {
-    const key = `${row.roleCode}::${row.module}`;
-    permMap[key] = {
+  (rolePerms ?? []).forEach(row => {
+    permMap[`${row.roleCode}::${row.module}`] = {
       canView: row.canView,
       canCreate: row.canCreate,
       canEdit: row.canEdit,
@@ -160,19 +193,18 @@ export default function AccessControlPage() {
   const getPerm = (rc: string, mod: string, perm: string): boolean => {
     const changeKey = `${rc}::${mod}::${perm}`;
     if (pendingChanges[changeKey] !== undefined) return pendingChanges[changeKey][perm] ?? false;
-    const rowKey = `${rc}::${mod}`;
-    return permMap[rowKey]?.[perm] ?? false;
+    return permMap[`${rc}::${mod}`]?.[perm] ?? false;
   };
 
   const togglePerm = (rc: string, mod: string, perm: string, val: boolean) => {
     if (rc === "SYS_ADMIN") return;
-    const changeKey = `${rc}::${mod}::${perm}`;
-    setPendingChanges(prev => ({ ...prev, [changeKey]: { [perm]: val } }));
+    setPendingChanges(prev => ({ ...prev, [`${rc}::${mod}::${perm}`]: { [perm]: val } }));
   };
 
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
 
   // ── Mutations ──────────────────────────────────────────────────────────
+
   const savePermsMutation = useMutation({
     mutationFn: async () => {
       const grouped: Record<string, Record<string, boolean>> = {};
@@ -183,10 +215,10 @@ export default function AccessControlPage() {
       });
       for (const [key, changes] of Object.entries(grouped)) {
         const [rc, mod] = key.split("::");
-        const rowKey = `${rc}::${mod}`;
-        const current = permMap[rowKey] ?? { canView: false, canCreate: false, canEdit: false, canDelete: false };
-        const merged = { ...current, ...changes };
-        await apiRequest("PUT", `/api/admin/role-permissions/${rc}/${mod}`, merged);
+        const current = permMap[`${rc}::${mod}`] ?? {
+          canView: false, canCreate: false, canEdit: false, canDelete: false,
+        };
+        await apiRequest("PUT", `/api/admin/role-permissions/${rc}/${mod}`, { ...current, ...changes });
       }
     },
     onSuccess: () => {
@@ -195,58 +227,64 @@ export default function AccessControlPage() {
       setPendingChanges({});
       toast({ title: "Permissions saved successfully" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: err.message || "Failed to save permissions", variant: "destructive" });
     },
   });
 
   const addApproverMutation = useMutation({
-    mutationFn: (crmUserId: number) => apiRequest("POST", "/api/admin/discount-approvers", { crmUserId }),
+    mutationFn: (crmUserId: number) =>
+      apiRequest("POST", "/api/admin/discount-approvers", { crmUserId }),
     onSuccess: () => {
       refetchApprovers();
       setAddApproverOpen(false);
       setSelectedApproverUserId("");
       toast({ title: "Discount approver added" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: err.message || "Failed to add approver", variant: "destructive" });
     },
   });
 
   const removeApproverMutation = useMutation({
-    mutationFn: (crmUserId: number) => apiRequest("DELETE", `/api/admin/discount-approvers/${crmUserId}`),
+    mutationFn: (crmUserId: number) =>
+      apiRequest("DELETE", `/api/admin/discount-approvers/${crmUserId}`),
     onSuccess: () => {
       refetchApprovers();
       toast({ title: "Approver removed" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: err.message || "Failed to remove approver", variant: "destructive" });
     },
   });
 
   const addOverrideMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/admin/user-permission-overrides", data),
+    mutationFn: (payload: OverridePayload) =>
+      apiRequest("POST", "/api/admin/user-permission-overrides", payload),
     onSuccess: () => {
       refetchOverrides();
       setAddOverrideOpen(false);
       setOverrideForm({ module: "", action: "canView", isGranted: true, reason: "", expiresAt: "" });
       toast({ title: "Permission override saved" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: err.message || "Failed to save override", variant: "destructive" });
     },
   });
 
   const removeOverrideMutation = useMutation({
-    mutationFn: (id: number) => apiRequest("DELETE", `/api/admin/user-permission-overrides/${id}`),
+    mutationFn: (id: number) =>
+      apiRequest("DELETE", `/api/admin/user-permission-overrides/${id}`),
     onSuccess: () => {
       refetchOverrides();
       toast({ title: "Override removed" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ title: err.message || "Failed to remove override", variant: "destructive" });
     },
   });
+
+  // ── Access guard ───────────────────────────────────────────────────────
 
   if (!isAdmin) {
     return (
@@ -259,16 +297,40 @@ export default function AccessControlPage() {
     );
   }
 
-  const approverUserIds = new Set((discountApprovers || []).map(a => a.crmUserId));
-  const availableForApprover = (teamUsers || []).filter(u => !approverUserIds.has(u.id));
+  // ── Derived state ──────────────────────────────────────────────────────
 
-  const filteredUsers = (teamUsers || []).filter(u => {
+  const approverUserIds = new Set((discountApprovers ?? []).map(a => a.crmUserId));
+  const availableForApprover = (teamUsers ?? []).filter(u => !approverUserIds.has(u.id));
+
+  const filteredUsers = (teamUsers ?? []).filter(u => {
     if (!userSearch) return true;
     const q = userSearch.toLowerCase();
-    return u.name.toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q);
+    return u.name.toLowerCase().includes(q) || (u.email ?? "").toLowerCase().includes(q);
   });
 
-  const selectedUser = selectedUserId ? (teamUsers || []).find(u => u.id === selectedUserId) : null;
+  const selectedUser = selectedUserId
+    ? (teamUsers ?? []).find(u => u.id === selectedUserId)
+    : null;
+
+  const now = new Date();
+  const activeOverrides = (userOverrides ?? []).filter(
+    ov => !ov.expiresAt || new Date(ov.expiresAt) >= now
+  );
+  const expiredOverrides = (userOverrides ?? []).filter(
+    ov => ov.expiresAt && new Date(ov.expiresAt) < now
+  );
+
+  const phiLabel = (level: string) =>
+    level === "Full" ? "Full PHI" : level === "Partial" ? "Partial PHI" : "No PHI";
+
+  const phiBadgeClass = (level: string) =>
+    level === "Full"
+      ? "bg-red-100 text-red-700 border-red-300"
+      : level === "Partial"
+      ? "bg-yellow-100 text-yellow-700 border-yellow-300"
+      : "bg-muted text-muted-foreground";
+
+  // ── Render ────────────────────────────────────────────────────────────
 
   return (
     <div className="container max-w-6xl py-8 space-y-6">
@@ -276,7 +338,9 @@ export default function AccessControlPage() {
         <ShieldCheck className="w-7 h-7 text-primary" />
         <div>
           <h1 className="text-2xl font-bold">Access Control</h1>
-          <p className="text-sm text-muted-foreground">Manage role-based permissions, user overrides, and discount approval authority</p>
+          <p className="text-sm text-muted-foreground">
+            Manage role-based permissions, user-level overrides, and discount approval authority
+          </p>
         </div>
       </div>
 
@@ -296,14 +360,16 @@ export default function AccessControlPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* ─── Role Permissions Tab ─────────────────────────────────────── */}
+        {/* ─── Role Permissions Tab ──────────────────────────────────────── */}
         <TabsContent value="role-permissions" className="mt-4 space-y-4">
           <Card>
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-base">Permission Matrix</CardTitle>
-                  <CardDescription>Configure what each role can view, create, edit, or delete per module.</CardDescription>
+                  <CardDescription>
+                    Configure what each role can view, create, edit, or delete per module.
+                  </CardDescription>
                 </div>
                 <div className="flex items-center gap-3">
                   <Select value={selectedRole} onValueChange={setSelectedRole}>
@@ -317,7 +383,11 @@ export default function AccessControlPage() {
                     </SelectContent>
                   </Select>
                   {hasPendingChanges && (
-                    <Button onClick={() => savePermsMutation.mutate()} disabled={savePermsMutation.isPending} data-testid="button-save-permissions">
+                    <Button
+                      onClick={() => savePermsMutation.mutate()}
+                      disabled={savePermsMutation.isPending}
+                      data-testid="button-save-permissions"
+                    >
                       <Save className="w-4 h-4 mr-2" />
                       {savePermsMutation.isPending ? "Saving..." : "Save Changes"}
                     </Button>
@@ -338,13 +408,18 @@ export default function AccessControlPage() {
                     <tr className="border-b bg-muted/30">
                       <th className="text-left px-4 py-3 font-medium text-muted-foreground w-52">Module</th>
                       {PERMS.map(p => (
-                        <th key={p} className="px-4 py-3 font-medium text-muted-foreground text-center">{PERM_LABELS[p]}</th>
+                        <th key={p} className="px-4 py-3 font-medium text-muted-foreground text-center">
+                          {PERM_LABELS[p]}
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {MODULES.map((mod, idx) => (
-                      <tr key={mod.key} className={cn("border-b last:border-0", idx % 2 === 0 ? "bg-background" : "bg-muted/10")}>
+                      <tr
+                        key={mod.key}
+                        className={cn("border-b last:border-0", idx % 2 === 0 ? "bg-background" : "bg-muted/10")}
+                      >
                         <td className="px-4 py-3 font-medium">{mod.label}</td>
                         {PERMS.map(perm => {
                           const val = selectedRole === "SYS_ADMIN" ? true : getPerm(selectedRole, mod.key, perm);
@@ -367,14 +442,22 @@ export default function AccessControlPage() {
               </div>
               {hasPendingChanges && (
                 <div className="px-4 py-3 border-t bg-orange-50 flex items-center justify-between">
-                  <span className="text-sm text-orange-700">
-                    You have unsaved permission changes.
-                  </span>
+                  <span className="text-sm text-orange-700">You have unsaved permission changes.</span>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setPendingChanges({})} data-testid="button-discard-changes">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPendingChanges({})}
+                      data-testid="button-discard-changes"
+                    >
                       Discard
                     </Button>
-                    <Button size="sm" onClick={() => savePermsMutation.mutate()} disabled={savePermsMutation.isPending} data-testid="button-save-permissions-bottom">
+                    <Button
+                      size="sm"
+                      onClick={() => savePermsMutation.mutate()}
+                      disabled={savePermsMutation.isPending}
+                      data-testid="button-save-permissions-bottom"
+                    >
                       <Save className="w-3.5 h-3.5 mr-1" />
                       {savePermsMutation.isPending ? "Saving..." : "Save Changes"}
                     </Button>
@@ -385,10 +468,10 @@ export default function AccessControlPage() {
           </Card>
         </TabsContent>
 
-        {/* ─── User Overrides Tab ───────────────────────────────────────── */}
+        {/* ─── User Overrides Tab ────────────────────────────────────────── */}
         <TabsContent value="user-overrides" className="mt-4">
           <div className="grid grid-cols-12 gap-4">
-            {/* Left: User list */}
+            {/* Left panel: team member list */}
             <div className="col-span-4">
               <Card className="h-full">
                 <CardHeader className="pb-3">
@@ -405,7 +488,7 @@ export default function AccessControlPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <div className="divide-y max-h-[520px] overflow-y-auto">
+                  <div className="divide-y max-h-[540px] overflow-y-auto">
                     {filteredUsers.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-8">No users found</p>
                     ) : (
@@ -427,7 +510,19 @@ export default function AccessControlPage() {
                               </div>
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium truncate">{u.name}</p>
-                                <p className="text-xs text-muted-foreground truncate">{u.email || "—"}</p>
+                                <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                                  {u.roleName && (
+                                    <span className="text-[10px] px-1.5 py-0 rounded-full bg-primary/10 text-primary font-medium">
+                                      {u.roleName}
+                                    </span>
+                                  )}
+                                  <span className={cn(
+                                    "text-[10px] px-1.5 py-0 rounded-full border font-medium",
+                                    phiBadgeClass(u.phiAccessLevel)
+                                  )}>
+                                    {phiLabel(u.phiAccessLevel)}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </button>
@@ -439,7 +534,7 @@ export default function AccessControlPage() {
               </Card>
             </div>
 
-            {/* Right: Overrides panel */}
+            {/* Right panel: override management */}
             <div className="col-span-8">
               {!selectedUser ? (
                 <Card className="h-full flex items-center justify-center min-h-[300px]">
@@ -458,89 +553,156 @@ export default function AccessControlPage() {
                         </div>
                         <div>
                           <CardTitle className="text-base">{selectedUser.name}</CardTitle>
-                          <CardDescription>{selectedUser.email || "No email"}</CardDescription>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            {selectedUser.roleName && (
+                              <Badge variant="secondary" className="text-xs">
+                                {selectedUser.roleName}
+                              </Badge>
+                            )}
+                            <Badge
+                              variant="outline"
+                              className={cn("text-xs", phiBadgeClass(selectedUser.phiAccessLevel))}
+                            >
+                              {phiLabel(selectedUser.phiAccessLevel)}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              Scope: {selectedUser.accessScopeType}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <Button
-                        size="sm"
-                        onClick={() => setAddOverrideOpen(true)}
-                        data-testid="button-add-override"
-                      >
+                      <Button size="sm" onClick={() => setAddOverrideOpen(true)} data-testid="button-add-override">
                         <Plus className="w-4 h-4 mr-1" />
                         Add Override
                       </Button>
                     </div>
                   </CardHeader>
-                  <CardContent>
-                    <div className="flex items-start gap-2 mb-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+                  <CardContent className="space-y-4">
+                    <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
                       <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
                       <span>
-                        Overrides take precedence over the role's default permissions. Use them to grant or revoke specific module access for this individual.
+                        Overrides take precedence over the role's default permissions. Use them to grant or
+                        revoke specific module access for this individual.
                       </span>
                     </div>
 
-                    {!userOverrides || userOverrides.length === 0 ? (
+                    {/* Active overrides */}
+                    {activeOverrides.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                          Active Overrides ({activeOverrides.length})
+                        </p>
+                        <div className="space-y-2">
+                          {activeOverrides.map(ov => {
+                            const modLabel = MODULES.find(m => m.key === ov.module)?.label ?? ov.module;
+                            const actLabel = PERM_LABELS[ov.action as PermKey] ?? ov.action;
+                            return (
+                              <div
+                                key={ov.id}
+                                className={cn(
+                                  "flex items-center justify-between p-3 rounded-lg border",
+                                  ov.isGranted ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+                                )}
+                                data-testid={`override-row-${ov.id}`}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      "text-xs font-semibold mt-0.5",
+                                      ov.isGranted
+                                        ? "bg-green-100 text-green-700 border-green-300"
+                                        : "bg-red-100 text-red-700 border-red-300"
+                                    )}
+                                  >
+                                    {ov.isGranted ? "Granted" : "Revoked"}
+                                  </Badge>
+                                  <div>
+                                    <p className="text-sm font-medium">
+                                      {actLabel} — {modLabel}
+                                    </p>
+                                    {ov.reason && (
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        Reason: {ov.reason}
+                                      </p>
+                                    )}
+                                    {ov.expiresAt && (
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        Expires: {format(new Date(ov.expiresAt), "dd/MM/yyyy")}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:bg-destructive/10"
+                                  onClick={() => removeOverrideMutation.mutate(ov.id)}
+                                  disabled={removeOverrideMutation.isPending}
+                                  data-testid={`button-remove-override-${ov.id}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Expired overrides */}
+                    {expiredOverrides.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                          Expired Overrides ({expiredOverrides.length})
+                        </p>
+                        <div className="space-y-2 opacity-60">
+                          {expiredOverrides.map(ov => {
+                            const modLabel = MODULES.find(m => m.key === ov.module)?.label ?? ov.module;
+                            const actLabel = PERM_LABELS[ov.action as PermKey] ?? ov.action;
+                            return (
+                              <div
+                                key={ov.id}
+                                className="flex items-center justify-between p-3 rounded-lg border bg-muted/20 border-muted"
+                                data-testid={`override-expired-${ov.id}`}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <Badge variant="outline" className="text-xs font-semibold mt-0.5 text-muted-foreground">
+                                    Expired
+                                  </Badge>
+                                  <div>
+                                    <p className="text-sm font-medium line-through text-muted-foreground">
+                                      {actLabel} — {modLabel}
+                                    </p>
+                                    {ov.expiresAt && (
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        Expired: {format(new Date(ov.expiresAt), "dd/MM/yyyy")}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-muted-foreground hover:bg-muted"
+                                  onClick={() => removeOverrideMutation.mutate(ov.id)}
+                                  disabled={removeOverrideMutation.isPending}
+                                  data-testid={`button-remove-expired-${ov.id}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {(userOverrides ?? []).length === 0 && (
                       <div className="text-center py-10 text-muted-foreground">
                         <ShieldCheck className="w-8 h-8 mx-auto mb-2 opacity-30" />
                         <p className="text-sm">No overrides configured.</p>
                         <p className="text-xs mt-1">This user inherits all permissions from their role.</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {userOverrides.map(ov => {
-                          const modLabel = MODULES.find(m => m.key === ov.module)?.label ?? ov.module;
-                          const actLabel = ACTION_LABELS[ov.action] ?? ov.action;
-                          const isExpired = ov.expiresAt && new Date(ov.expiresAt) < new Date();
-                          return (
-                            <div
-                              key={ov.id}
-                              className={cn(
-                                "flex items-center justify-between p-3 rounded-lg border",
-                                isExpired ? "bg-muted/30 opacity-60" : ov.isGranted ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
-                              )}
-                              data-testid={`override-row-${ov.id}`}
-                            >
-                              <div className="flex items-start gap-3">
-                                <Badge
-                                  variant="outline"
-                                  className={cn(
-                                    "text-xs font-semibold mt-0.5",
-                                    isExpired
-                                      ? "bg-muted text-muted-foreground border-muted-foreground/30"
-                                      : ov.isGranted
-                                      ? "bg-green-100 text-green-700 border-green-300"
-                                      : "bg-red-100 text-red-700 border-red-300"
-                                  )}
-                                >
-                                  {isExpired ? "Expired" : ov.isGranted ? "Granted" : "Revoked"}
-                                </Badge>
-                                <div>
-                                  <p className="text-sm font-medium">
-                                    {actLabel} — {modLabel}
-                                  </p>
-                                  {ov.reason && (
-                                    <p className="text-xs text-muted-foreground mt-0.5">Reason: {ov.reason}</p>
-                                  )}
-                                  {ov.expiresAt && (
-                                    <p className="text-xs text-muted-foreground mt-0.5">
-                                      {isExpired ? "Expired" : "Expires"}: {format(new Date(ov.expiresAt), "dd/MM/yyyy")}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-destructive hover:bg-destructive/10"
-                                onClick={() => removeOverrideMutation.mutate(ov.id)}
-                                disabled={removeOverrideMutation.isPending}
-                                data-testid={`button-remove-override-${ov.id}`}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          );
-                        })}
                       </div>
                     )}
                   </CardContent>
@@ -550,7 +712,7 @@ export default function AccessControlPage() {
           </div>
         </TabsContent>
 
-        {/* ─── Discount Approvers Tab ───────────────────────────────────── */}
+        {/* ─── Discount Approvers Tab ────────────────────────────────────── */}
         <TabsContent value="discount-approvers" className="mt-4 space-y-4">
           <Card>
             <CardHeader>
@@ -558,7 +720,8 @@ export default function AccessControlPage() {
                 <div>
                   <CardTitle className="text-base">Discount Approval Authority</CardTitle>
                   <CardDescription>
-                    These users will receive in-app notifications and email alerts whenever a team member requests a discount on an episode.
+                    These users receive in-app notifications and email alerts whenever a team member
+                    requests a discount on an episode.
                   </CardDescription>
                 </div>
                 <Button onClick={() => setAddApproverOpen(true)} data-testid="button-add-approver">
@@ -584,12 +747,14 @@ export default function AccessControlPage() {
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center font-semibold text-primary text-sm">
-                          {(approver.name || "?").charAt(0).toUpperCase()}
+                          {(approver.name ?? "?").charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <p className="font-medium text-sm">{approver.name || "Unknown"}</p>
+                          <p className="font-medium text-sm">{approver.name ?? "Unknown"}</p>
                           <p className="text-xs text-muted-foreground">
-                            {approver.designation || ""}{approver.designation && approver.email ? " · " : ""}{approver.email || ""}
+                            {approver.designation ?? ""}
+                            {approver.designation && approver.email ? " · " : ""}
+                            {approver.email ?? ""}
                           </p>
                         </div>
                       </div>
@@ -621,7 +786,7 @@ export default function AccessControlPage() {
               <p>When a team member submits a discount request on an episode:</p>
               <ol className="list-decimal ml-4 space-y-1">
                 <li>All configured approvers receive an <strong>in-app notification</strong> (bell icon in sidebar).</li>
-                <li>An <strong>email</strong> is sent to each approver with episode details and the discount request.</li>
+                <li>An <strong>email</strong> is sent to each approver with episode details and the discount amount.</li>
                 <li>Approvers can approve or reject the discount from the Episode's Quotation tab.</li>
               </ol>
             </CardContent>
@@ -629,7 +794,7 @@ export default function AccessControlPage() {
         </TabsContent>
       </Tabs>
 
-      {/* ── Add Approver Dialog ──────────────────────────────────────────── */}
+      {/* ── Add Approver Dialog ───────────────────────────────────────────── */}
       <Dialog open={addApproverOpen} onOpenChange={setAddApproverOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
@@ -648,7 +813,7 @@ export default function AccessControlPage() {
                   ) : (
                     availableForApprover.map(u => (
                       <SelectItem key={u.id} value={String(u.id)}>
-                        {u.name}{u.email ? ` · ${u.email}` : ""}
+                        {u.name}{u.roleName ? ` · ${u.roleName}` : ""}
                       </SelectItem>
                     ))
                   )}
@@ -671,16 +836,21 @@ export default function AccessControlPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Add Override Dialog ──────────────────────────────────────────── */}
+      {/* ── Add Override Dialog ───────────────────────────────────────────── */}
       <Dialog open={addOverrideOpen} onOpenChange={setAddOverrideOpen}>
         <DialogContent className="sm:max-w-[460px]">
           <DialogHeader>
             <DialogTitle>Add Permission Override</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <p className="text-sm text-muted-foreground">
-              Override for: <strong>{selectedUser?.name}</strong>
-            </p>
+            {selectedUser && (
+              <p className="text-sm text-muted-foreground">
+                Override for: <strong>{selectedUser.name}</strong>
+                {selectedUser.roleName && (
+                  <span className="ml-1 text-muted-foreground/70">({selectedUser.roleName})</span>
+                )}
+              </p>
+            )}
 
             <div>
               <Label>Module</Label>
@@ -710,7 +880,7 @@ export default function AccessControlPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {PERMS.map(p => (
-                    <SelectItem key={p} value={p}>{ACTION_LABELS[p]}</SelectItem>
+                    <SelectItem key={p} value={p}>{PERM_LABELS[p]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -735,7 +905,10 @@ export default function AccessControlPage() {
             </div>
 
             <div>
-              <Label>Reason <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Label>
+                Reason{" "}
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
               <Textarea
                 className="mt-1 text-sm"
                 rows={2}
@@ -747,7 +920,10 @@ export default function AccessControlPage() {
             </div>
 
             <div>
-              <Label>Expires On <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Label>
+                Expires On{" "}
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
               <Input
                 type="date"
                 className="mt-1"
@@ -764,14 +940,15 @@ export default function AccessControlPage() {
               disabled={!overrideForm.module || addOverrideMutation.isPending}
               onClick={() => {
                 if (!selectedUserId || !overrideForm.module) return;
-                addOverrideMutation.mutate({
+                const payload: OverridePayload = {
                   crmUserId: selectedUserId,
                   module: overrideForm.module,
                   action: overrideForm.action,
                   isGranted: overrideForm.isGranted,
                   reason: overrideForm.reason || null,
                   expiresAt: overrideForm.expiresAt || null,
-                });
+                };
+                addOverrideMutation.mutate(payload);
               }}
               data-testid="button-confirm-add-override"
             >
