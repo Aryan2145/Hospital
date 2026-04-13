@@ -4409,8 +4409,9 @@ export async function registerRoutes(
       LEFT JOIN system_roles sr ON cu.system_role_id = sr.id
       WHERE cu.tenant_id = ${tid} AND cu.is_active = true
     `);
+    interface RoleRow { id: number; roleName: string | null; roleCode: string | null }
     const roleMap: Record<number, { roleName: string | null; roleCode: string | null }> = {};
-    for (const row of enriched.rows as any[]) {
+    for (const row of enriched.rows as RoleRow[]) {
       roleMap[row.id] = { roleName: row.roleName ?? null, roleCode: row.roleCode ?? null };
     }
     res.json(active.map(u => ({ ...u, ...(roleMap[u.id] ?? { roleName: null, roleCode: null }) })));
