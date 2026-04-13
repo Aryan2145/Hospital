@@ -2210,8 +2210,19 @@ function ContactPersonsPanel({ leadId, lead }: { leadId: number; lead?: any }) {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="text-[10px] text-muted-foreground">Phone</Label>
-                <Input value={formData.phoneE164} onChange={e => setFormData(p => ({ ...p, phoneE164: e.target.value }))}
-                  placeholder="+91..." className="h-7 text-xs mt-0.5" data-testid="input-cp-phone" />
+                <Input value={formData.phoneE164} onChange={e => handleCpPhoneChange(e.target.value)}
+                  placeholder="+91..." className="h-7 text-xs mt-0.5" data-testid="input-cp-phone"
+                  disabled={!!editingLink} />
+                {!editingLink && cpPhoneMatch && (
+                  <div className="mt-1 p-1.5 rounded bg-amber-50 border border-amber-200 text-[10px]">
+                    <span className="text-amber-700 font-medium">Existing contact found: </span>
+                    <span className="text-amber-900">{cpPhoneMatch.name}</span>
+                    <button type="button" onClick={() => reuseExistingCp(cpPhoneMatch)}
+                      className="ml-2 text-primary underline font-medium" data-testid="btn-reuse-contact">
+                      Reuse
+                    </button>
+                  </div>
+                )}
               </div>
               <div>
                 <Label className="text-[10px] text-muted-foreground">WhatsApp</Label>
