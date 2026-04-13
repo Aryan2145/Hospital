@@ -94,12 +94,12 @@ export default function AppointmentsPage() {
     <AppLayout>
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
-          <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground" data-testid="text-appointments-title">Appointments</h2>
               <p className="text-muted-foreground mt-1">View and manage patient appointments.</p>
             </div>
-            <Button variant="outline" onClick={() => { setSlotCallback({ fn: null }); setAvailabilityOpen(true); }} data-testid="button-availability-calendar" className="gap-2">
+          <Button variant="outline" onClick={() => { setSlotCallback({ fn: null }); setAvailabilityOpen(true); }} data-testid="button-availability-calendar" className="gap-2">
               <CalendarCheck className="w-4 h-4" />
               Availability Calendar
             </Button>
@@ -1731,7 +1731,7 @@ function AvailabilityCalendarModal({ open, onOpenChange, selectMode, onSlotSelec
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="availability-calendar-modal">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto" data-testid="availability-calendar-modal">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarCheck className="w-5 h-5 text-primary" />
@@ -1740,8 +1740,8 @@ function AvailabilityCalendarModal({ open, onOpenChange, selectMode, onSlotSelec
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-wrap items-center gap-3 mb-4">
-          <div className="min-w-[200px]">
+        <div className="grid gap-3 md:grid-cols-3 mb-4">
+          <div className="min-w-0">
             <SearchableSelect
               value={selectedDoctor}
               onValueChange={(v) => { setSelectedDoctor(v); setSelectedDay(null); }}
@@ -1753,7 +1753,18 @@ function AvailabilityCalendarModal({ open, onOpenChange, selectMode, onSlotSelec
               data-testid="avail-select-doctor"
             />
           </div>
-          <div className="flex gap-1 bg-muted/50 rounded-lg p-0.5">
+          <div className="min-w-0">
+            <Button
+              variant="outline"
+              className="w-full justify-start text-left"
+              onClick={() => setViewMode("month")}
+              data-testid="button-open-calendar-month"
+            >
+              <Calendar className="w-4 h-4 mr-2" />
+              Pick date from calendar
+            </Button>
+          </div>
+          <div className="flex gap-1 bg-muted/50 rounded-lg p-0.5 w-fit">
             <Button size="sm" variant={viewMode === "month" ? "default" : "ghost"} className="text-xs h-7" onClick={() => setViewMode("month")} data-testid="avail-view-month">Month</Button>
             <Button size="sm" variant={viewMode === "day" ? "default" : "ghost"} className="text-xs h-7" onClick={() => setViewMode("day")} data-testid="avail-view-day">Day</Button>
             <Button size="sm" variant={viewMode === "week" ? "default" : "ghost"} className="text-xs h-7" onClick={() => setViewMode("week")} data-testid="avail-view-week">Week</Button>
@@ -1981,21 +1992,26 @@ function AvailabilityDaySlots({ date, doctorId, doctorName, availability, select
       ) : availability.data.slots.length === 0 ? (
         <p className="text-xs text-muted-foreground py-4 text-center">No OPD slots configured for this day</p>
       ) : (
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           {availability.data.slots.map((slot: any) => (
-            <div key={slot.startTime} className={cn("flex items-center justify-between p-2 rounded border text-xs", slot.availableCount <= 0 ? "bg-muted/50 opacity-50" : "hover:bg-primary/5")}>
+            <div key={slot.startTime} className={cn("flex items-center justify-between p-2.5 rounded border text-xs", slot.availableCount <= 0 ? "bg-muted/50 opacity-60" : "bg-green-50/40 border-green-200 hover:bg-green-50")}>
               <div className="flex items-center gap-2">
                 <Clock className="w-3 h-3 text-primary" />
                 <span className="font-medium">{slot.startTime} - {slot.endTime}</span>
-                <Badge variant="outline" className={cn("text-[10px] h-4", slot.availableCount <= 0 ? "text-destructive" : "text-green-600")}>
-                  {slot.availableCount <= 0 ? "Full" : `${slot.availableCount} left`}
+                <Badge variant="outline" className={cn("text-[10px] h-4", slot.availableCount <= 0 ? "text-destructive border-destructive/20" : "text-green-700 border-green-200")}>
+                  {slot.availableCount <= 0 ? `Booked (${slot.booked || 0})` : `Available (${slot.availableCount})`}
                 </Badge>
               </div>
-              {selectMode && slot.availableCount > 0 && (
-                <Button size="sm" variant="default" className="text-[10px] h-6 px-2" onClick={() => onSlotSelected(doctorId, date, slot.startTime)} data-testid={`avail-pick-slot-${slot.startTime}`}>
-                  Select
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                <span className={cn("text-[10px] font-medium", slot.availableCount <= 0 ? "text-destructive" : "text-green-700")}>
+                  {slot.availableCount <= 0 ? "Booked" : "Open"}
+                </span>
+                {selectMode && slot.availableCount > 0 && (
+                  <Button size="sm" variant="default" className="text-[10px] h-6 px-2" onClick={() => onSlotSelected(doctorId, date, slot.startTime)} data-testid={`avail-pick-slot-${slot.startTime}`}>
+                    Select
+                  </Button>
+                )}
+              </div>
             </div>
           ))}
         </div>
