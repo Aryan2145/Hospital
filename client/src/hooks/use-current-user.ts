@@ -50,6 +50,10 @@ export function useCurrentUser() {
         return ["dashboard", "leads", "appointments", "campaigns", "transactions", "team", "masters", "connectors", "branding", "email-settings", "whatsapp-settings"].includes(page);
       case "MANAGER":
         return ["dashboard", "leads", "appointments", "campaigns", "transactions", "team"].includes(page);
+      case "TELECALLER":
+        return ["dashboard", "appointments"].includes(page);
+      case "MEDICAL_ASSISTANT":
+        return ["dashboard", "transactions"].includes(page);
       case "AGENT":
       case "COUNSELLOR":
         return ["dashboard", "leads", "appointments", "transactions"].includes(page);

@@ -1,0 +1,219 @@
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { useToast } from "@/hooks/use-toast";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useState } from "react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ShieldCheck, Trash2, Plus, UserCheck } from "lucide-react";
+import { fmtDate } from "@/lib/date-utils";
+import { useCurrentUser } from "@/hooks/use-current-user";
+
+export default function DiscountApproversPage() {
+  const { toast } = useToast();
+  const { isAdmin } = useCurrentUser();
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
+
+  const { data: approvers = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/discount-approvers"],
+    queryFn: async () => {
+      const res = await fetch("/api/discount-approvers", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+  });
+
+  const { data: crmUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/crm-users/active"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm-users/active", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const addApprover = useMutation({
+    mutationFn: async (crmUserId: number) => {
+      await apiRequest("POST", "/api/discount-approvers", { crmUserId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/discount-approvers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/discount-approvers/me"] });
+      toast({ title: "Discount approver added" });
+      setSelectedUserId("");
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const removeApprover = useMutation({
+    mutationFn: async (crmUserId: number) => {
+      await apiRequest("DELETE", `/api/discount-approvers/${crmUserId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/discount-approvers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/discount-approvers/me"] });
+      toast({ title: "Discount approver removed" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const approverIds = new Set(approvers.map((a: any) => a.crmUserId));
+  const availableUsers = (crmUsers as any[]).filter((u: any) => !approverIds.has(u.id));
+
+  if (isLoading) {
+    return (
+      <AppLayout>
+        <div className="flex-1 flex items-center justify-center">
+          <LoadingSpinner text="Loading discount approvers..." />
+        </div>
+      </AppLayout>
+    );
+  }
+
+  return (
+    <AppLayout className="flex-1 flex flex-col h-full overflow-hidden">
+      <div className="p-4 border-b border-border bg-card">
+        <div className="flex items-center gap-3">
+          <ShieldCheck className="w-5 h-5 text-primary" />
+          <div>
+            <h1 className="text-lg font-bold text-foreground" data-testid="text-page-title">Discount Approvers</h1>
+            <p className="text-xs text-muted-foreground">
+              Configure which CRM users can approve or revoke discount requests for this hospital
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <Card className="p-4" data-testid="card-discount-approvers-info">
+          <div className="flex items-start gap-3">
+            <UserCheck className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-muted-foreground space-y-1">
+              <p>
+                When discount approvers are configured, <strong>only the designated approvers</strong> will be able to
+                approve or revoke discount requests on episode financial records.
+              </p>
+              <p>
+                If <strong>no approvers are configured</strong>, the system falls back to allowing any{" "}
+                <Badge variant="outline" className="text-xs">Admin</Badge> or{" "}
+                <Badge variant="outline" className="text-xs">System Admin</Badge> to approve discounts.
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        {isAdmin && (
+          <Card className="p-4" data-testid="card-add-approver">
+            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Plus className="w-4 h-4 text-primary" />
+              Add Discount Approver
+            </h3>
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <SearchableSelect
+                  value={selectedUserId}
+                  onValueChange={setSelectedUserId}
+                  options={availableUsers.map((u: any) => ({
+                    value: String(u.id),
+                    label: u.name,
+                  }))}
+                  placeholder="Search and select a CRM user..."
+                  triggerClassName="w-full"
+                  data-testid="select-add-approver-user"
+                />
+              </div>
+              <Button
+                onClick={() => selectedUserId && addApprover.mutate(Number(selectedUserId))}
+                disabled={!selectedUserId || addApprover.isPending}
+                data-testid="button-add-approver"
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                {addApprover.isPending ? "Adding..." : "Add Approver"}
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        <Card className="p-4" data-testid="card-approvers-list">
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-primary" />
+            Current Approvers
+            {approvers.length > 0 && (
+              <Badge variant="secondary" className="ml-auto text-xs">{approvers.length}</Badge>
+            )}
+          </h3>
+
+          {approvers.length === 0 ? (
+            <div className="text-center py-8" data-testid="text-no-approvers">
+              <ShieldCheck className="w-8 h-8 mx-auto mb-2 text-muted-foreground opacity-40" />
+              <p className="text-sm text-muted-foreground">No discount approvers configured</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Falling back to Admin / System Admin role for discount approvals
+              </p>
+            </div>
+          ) : (
+            <Table data-testid="table-approvers">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Name</TableHead>
+                  <TableHead className="text-xs">Designation</TableHead>
+                  <TableHead className="text-xs">Email</TableHead>
+                  <TableHead className="text-xs">Added On</TableHead>
+                  {isAdmin && <TableHead className="text-xs text-right">Actions</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {approvers.map((approver: any) => (
+                  <TableRow key={approver.id} data-testid={`row-approver-${approver.crmUserId}`}>
+                    <TableCell className="text-sm font-medium" data-testid={`text-approver-name-${approver.crmUserId}`}>
+                      {approver.userName}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground" data-testid={`text-approver-designation-${approver.crmUserId}`}>
+                      {approver.designationName || "—"}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground" data-testid={`text-approver-email-${approver.crmUserId}`}>
+                      {approver.userEmail || "—"}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {approver.createdAt ? fmtDate(approver.createdAt) : "—"}
+                    </TableCell>
+                    {isAdmin && (
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => removeApprover.mutate(approver.crmUserId)}
+                          disabled={removeApprover.isPending}
+                          data-testid={`button-remove-approver-${approver.crmUserId}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-1" />
+                          Remove
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Card>
+      </div>
+    </AppLayout>
+  );
+}

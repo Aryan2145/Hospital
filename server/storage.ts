@@ -14,7 +14,7 @@ import {
   tenants, tenantSettings, leads, tasks, activities, campaigns, crmUsers, systemRoles,
   patients, contacts, patientContactLinks, appointments, episodes, auditLogs,
   opdTimings, doctorLeaveExceptions, doctors, platformConnectors, branches,
-  contactPersons, leadContactPersons,
+  contactPersons, leadContactPersons, tenantDiscountApprovers, designations,
   type Tenant, type InsertTenant,
   type Patient, type InsertPatient,
   type Contact, type InsertContact,
@@ -129,6 +129,12 @@ export interface IStorage {
   createMasterRecord(tableName: string, data: Record<string, any>): Promise<MasterRecord>;
   updateMasterRecord(tableName: string, id: number, data: Record<string, any>): Promise<MasterRecord>;
   deleteMasterRecord(tableName: string, id: number): Promise<void>;
+  // Discount Approvers
+  getDiscountApprovers(tenantId: number): Promise<any[]>;
+  addDiscountApprover(tenantId: number, crmUserId: number, createdBy?: string): Promise<any>;
+  removeDiscountApprover(tenantId: number, crmUserId: number): Promise<void>;
+  isDiscountApprover(tenantId: number, crmUserId: number): Promise<boolean>;
+  hasAnyDiscountApprovers(tenantId: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -978,6 +984,60 @@ export class DatabaseStorage implements IStorage {
       result[camelKey] = value;
     }
     return result;
+  }
+
+  // --- Discount Approvers ---
+  async getDiscountApprovers(tenantId: number): Promise<any[]> {
+    const rows = await db.select({
+      id: tenantDiscountApprovers.id,
+      tenantId: tenantDiscountApprovers.tenantId,
+      crmUserId: tenantDiscountApprovers.crmUserId,
+      createdAt: tenantDiscountApprovers.createdAt,
+      createdBy: tenantDiscountApprovers.createdBy,
+      userName: crmUsers.name,
+      userEmail: crmUsers.email,
+      designationId: crmUsers.designationId,
+    })
+    .from(tenantDiscountApprovers)
+    .innerJoin(crmUsers, and(eq(crmUsers.id, tenantDiscountApprovers.crmUserId), eq(crmUsers.tenantId, tenantId)))
+    .where(eq(tenantDiscountApprovers.tenantId, tenantId));
+
+    const result: any[] = [];
+    for (const row of rows) {
+      let designationName: string | null = null;
+      if (row.designationId) {
+        const [des] = await db.select({ name: designations.name }).from(designations).where(eq(designations.id, row.designationId));
+        designationName = des?.name || null;
+      }
+      result.push({ ...row, designationName });
+    }
+    return result;
+  }
+
+  async addDiscountApprover(tenantId: number, crmUserId: number, createdBy?: string): Promise<any> {
+    const [member] = await db.select({ id: crmUsers.id, isActive: crmUsers.isActive }).from(crmUsers)
+      .where(and(eq(crmUsers.id, crmUserId), eq(crmUsers.tenantId, tenantId)));
+    if (!member) throw new Error("User not found in this hospital");
+    if (!member.isActive) throw new Error("Cannot add an inactive user as a discount approver");
+    const [row] = await db.insert(tenantDiscountApprovers).values({ tenantId, crmUserId, createdBy: createdBy || null }).returning();
+    return row;
+  }
+
+  async removeDiscountApprover(tenantId: number, crmUserId: number): Promise<void> {
+    await db.delete(tenantDiscountApprovers)
+      .where(and(eq(tenantDiscountApprovers.tenantId, tenantId), eq(tenantDiscountApprovers.crmUserId, crmUserId)));
+  }
+
+  async isDiscountApprover(tenantId: number, crmUserId: number): Promise<boolean> {
+    const rows = await db.select({ id: tenantDiscountApprovers.id }).from(tenantDiscountApprovers)
+      .where(and(eq(tenantDiscountApprovers.tenantId, tenantId), eq(tenantDiscountApprovers.crmUserId, crmUserId)));
+    return rows.length > 0;
+  }
+
+  async hasAnyDiscountApprovers(tenantId: number): Promise<boolean> {
+    const [result] = await db.select({ cnt: count() }).from(tenantDiscountApprovers)
+      .where(eq(tenantDiscountApprovers.tenantId, tenantId));
+    return (result?.cnt ?? 0) > 0;
   }
 }
 

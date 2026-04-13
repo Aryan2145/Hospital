@@ -8262,9 +8262,21 @@ export async function registerRoutes(
       const episodeId = Number(req.params.id);
 
       const crmUser = await getSessionCrmUserWithRole(req);
-      const allowedRoles = ["SYS_ADMIN", "ADMIN"];
-      if (!crmUser || !allowedRoles.includes(crmUser.roleCode)) {
-        return res.status(403).json({ message: "Only Admins and System Admins can approve discounts" });
+      if (!crmUser) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+
+      const hasApprovers = await storage.hasAnyDiscountApprovers(tid);
+      if (hasApprovers) {
+        const isApprover = await storage.isDiscountApprover(tid, crmUser.id);
+        if (!isApprover) {
+          return res.status(403).json({ message: "You are not designated as a discount approver for this hospital" });
+        }
+      } else {
+        const allowedRoles = ["SYS_ADMIN", "ADMIN"];
+        if (!allowedRoles.includes(crmUser.roleCode)) {
+          return res.status(403).json({ message: "Only Admins and System Admins can approve discounts" });
+        }
       }
 
       const oldEpisode = await storage.getEpisode(episodeId, tid);
@@ -8322,9 +8334,21 @@ export async function registerRoutes(
       const { reason } = req.body;
 
       const crmUser = await getSessionCrmUserWithRole(req);
-      const allowedRoles = ["SYS_ADMIN", "ADMIN"];
-      if (!crmUser || !allowedRoles.includes(crmUser.roleCode)) {
-        return res.status(403).json({ message: "Only Admins and System Admins can revoke discounts" });
+      if (!crmUser) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+
+      const hasApprovers = await storage.hasAnyDiscountApprovers(tid);
+      if (hasApprovers) {
+        const isApprover = await storage.isDiscountApprover(tid, crmUser.id);
+        if (!isApprover) {
+          return res.status(403).json({ message: "You are not designated as a discount approver for this hospital" });
+        }
+      } else {
+        const allowedRoles = ["SYS_ADMIN", "ADMIN"];
+        if (!allowedRoles.includes(crmUser.roleCode)) {
+          return res.status(403).json({ message: "Only Admins and System Admins can revoke discounts" });
+        }
       }
 
       if (!reason || !reason.trim()) {
@@ -8365,6 +8389,75 @@ export async function registerRoutes(
 
       const freshEp = await storage.getEpisode(episodeId, tid);
       res.json(freshEp);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // DISCOUNT APPROVERS CONFIG
+  // =============================================
+
+  app.get("/api/discount-approvers", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admins can view discount approver configuration" });
+      }
+      const approvers = await storage.getDiscountApprovers(tid);
+      res.json(approvers);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/discount-approvers", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admins can manage discount approvers" });
+      }
+      const { crmUserId } = req.body;
+      if (!crmUserId || isNaN(Number(crmUserId))) {
+        return res.status(400).json({ message: "crmUserId is required" });
+      }
+      const row = await storage.addDiscountApprover(tid, Number(crmUserId), crmUser.name);
+      res.json(row);
+    } catch (err: any) {
+      res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.delete("/api/discount-approvers/:crmUserId", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admins can manage discount approvers" });
+      }
+      const crmUserId = Number(req.params.crmUserId);
+      await storage.removeDiscountApprover(tid, crmUserId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/discount-approvers/me", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser) return res.json({ canApprove: false });
+
+      const hasApprovers = await storage.hasAnyDiscountApprovers(tid);
+      if (!hasApprovers) {
+        const canApprove = ["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode);
+        return res.json({ canApprove });
+      }
+      const isApprover = await storage.isDiscountApprover(tid, crmUser.id);
+      res.json({ canApprove: isApprover });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

@@ -1362,7 +1362,17 @@ function LogAndNextActionCard({ episode }: { episode: any }) {
 function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate: (fields: Record<string, any>) => void; isPending: boolean }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { isAdmin } = useCurrentUser();
+
+  const { data: discountApproverData } = useQuery<{ canApprove: boolean }>({
+    queryKey: ["/api/discount-approvers/me"],
+    queryFn: async () => {
+      const res = await fetch("/api/discount-approvers/me", { credentials: "include" });
+      if (!res.ok) return { canApprove: false };
+      return res.json();
+    },
+    staleTime: 1000 * 30,
+  });
+  const canApproveDiscount = discountApproverData?.canApprove ?? false;
 
   const initialQuote = episode.initialQuote || 0;
   const isDiscountApproved = episode.discountStatus === "Approved";
@@ -1683,7 +1693,7 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
                 </Button>
               )}
 
-              {isAdmin && (isPendingDiscount || isDraft) && localDiscountAmount > 0 && (
+              {canApproveDiscount && (isPendingDiscount || isDraft) && localDiscountAmount > 0 && (
                 <Button
                   variant="outline"
                   onClick={() => approveDiscount.mutate()}
@@ -1694,7 +1704,7 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
                 </Button>
               )}
 
-              {isAdmin && isApproved && (
+              {canApproveDiscount && isApproved && (
                 <Button
                   variant="outline"
                   onClick={() => setRevokeDialogOpen(true)}

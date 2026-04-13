@@ -42,6 +42,7 @@ import CallyzerReportsPage from "@/pages/CallyzerReportsPage";
 import IntelligenceConfigPage from "@/pages/IntelligenceConfigPage";
 import PostCareProtocolsPage from "@/pages/PostCareProtocolsPage";
 import ReferralConfigPage from "@/pages/ReferralConfigPage";
+import DiscountApproversPage from "@/pages/DiscountApproversPage";
 import ReferralsPage from "@/pages/ReferralsPage";
 import EventsPage from "@/pages/EventsPage";
 import EventDetailPage from "@/pages/EventDetailPage";
@@ -230,6 +231,12 @@ function Router() {
       <Route path="/referral-config">
         {isAuthenticated ? (
           <RoleGate page="connectors"><ReferralConfigPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/discount-approvers">
+        {isAuthenticated ? (
+          <RoleGate page="connectors"><DiscountApproversPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

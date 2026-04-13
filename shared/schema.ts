@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, time } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, time, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -2155,6 +2155,23 @@ export const resourceLinks = pgTable("resource_links", {
 export const insertResourceLinkSchema = createInsertSchema(resourceLinks).omit({ id: true, createdAt: true });
 export type InsertResourceLink = z.infer<typeof insertResourceLinkSchema>;
 export type ResourceLink = typeof resourceLinks.$inferSelect;
+
+// =============================================
+// TENANT DISCOUNT APPROVERS
+// =============================================
+export const tenantDiscountApprovers = pgTable("tenant_discount_approvers", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  crmUserId: integer("crm_user_id").notNull().references(() => crmUsers.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+}, (table) => ({
+  uniqueApprover: uniqueIndex("tenant_discount_approvers_tenant_user_unique").on(table.tenantId, table.crmUserId),
+}));
+
+export const insertTenantDiscountApproverSchema = createInsertSchema(tenantDiscountApprovers).omit({ id: true, createdAt: true });
+export type InsertTenantDiscountApprover = z.infer<typeof insertTenantDiscountApproverSchema>;
+export type TenantDiscountApprover = typeof tenantDiscountApprovers.$inferSelect;
 
 export const referralRewardLogs = pgTable("referral_reward_logs", {
   id: serial("id").primaryKey(),

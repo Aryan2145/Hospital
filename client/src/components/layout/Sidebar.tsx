@@ -75,6 +75,7 @@ const sections: { label: string; items: NavItem[] }[] = [
       { icon: Brain, label: "Intelligence Config", href: "/intelligence-config", page: "connectors" },
       { icon: Stethoscope, label: "Post-Care Protocols", href: "/post-care-protocols", page: "connectors" },
       { icon: Settings2, label: "Referral Settings", href: "/referral-config", page: "connectors" },
+      { icon: UserCheck, label: "Discount Approvers", href: "/discount-approvers", page: "connectors" },
     ],
   },
   {
