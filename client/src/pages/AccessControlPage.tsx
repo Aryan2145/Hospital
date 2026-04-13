@@ -12,9 +12,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { ShieldCheck, UserCog, Plus, Trash2, Save, Users, AlertTriangle, Info } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { ShieldCheck, UserCog, Plus, Trash2, Save, Users, AlertTriangle, Info, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 
 const ROLE_CODES = [
   { code: "SYS_ADMIN", label: "System Admin" },
@@ -50,6 +52,7 @@ const MODULES = [
 
 const PERMS = ["canView", "canCreate", "canEdit", "canDelete"] as const;
 const PERM_LABELS: Record<string, string> = { canView: "View", canCreate: "Create", canEdit: "Edit", canDelete: "Delete" };
+const ACTION_LABELS: Record<string, string> = { canView: "View", canCreate: "Create", canEdit: "Edit", canDelete: "Delete" };
 
 interface RolePermRow {
   id: number;
@@ -66,8 +69,10 @@ interface CrmUserBasic {
   id: number;
   name: string;
   email: string | null;
-  designation: string | null;
   isActive: boolean;
+  systemRoleId: number | null;
+  roleName?: string | null;
+  roleCode?: string | null;
 }
 
 interface DiscountApprover {
@@ -78,15 +83,43 @@ interface DiscountApprover {
   designation: string | null;
 }
 
+interface UserPermissionOverride {
+  id: number;
+  crmUserId: number;
+  module: string;
+  action: string;
+  isGranted: boolean;
+  reason: string | null;
+  expiresAt: string | null;
+  createdAt: string | null;
+}
+
 export default function AccessControlPage() {
-  const { isAdmin, isSysAdmin, roleCode } = useCurrentUser();
+  const { isAdmin, crmUser: me } = useCurrentUser();
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  // Role Permissions tab state
   const [selectedRole, setSelectedRole] = useState("ADMIN");
   const [pendingChanges, setPendingChanges] = useState<Record<string, Record<string, boolean>>>({});
+
+  // Discount Approvers tab state
   const [addApproverOpen, setAddApproverOpen] = useState(false);
   const [selectedApproverUserId, setSelectedApproverUserId] = useState("");
 
+  // User Overrides tab state
+  const [userSearch, setUserSearch] = useState("");
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [addOverrideOpen, setAddOverrideOpen] = useState(false);
+  const [overrideForm, setOverrideForm] = useState({
+    module: "",
+    action: "canView",
+    isGranted: true,
+    reason: "",
+    expiresAt: "",
+  });
+
+  // ── Queries ────────────────────────────────────────────────────────────
   const { data: rolePerms } = useQuery<RolePermRow[]>({
     queryKey: ["/api/admin/role-permissions"],
     enabled: isAdmin,
@@ -102,6 +135,17 @@ export default function AccessControlPage() {
     enabled: isAdmin,
   });
 
+  const { data: userOverrides, refetch: refetchOverrides } = useQuery<UserPermissionOverride[]>({
+    queryKey: ["/api/admin/user-permission-overrides", selectedUserId],
+    enabled: isAdmin && selectedUserId !== null,
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/user-permission-overrides/${selectedUserId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load overrides");
+      return res.json();
+    },
+  });
+
+  // ── Role permissions helpers ───────────────────────────────────────────
   const permMap: Record<string, Record<string, boolean>> = {};
   (rolePerms || []).forEach(row => {
     const key = `${row.roleCode}::${row.module}`;
@@ -126,6 +170,9 @@ export default function AccessControlPage() {
     setPendingChanges(prev => ({ ...prev, [changeKey]: { [perm]: val } }));
   };
 
+  const hasPendingChanges = Object.keys(pendingChanges).length > 0;
+
+  // ── Mutations ──────────────────────────────────────────────────────────
   const savePermsMutation = useMutation({
     mutationFn: async () => {
       const grouped: Record<string, Record<string, boolean>> = {};
@@ -177,7 +224,29 @@ export default function AccessControlPage() {
     },
   });
 
-  const hasPendingChanges = Object.keys(pendingChanges).length > 0;
+  const addOverrideMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", "/api/admin/user-permission-overrides", data),
+    onSuccess: () => {
+      refetchOverrides();
+      setAddOverrideOpen(false);
+      setOverrideForm({ module: "", action: "canView", isGranted: true, reason: "", expiresAt: "" });
+      toast({ title: "Permission override saved" });
+    },
+    onError: (err: any) => {
+      toast({ title: err.message || "Failed to save override", variant: "destructive" });
+    },
+  });
+
+  const removeOverrideMutation = useMutation({
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/admin/user-permission-overrides/${id}`),
+    onSuccess: () => {
+      refetchOverrides();
+      toast({ title: "Override removed" });
+    },
+    onError: (err: any) => {
+      toast({ title: err.message || "Failed to remove override", variant: "destructive" });
+    },
+  });
 
   if (!isAdmin) {
     return (
@@ -193,13 +262,21 @@ export default function AccessControlPage() {
   const approverUserIds = new Set((discountApprovers || []).map(a => a.crmUserId));
   const availableForApprover = (teamUsers || []).filter(u => !approverUserIds.has(u.id));
 
+  const filteredUsers = (teamUsers || []).filter(u => {
+    if (!userSearch) return true;
+    const q = userSearch.toLowerCase();
+    return u.name.toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q);
+  });
+
+  const selectedUser = selectedUserId ? (teamUsers || []).find(u => u.id === selectedUserId) : null;
+
   return (
     <div className="container max-w-6xl py-8 space-y-6">
       <div className="flex items-center gap-3">
         <ShieldCheck className="w-7 h-7 text-primary" />
         <div>
           <h1 className="text-2xl font-bold">Access Control</h1>
-          <p className="text-sm text-muted-foreground">Manage role-based permissions and discount approval authority</p>
+          <p className="text-sm text-muted-foreground">Manage role-based permissions, user overrides, and discount approval authority</p>
         </div>
       </div>
 
@@ -208,6 +285,10 @@ export default function AccessControlPage() {
           <TabsTrigger value="role-permissions" data-testid="tab-role-permissions">
             <ShieldCheck className="w-4 h-4 mr-2" />
             Role Permissions
+          </TabsTrigger>
+          <TabsTrigger value="user-overrides" data-testid="tab-user-overrides">
+            <UserCog className="w-4 h-4 mr-2" />
+            User Overrides
           </TabsTrigger>
           <TabsTrigger value="discount-approvers" data-testid="tab-discount-approvers">
             <Users className="w-4 h-4 mr-2" />
@@ -304,6 +385,171 @@ export default function AccessControlPage() {
           </Card>
         </TabsContent>
 
+        {/* ─── User Overrides Tab ───────────────────────────────────────── */}
+        <TabsContent value="user-overrides" className="mt-4">
+          <div className="grid grid-cols-12 gap-4">
+            {/* Left: User list */}
+            <div className="col-span-4">
+              <Card className="h-full">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold">Team Members</CardTitle>
+                  <div className="relative mt-1">
+                    <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by name or email..."
+                      value={userSearch}
+                      onChange={e => setUserSearch(e.target.value)}
+                      className="pl-8 h-8 text-sm"
+                      data-testid="input-user-search"
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="divide-y max-h-[520px] overflow-y-auto">
+                    {filteredUsers.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-8">No users found</p>
+                    ) : (
+                      filteredUsers.map(u => {
+                        const isSelected = selectedUserId === u.id;
+                        return (
+                          <button
+                            key={u.id}
+                            className={cn(
+                              "w-full text-left px-4 py-3 hover:bg-muted/40 transition-colors",
+                              isSelected && "bg-primary/5 border-l-2 border-l-primary"
+                            )}
+                            onClick={() => setSelectedUserId(u.id)}
+                            data-testid={`user-row-${u.id}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs flex-shrink-0">
+                                {u.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium truncate">{u.name}</p>
+                                <p className="text-xs text-muted-foreground truncate">{u.email || "—"}</p>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Right: Overrides panel */}
+            <div className="col-span-8">
+              {!selectedUser ? (
+                <Card className="h-full flex items-center justify-center min-h-[300px]">
+                  <div className="text-center text-muted-foreground">
+                    <UserCog className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm">Select a team member to view and manage their permission overrides</p>
+                  </div>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                          {selectedUser.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">{selectedUser.name}</CardTitle>
+                          <CardDescription>{selectedUser.email || "No email"}</CardDescription>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => setAddOverrideOpen(true)}
+                        data-testid="button-add-override"
+                      >
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add Override
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-start gap-2 mb-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+                      <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                      <span>
+                        Overrides take precedence over the role's default permissions. Use them to grant or revoke specific module access for this individual.
+                      </span>
+                    </div>
+
+                    {!userOverrides || userOverrides.length === 0 ? (
+                      <div className="text-center py-10 text-muted-foreground">
+                        <ShieldCheck className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-sm">No overrides configured.</p>
+                        <p className="text-xs mt-1">This user inherits all permissions from their role.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {userOverrides.map(ov => {
+                          const modLabel = MODULES.find(m => m.key === ov.module)?.label ?? ov.module;
+                          const actLabel = ACTION_LABELS[ov.action] ?? ov.action;
+                          const isExpired = ov.expiresAt && new Date(ov.expiresAt) < new Date();
+                          return (
+                            <div
+                              key={ov.id}
+                              className={cn(
+                                "flex items-center justify-between p-3 rounded-lg border",
+                                isExpired ? "bg-muted/30 opacity-60" : ov.isGranted ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+                              )}
+                              data-testid={`override-row-${ov.id}`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "text-xs font-semibold mt-0.5",
+                                    isExpired
+                                      ? "bg-muted text-muted-foreground border-muted-foreground/30"
+                                      : ov.isGranted
+                                      ? "bg-green-100 text-green-700 border-green-300"
+                                      : "bg-red-100 text-red-700 border-red-300"
+                                  )}
+                                >
+                                  {isExpired ? "Expired" : ov.isGranted ? "Granted" : "Revoked"}
+                                </Badge>
+                                <div>
+                                  <p className="text-sm font-medium">
+                                    {actLabel} — {modLabel}
+                                  </p>
+                                  {ov.reason && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">Reason: {ov.reason}</p>
+                                  )}
+                                  {ov.expiresAt && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      {isExpired ? "Expired" : "Expires"}: {format(new Date(ov.expiresAt), "dd/MM/yyyy")}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:bg-destructive/10"
+                                onClick={() => removeOverrideMutation.mutate(ov.id)}
+                                disabled={removeOverrideMutation.isPending}
+                                data-testid={`button-remove-override-${ov.id}`}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
         {/* ─── Discount Approvers Tab ───────────────────────────────────── */}
         <TabsContent value="discount-approvers" className="mt-4 space-y-4">
           <Card>
@@ -383,7 +629,7 @@ export default function AccessControlPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Add Approver Dialog */}
+      {/* ── Add Approver Dialog ──────────────────────────────────────────── */}
       <Dialog open={addApproverOpen} onOpenChange={setAddApproverOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
@@ -402,7 +648,7 @@ export default function AccessControlPage() {
                   ) : (
                     availableForApprover.map(u => (
                       <SelectItem key={u.id} value={String(u.id)}>
-                        {u.name}{u.designation ? ` · ${u.designation}` : ""}
+                        {u.name}{u.email ? ` · ${u.email}` : ""}
                       </SelectItem>
                     ))
                   )}
@@ -420,6 +666,116 @@ export default function AccessControlPage() {
               data-testid="button-confirm-add-approver"
             >
               {addApproverMutation.isPending ? "Adding..." : "Add Approver"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add Override Dialog ──────────────────────────────────────────── */}
+      <Dialog open={addOverrideOpen} onOpenChange={setAddOverrideOpen}>
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>Add Permission Override</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Override for: <strong>{selectedUser?.name}</strong>
+            </p>
+
+            <div>
+              <Label>Module</Label>
+              <Select
+                value={overrideForm.module}
+                onValueChange={v => setOverrideForm(f => ({ ...f, module: v }))}
+              >
+                <SelectTrigger className="mt-1" data-testid="select-override-module">
+                  <SelectValue placeholder="Select module..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {MODULES.map(m => (
+                    <SelectItem key={m.key} value={m.key}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Permission</Label>
+              <Select
+                value={overrideForm.action}
+                onValueChange={v => setOverrideForm(f => ({ ...f, action: v }))}
+              >
+                <SelectTrigger className="mt-1" data-testid="select-override-action">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PERMS.map(p => (
+                    <SelectItem key={p} value={p}>{ACTION_LABELS[p]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-3 p-3 border rounded-lg">
+              <Switch
+                checked={overrideForm.isGranted}
+                onCheckedChange={v => setOverrideForm(f => ({ ...f, isGranted: v }))}
+                data-testid="switch-override-grant"
+              />
+              <div>
+                <p className="text-sm font-medium">
+                  {overrideForm.isGranted ? "Grant access" : "Revoke access"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {overrideForm.isGranted
+                    ? "User will be allowed this action even if their role doesn't permit it."
+                    : "User will be denied this action even if their role normally permits it."}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <Label>Reason <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Textarea
+                className="mt-1 text-sm"
+                rows={2}
+                placeholder="Why is this override being applied?"
+                value={overrideForm.reason}
+                onChange={e => setOverrideForm(f => ({ ...f, reason: e.target.value }))}
+                data-testid="textarea-override-reason"
+              />
+            </div>
+
+            <div>
+              <Label>Expires On <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                type="date"
+                className="mt-1"
+                value={overrideForm.expiresAt}
+                onChange={e => setOverrideForm(f => ({ ...f, expiresAt: e.target.value }))}
+                data-testid="input-override-expiry"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Leave blank for a permanent override.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddOverrideOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!overrideForm.module || addOverrideMutation.isPending}
+              onClick={() => {
+                if (!selectedUserId || !overrideForm.module) return;
+                addOverrideMutation.mutate({
+                  crmUserId: selectedUserId,
+                  module: overrideForm.module,
+                  action: overrideForm.action,
+                  isGranted: overrideForm.isGranted,
+                  reason: overrideForm.reason || null,
+                  expiresAt: overrideForm.expiresAt || null,
+                });
+              }}
+              data-testid="button-confirm-add-override"
+            >
+              {addOverrideMutation.isPending ? "Saving..." : "Save Override"}
             </Button>
           </DialogFooter>
         </DialogContent>
