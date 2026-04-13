@@ -903,6 +903,9 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
                         <p data-testid="text-duplicate-status"><span className="font-medium">Status:</span> {duplicateInfo.existingLead.status}</p>
                         <p data-testid="text-duplicate-assigned"><span className="font-medium">Assigned To:</span> {duplicateInfo.existingLead.assignedTo || "Unassigned"}</p>
                         <p data-testid="text-duplicate-created"><span className="font-medium">Created:</span> {duplicateInfo.existingLead.createdAt ? fmtDate(duplicateInfo.existingLead.createdAt) : "—"}</p>
+                        {(duplicateInfo.existingLead as any).matchedVia && (
+                          <p className="text-amber-700" data-testid="text-duplicate-matched-via"><span className="font-medium">Matched via:</span> {(duplicateInfo.existingLead as any).matchedVia}</p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 mt-3 flex-wrap">
                         <Button

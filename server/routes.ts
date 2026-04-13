@@ -19,6 +19,7 @@ const PHI_FIELDS_TO_MASK = [
   "phoneE164", "phone_e164", "mobileNormalized", "mobile_normalized",
   "email", "primaryPhone", "primary_phone", "secondaryPhone", "secondary_phone",
   "emergencyContactName", "emergency_contact_name", "emergencyContactPhone", "emergency_contact_phone",
+  "whatsappNumber", "whatsapp_number",
 ];
 const PHI_FIELDS_TO_HIDE = [
   "diagnosis", "treatmentPlan", "treatment_plan", "consultationNotes", "consultation_notes",
@@ -1399,6 +1400,37 @@ export async function registerRoutes(
           },
         });
       }
+      // Also check contact person phones linked to leads
+      const cpResult = await pool.query(
+        `SELECT l.id, l.name, l.status, l.phone_e164, l.created_at,
+          cu.name as assigned_to_name, cp.name as contact_person_name, lcp.relationship as cp_relationship
+        FROM contact_persons cp
+        JOIN lead_contact_persons lcp ON lcp.contact_person_id = cp.id
+        JOIN leads l ON l.id = lcp.lead_id
+        LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
+        WHERE cp.tenant_id = $1 AND cp.phone_e164 = $2
+          AND (l.merge_status IS NULL OR l.merge_status = 'ACTIVE')
+          AND l.status NOT IN (${closedStatuses.map((_, i) => `$${i + 3}`).join(",")})
+          AND l.status NOT LIKE '%Closed%'
+        ORDER BY l.created_at DESC LIMIT 1`,
+        [tid, mobile, ...closedStatuses]
+      );
+      if (cpResult.rows.length > 0) {
+        const row = cpResult.rows[0];
+        return res.json({
+          isDuplicate: true,
+          matchType: "contact_person",
+          existingLead: {
+            id: row.id,
+            name: row.name,
+            status: row.status,
+            phone: row.phone_e164,
+            assignedTo: row.assigned_to_name || "Unassigned",
+            createdAt: row.created_at,
+            matchedVia: `Contact: ${row.contact_person_name} (${row.cp_relationship})`,
+          },
+        });
+      }
       res.json({ isDuplicate: false });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
@@ -1523,6 +1555,35 @@ export async function registerRoutes(
             },
           });
         }
+        // Also check contact person phone duplicates
+        const cpDupResult = await pool.query(
+          `SELECT l.id, l.name, l.status, l.created_at, cu.name as assigned_to_name, cp.name as cp_name, lcp.relationship as cp_rel
+           FROM contact_persons cp
+           JOIN lead_contact_persons lcp ON lcp.contact_person_id = cp.id
+           JOIN leads l ON l.id = lcp.lead_id
+           LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
+           WHERE cp.tenant_id = $1 AND cp.phone_e164 = $2
+           AND (l.merge_status IS NULL OR l.merge_status = 'ACTIVE')
+           AND l.status NOT IN (${closedStatuses.map((_, i) => `$${i + 3}`).join(",")})
+           AND l.status NOT LIKE '%Closed%'
+           LIMIT 1`,
+          [tid, input.phoneE164, ...closedStatuses]
+        );
+        if (cpDupResult.rows.length > 0) {
+          const dup = cpDupResult.rows[0];
+          return res.status(409).json({
+            message: `This phone matches a contact person (${dup.cp_name}, ${dup.cp_rel}) linked to an existing lead: ${dup.name}`,
+            existingLeadId: dup.id,
+            existingLead: {
+              id: dup.id,
+              name: dup.name,
+              status: dup.status,
+              assignedTo: dup.assigned_to_name || "Unassigned",
+              createdAt: dup.created_at,
+              matchedVia: `Contact: ${dup.cp_name} (${dup.cp_rel})`,
+            },
+          });
+        }
       }
       const sessionCrmUserId = (req.session as any)?.crmUserId;
       if (sessionCrmUserId) {
@@ -1616,6 +1677,35 @@ export async function registerRoutes(
               status: dup.status,
               assignedTo: dup.assigned_to_name || "Unassigned",
               createdAt: dup.created_at,
+            },
+          });
+        }
+        // Also check contact person phone duplicates for update
+        const cpDupResult = await pool.query(
+          `SELECT l.id, l.name, l.status, l.created_at, cu.name as assigned_to_name, cp.name as cp_name, lcp.relationship as cp_rel
+           FROM contact_persons cp
+           JOIN lead_contact_persons lcp ON lcp.contact_person_id = cp.id
+           JOIN leads l ON l.id = lcp.lead_id
+           LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
+           WHERE cp.tenant_id = $1 AND cp.phone_e164 = $2 AND l.id != $3
+           AND (l.merge_status IS NULL OR l.merge_status = 'ACTIVE')
+           AND l.status NOT IN (${closedStatuses.map((_, i) => `$${i + 4}`).join(",")})
+           AND l.status NOT LIKE '%Closed%'
+           LIMIT 1`,
+          [tid, input.phoneE164, leadId, ...closedStatuses]
+        );
+        if (cpDupResult.rows.length > 0) {
+          const dup = cpDupResult.rows[0];
+          return res.status(409).json({
+            message: `This phone matches a contact person (${dup.cp_name}) linked to another lead: ${dup.name}`,
+            existingLeadId: dup.id,
+            existingLead: {
+              id: dup.id,
+              name: dup.name,
+              status: dup.status,
+              assignedTo: dup.assigned_to_name || "Unassigned",
+              createdAt: dup.created_at,
+              matchedVia: `Contact: ${dup.cp_name} (${dup.cp_rel})`,
             },
           });
         }
@@ -4619,6 +4709,54 @@ export async function registerRoutes(
     }
   });
 
+  // Patient-side contact-person endpoints (using lead_contact_persons via lead-to-patient link)
+  app.get("/api/patients/:id/contact-persons", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const patientId = Number(req.params.id);
+      // Get leads linked to this patient via episodes
+      const episodeRows = await pool.query(
+        `SELECT DISTINCT e.lead_id FROM episodes e WHERE e.patient_id = $1 AND e.tenant_id = $2 AND e.lead_id IS NOT NULL`,
+        [patientId, tid]
+      );
+      if (episodeRows.rows.length === 0) return res.json([]);
+      const leadIds = episodeRows.rows.map((r: any) => r.lead_id);
+      const cpRows = await pool.query(
+        `SELECT lcp.id, lcp.lead_id, lcp.relationship, lcp.notes,
+                lcp.is_primary, lcp.is_billing_contact, lcp.is_emergency_contact,
+                lcp.is_whatsapp_consent_holder, lcp.is_appointment_coordinator,
+                cp.id as cp_id, cp.name as cp_name, cp.phone_e164, cp.whatsapp_number,
+                cp.email, cp.gender, cp.status
+         FROM lead_contact_persons lcp
+         JOIN contact_persons cp ON cp.id = lcp.contact_person_id
+         WHERE lcp.lead_id = ANY($1) AND lcp.tenant_id = $2
+         ORDER BY lcp.is_primary DESC, cp.name ASC`,
+        [leadIds, tid]
+      );
+      const result = cpRows.rows.map((r: any) => ({
+        id: r.id,
+        leadId: r.lead_id,
+        relationship: r.relationship,
+        notes: r.notes,
+        isPrimary: r.is_primary,
+        isBillingContact: r.is_billing_contact,
+        isEmergencyContact: r.is_emergency_contact,
+        isWhatsAppConsentHolder: r.is_whatsapp_consent_holder,
+        isAppointmentCoordinator: r.is_appointment_coordinator,
+        contactPerson: {
+          id: r.cp_id, name: r.cp_name, phoneE164: r.phone_e164,
+          whatsappNumber: r.whatsapp_number, email: r.email, gender: r.gender, status: r.status,
+        },
+      }));
+      const sessionCrmUserId = (req as any).session?.crmUserId;
+      const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId || 0));
+      const phiLevel = crmUser?.phiAccessLevel || "Masked";
+      res.json(applyPhiMasking(result, phiLevel));
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.post("/api/contacts", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
@@ -4680,7 +4818,18 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const search = req.query.search as string | undefined;
       const result = await storage.getContactPersons(tid, search);
-      res.json(result);
+      // Enrich with lead counts
+      const countResult = await pool.query(
+        `SELECT contact_person_id, COUNT(*) as cnt FROM lead_contact_persons WHERE tenant_id = $1 GROUP BY contact_person_id`,
+        [tid]
+      );
+      const countMap = new Map<number, number>();
+      countResult.rows.forEach((r: any) => countMap.set(Number(r.contact_person_id), Number(r.cnt)));
+      const enriched = result.map((cp: any) => ({ ...cp, _leadCount: countMap.get(cp.id) || 0 }));
+      const sessionCrmUserId = (req as any).session?.crmUserId;
+      const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId || 0));
+      const phiLevel = crmUser?.phiAccessLevel || "Masked";
+      res.json(applyPhiMasking(enriched, phiLevel));
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -4691,7 +4840,10 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const cp = await storage.getContactPerson(Number(req.params.id), tid);
       if (!cp) return res.status(404).json({ message: "Contact person not found" });
-      res.json(cp);
+      const sessionCrmUserId = (req as any).session?.crmUserId;
+      const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId || 0));
+      const phiLevel = crmUser?.phiAccessLevel || "Masked";
+      res.json(applyPhiMasking(cp, phiLevel));
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -4734,7 +4886,15 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const result = await storage.getLeadContactPersons(Number(req.params.id), tid);
-      res.json(result);
+      const sessionCrmUserId = (req as any).session?.crmUserId;
+      const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId || 0));
+      const phiLevel = crmUser?.phiAccessLevel || "Masked";
+      // Apply masking to the contactPerson sub-object
+      const masked = result.map((link: any) => ({
+        ...link,
+        contactPerson: applyPhiMasking(link.contactPerson, phiLevel),
+      }));
+      res.json(masked);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -4786,7 +4946,10 @@ export async function registerRoutes(
          ORDER BY lcp.id DESC`,
         [cpId, tid]
       );
-      res.json(result.rows);
+      const sessionCrmUserId = (req as any).session?.crmUserId;
+      const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId || 0));
+      const phiLevel = crmUser?.phiAccessLevel || "Masked";
+      res.json(applyPhiMasking(result.rows, phiLevel));
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

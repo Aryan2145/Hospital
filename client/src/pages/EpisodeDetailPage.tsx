@@ -2202,11 +2202,56 @@ function InsuranceTab({
   );
 }
 
+function ContactPersonsReadOnlyList({ leadId }: { leadId?: number }) {
+  const { data: contactLinks = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/leads", leadId, "contact-persons"],
+    queryFn: async () => {
+      if (!leadId) return [];
+      const res = await fetch(`/api/leads/${leadId}/contact-persons`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!leadId,
+  });
+  if (!leadId || (isLoading && contactLinks.length === 0)) return null;
+  if (!isLoading && contactLinks.length === 0) return (
+    <p className="text-xs text-muted-foreground italic">No contact persons linked to this lead.</p>
+  );
+  return (
+    <div className="space-y-2">
+      {contactLinks.map((link: any) => (
+        <div key={link.id} className="bg-muted/40 rounded p-2 text-[11px]" data-testid={`ep-contact-person-${link.id}`}>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-medium text-foreground">{link.contactPerson?.name}</span>
+            {link.relationship && <Badge variant="outline" className="text-[9px] py-0 px-1">{link.relationship}</Badge>}
+            {link.isPrimary && <Badge variant="outline" className="text-[9px] py-0 px-1 text-primary border-primary/30">Primary</Badge>}
+            {link.isBillingContact && <Badge variant="outline" className="text-[9px] py-0 px-1">Billing</Badge>}
+            {link.isEmergencyContact && <Badge variant="outline" className="text-[9px] py-0 px-1">Emergency</Badge>}
+            {link.isWhatsAppConsentHolder && <Badge variant="outline" className="text-[9px] py-0 px-1">WA Consent</Badge>}
+            {link.isAppointmentCoordinator && <Badge variant="outline" className="text-[9px] py-0 px-1">Appt Coord</Badge>}
+          </div>
+          {link.contactPerson?.phoneE164 && (
+            <p className="flex items-center gap-1 mt-0.5 text-muted-foreground">
+              <Phone className="w-2.5 h-2.5" />{link.contactPerson.phoneE164}
+            </p>
+          )}
+          {link.contactPerson?.email && (
+            <p className="flex items-center gap-1 text-muted-foreground">
+              <Mail className="w-2.5 h-2.5" />{link.contactPerson.email}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function FamilyTab({ episode, onUpdate, isPending }: { episode: any; onUpdate: (fields: Record<string, any>) => void; isPending: boolean }) {
   const [localDecisionNotes, setLocalDecisionNotes] = useState(episode.decisionNotes || "");
 
   return (
-    <Card className="p-4" data-testid="card-family-status">
+    <div className="space-y-4" data-testid="card-family-status">
+      <Card className="p-4">
       <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
         <Users className="w-4 h-4 text-primary" />
         Family & Decision Status
@@ -2274,6 +2319,17 @@ function FamilyTab({ episode, onUpdate, isPending }: { episode: any; onUpdate: (
         </div>
       </div>
     </Card>
+
+      {episode.leadId && (
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <Users className="w-4 h-4 text-primary" />
+            Contact Persons
+          </h3>
+          <ContactPersonsReadOnlyList leadId={episode.leadId} />
+        </Card>
+      )}
+    </div>
   );
 }
 

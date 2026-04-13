@@ -222,7 +222,7 @@ export default function LeadDetailPage() {
           <TasksPanel leadId={lead.id} />
           <OwnershipCard lead={lead} />
           <QuickActions lead={lead} />
-          <ContactPersonsPanel leadId={lead.id} />
+          <ContactPersonsPanel leadId={lead.id} lead={lead} />
           <TemperatureHistory leadId={lead.id} />
           <HandoverHistory leadId={lead.id} />
           <CommunicationPreferencesPanel leadId={lead.id} />
@@ -1958,7 +1958,7 @@ const RELATIONSHIP_OPTIONS = [
   "Friend", "Colleague", "Caregiver", "Power of Attorney", "Other"
 ];
 
-function ContactPersonsPanel({ leadId }: { leadId: number }) {
+function ContactPersonsPanel({ leadId, lead }: { leadId: number; lead?: any }) {
   const { toast } = useToast();
   const [showForm, setShowForm] = useState(false);
   const [editingLink, setEditingLink] = useState<any>(null);
@@ -2183,6 +2183,20 @@ function ContactPersonsPanel({ leadId }: { leadId: number }) {
             </div>
           </div>
         </Card>
+      )}
+
+      {/* Reachability warning when lead has no phone and no contact with phone */}
+      {!isLoading && !lead?.phoneE164 && contactLinks.length > 0 && !contactLinks.some((l: any) => l.contactPerson?.phoneE164) && (
+        <div className="flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded p-2 mb-2 text-[10px] text-amber-700">
+          <span className="shrink-0 mt-0.5">⚠</span>
+          <span>This lead has no direct phone number and no contact person with a phone number. Add a contact phone to enable outreach.</span>
+        </div>
+      )}
+      {!isLoading && !lead?.phoneE164 && contactLinks.length === 0 && !showForm && (
+        <div className="flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded p-2 mb-2 text-[10px] text-amber-700">
+          <span className="shrink-0 mt-0.5">⚠</span>
+          <span>This lead has no direct phone number. Add a contact person with a phone to enable outreach.</span>
+        </div>
       )}
 
       {isLoading ? (

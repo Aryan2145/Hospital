@@ -205,9 +205,16 @@ export default function ContactDirectoryPage() {
                           <Phone className="w-2.5 h-2.5" /> {p.phoneE164}
                         </p>
                       )}
-                      {p.relationship && (
-                        <Badge variant="outline" className="text-[9px] mt-1">{p.relationship}</Badge>
-                      )}
+                      <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                        {p.relationship && (
+                          <Badge variant="outline" className="text-[9px]">{p.relationship}</Badge>
+                        )}
+                        {typeof p._leadCount === "number" && p._leadCount > 0 && (
+                          <Badge variant="outline" className="text-[9px] bg-primary/10 text-primary border-primary/20">
+                            {p._leadCount} lead{p._leadCount !== 1 ? "s" : ""}
+                          </Badge>
+                        )}
+                      </div>
                     </button>
                   ))}
                 </div>

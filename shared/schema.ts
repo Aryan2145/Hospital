@@ -942,7 +942,13 @@ export const patientContactLinks = pgTable("patient_contact_links", {
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
   patientId: integer("patient_id").notNull().references(() => patients.id),
   contactId: integer("contact_id").notNull().references(() => contacts.id),
+  contactPersonId: integer("contact_person_id").references(() => contactPersons.id),
   relationship: text("relationship").default("Self"),
+  isPrimary: boolean("is_primary").default(false),
+  isBillingContact: boolean("is_billing_contact").default(false),
+  isEmergencyContact: boolean("is_emergency_contact").default(false),
+  isWhatsAppConsentHolder: boolean("is_whatsapp_consent_holder").default(false),
+  isAppointmentCoordinator: boolean("is_appointment_coordinator").default(false),
   status: text("status").notNull().default("Active"),
   createdAt: timestamp("created_at").defaultNow(),
 });
