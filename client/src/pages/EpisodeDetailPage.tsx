@@ -2207,16 +2207,27 @@ const EP_RELATIONSHIP_OPTIONS = ["Self","Spouse","Parent","Child","Sibling","Gua
 
 function PatientContactPersonsPanel({ leadId, patientId }: { leadId?: number; patientId?: number }) {
   const { toast } = useToast();
-  const qk = leadId ? ["/api/leads", leadId, "contact-persons"] : null;
+  // For READING: use patient endpoint (includes both patient-direct + lead-derived)
+  const patientQk = patientId ? ["/api/patients", patientId, "contact-persons"] : null;
+  // For patient-direct mutations: track patient links only (linkSource === "patient")
+  const leadQk = leadId ? ["/api/leads", leadId, "contact-persons"] : null;
+
   const { data: contactLinks = [], isLoading } = useQuery<any[]>({
-    queryKey: qk || [],
+    queryKey: patientQk || leadQk || [],
     queryFn: async () => {
-      if (!leadId) return [];
-      const res = await fetch(`/api/leads/${leadId}/contact-persons`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
+      if (patientId) {
+        const res = await fetch(`/api/patients/${patientId}/contact-persons`, { credentials: "include" });
+        if (!res.ok) return [];
+        return res.json();
+      }
+      if (leadId) {
+        const res = await fetch(`/api/leads/${leadId}/contact-persons`, { credentials: "include" });
+        if (!res.ok) return [];
+        return res.json();
+      }
+      return [];
     },
-    enabled: !!leadId,
+    enabled: !!(patientId || leadId),
   });
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -2227,24 +2238,36 @@ function PatientContactPersonsPanel({ leadId, patientId }: { leadId?: number; pa
 
   const addMutation = useMutation({
     mutationFn: async (data: any) => {
-      let cpId: number | undefined;
-      const cpRes = await apiRequest("POST", "/api/contact-persons", {
-        name: data.name, phoneE164: data.phoneE164 || null,
-        whatsappNumber: data.whatsappNumber || null, email: data.email || null,
-        relationship: data.relationship,
-      });
-      const cp = await cpRes.json();
-      cpId = cp.id;
-      await apiRequest("POST", `/api/leads/${leadId}/contact-persons`, {
-        contactPersonId: cpId, relationship: data.relationship,
-        isPrimary: data.isPrimary, isBillingContact: data.isBillingContact,
-        isEmergencyContact: data.isEmergencyContact,
-        isWhatsAppConsentHolder: data.isWhatsAppConsentHolder,
-        isAppointmentCoordinator: data.isAppointmentCoordinator,
-      });
+      if (patientId) {
+        // Direct patient-contact-person link (patient-specific)
+        await apiRequest("POST", `/api/patients/${patientId}/contact-persons`, {
+          name: data.name, phoneE164: data.phoneE164 || null,
+          whatsappNumber: data.whatsappNumber || null, email: data.email || null,
+          relationship: data.relationship,
+          isPrimary: data.isPrimary, isBillingContact: data.isBillingContact,
+          isEmergencyContact: data.isEmergencyContact,
+          isWhatsAppConsentHolder: data.isWhatsAppConsentHolder,
+          isAppointmentCoordinator: data.isAppointmentCoordinator,
+        });
+      } else if (leadId) {
+        const cpRes = await apiRequest("POST", "/api/contact-persons", {
+          name: data.name, phoneE164: data.phoneE164 || null,
+          whatsappNumber: data.whatsappNumber || null, email: data.email || null,
+          relationship: data.relationship,
+        });
+        const cp = await cpRes.json();
+        await apiRequest("POST", `/api/leads/${leadId}/contact-persons`, {
+          contactPersonId: cp.id, relationship: data.relationship,
+          isPrimary: data.isPrimary, isBillingContact: data.isBillingContact,
+          isEmergencyContact: data.isEmergencyContact,
+          isWhatsAppConsentHolder: data.isWhatsAppConsentHolder,
+          isAppointmentCoordinator: data.isAppointmentCoordinator,
+        });
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk! });
+      if (patientQk) queryClient.invalidateQueries({ queryKey: patientQk });
+      if (leadQk) queryClient.invalidateQueries({ queryKey: leadQk });
       toast({ title: "Contact person added" });
       setShowForm(false);
       setFormData({ name: "", phoneE164: "", whatsappNumber: "", email: "", relationship: "Other",
@@ -2255,17 +2278,28 @@ function PatientContactPersonsPanel({ leadId, patientId }: { leadId?: number; pa
   });
 
   const removeMutation = useMutation({
-    mutationFn: async (linkId: number) => {
-      await apiRequest("DELETE", `/api/leads/${leadId}/contact-persons/${linkId}`, null);
+    mutationFn: async (link: { id: number; linkSource?: string }) => {
+      if (link.linkSource === "patient" && patientId) {
+        // Remove from patientContactLinks
+        await apiRequest("DELETE", `/api/patients/${patientId}/contact-persons/${link.id}`, null);
+      } else if (leadId) {
+        // Remove lead contact-person link (with reachability guard)
+        const res = await apiRequest("DELETE", `/api/leads/${leadId}/contact-persons/${link.id}`, null);
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.message || "Cannot remove contact");
+        }
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk! });
+      if (patientQk) queryClient.invalidateQueries({ queryKey: patientQk });
+      if (leadQk) queryClient.invalidateQueries({ queryKey: leadQk });
       toast({ title: "Contact person removed" });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  if (!leadId) return <p className="text-xs text-muted-foreground italic">No lead linked to this episode.</p>;
+  if (!patientId && !leadId) return <p className="text-xs text-muted-foreground italic">No lead linked to this episode.</p>;
 
   return (
     <div className="space-y-3" data-testid="patient-contact-persons-panel">
@@ -2357,7 +2391,7 @@ function PatientContactPersonsPanel({ leadId, patientId }: { leadId?: number; pa
                 )}
               </div>
               <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0 text-destructive"
-                onClick={() => removeMutation.mutate(link.id)}
+                onClick={() => removeMutation.mutate({ id: link.id, linkSource: link.linkSource })}
                 disabled={removeMutation.isPending}
                 data-testid={`button-ep-remove-cp-${link.id}`}>
                 ×

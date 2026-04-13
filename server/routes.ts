@@ -662,6 +662,29 @@ async function ensurePatientsForConvertedLeads() {
   }
 }
 
+// Shared reachability validator: lead must have phone or linked contact with phone
+async function assertLeadReachable(leadId: number, tenantId: number, excludeLinkId?: number): Promise<void> {
+  const rows = await pool.query(
+    `SELECT l.phone_e164 FROM leads l WHERE l.id = $1 AND l.tenant_id = $2`,
+    [leadId, tenantId]
+  );
+  if (!rows.rows.length) throw new Error("Lead not found");
+  const phoneE164 = rows.rows[0].phone_e164;
+  if (phoneE164 && phoneE164.trim()) return; // Direct phone present — always reachable
+  // Check contact persons linked to this lead for a phone
+  const cpRows = await pool.query(
+    `SELECT cp.phone_e164 FROM lead_contact_persons lcp
+     JOIN contact_persons cp ON cp.id = lcp.contact_person_id
+     WHERE lcp.lead_id = $1 AND lcp.tenant_id = $2
+     ${excludeLinkId ? `AND lcp.id != ${excludeLinkId}` : ""}`,
+    [leadId, tenantId]
+  );
+  const hasContactPhone = cpRows.rows.some((r: any) => r.phone_e164 && r.phone_e164.trim());
+  if (!hasContactPhone) {
+    throw new Error("A lead must have at least one reachable phone number — either a direct phone or via a linked contact person.");
+  }
+}
+
 async function triggerPostCareProtocol(episodeId: number, tid: number, triggerStatus: string, userId: string) {
   const [episode] = await db.select().from(episodes).where(and(eq(episodes.id, episodeId), eq(episodes.tenantId, tid)));
   if (!episode || !episode.leadId) return;
@@ -1761,6 +1784,21 @@ export async function registerRoutes(
 
       const oldLead = await storage.getLead(leadId);
       let lead = await storage.updateLead(leadId, input);
+
+      // Reachability guard: if phoneE164 was cleared, verify a contact person still has a phone
+      if (input.phoneE164 === null || input.phoneE164 === "") {
+        const tidForCheck = await getDefaultTenantId(req);
+        try {
+          await assertLeadReachable(leadId, tidForCheck);
+        } catch {
+          // Rollback: restore previous phone
+          await storage.updateLead(leadId, { phoneE164: oldLead?.phoneE164 });
+          return res.status(400).json({
+            message: "Cannot remove the phone number — the lead would have no reachable contact. Add a contact person with a phone first.",
+            field: "phoneE164",
+          });
+        }
+      }
 
       if (input.status === "Nurture" && oldLead?.status !== "Nurture") {
         try {
@@ -4759,36 +4797,60 @@ export async function registerRoutes(
 
   // =============================================
   // PATIENT CONTACT-PERSON MANAGEMENT
-  // Works through lead_contact_persons linked to the patient's episode leads
+  // GET returns: patient-direct links (patientContactLinks) + lead-derived (lead_contact_persons via episodes)
+  // POST/DELETE/PATCH: operate on patientContactLinks (patient-specific, independent of lead links)
   // =============================================
   app.get("/api/patients/:id/contact-persons", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
       const patientId = Number(req.params.id);
-      // Get leads linked to this patient via episodes
+
+      // 1) Patient-direct contact persons from patientContactLinks
+      const patientLinkRows = await pool.query(
+        `SELECT pcl.id, pcl.patient_id, pcl.relationship,
+                pcl.is_primary, pcl.is_billing_contact, pcl.is_emergency_contact,
+                pcl.is_whatsapp_consent_holder, pcl.is_appointment_coordinator,
+                cp.id as cp_id, cp.name as cp_name, cp.phone_e164, cp.whatsapp_number,
+                cp.email, cp.gender, cp.status,
+                'patient' as link_source
+         FROM patient_contact_links pcl
+         JOIN contact_persons cp ON cp.id = pcl.contact_person_id
+         WHERE pcl.patient_id = $1 AND pcl.tenant_id = $2
+         ORDER BY pcl.is_primary DESC, cp.name ASC`,
+        [patientId, tid]
+      );
+
+      // 2) Lead-derived contacts from lead_contact_persons via episodes
       const episodeRows = await pool.query(
         `SELECT DISTINCT e.lead_id FROM episodes e WHERE e.patient_id = $1 AND e.tenant_id = $2 AND e.lead_id IS NOT NULL`,
         [patientId, tid]
       );
-      if (episodeRows.rows.length === 0) return res.json([]);
-      const leadIds = episodeRows.rows.map((r: any) => r.lead_id);
-      const cpRows = await pool.query(
-        `SELECT lcp.id, lcp.lead_id, lcp.relationship, lcp.notes,
-                lcp.is_primary, lcp.is_billing_contact, lcp.is_emergency_contact,
-                lcp.is_whatsapp_consent_holder, lcp.is_appointment_coordinator,
-                cp.id as cp_id, cp.name as cp_name, cp.phone_e164, cp.whatsapp_number,
-                cp.email, cp.gender, cp.status
-         FROM lead_contact_persons lcp
-         JOIN contact_persons cp ON cp.id = lcp.contact_person_id
-         WHERE lcp.lead_id = ANY($1) AND lcp.tenant_id = $2
-         ORDER BY lcp.is_primary DESC, cp.name ASC`,
-        [leadIds, tid]
-      );
-      const result = cpRows.rows.map((r: any) => ({
+      let leadDerivedRows: any[] = [];
+      if (episodeRows.rows.length > 0) {
+        const leadIds = episodeRows.rows.map((r: any) => r.lead_id);
+        const cpRows = await pool.query(
+          `SELECT lcp.id, lcp.lead_id, lcp.relationship, lcp.notes,
+                  lcp.is_primary, lcp.is_billing_contact, lcp.is_emergency_contact,
+                  lcp.is_whatsapp_consent_holder, lcp.is_appointment_coordinator,
+                  cp.id as cp_id, cp.name as cp_name, cp.phone_e164, cp.whatsapp_number,
+                  cp.email, cp.gender, cp.status,
+                  'lead' as link_source
+           FROM lead_contact_persons lcp
+           JOIN contact_persons cp ON cp.id = lcp.contact_person_id
+           WHERE lcp.lead_id = ANY($1) AND lcp.tenant_id = $2
+           ORDER BY lcp.is_primary DESC, cp.name ASC`,
+          [leadIds, tid]
+        );
+        leadDerivedRows = cpRows.rows;
+      }
+
+      const mapRow = (r: any) => ({
         id: r.id,
-        leadId: r.lead_id,
+        leadId: r.lead_id || null,
+        patientId: r.patient_id || null,
+        linkSource: r.link_source,
         relationship: r.relationship,
-        notes: r.notes,
+        notes: r.notes || null,
         isPrimary: r.is_primary,
         isBillingContact: r.is_billing_contact,
         isEmergencyContact: r.is_emergency_contact,
@@ -4798,7 +4860,13 @@ export async function registerRoutes(
           id: r.cp_id, name: r.cp_name, phoneE164: r.phone_e164,
           whatsappNumber: r.whatsapp_number, email: r.email, gender: r.gender, status: r.status,
         },
-      }));
+      });
+
+      const result = [
+        ...patientLinkRows.rows.map(mapRow),
+        ...leadDerivedRows.map(mapRow),
+      ];
+
       const sessionCrmUserId = (req as any).session?.crmUserId;
       const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId || 0));
       const phiLevel = crmUser?.phiAccessLevel || "Masked";
@@ -4808,7 +4876,12 @@ export async function registerRoutes(
     }
   });
 
-  // POST /api/patients/:id/contact-persons - link a contact person to patient via their lead
+  // =============================================
+  // PATIENT CONTACT-PERSON MANAGEMENT (via patientContactLinks.contactPersonId)
+  // These are patient-specific associations, independent of lead_contact_persons
+  // =============================================
+
+  // POST /api/patients/:id/contact-persons - link a contact person directly to patient
   app.post("/api/patients/:id/contact-persons", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
@@ -4817,53 +4890,85 @@ export async function registerRoutes(
       const [patient] = await db.select({ id: patients.id }).from(patients)
         .where(and(eq(patients.id, patientId), eq(patients.tenantId, tid)));
       if (!patient) return res.status(404).json({ message: "Patient not found" });
-      // Find the primary lead for this patient via episodes
-      const episodeRows = await pool.query(
-        `SELECT e.lead_id FROM episodes e WHERE e.patient_id = $1 AND e.tenant_id = $2 AND e.lead_id IS NOT NULL ORDER BY e.created_at DESC LIMIT 1`,
-        [patientId, tid]
-      );
-      if (episodeRows.rows.length === 0) {
-        return res.status(400).json({ message: "Patient has no associated lead. Add contact persons to the lead instead." });
-      }
-      const leadId = episodeRows.rows[0].lead_id;
-      // If contactPersonId provided, verify tenant ownership
-      if (req.body.contactPersonId) {
+      // Resolve contactPersonId — either provided or create new contact person
+      let cpId: number = req.body.contactPersonId ? Number(req.body.contactPersonId) : 0;
+      if (cpId) {
         const [cp] = await db.select({ id: contactPersons.id }).from(contactPersons)
-          .where(and(eq(contactPersons.id, Number(req.body.contactPersonId)), eq(contactPersons.tenantId, tid)));
+          .where(and(eq(contactPersons.id, cpId), eq(contactPersons.tenantId, tid)));
         if (!cp) return res.status(403).json({ message: "Contact person not found or access denied" });
+      } else {
+        // Create new contact person from inline data
+        const [newCp] = await db.insert(contactPersons).values({
+          tenantId: tid,
+          name: req.body.name,
+          phoneE164: req.body.phoneE164 || null,
+          whatsappNumber: req.body.whatsappNumber || null,
+          email: req.body.email || null,
+          relationship: req.body.relationship || "Other",
+        }).returning();
+        cpId = newCp.id;
       }
-      const link = await storage.addContactPersonToLead(leadId, tid, req.body);
+      // Create direct patient→contactPerson link in patientContactLinks
+      const [link] = await db.insert(patientContactLinks).values({
+        tenantId: tid,
+        patientId,
+        contactPersonId: cpId,
+        relationship: req.body.relationship || "Other",
+        isPrimary: req.body.isPrimary || false,
+        isBillingContact: req.body.isBillingContact || false,
+        isEmergencyContact: req.body.isEmergencyContact || false,
+        isWhatsAppConsentHolder: req.body.isWhatsAppConsentHolder || false,
+        isAppointmentCoordinator: req.body.isAppointmentCoordinator || false,
+      }).returning();
       res.status(201).json(link);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
     }
   });
 
-  // DELETE /api/patients/:id/contact-persons/:linkId - unlink contact person from patient's lead
+  // DELETE /api/patients/:id/contact-persons/:linkId - remove patient contact-person link
   app.delete("/api/patients/:id/contact-persons/:linkId", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      // Verify the link belongs to this tenant
-      const [existingLink] = await db.select().from(leadContactPersons)
-        .where(and(eq(leadContactPersons.id, Number(req.params.linkId)), eq(leadContactPersons.tenantId, tid)));
+      const patientId = Number(req.params.id);
+      const linkId = Number(req.params.linkId);
+      // Verify the link belongs to this patient and tenant
+      const [existingLink] = await db.select().from(patientContactLinks)
+        .where(and(
+          eq(patientContactLinks.id, linkId),
+          eq(patientContactLinks.tenantId, tid),
+          eq(patientContactLinks.patientId, patientId)
+        ));
       if (!existingLink) return res.status(404).json({ message: "Contact person link not found" });
-      await storage.removeLeadContactPerson(Number(req.params.linkId), tid);
+      await db.delete(patientContactLinks).where(eq(patientContactLinks.id, linkId));
       res.status(204).send();
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
   });
 
-  // PATCH /api/patients/:id/contact-persons/:linkId - update link flags
+  // PATCH /api/patients/:id/contact-persons/:linkId - update patient contact-person link flags
   app.patch("/api/patients/:id/contact-persons/:linkId", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      const [existingLink] = await db.select().from(leadContactPersons)
-        .where(and(eq(leadContactPersons.id, Number(req.params.linkId)), eq(leadContactPersons.tenantId, tid)));
+      const patientId = Number(req.params.id);
+      const linkId = Number(req.params.linkId);
+      const [existingLink] = await db.select().from(patientContactLinks)
+        .where(and(
+          eq(patientContactLinks.id, linkId),
+          eq(patientContactLinks.tenantId, tid),
+          eq(patientContactLinks.patientId, patientId)
+        ));
       if (!existingLink) return res.status(404).json({ message: "Contact person link not found" });
-      const parsed = insertLeadContactPersonSchema.partial().parse(req.body);
-      const link = await storage.updateLeadContactPerson(Number(req.params.linkId), tid, parsed);
-      res.json(link);
+      const [updated] = await db.update(patientContactLinks).set({
+        relationship: req.body.relationship || existingLink.relationship,
+        isPrimary: req.body.isPrimary ?? existingLink.isPrimary,
+        isBillingContact: req.body.isBillingContact ?? existingLink.isBillingContact,
+        isEmergencyContact: req.body.isEmergencyContact ?? existingLink.isEmergencyContact,
+        isWhatsAppConsentHolder: req.body.isWhatsAppConsentHolder ?? existingLink.isWhatsAppConsentHolder,
+        isAppointmentCoordinator: req.body.isAppointmentCoordinator ?? existingLink.isAppointmentCoordinator,
+      }).where(eq(patientContactLinks.id, linkId)).returning();
+      res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
     }
@@ -5067,11 +5172,19 @@ export async function registerRoutes(
   app.delete("/api/leads/:id/contact-persons/:linkId", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
+      const leadId = Number(req.params.id);
+      const linkId = Number(req.params.linkId);
       // Verify the link belongs to this tenant
       const [existingLink] = await db.select().from(leadContactPersons)
-        .where(and(eq(leadContactPersons.id, Number(req.params.linkId)), eq(leadContactPersons.tenantId, tid)));
+        .where(and(eq(leadContactPersons.id, linkId), eq(leadContactPersons.tenantId, tid)));
       if (!existingLink) return res.status(404).json({ message: "Contact person link not found" });
-      await storage.removeLeadContactPerson(Number(req.params.linkId), tid);
+      // Reachability guard: simulate removal and check if lead still has a reachable phone
+      try {
+        await assertLeadReachable(leadId, tid, linkId);
+      } catch (reachErr: any) {
+        return res.status(400).json({ message: reachErr.message });
+      }
+      await storage.removeLeadContactPerson(linkId, tid);
       res.status(204).send();
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });

@@ -2044,7 +2044,11 @@ function ContactPersonsPanel({ leadId, lead }: { leadId: number; lead?: any }) {
 
   const removeMutation = useMutation({
     mutationFn: async (linkId: number) => {
-      await apiRequest("DELETE", `/api/leads/${leadId}/contact-persons/${linkId}`);
+      const res = await apiRequest("DELETE", `/api/leads/${leadId}/contact-persons/${linkId}`);
+      if (res && !res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to remove contact person");
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads", leadId, "contact-persons"] });

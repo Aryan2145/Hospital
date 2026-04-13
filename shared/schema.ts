@@ -941,7 +941,7 @@ export const patientContactLinks = pgTable("patient_contact_links", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
   patientId: integer("patient_id").notNull().references(() => patients.id),
-  contactId: integer("contact_id").notNull().references(() => contacts.id),
+  contactId: integer("contact_id").references(() => contacts.id),
   contactPersonId: integer("contact_person_id").references(() => contactPersons.id),
   relationship: text("relationship").default("Self"),
   isPrimary: boolean("is_primary").default(false),
