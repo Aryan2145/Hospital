@@ -5,7 +5,11 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Calendar, ArrowUpDown, ChevronUp, ChevronDown, ChevronRight, X, Clock, Users, Flame, Moon, AlertCircle, Headphones, Building2, Stethoscope, Shield, GitMerge, ChevronDown as ChevronDownIcon } from "lucide-react";
+import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Calendar, ArrowUpDown, ChevronUp, ChevronDown, ChevronRight, X, Clock, Users, Flame, Moon, AlertCircle, Headphones, Building2, Stethoscope, Shield, GitMerge, ChevronDown as ChevronDownIcon, UserPlus, Trash2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { MergeLeadsModal } from "@/components/leads/MergeLeadsModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
@@ -748,6 +752,29 @@ function useMasterData(tableName: string) {
   });
 }
 
+const CONTACT_RELATIONSHIP_OPTIONS = ["Self","Spouse","Parent","Child","Sibling","Guardian","Friend","Colleague","Caregiver","Power of Attorney","Other"];
+
+interface InlineContact {
+  name: string;
+  phoneE164: string;
+  whatsappNumber: string;
+  email: string;
+  relationship: string;
+  isPrimary: boolean;
+  isBillingContact: boolean;
+  isEmergencyContact: boolean;
+  isWhatsAppConsentHolder: boolean;
+  isAppointmentCoordinator: boolean;
+  // For existing contact reuse
+  existingContactPersonId?: number;
+}
+
+const defaultContact = (): InlineContact => ({
+  name: "", phoneE164: "", whatsappNumber: "", email: "", relationship: "Other",
+  isPrimary: false, isBillingContact: false, isEmergencyContact: false,
+  isWhatsAppConsentHolder: false, isAppointmentCoordinator: false,
+});
+
 function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
   const createLead = useCreateLead();
   const [, navigate] = useLocation();
@@ -758,6 +785,13 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const duplicateDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const lastCheckedPhone = useRef<string>("");
+
+  // Inline contact persons state
+  const [inlineContacts, setInlineContacts] = useState<InlineContact[]>([]);
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [newContact, setNewContact] = useState<InlineContact>(defaultContact());
+  const [cpPhoneSearchResult, setCpPhoneSearchResult] = useState<any>(null);
+  const cpPhoneDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const { data: branches = [] } = useMasterData("branches");
   const { data: leadSourceCategories = [] } = useMasterData("lead_source_categories");
@@ -845,9 +879,69 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
 
   const isDuplicateDetected = duplicateInfo?.isDuplicate === true;
 
+  // Check if lead has at least one reachable phone (own phone or inline contact with phone)
+  const leadPhone = form.watch("phoneE164");
+  const hasReachablePhone = !!(leadPhone?.trim()) || inlineContacts.some(c => c.phoneE164?.trim());
+  const showReachabilityWarning = !hasReachablePhone && inlineContacts.length === 0 && !leadPhone?.trim();
+
+  const checkCpPhone = useCallback(async (phone: string) => {
+    if (!phone || phone.replace(/\D/g, "").length < 10) { setCpPhoneSearchResult(null); return; }
+    const res = await fetch(`/api/contact-persons?search=${encodeURIComponent(phone)}`, { credentials: "include" });
+    if (res.ok) {
+      const data = await res.json();
+      const match = data.find((cp: any) => cp.phoneE164 === phone || cp.phoneE164?.replace(/\D/g, "") === phone.replace(/\D/g, ""));
+      setCpPhoneSearchResult(match || null);
+    }
+  }, []);
+
+  const handleCpPhoneChange = useCallback((phone: string) => {
+    setNewContact(p => ({ ...p, phoneE164: phone, existingContactPersonId: undefined }));
+    setCpPhoneSearchResult(null);
+    if (cpPhoneDebounceRef.current) clearTimeout(cpPhoneDebounceRef.current);
+    cpPhoneDebounceRef.current = setTimeout(() => checkCpPhone(phone), 500);
+  }, [checkCpPhone]);
+
+  function addInlineContact() {
+    if (!newContact.name.trim()) return;
+    const toAdd: InlineContact = { ...newContact };
+    setInlineContacts(p => [...p, toAdd]);
+    setNewContact(defaultContact());
+    setCpPhoneSearchResult(null);
+    setShowAddContact(false);
+  }
+
+  function reuseExistingContact(cp: any) {
+    setNewContact(p => ({
+      ...p,
+      name: cp.name,
+      phoneE164: cp.phoneE164 || "",
+      whatsappNumber: cp.whatsappNumber || "",
+      email: cp.email || "",
+      existingContactPersonId: cp.id,
+    }));
+    setCpPhoneSearchResult(null);
+  }
+
   function onSubmit(data: InsertLead) {
     if (isDuplicateDetected) return;
-    createLead.mutate(data, {
+    // Include inline contacts in the create payload so server handles them atomically
+    const payload: any = { ...data };
+    if (inlineContacts.length > 0) {
+      payload.contactPersons = inlineContacts.map(c => ({
+        contactPersonId: c.existingContactPersonId || undefined,
+        name: c.name,
+        phoneE164: c.phoneE164 || undefined,
+        whatsappNumber: c.whatsappNumber || undefined,
+        email: c.email || undefined,
+        relationship: c.relationship,
+        isPrimary: c.isPrimary,
+        isBillingContact: c.isBillingContact,
+        isEmergencyContact: c.isEmergencyContact,
+        isWhatsAppConsentHolder: c.isWhatsAppConsentHolder,
+        isAppointmentCoordinator: c.isAppointmentCoordinator,
+      }));
+    }
+    createLead.mutate(payload, {
       onSuccess: () => onSuccess(),
       onError: (error: any) => {
         if (error.status === 409 && error.existingLeadId) {
@@ -1192,6 +1286,138 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
           />
         </div>
 
+        {/* Inline Contact Persons Section */}
+        <div className="border border-border rounded-lg p-3 space-y-3" data-testid="section-inline-contacts">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium flex items-center gap-2">
+              <UserPlus className="w-4 h-4 text-primary" />
+              Contact Persons
+              {inlineContacts.length > 0 && (
+                <Badge variant="outline" className="text-xs ml-1">{inlineContacts.length}</Badge>
+              )}
+            </Label>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => { setShowAddContact(true); setNewContact(defaultContact()); setCpPhoneSearchResult(null); }}
+              data-testid="button-add-inline-contact"
+            >
+              <Plus className="w-3 h-3 mr-1" /> Add Contact Person
+            </Button>
+          </div>
+
+          {inlineContacts.length === 0 && !showAddContact && (
+            <p className="text-xs text-muted-foreground">Add a family member, caregiver, or billing contact who will coordinate on behalf of the patient.</p>
+          )}
+
+          {/* Listed inline contacts */}
+          {inlineContacts.map((c, idx) => (
+            <Card key={idx} className="p-2 text-xs flex items-start justify-between gap-2" data-testid={`card-inline-contact-${idx}`}>
+              <div className="flex-1">
+                <span className="font-medium">{c.name}</span>
+                {c.existingContactPersonId && <Badge variant="outline" className="ml-1 text-[9px]">Existing</Badge>}
+                <span className="text-muted-foreground ml-1.5">({c.relationship})</span>
+                {c.phoneE164 && <span className="text-muted-foreground ml-1.5">· {c.phoneE164}</span>}
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {c.isPrimary && <Badge variant="outline" className="text-[9px] py-0 px-1">Primary</Badge>}
+                  {c.isBillingContact && <Badge variant="outline" className="text-[9px] py-0 px-1">Billing</Badge>}
+                  {c.isEmergencyContact && <Badge variant="outline" className="text-[9px] py-0 px-1">Emergency</Badge>}
+                  {c.isWhatsAppConsentHolder && <Badge variant="outline" className="text-[9px] py-0 px-1">WA Consent</Badge>}
+                  {c.isAppointmentCoordinator && <Badge variant="outline" className="text-[9px] py-0 px-1">Appt Coord</Badge>}
+                </div>
+              </div>
+              <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0"
+                onClick={() => setInlineContacts(p => p.filter((_, i) => i !== idx))}
+                data-testid={`button-remove-inline-contact-${idx}`}>
+                <Trash2 className="w-3 h-3 text-destructive" />
+              </Button>
+            </Card>
+          ))}
+
+          {/* Add new contact form */}
+          {showAddContact && (
+            <Card className="p-3 border-primary/20 bg-primary/5 space-y-2">
+              <p className="text-xs font-medium text-foreground mb-1">New Contact Person</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Full Name *</Label>
+                  <Input value={newContact.name} onChange={e => setNewContact(p => ({ ...p, name: e.target.value }))}
+                    placeholder="e.g. Priya Modi" className="h-7 text-xs mt-0.5" data-testid="input-cp-name" />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Phone</Label>
+                  <Input value={newContact.phoneE164}
+                    onChange={e => handleCpPhoneChange(e.target.value)}
+                    placeholder="+91..." className="h-7 text-xs mt-0.5" data-testid="input-cp-phone" />
+                  {cpPhoneSearchResult && (
+                    <div className="mt-1 p-1.5 bg-amber-50 border border-amber-200 rounded text-[10px]">
+                      <p className="text-amber-700 font-medium">Existing contact found: {cpPhoneSearchResult.name}</p>
+                      <Button type="button" size="sm" variant="outline" className="h-5 text-[9px] mt-1 px-2"
+                        onClick={() => reuseExistingContact(cpPhoneSearchResult)}
+                        data-testid="button-reuse-existing-cp">
+                        Reuse this contact
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">WhatsApp</Label>
+                  <Input value={newContact.whatsappNumber}
+                    onChange={e => setNewContact(p => ({ ...p, whatsappNumber: e.target.value }))}
+                    placeholder="+91..." className="h-7 text-xs mt-0.5" data-testid="input-cp-whatsapp" />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Email</Label>
+                  <Input value={newContact.email}
+                    onChange={e => setNewContact(p => ({ ...p, email: e.target.value }))}
+                    placeholder="email@..." className="h-7 text-xs mt-0.5" data-testid="input-cp-email" />
+                </div>
+                <div className="col-span-2">
+                  <Label className="text-[10px] text-muted-foreground">Relationship</Label>
+                  <Select value={newContact.relationship} onValueChange={v => setNewContact(p => ({ ...p, relationship: v }))}>
+                    <SelectTrigger className="h-7 text-xs mt-0.5" data-testid="select-cp-rel">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CONTACT_RELATIONSHIP_OPTIONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 pt-1">
+                {([
+                  { key: "isPrimary", label: "Primary Contact" },
+                  { key: "isBillingContact", label: "Billing Contact" },
+                  { key: "isEmergencyContact", label: "Emergency Contact" },
+                  { key: "isWhatsAppConsentHolder", label: "WhatsApp Consent" },
+                  { key: "isAppointmentCoordinator", label: "Appointment Coordinator" },
+                ] as const).map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-1.5 text-[10px] text-foreground cursor-pointer"
+                    data-testid={`toggle-cp-${key}`}>
+                    <Switch checked={(newContact as any)[key]}
+                      onCheckedChange={v => setNewContact(p => ({ ...p, [key]: v }))}
+                      className="scale-75" />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button type="button" size="sm" className="h-7 text-xs" onClick={addInlineContact}
+                  disabled={!newContact.name.trim()} data-testid="button-confirm-add-cp">
+                  Add
+                </Button>
+                <Button type="button" size="sm" variant="ghost" className="h-7 text-xs"
+                  onClick={() => { setShowAddContact(false); setNewContact(defaultContact()); setCpPhoneSearchResult(null); }}
+                  data-testid="button-cancel-add-cp">
+                  Cancel
+                </Button>
+              </div>
+            </Card>
+          )}
+        </div>
+
         <FormField
           control={form.control}
           name="notes"
@@ -1226,8 +1452,15 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
           </label>
         </div>
 
-        <Button type="submit" className="w-full" disabled={createLead.isPending || isDuplicateDetected} data-testid="button-create-lead">
-          {createLead.isPending ? "Creating..." : isDuplicateDetected ? "Duplicate Detected — Cannot Submit" : "Create Lead"}
+        {!hasReachablePhone && !showAddContact && (
+          <div className="flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded p-2 text-xs text-amber-700" data-testid="reachability-warning">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>No reachable phone number. Add a phone number above or add a contact person with a phone.</span>
+          </div>
+        )}
+
+        <Button type="submit" className="w-full" disabled={createLead.isPending || isDuplicateDetected || !hasReachablePhone} data-testid="button-create-lead">
+          {createLead.isPending ? "Creating..." : isDuplicateDetected ? "Duplicate Detected — Cannot Submit" : !hasReachablePhone ? "Add a Phone Number or Contact Person" : "Create Lead"}
         </Button>
       </form>
     </Form>

@@ -214,6 +214,11 @@ export default function ContactDirectoryPage() {
                             {p._leadCount} lead{p._leadCount !== 1 ? "s" : ""}
                           </Badge>
                         )}
+                        {typeof p._patientCount === "number" && p._patientCount > 0 && (
+                          <Badge variant="outline" className="text-[9px] bg-green-50 text-green-700 border-green-200">
+                            {p._patientCount} patient{p._patientCount !== 1 ? "s" : ""}
+                          </Badge>
+                        )}
                       </div>
                     </button>
                   ))}
@@ -348,6 +353,27 @@ function ContactPersonDetail({ person, onEdit, onDelete, deleting }: {
     },
   });
 
+  // Derive linked patients from linked leads (via episodes)
+  const { data: linkedPatients = [] } = useQuery<any[]>({
+    queryKey: ["/api/contact-persons", person.id, "patients"],
+    queryFn: async () => {
+      if (linkedLeads.length === 0) return [];
+      const leadIds = linkedLeads.map((l: any) => l.lead_id || l.leadId).filter(Boolean);
+      if (leadIds.length === 0) return [];
+      const res = await fetch(`/api/episodes?leadIds=${leadIds.join(",")}&limit=100`, { credentials: "include" });
+      if (!res.ok) return [];
+      const episodes = await res.json();
+      // Deduplicate by patientId
+      const seen = new Set<number>();
+      return (Array.isArray(episodes) ? episodes : episodes.episodes || []).filter((ep: any) => {
+        if (!ep.patientId || seen.has(ep.patientId)) return false;
+        seen.add(ep.patientId);
+        return true;
+      });
+    },
+    enabled: linkedLeads.length > 0,
+  });
+
   const infoRow = (label: string, value: any, icon?: any) => {
     if (!value) return null;
     const Icon = icon;
@@ -403,7 +429,7 @@ function ContactPersonDetail({ person, onEdit, onDelete, deleting }: {
       </Card>
 
       {linkedLeads.length > 0 && (
-        <Card className="p-4">
+        <Card className="p-4 mb-4">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
             <Users className="w-3.5 h-3.5" /> Linked Leads ({linkedLeads.length})
           </h3>
@@ -411,12 +437,36 @@ function ContactPersonDetail({ person, onEdit, onDelete, deleting }: {
             {linkedLeads.map((link: any) => (
               <div key={link.id} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
                 <div>
-                  <p className="text-sm font-medium text-foreground">{link.leadName || `Lead #${link.leadId}`}</p>
+                  <p className="text-sm font-medium text-foreground">{link.leadName || `Lead #${link.lead_id || link.leadId}`}</p>
                   <div className="flex items-center gap-2 mt-0.5">
                     {link.relationship && <Badge variant="outline" className="text-[9px]">{link.relationship}</Badge>}
-                    {link.isPrimary && <Badge className="text-[9px] bg-primary/10 text-primary border-primary/20">Primary</Badge>}
-                    {link.isEmergencyContact && <Badge className="text-[9px] bg-red-50 text-red-700 border-red-200">Emergency</Badge>}
+                    {link.is_primary && <Badge className="text-[9px] bg-primary/10 text-primary border-primary/20">Primary</Badge>}
+                    {link.is_emergency_contact && <Badge className="text-[9px] bg-red-50 text-red-700 border-red-200">Emergency</Badge>}
+                    {link.leadStatus && <Badge variant="outline" className="text-[9px]">{link.leadStatus}</Badge>}
                   </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {linkedPatients.length > 0 && (
+        <Card className="p-4">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Users className="w-3.5 h-3.5 text-green-600" /> Linked Patients ({linkedPatients.length})
+          </h3>
+          <div className="space-y-2">
+            {linkedPatients.map((ep: any) => (
+              <div key={ep.patientId} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {ep.patientName || `Patient #${ep.patientId}`}
+                  </p>
+                  {ep.status && (
+                    <Badge variant="outline" className="text-[9px] mt-0.5">{ep.status}</Badge>
+                  )}
                 </div>
                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
               </div>

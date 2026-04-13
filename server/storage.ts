@@ -73,6 +73,7 @@ export interface IStorage {
   updateLeadContactPerson(id: number, tenantId: number, data: Partial<InsertLeadContactPerson>): Promise<LeadContactPerson>;
   removeLeadContactPerson(id: number, tenantId: number): Promise<void>;
   findLeadByContactPhone(tenantId: number, phoneE164: string): Promise<Lead | undefined>;
+  addContactPersonToLead(leadId: number, tenantId: number, data: any): Promise<LeadContactPerson>;
   // CRM Users
   getCrmUsers(tenantId: number): Promise<CrmUser[]>;
   getCrmUser(id: number, tenantId: number): Promise<CrmUser | undefined>;
@@ -340,6 +341,35 @@ export class DatabaseStorage implements IStorage {
   async removeLeadContactPerson(id: number, tenantId: number): Promise<void> {
     await db.delete(leadContactPersons)
       .where(and(eq(leadContactPersons.id, id), eq(leadContactPersons.tenantId, tenantId)));
+  }
+
+  async addContactPersonToLead(leadId: number, tenantId: number, data: any): Promise<LeadContactPerson> {
+    let cpId = data.contactPersonId;
+    if (!cpId) {
+      // Create a new contact person first
+      const [newCp] = await db.insert(contactPersons).values({
+        tenantId,
+        name: data.name,
+        phoneE164: data.phoneE164 || null,
+        whatsappNumber: data.whatsappNumber || null,
+        email: data.email || null,
+        relationship: data.relationship || "Other",
+      }).returning();
+      cpId = newCp.id;
+    }
+    const [link] = await db.insert(leadContactPersons).values({
+      tenantId,
+      leadId,
+      contactPersonId: cpId,
+      relationship: data.relationship || "Other",
+      isPrimary: data.isPrimary || false,
+      isBillingContact: data.isBillingContact || false,
+      isEmergencyContact: data.isEmergencyContact || false,
+      isWhatsAppConsentHolder: data.isWhatsAppConsentHolder || false,
+      isAppointmentCoordinator: data.isAppointmentCoordinator || false,
+      notes: data.notes || null,
+    }).returning();
+    return link;
   }
 
   async findLeadByContactPhone(tenantId: number, phoneE164: string): Promise<Lead | undefined> {

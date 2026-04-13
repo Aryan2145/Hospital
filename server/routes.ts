@@ -1621,7 +1621,28 @@ export async function registerRoutes(
         }
       }
 
+      // Reachability validation: must have phoneE164 or at least one contact person with a phone
+      const inlineContacts: any[] = Array.isArray(req.body.contactPersons) ? req.body.contactPersons : [];
+      const hasPhone = !!(input.phoneE164 && input.phoneE164.trim());
+      const hasContactPhone = inlineContacts.some((c: any) => c.phoneE164 && c.phoneE164.trim());
+      if (!hasPhone && !hasContactPhone) {
+        return res.status(400).json({
+          message: "A lead must have at least one reachable phone number — either a direct phone or via a linked contact person.",
+          field: "phoneE164",
+        });
+      }
+
       const lead = await storage.createLead(input);
+
+      // Atomically create any inline contact persons and link them to the lead
+      for (const cpData of inlineContacts) {
+        try {
+          await storage.addContactPersonToLead(lead.id, tid, cpData);
+        } catch (cpErr: any) {
+          console.warn("Failed to link inline contact person:", cpErr.message);
+        }
+      }
+
       res.status(201).json(lead);
     } catch (err: any) {
       if (err?.code === "23505") {
@@ -4818,14 +4839,29 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const search = req.query.search as string | undefined;
       const result = await storage.getContactPersons(tid, search);
-      // Enrich with lead counts
+      // Enrich with lead counts and patient counts
       const countResult = await pool.query(
         `SELECT contact_person_id, COUNT(*) as cnt FROM lead_contact_persons WHERE tenant_id = $1 GROUP BY contact_person_id`,
         [tid]
       );
       const countMap = new Map<number, number>();
       countResult.rows.forEach((r: any) => countMap.set(Number(r.contact_person_id), Number(r.cnt)));
-      const enriched = result.map((cp: any) => ({ ...cp, _leadCount: countMap.get(cp.id) || 0 }));
+      // Patient count: via episodes linked to leads that have this contact person
+      const patCountResult = await pool.query(
+        `SELECT lcp.contact_person_id, COUNT(DISTINCT e.patient_id) as cnt
+         FROM lead_contact_persons lcp
+         JOIN episodes e ON e.lead_id = lcp.lead_id AND e.patient_id IS NOT NULL
+         WHERE lcp.tenant_id = $1
+         GROUP BY lcp.contact_person_id`,
+        [tid]
+      );
+      const patCountMap = new Map<number, number>();
+      patCountResult.rows.forEach((r: any) => patCountMap.set(Number(r.contact_person_id), Number(r.cnt)));
+      const enriched = result.map((cp: any) => ({
+        ...cp,
+        _leadCount: countMap.get(cp.id) || 0,
+        _patientCount: patCountMap.get(cp.id) || 0,
+      }));
       const sessionCrmUserId = (req as any).session?.crmUserId;
       const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId || 0));
       const phiLevel = crmUser?.phiAccessLevel || "Masked";
