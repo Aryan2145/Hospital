@@ -87,6 +87,19 @@ function RoleGate({ page, children }: { page: string; children: React.ReactNode 
   return <>{children}</>;
 }
 
+// Redirects to the role-appropriate home page for specialized roles
+function HomeRedirect() {
+  const { isLoading, isRegistered, tenantSuspended, isSysAdmin, getDefaultHomePage } = useCurrentUser();
+
+  if (isLoading) return <div className="h-screen flex items-center justify-center"><LoadingSpinner /></div>;
+  if (!isRegistered) return <PendingApproval />;
+  if (tenantSuspended && !isSysAdmin) return <TenantSuspended />;
+
+  const home = getDefaultHomePage();
+  if (home !== "/") return <Redirect to={home} />;
+  return <RoleGate page="dashboard"><Dashboard /></RoleGate>;
+}
+
 function SysAdminGate({ children }: { children: React.ReactNode }) {
   const { isLoading, isRegistered, isSysAdmin } = useCurrentUser();
 
@@ -104,9 +117,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/">
-        {isAuthenticated ? (
-          <RoleGate page="dashboard"><Dashboard /></RoleGate>
-        ) : <Landing />}
+        {isAuthenticated ? <HomeRedirect /> : <Landing />}
       </Route>
 
       <Route path="/dashboard">

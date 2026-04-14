@@ -1,6 +1,8 @@
 import { pool } from "../db";
 import { processDormantLeadsAndStaleAppointments } from "./nurtureEngine";
 import { checkDormantLeads } from "./temperatureEngine";
+import { sendDiscountApprovalEmail } from "../email";
+import { sendDiscountApprovalSMS } from "../sms";
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 
@@ -79,14 +81,131 @@ async function autoMarkNoShows(tenantId: number): Promise<number> {
         }
       } catch {}
     }
-
-    if (count > 0) {
-      console.log(`[scheduler] Auto-marked ${count} past appointments as No Show for ${leadNoShowCounts.size} leads in tenant ${tenantId}`);
-    }
   } catch (err: any) {
     console.error(`[scheduler] Error in autoMarkNoShows for tenant ${tenantId}:`, err.message);
   }
   return count;
+}
+
+async function escalateOverdueDiscounts(tenantId: number, tenantName: string): Promise<void> {
+  try {
+    // Get configurable SLA window (default 4 hours)
+    const slaRow = await pool.query(
+      `SELECT setting_value FROM tenant_settings WHERE tenant_id = $1 AND setting_key = 'discountApprovalSlaHours' LIMIT 1`,
+      [tenantId]
+    );
+    const slaHours = slaRow.rows[0] ? parseInt(slaRow.rows[0].setting_value, 10) : 4;
+    const effectiveSla = isNaN(slaHours) || slaHours < 1 ? 4 : slaHours;
+
+    // Find overdue pending discounts (requested but not yet escalated, past SLA window)
+    const overdue = await pool.query(
+      `SELECT e.id, e.discount_percent, e.discount_amount, e.discount_notes, e.discount_requested_at,
+              p.name AS patient_name
+       FROM episodes e
+       LEFT JOIN patients p ON e.patient_id = p.id
+       WHERE e.tenant_id = $1
+         AND e.discount_status = 'Pending'
+         AND e.discount_escalated_at IS NULL
+         AND e.discount_requested_at IS NOT NULL
+         AND e.discount_requested_at < NOW() - INTERVAL '1 hour' * $2`,
+      [tenantId, effectiveSla]
+    );
+
+    if (overdue.rows.length === 0) return;
+
+    // Get ADMIN users for this tenant with their contact info
+    const admins = await pool.query(
+      `SELECT cu.id, cu.name, cu.email, cu.phone
+       FROM crm_users cu
+       JOIN system_roles sr ON cu.system_role_id = sr.id
+       WHERE cu.tenant_id = $1
+         AND sr.code IN ('ADMIN', 'SYS_ADMIN')
+         AND cu.is_active = TRUE`,
+      [tenantId]
+    );
+
+    if (admins.rows.length === 0) {
+      console.log(`[scheduler] Tenant ${tenantId}: no active admins for discount escalation`);
+      return;
+    }
+
+    for (const ep of overdue.rows) {
+      try {
+        const patientName = ep.patient_name || `Episode #${ep.id}`;
+        const discountPercent = ep.discount_percent || 0;
+        const discountAmount = ep.discount_amount || 0;
+        const adminIds: number[] = admins.rows.map((a: any) => a.id);
+
+        // Insert in-app notifications for all admin users
+        if (adminIds.length > 0) {
+          await pool.query(
+            `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
+             SELECT $1, unnest($2::int[]), 'discount_escalation', $3, $4, 'episode', $5, $6, FALSE, NOW()`,
+            [
+              tenantId,
+              adminIds,
+              "Discount Approval Overdue — Action Required",
+              `A discount request of ${discountPercent}% (₹${discountAmount.toLocaleString("en-IN")}) for ${patientName} has been pending beyond the ${effectiveSla}-hour SLA. Immediate review required.`,
+              ep.id,
+              `/transactions/${ep.id}`,
+            ]
+          );
+        }
+
+        // Send email + SMS to each admin
+        for (const admin of admins.rows) {
+          if (admin.email) {
+            sendDiscountApprovalEmail({
+              to: admin.email,
+              approverName: admin.name,
+              requestedBy: "System Escalation",
+              patientName,
+              episodeId: ep.id,
+              discountPercent,
+              discountAmount,
+              discountNotes: ep.discount_notes || "",
+              hospitalName: tenantName,
+            }).catch((e: any) => console.error("[scheduler] Escalation email error:", e.message));
+          }
+          if (admin.phone) {
+            sendDiscountApprovalSMS({
+              phone: admin.phone,
+              approverName: admin.name || "Admin",
+              requestedBy: "System Escalation",
+              patientName,
+              episodeId: ep.id,
+              discountPercent,
+              discountAmount,
+              hospitalName: tenantName,
+            }).catch((e: any) => console.error("[scheduler] Escalation SMS error:", e.message));
+          }
+        }
+
+        // Mark episode as escalated (prevents re-escalation)
+        await pool.query(
+          `UPDATE episodes SET discount_escalated_at = NOW() WHERE id = $1 AND tenant_id = $2`,
+          [ep.id, tenantId]
+        );
+
+        // Write audit log
+        await pool.query(
+          `INSERT INTO audit_logs (tenant_id, entity_type, entity_id, action, new_values, changed_fields, performed_by, performed_at)
+           VALUES ($1, 'discount_request', $2, 'discount_escalated', $3, 'discountEscalatedAt', 'system-scheduler', NOW())`,
+          [
+            tenantId,
+            ep.id,
+            JSON.stringify({ escalatedAt: new Date().toISOString(), slaHours: effectiveSla, adminCount: admins.rows.length }),
+          ]
+        );
+
+        console.log(`[scheduler] Tenant ${tenantName}: escalated discount on Episode #${ep.id} (${patientName}, ${discountPercent}%) to ${admins.rows.length} admin(s)`);
+      } catch (epErr: any) {
+        console.error(`[scheduler] Error escalating discount for Episode ${ep.id}:`, epErr.message);
+      }
+    }
+  } catch (err: any) {
+    console.error(`[scheduler] Error in escalateOverdueDiscounts for tenant ${tenantId}:`, err.message);
+  }
 }
 
 async function runScheduledTasks(): Promise<void> {
@@ -109,6 +228,8 @@ async function runScheduledTasks(): Promise<void> {
             `${result.staleLeadsFlagged} stale flagged, ${result.overdueNurtureEscalated} nurture escalated`
           );
         }
+
+        await escalateOverdueDiscounts(tenant.id, tenant.name);
       } catch (err: any) {
         console.error(`[scheduler] Error processing tenant ${tenant.id}:`, err.message);
       }

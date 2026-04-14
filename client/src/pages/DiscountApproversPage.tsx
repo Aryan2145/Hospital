@@ -2,6 +2,8 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -16,14 +18,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ShieldCheck, Trash2, Plus, UserCheck } from "lucide-react";
+import { ShieldCheck, Trash2, Plus, UserCheck, Clock, Save } from "lucide-react";
 import { fmtDate } from "@/lib/date-utils";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useEffect } from "react";
 
 export default function DiscountApproversPage() {
   const { toast } = useToast();
   const { isAdmin } = useCurrentUser();
   const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [slaInput, setSlaInput] = useState<string>("");
 
   const { data: approvers = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/discount-approvers"],
@@ -33,6 +37,21 @@ export default function DiscountApproversPage() {
       return res.json();
     },
   });
+
+  const { data: slaSettings, isLoading: slaLoading } = useQuery<{ discountApprovalSlaHours: number }>({
+    queryKey: ["/api/settings/discount-sla"],
+    queryFn: async () => {
+      const res = await fetch("/api/settings/discount-sla", { credentials: "include" });
+      if (!res.ok) return { discountApprovalSlaHours: 4 };
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (slaSettings && slaInput === "") {
+      setSlaInput(String(slaSettings.discountApprovalSlaHours));
+    }
+  }, [slaSettings]);
 
   const { data: crmUsers = [] } = useQuery<any[]>({
     queryKey: ["/api/crm-users/active"],
@@ -72,8 +91,30 @@ export default function DiscountApproversPage() {
     },
   });
 
+  const saveSla = useMutation({
+    mutationFn: async (hours: number) => {
+      await apiRequest("PUT", "/api/settings/discount-sla", { discountApprovalSlaHours: hours });
+    },
+    onSuccess: (_, hours) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/discount-sla"] });
+      toast({ title: `SLA window updated to ${hours} hours` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const approverIds = new Set(approvers.map((a: any) => a.crmUserId));
   const availableUsers = (crmUsers as any[]).filter((u: any) => !approverIds.has(u.id));
+
+  const handleSaveSla = () => {
+    const hours = parseInt(slaInput, 10);
+    if (!hours || hours < 1 || hours > 720) {
+      toast({ title: "Invalid SLA", description: "Please enter a value between 1 and 720 hours", variant: "destructive" });
+      return;
+    }
+    saveSla.mutate(hours);
+  };
 
   if (isLoading) {
     return (
@@ -93,7 +134,7 @@ export default function DiscountApproversPage() {
           <div>
             <h1 className="text-lg font-bold text-foreground" data-testid="text-page-title">Discount Approvers</h1>
             <p className="text-xs text-muted-foreground">
-              Configure which CRM users can approve or revoke discount requests for this hospital
+              Configure which CRM users can approve discount requests and set the escalation SLA window
             </p>
           </div>
         </div>
@@ -113,9 +154,56 @@ export default function DiscountApproversPage() {
                 <Badge variant="outline" className="text-xs">Admin</Badge> or{" "}
                 <Badge variant="outline" className="text-xs">System Admin</Badge> to approve discounts.
               </p>
+              <p>
+                Approvers receive <strong>in-app notifications, email, and SMS alerts</strong> when a discount is requested.
+              </p>
             </div>
           </div>
         </Card>
+
+        {isAdmin && (
+          <Card className="p-4" data-testid="card-sla-settings">
+            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-primary" />
+              Escalation SLA Window
+            </h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              If no approver acts on a pending discount request within this time window, the system automatically
+              escalates it to all Admin users via notification, email, and SMS.
+            </p>
+            <div className="flex items-end gap-3">
+              <div className="flex-1 max-w-[200px]">
+                <Label htmlFor="sla-hours" className="text-xs text-muted-foreground mb-1 block">SLA Window (hours)</Label>
+                <Input
+                  id="sla-hours"
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={slaInput}
+                  onChange={(e) => setSlaInput(e.target.value)}
+                  placeholder={slaLoading ? "Loading..." : "4"}
+                  disabled={slaLoading}
+                  className="h-8 text-sm"
+                  data-testid="input-sla-hours"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={handleSaveSla}
+                disabled={saveSla.isPending || slaLoading}
+                data-testid="button-save-sla"
+              >
+                <Save className="w-3.5 h-3.5 mr-1.5" />
+                {saveSla.isPending ? "Saving..." : "Save"}
+              </Button>
+              {slaSettings && (
+                <p className="text-xs text-muted-foreground">
+                  Current: <strong>{slaSettings.discountApprovalSlaHours}h</strong>
+                </p>
+              )}
+            </div>
+          </Card>
+        )}
 
         {isAdmin && (
           <Card className="p-4" data-testid="card-add-approver">

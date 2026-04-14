@@ -1250,6 +1250,8 @@ export const episodes = pgTable("episodes", {
   discountStatus: text("discount_status").default("Draft"),
   discountApprovedBy: varchar("discount_approved_by"),
   discountApprovedAt: timestamp("discount_approved_at"),
+  discountRequestedAt: timestamp("discount_requested_at"),
+  discountEscalatedAt: timestamp("discount_escalated_at"),
   finalEstimatedAmount: integer("final_estimated_amount"),
   advanceReceivedAmount: integer("advance_received_amount"),
   paymentMode: text("payment_mode"),

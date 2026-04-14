@@ -15,6 +15,7 @@ import { stringify } from "csv-stringify/sync";
 import { desc, eq, and, or, sql, count, gte, lte, isNull, inArray } from "drizzle-orm";
 import { encryptValue, decryptValue, isEncrypted } from "./crypto";
 import { sendDiscountApprovalEmail } from "./email";
+import { sendDiscountApprovalSMS } from "./sms";
 
 const PHI_FIELDS_TO_MASK = [
   "phoneE164", "phone_e164", "mobileNormalized", "mobile_normalized",
@@ -1857,6 +1858,9 @@ export async function registerRoutes(
 
   app.post(api.leads.create.path, isAuthenticated, async (req, res) => {
     try {
+      if (!(await hasPermission(req, "leads", "canCreate"))) {
+        return res.status(403).json({ message: "You do not have permission to create leads" });
+      }
       const tid = await getDefaultTenantId(req);
       const input = api.leads.create.input.parse({ ...req.body, tenantId: tid });
       if (input.phoneE164) {
@@ -2029,6 +2033,9 @@ export async function registerRoutes(
 
   app.patch(api.leads.update.path, isAuthenticated, async (req, res) => {
     try {
+      if (!(await hasPermission(req, "leads", "canEdit"))) {
+        return res.status(403).json({ message: "You do not have permission to edit leads" });
+      }
       const body = coerceDateFields(req.body, ["nextActionDate"]);
       const input = api.leads.update.input.parse(body);
       const leadId = Number(req.params.id);
@@ -6785,6 +6792,9 @@ export async function registerRoutes(
 
   app.post("/api/episodes", isAuthenticated, async (req, res) => {
     try {
+      if (!(await hasPermission(req, "episodes", "canCreate"))) {
+        return res.status(403).json({ message: "You do not have permission to create episodes" });
+      }
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["startDate", "endDate", "nextActionDate", "slaDeadline"]);
 
@@ -6902,6 +6912,9 @@ export async function registerRoutes(
 
   app.patch("/api/episodes/:id", isAuthenticated, async (req, res) => {
     try {
+      if (!(await hasPermission(req, "episodes", "canEdit"))) {
+        return res.status(403).json({ message: "You do not have permission to edit episodes" });
+      }
       const tid = await getDefaultTenantId(req);
       const episodeId = Number(req.params.id);
       const oldEpisode = await storage.getEpisode(episodeId, tid);
@@ -8521,6 +8534,8 @@ export async function registerRoutes(
         originalQuotedAmount: baseAmount,
         finalQuote: baseAmount,
         finalEstimatedAmount: baseAmount,
+        discountRequestedAt: new Date(),
+        discountEscalatedAt: null,
       };
 
       await storage.updateEpisode(episodeId, tid, updates);
@@ -8557,11 +8572,11 @@ export async function registerRoutes(
             `${userName} requested ${calcPercent}% discount (₹${calcAmount.toLocaleString("en-IN")}) for ${patientName}. Please review and approve or reject.`,
             { entityType: "episode", entityId: episodeId, link: `/transactions/${episodeId}` }
           );
-          // Email approvers
-          const approverEmails = await db.select({ email: crmUsers.email, name: crmUsers.name })
+          // Email + SMS approvers
+          const approverDetails = await db.select({ email: crmUsers.email, name: crmUsers.name, phone: crmUsers.phone })
             .from(crmUsers)
             .where(inArray(crmUsers.id, approverIds));
-          for (const approver of approverEmails) {
+          for (const approver of approverDetails) {
             if (approver.email) {
               sendDiscountApprovalEmail({
                 to: approver.email,
@@ -8573,6 +8588,17 @@ export async function registerRoutes(
                 discountAmount: calcAmount,
                 discountNotes: discountNotes.trim(),
               }).catch((e: any) => console.error("Discount email error:", e.message));
+            }
+            if (approver.phone) {
+              sendDiscountApprovalSMS({
+                phone: approver.phone,
+                approverName: approver.name || "Approver",
+                requestedBy: userName,
+                patientName,
+                episodeId,
+                discountPercent: calcPercent,
+                discountAmount: calcAmount,
+              }).catch((e: any) => console.error("Discount SMS error:", e.message));
             }
           }
         }
@@ -8788,6 +8814,56 @@ export async function registerRoutes(
       }
       const isApprover = await storage.isDiscountApprover(tid, crmUser.id);
       res.json({ canApprove: isApprover });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // DISCOUNT APPROVAL SLA SETTINGS
+  // =============================================
+
+  app.get("/api/settings/discount-sla", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const row = await pool.query(
+        `SELECT setting_value FROM tenant_settings WHERE tenant_id = $1 AND setting_key = 'discountApprovalSlaHours' LIMIT 1`,
+        [tid]
+      );
+      const slaHours = row.rows[0] ? parseInt(row.rows[0].setting_value, 10) : 4;
+      res.json({ discountApprovalSlaHours: isNaN(slaHours) ? 4 : slaHours });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.put("/api/settings/discount-sla", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admins can change SLA settings" });
+      }
+      const hours = Number(req.body.discountApprovalSlaHours);
+      if (!hours || hours < 1 || hours > 720) {
+        return res.status(400).json({ message: "SLA hours must be between 1 and 720" });
+      }
+      const existing = await pool.query(
+        `SELECT id FROM tenant_settings WHERE tenant_id = $1 AND setting_key = 'discountApprovalSlaHours' LIMIT 1`,
+        [tid]
+      );
+      if (existing.rows.length > 0) {
+        await pool.query(
+          `UPDATE tenant_settings SET setting_value = $1, modified_at = NOW() WHERE tenant_id = $2 AND setting_key = 'discountApprovalSlaHours'`,
+          [String(hours), tid]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO tenant_settings (tenant_id, setting_key, setting_value, setting_type, description) VALUES ($1, 'discountApprovalSlaHours', $2, 'number', 'Hours before discount approval escalates to Admin')`,
+          [tid, String(hours)]
+        );
+      }
+      res.json({ discountApprovalSlaHours: hours });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

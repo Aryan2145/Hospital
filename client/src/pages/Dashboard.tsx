@@ -41,7 +41,7 @@ function formatNumber(value: number) {
 }
 
 export default function Dashboard() {
-  const { crmUser, roleCode, isAdmin, isManager, isSysAdmin } = useCurrentUser();
+  const { crmUser, roleCode, isAdmin, isManager, isSysAdmin, isMisViewer } = useCurrentUser();
   const [, navigate] = useLocation();
 
   const { data: dashStats, isLoading } = useQuery<any>({
@@ -86,6 +86,27 @@ export default function Dashboard() {
   const lc = dashStats.leadCounts || {};
   const ec = dashStats.episodeCounts || {};
   const ac = dashStats.appointmentCounts || {};
+
+  if (isMisViewer) {
+    return (
+      <AppLayout>
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6">
+            <ManagementDashboard
+              lc={lc} ec={ec} ac={ac}
+              dashStats={dashStats}
+              todayTasks={todayTasks}
+              dormantLeads={dormantLeads}
+              intelligenceStats={intelligenceStats}
+              navigate={navigate}
+              userName={dashStats.userName}
+              readOnly
+            />
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   if (isAdmin) {
     return (
@@ -143,10 +164,13 @@ export default function Dashboard() {
   );
 }
 
-function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, intelligenceStats, navigate, userName }: any) {
+function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, intelligenceStats, navigate, userName, readOnly }: any) {
   const totalLeads = Number(lc.total_leads) || 0;
   const pipelineValue = Number(ec.pipeline_value) || 0;
   const realizedRevenue = Number(ec.realized_revenue) || 0;
+
+  // readOnly = true means MIS_VIEWER: show aggregated stats only, no drill-down links
+  const nav = readOnly ? undefined : navigate;
 
   const pipelineData = [
     { name: "Raw Lead", count: Number(lc.raw_leads) || 0, color: "#94a3b8", status: "Raw Lead Captured" },
@@ -164,34 +188,40 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground" data-testid="text-dashboard-title">
-            Management Dashboard
+            {readOnly ? "Analytics Overview" : "Management Dashboard"}
           </h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Welcome back, {userName} — Hospital CRM Overview</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {readOnly ? `Welcome back, ${userName} — Aggregated Analytics View` : `Welcome back, ${userName} — Hospital CRM Overview`}
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="outline" className="text-xs"><Building2 className="w-3 h-3 mr-1" />Management View</Badge>
+          {readOnly ? (
+            <Badge variant="outline" className="text-xs"><BarChart3 className="w-3 h-3 mr-1" />Analytics View</Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs"><Building2 className="w-3 h-3 mr-1" />Management View</Badge>
+          )}
           <Badge variant="secondary" className="text-xs">Live Data</Badge>
         </div>
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
-        <KPICard title="Total Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} onClick={() => navigate("/leads")} />
-        <KPICard title="Active Episodes" value={(Number(ec.active_episodes) || 0).toString()} icon={FileText} trend={`${Number(ec.surgeries) || 0} surgeries`} up onClick={() => navigate("/leads?view=list")} />
-        <KPICard title="Pipeline Value" value={`Rs.${formatINR(pipelineValue)}`} icon={IndianRupee} trend={`${Number(ec.total_episodes) || 0} total episodes`} onClick={() => navigate("/leads?view=list")} />
-        <KPICard title="Revenue Realized" value={`Rs.${formatINR(realizedRevenue)}`} icon={IndianRupee} trend={`${Number(ec.completed) || 0} completed`} up={realizedRevenue > 0} onClick={() => navigate("/leads?status=Closed Won&view=list")} />
-        <KPICard title="Today Appointments" value={(Number(ac.today_appointments) || 0).toString()} icon={CalendarCheck} trend={`${Number(ac.today_pending) || 0} pending`} onClick={() => navigate("/appointments")} />
+        <KPICard title="Total Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} onClick={nav ? () => nav("/leads") : undefined} />
+        <KPICard title="Active Episodes" value={(Number(ec.active_episodes) || 0).toString()} icon={FileText} trend={`${Number(ec.surgeries) || 0} surgeries`} up onClick={nav ? () => nav("/leads?view=list") : undefined} />
+        <KPICard title="Pipeline Value" value={`Rs.${formatINR(pipelineValue)}`} icon={IndianRupee} trend={`${Number(ec.total_episodes) || 0} total episodes`} onClick={nav ? () => nav("/leads?view=list") : undefined} />
+        <KPICard title="Revenue Realized" value={`Rs.${formatINR(realizedRevenue)}`} icon={IndianRupee} trend={`${Number(ec.completed) || 0} completed`} up={realizedRevenue > 0} onClick={nav ? () => nav("/leads?status=Closed Won&view=list") : undefined} />
+        <KPICard title="Today Appointments" value={(Number(ac.today_appointments) || 0).toString()} icon={CalendarCheck} trend={`${Number(ac.today_pending) || 0} pending`} onClick={nav ? () => nav("/appointments") : undefined} />
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Hot Leads" value={Number(lc.hot_leads) || 0} icon={Flame} color="text-orange-500" onClick={() => navigate("/leads?filter=hot&view=list")} />
-        <StatCard label="Dormant Leads" value={Number(lc.dormant_leads) || 0} icon={Snowflake} color="text-blue-400" onClick={() => navigate("/leads?filter=dormant&view=list")} />
-        <StatCard label="Overdue Actions" value={(Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)} icon={AlertTriangle} color="text-red-500" onClick={() => navigate("/leads?filter=overdue&view=list")} />
-        <StatCard label="Insurance Cases" value={Number(ec.insurance_cases) || 0} icon={ShieldCheck} color="text-cyan-500" onClick={() => navigate("/leads?view=list")} />
+        <StatCard label="Hot Leads" value={Number(lc.hot_leads) || 0} icon={Flame} color="text-orange-500" onClick={nav ? () => nav("/leads?filter=hot&view=list") : undefined} />
+        <StatCard label="Dormant Leads" value={Number(lc.dormant_leads) || 0} icon={Snowflake} color="text-blue-400" onClick={nav ? () => nav("/leads?filter=dormant&view=list") : undefined} />
+        <StatCard label="Overdue Actions" value={(Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)} icon={AlertTriangle} color="text-red-500" onClick={nav ? () => nav("/leads?filter=overdue&view=list") : undefined} />
+        <StatCard label="Insurance Cases" value={Number(ec.insurance_cases) || 0} icon={ShieldCheck} color="text-cyan-500" onClick={nav ? () => nav("/leads?view=list") : undefined} />
       </div>
 
-      <MyTodayAndOverdueSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />
+      {!readOnly && <MyTodayAndOverdueSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />}
 
-      {(dormantLeads?.length || 0) > 0 && (
+      {!readOnly && (dormantLeads?.length || 0) > 0 && (
         <DormantLeadsCard dormantLeads={dormantLeads} navigate={navigate} />
       )}
 
@@ -214,7 +244,7 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
                 <XAxis type="number" tick={{ fontSize: 11 }} />
                 <YAxis dataKey="name" type="category" width={85} tick={{ fontSize: 11 }} />
                 <Tooltip cursor={{ fill: "transparent" }} />
-                <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={24} className="cursor-pointer" onClick={(_: any, index: number) => navigate(`/leads?status=${encodeURIComponent(pipelineData[index].status)}&view=list`)}>
+                <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={24} className={nav ? "cursor-pointer" : ""} onClick={nav ? (_: any, index: number) => nav(`/leads?status=${encodeURIComponent(pipelineData[index].status)}&view=list`) : undefined}>
                   {pipelineData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
@@ -320,9 +350,9 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
         </div>
       )}
 
-      {intelligenceStats && <IntelligenceOverview stats={intelligenceStats} navigate={navigate} />}
+      {intelligenceStats && !readOnly && <IntelligenceOverview stats={intelligenceStats} navigate={navigate} />}
 
-      <QuickActionsCard navigate={navigate} totalLeads={totalLeads} role="management" />
+      {!readOnly && <QuickActionsCard navigate={navigate} totalLeads={totalLeads} role="management" />}
     </>
   );
 }

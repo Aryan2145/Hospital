@@ -140,7 +140,27 @@ export function useCurrentUser() {
   const isClinical = roleCode === "DOCTOR" || roleCode === "MEDICAL_ASSISTANT";
   const isBilling = roleCode === "BILLING";
   const isInsurance = roleCode === "INSURANCE_DESK";
+  const isMisViewer = roleCode === "MIS_VIEWER";
   const tenantSuspended = data?.tenantSubscriptionStatus === "Suspended";
+
+  // Role-specific home page — where the user lands after login
+  const getDefaultHomePage = (): string => {
+    switch (roleCode) {
+      case "DOCTOR":
+      case "MEDICAL_ASSISTANT":
+      case "RECEPTIONIST":
+        return "/appointments";
+      case "TELECALLER":
+        return "/leads";
+      case "BILLING":
+      case "INSURANCE_DESK":
+        return "/transactions";
+      case "MIS_VIEWER":
+        return "/dashboard";
+      default:
+        return "/";
+    }
+  };
 
   // Tab names: clinical, financial, insurance, family
   const canViewEpisodeTab = (tab: string): boolean => {
@@ -187,8 +207,10 @@ export function useCurrentUser() {
     isClinical,
     isBilling,
     isInsurance,
+    isMisViewer,
     tenantSuspended,
     canViewPage,
     canViewEpisodeTab,
+    getDefaultHomePage,
   };
 }
