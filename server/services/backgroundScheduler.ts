@@ -100,8 +100,9 @@ async function escalateOverdueDiscounts(tenantId: number, tenantName: string): P
     // Find overdue pending discounts (requested but not yet escalated, past SLA window)
     const overdue = await pool.query(
       `SELECT e.id, e.discount_percent, e.discount_amount, e.discount_notes, e.discount_requested_at,
-              p.name AS patient_name
+              COALESCE(l.name, CONCAT(p.first_name, ' ', p.last_name)) AS patient_name
        FROM episodes e
+       LEFT JOIN leads l ON e.lead_id = l.id
        LEFT JOIN patients p ON e.patient_id = p.id
        WHERE e.tenant_id = $1
          AND e.discount_status = 'Pending'

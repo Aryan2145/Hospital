@@ -648,6 +648,16 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
                   ))}
                 </div>
               </div>
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">System</h3>
+                <div className="flex items-start gap-3 p-3 rounded-lg border bg-gray-50/60">
+                  <div className="flex-1">
+                    <span className="text-sm font-semibold text-foreground">System Admin </span>
+                    <span className="text-xs text-muted-foreground font-mono">(SYS_ADMIN)</span>
+                    <p className="text-xs text-muted-foreground mt-0.5">Platform-level administrator managed by the software provider. Manages all hospitals (tenants), subscriptions, and system-wide settings via a separate Admin Panel. Not a hospital-level user — hospital staff will not be assigned this role.</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
           <section>
@@ -3204,6 +3214,7 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               When creating or editing a user, select the role that matches their job function. The CRM has 12 roles across four functional groups:
             </p>
             <FieldTable fields={[
+              { field: "SYS_ADMIN", desc: "Platform-level administrator. Manages all hospitals (tenants), subscriptions, and system-wide settings. Accesses a separate Admin Panel — not a hospital user." },
               { field: "Admin", desc: "Full hospital-level access. Manages users, configurations, master data, branding, and access control. Sees all data across branches." },
               { field: "Manager", desc: "Team leader. Views team performance, overdue tasks, and lead assignments. Typically Branch or All scope." },
               { field: "MIS Viewer", desc: "Analytics-only. Read-only access to the Management Dashboard. Cannot open individual records." },
