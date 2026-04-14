@@ -4939,14 +4939,25 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const includeInactive = req.query.includeInactive === "true";
+      const sessionUser = await getSessionCrmUserWithRole(req);
+      const isSysAdmin = sessionUser?.roleCode === "SYS_ADMIN";
       if (includeInactive) {
-        const sessionUser = await getSessionCrmUserWithRole(req);
-        if (!sessionUser || (sessionUser.roleCode !== "SYS_ADMIN" && sessionUser.roleCode !== "ADMIN")) {
+        if (!sessionUser || (!isSysAdmin && sessionUser.roleCode !== "ADMIN")) {
           return res.status(403).json({ message: "Admin access required to view inactive users" });
         }
       }
       const users = await storage.getCrmUsers(tid);
-      const filtered = users.filter(u => u.code !== "SUPERADMIN" && (includeInactive ? true : u.isActive !== false));
+      // Also fetch SYS_ADMIN role IDs so we can exclude those users from non-SYS_ADMIN views
+      const sysAdminRoleIds = isSysAdmin ? new Set<number>() : new Set(
+        (await db.select({ id: systemRoles.id }).from(systemRoles)
+          .where(and(eq(systemRoles.tenantId, tid), eq(systemRoles.code, "SYS_ADMIN"))))
+          .map(r => r.id)
+      );
+      const filtered = users.filter(u =>
+        u.code !== "SUPERADMIN" &&
+        (isSysAdmin || !u.systemRoleId || !sysAdminRoleIds.has(u.systemRoleId)) &&
+        (includeInactive ? true : u.isActive !== false)
+      );
       res.json(filtered);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
@@ -8597,7 +8608,7 @@ export async function registerRoutes(
             "discount_request",
             "Discount Approval Required",
             `${userName} requested ${calcPercent}% discount (₹${calcAmount.toLocaleString("en-IN")}) for ${patientName}. Please review and approve or reject.`,
-            { entityType: "episode", entityId: episodeId, link: `/transactions/${episodeId}` }
+            { entityType: "episode", entityId: episodeId, link: `/episodes/${episodeId}` }
           );
           // Email + SMS approvers
           const approverDetails = await db.select({ email: crmUsers.email, name: crmUsers.name, phone: crmUsers.phone })

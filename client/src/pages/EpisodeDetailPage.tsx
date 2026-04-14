@@ -1420,18 +1420,15 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
   const handlePercentChange = (pct: number) => {
     const clamped = Math.min(100, Math.max(0, pct));
     setLocalDiscountPercent(clamped);
-    setLocalDiscountAmount(Math.round((localInitialQuote * clamped) / 100));
   };
 
   const handleAmountChange = (amt: number) => {
     const clamped = Math.min(localInitialQuote, Math.max(0, amt));
     setLocalDiscountAmount(clamped);
-    setLocalDiscountPercent(localInitialQuote > 0 ? Math.round((clamped / localInitialQuote) * 100) : 0);
   };
 
   const handleInitialQuoteChange = (val: number) => {
     setLocalInitialQuote(val);
-    setLocalDiscountAmount(Math.round((val * localDiscountPercent) / 100));
   };
 
   const submitDiscount = useMutation({
