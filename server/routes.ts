@@ -520,8 +520,8 @@ async function seedDatabase() {
     await db.insert(systemRoles).values({ tenantId: tid, code: "SYS_ADMIN", name: "System Admin", status: "Active", displayOrder: 0 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "ADMIN", name: "Admin", status: "Active", displayOrder: 1 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "MANAGER", name: "Manager", status: "Active", displayOrder: 2 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "COUNSELLOR", name: "Counsellor", status: "Active", displayOrder: 3 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "PATIENT_COORDINATOR", name: "Patient Coordinator", status: "Active", displayOrder: 4 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "PATIENT_COORDINATOR", name: "Patient Coordinator", status: "Active", displayOrder: 3 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "COUNSELLOR", name: "Counsellor", status: "Active", displayOrder: 4 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "TELECALLER", name: "Telecaller", status: "Active", displayOrder: 5 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "RECEPTIONIST", name: "Receptionist", status: "Active", displayOrder: 6 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "DOCTOR", name: "Doctor", status: "Active", displayOrder: 7 });
@@ -4498,14 +4498,21 @@ export async function registerRoutes(
     }
   });
 
-  app.get(api.masters.list.path, isAuthenticated, async (req, res) => {
+  app.get(api.masters.list.path, isAuthenticated, async (req: any, res) => {
     const tableName = req.params.tableName as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
     try {
       const tid = await getDefaultTenantId(req);
-      const records = await storage.getMasterRecords(tableName, tid);
+      let records = await storage.getMasterRecords(tableName, tid);
+      if (tableName === "systemRoles") {
+        const sessionUser = await getSessionCrmUserWithRole(req);
+        const callerRoleCode = sessionUser?.roleCode ?? null;
+        if (callerRoleCode !== "SYS_ADMIN") {
+          records = records.filter((r: any) => r.code !== "SYS_ADMIN");
+        }
+      }
       res.json(records);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
@@ -4928,11 +4935,19 @@ export async function registerRoutes(
   // =============================================
   // CRM USER MANAGEMENT ROUTES
   // =============================================
-  app.get("/api/crm-users", isAuthenticated, async (req, res) => {
+  app.get("/api/crm-users", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId(req);
+      const includeInactive = req.query.includeInactive === "true";
+      if (includeInactive) {
+        const sessionUser = await getSessionCrmUserWithRole(req);
+        if (!sessionUser || (sessionUser.roleCode !== "SYS_ADMIN" && sessionUser.roleCode !== "ADMIN")) {
+          return res.status(403).json({ message: "Admin access required to view inactive users" });
+        }
+      }
       const users = await storage.getCrmUsers(tid);
-      res.json(users.filter(u => u.code !== "SUPERADMIN"));
+      const filtered = users.filter(u => u.code !== "SUPERADMIN" && (includeInactive ? true : u.isActive !== false));
+      res.json(filtered);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -5048,6 +5063,18 @@ export async function registerRoutes(
       await db.update(callyzerWebhookLogs).set({ matchedCrmUserId: null }).where(and(eq(callyzerWebhookLogs.tenantId, tid), eq(callyzerWebhookLogs.matchedCrmUserId, userId)));
       await storage.deleteCrmUser(userId, tid);
       res.status(204).send();
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/crm-users/:id/revive", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      if (!(await requireAdminRole(req, res, tid))) return;
+      const userId = Number(req.params.id);
+      const user = await storage.updateCrmUser(userId, tid, { isActive: true, status: "Active" });
+      res.json(user);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -11379,8 +11406,8 @@ async function provisionNewTenant(tid: number) {
   await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "SYS_ADMIN", name: "System Admin", status: "Active", displayOrder: 0 }));
   await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "ADMIN", name: "Admin", status: "Active", displayOrder: 1 }));
   await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "MANAGER", name: "Manager", status: "Active", displayOrder: 2 }));
-  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "COUNSELLOR", name: "Counsellor", status: "Active", displayOrder: 3 }));
-  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "PATIENT_COORDINATOR", name: "Patient Coordinator", status: "Active", displayOrder: 4 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "PATIENT_COORDINATOR", name: "Patient Coordinator", status: "Active", displayOrder: 3 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "COUNSELLOR", name: "Counsellor", status: "Active", displayOrder: 4 }));
   await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "TELECALLER", name: "Telecaller", status: "Active", displayOrder: 5 }));
   await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "RECEPTIONIST", name: "Receptionist", status: "Active", displayOrder: 6 }));
   await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "DOCTOR", name: "Doctor", status: "Active", displayOrder: 7 }));

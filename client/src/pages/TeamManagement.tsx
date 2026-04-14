@@ -12,10 +12,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import type { CrmUser, MasterRecord } from "@shared/schema";
 import {
   UserPlus, Search, ChevronDown, ChevronRight, Mail, Phone, Shield, Eye, EyeOff,
-  Users, UserCog, Network, List, Pencil, Trash2, KeyRound, Building2, Briefcase
+  Users, UserCog, Network, List, Pencil, Trash2, KeyRound, Building2, Briefcase, RotateCcw
 } from "lucide-react";
 
 type ViewMode = "list" | "tree";
@@ -140,8 +141,10 @@ function TreeNode({ user, allUsers, level = 0, onEdit, onDelete }: {
 
 export default function TeamManagement() {
   const { toast } = useToast();
+  const { isAdmin } = useCurrentUser();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showInactive, setShowInactive] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<CrmUser | null>(null);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -152,7 +155,12 @@ export default function TeamManagement() {
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
   const [formData, setFormData] = useState<UserFormData>({ ...EMPTY_FORM });
 
-  const { data: users = [], isLoading } = useQuery<CrmUser[]>({ queryKey: ["/api/crm-users"] });
+  const usersQueryKey = showInactive && isAdmin ? ["/api/crm-users", "includeInactive"] : ["/api/crm-users"];
+  const usersQueryUrl = showInactive && isAdmin ? "/api/crm-users?includeInactive=true" : "/api/crm-users";
+  const { data: users = [], isLoading } = useQuery<CrmUser[]>({
+    queryKey: usersQueryKey,
+    queryFn: () => fetch(usersQueryUrl, { credentials: "include" }).then(r => r.json()),
+  });
   const { data: roles = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/systemRoles"] });
   const { data: branches = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/branches"] });
   const { data: departments = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/administrativeDepartments"] });
@@ -196,6 +204,16 @@ export default function TeamManagement() {
       setPasswordDialogOpen(false);
       setPasswordTarget(null);
       setNewPassword("");
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const reviveMutation = useMutation({
+    mutationFn: (id: number) => apiRequest("POST", `/api/crm-users/${id}/revive`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm-users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm-users", "includeInactive"] });
+      toast({ title: "User reactivated" });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -383,6 +401,18 @@ export default function TeamManagement() {
             </div>
           </div>
 
+          {isAdmin && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowInactive(v => !v)}
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+                data-testid="button-toggle-inactive-users"
+              >
+                {showInactive ? "Hide inactive users" : "Show inactive users"}
+              </button>
+            </div>
+          )}
+
           {viewMode === "list" ? (
             <Card>
               <CardContent className="p-0">
@@ -402,53 +432,69 @@ export default function TeamManagement() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredUsers.map(user => (
-                        <tr key={user.id} className="border-b last:border-0 hover-elevate" data-testid={`row-user-${user.id}`}>
-                          <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
-                                {getInitials(user.name)}
+                      {filteredUsers.map(user => {
+                        const isInactive = user.isActive === false;
+                        return (
+                          <tr key={user.id} className={`border-b last:border-0 ${isInactive ? 'opacity-60 bg-muted/20' : 'hover-elevate'}`} data-testid={`row-user-${user.id}`}>
+                            <td className="p-3">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isInactive ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'}`}>
+                                  {getInitials(user.name)}
+                                </div>
+                                <span className={`font-medium ${isInactive ? 'text-muted-foreground line-through' : ''}`}>{user.name}</span>
                               </div>
-                              <span className="font-medium">{user.name}</span>
-                            </div>
-                          </td>
-                          <td className="p-3 text-muted-foreground">{user.code}</td>
-                          <td className="p-3">
-                            {getRoleName(user.systemRoleId) ? (
-                              <Badge variant="outline" className="text-xs">{getRoleName(user.systemRoleId)}</Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">-</span>
-                            )}
-                          </td>
-                          <td className="p-3">
-                            <div className="space-y-0.5">
-                              {user.email && <div className="flex items-center gap-1 text-xs text-muted-foreground"><Mail className="w-3 h-3" />{user.email}</div>}
-                              {user.phone && <div className="flex items-center gap-1 text-xs text-muted-foreground"><Phone className="w-3 h-3" />{user.phone}</div>}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            {getBranchName(user.branchId) ? (
-                              <span className="flex items-center gap-1 text-xs text-muted-foreground"><Building2 className="w-3 h-3" />{getBranchName(user.branchId)}</span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">-</span>
-                            )}
-                          </td>
-                          <td className="p-3 text-muted-foreground text-xs">{getManagerName(user.reportingTo)}</td>
-                          <td className="p-3"><AccessScopeBadge scope={user.accessScopeType} /></td>
-                          <td className="p-3">
-                            <Badge variant={user.status === "Active" ? "default" : "secondary"}>
-                              {user.status}
-                            </Badge>
-                          </td>
-                          <td className="p-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button size="icon" variant="ghost" onClick={() => { setPasswordTarget(user); setNewPassword(""); setPasswordDialogOpen(true); }} title="Set Password" data-testid={`button-password-user-${user.id}`}><KeyRound className="w-3.5 h-3.5" /></Button>
-                              <Button size="icon" variant="ghost" onClick={() => openEdit(user)} data-testid={`button-edit-user-${user.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
-                              <Button size="icon" variant="ghost" onClick={() => confirmDelete(user.id)} data-testid={`button-delete-user-${user.id}`}><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="p-3 text-muted-foreground">{user.code}</td>
+                            <td className="p-3">
+                              {getRoleName(user.systemRoleId) ? (
+                                <Badge variant="outline" className="text-xs">{getRoleName(user.systemRoleId)}</Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">-</span>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <div className="space-y-0.5">
+                                {user.email && <div className="flex items-center gap-1 text-xs text-muted-foreground"><Mail className="w-3 h-3" />{user.email}</div>}
+                                {user.phone && <div className="flex items-center gap-1 text-xs text-muted-foreground"><Phone className="w-3 h-3" />{user.phone}</div>}
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              {getBranchName(user.branchId) ? (
+                                <span className="flex items-center gap-1 text-xs text-muted-foreground"><Building2 className="w-3 h-3" />{getBranchName(user.branchId)}</span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">-</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-muted-foreground text-xs">{getManagerName(user.reportingTo)}</td>
+                            <td className="p-3"><AccessScopeBadge scope={user.accessScopeType} /></td>
+                            <td className="p-3">
+                              <Badge variant={user.status === "Active" ? "default" : "secondary"}>
+                                {user.status}
+                              </Badge>
+                            </td>
+                            <td className="p-3 text-right">
+                              {isInactive ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => reviveMutation.mutate(user.id)}
+                                  disabled={reviveMutation.isPending}
+                                  className="text-green-700 border-green-300 hover:bg-green-50 text-xs h-7 px-2"
+                                  data-testid={`button-revive-user-${user.id}`}
+                                >
+                                  <RotateCcw className="w-3 h-3 mr-1" />Revive
+                                </Button>
+                              ) : (
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button size="icon" variant="ghost" onClick={() => { setPasswordTarget(user); setNewPassword(""); setPasswordDialogOpen(true); }} title="Set Password" data-testid={`button-password-user-${user.id}`}><KeyRound className="w-3.5 h-3.5" /></Button>
+                                  <Button size="icon" variant="ghost" onClick={() => openEdit(user)} data-testid={`button-edit-user-${user.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
+                                  <Button size="icon" variant="ghost" onClick={() => confirmDelete(user.id)} data-testid={`button-delete-user-${user.id}`}><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                       {filteredUsers.length === 0 && (
                         <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">No users found.</td></tr>
                       )}
