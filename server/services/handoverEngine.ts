@@ -34,16 +34,16 @@ async function findTeamUser(tenantId: number, team: string, branchId?: number | 
   }
 
   const roleMapping: Record<string, string[]> = {
-    "Telecalling": ["AGENT", "COUNSELLOR"],
-    "Front Office": ["AGENT", "MANAGER"],
+    "Telecalling": ["PATIENT_COORDINATOR", "COUNSELLOR"],
+    "Front Office": ["PATIENT_COORDINATOR", "MANAGER"],
     "Financial": ["COUNSELLOR", "MANAGER"],
     "Insurance": ["COUNSELLOR", "MANAGER"],
     "OT / IP Desk": ["MANAGER"],
-    "Post Care": ["AGENT", "COUNSELLOR"],
-    "Referral": ["AGENT", "COUNSELLOR"],
+    "Post Care": ["PATIENT_COORDINATOR", "COUNSELLOR"],
+    "Referral": ["PATIENT_COORDINATOR", "COUNSELLOR"],
   };
 
-  const roles = roleMapping[team] || ["AGENT"];
+  const roles = roleMapping[team] || ["PATIENT_COORDINATOR"];
   const rolePlaceholders = roles.map((_, i) => `$${i + 3}`).join(", ");
 
   let query = `

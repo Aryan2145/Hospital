@@ -479,13 +479,13 @@ function ManagerDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, userNam
 
 function IndividualDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, userName, roleCode }: any) {
   const totalLeads = Number(lc.total_leads) || 0;
-  const roleLabel = roleCode === "COUNSELLOR" ? "Counsellor" : roleCode === "AGENT" ? "Tele-Caller" : "Team Member";
+  const roleLabel = roleCode === "COUNSELLOR" ? "Counsellor" : roleCode === "PATIENT_COORDINATOR" ? "Patient Coordinator" : "Team Member";
   const perf = dashStats.individualPerformance || {};
   const callStats = perf.callStats || {};
   const leadSources = perf.leadSourceBreakdown || [];
   const myEpStats = perf.myEpisodeStats || {};
   const funnel = perf.conversionFunnel || {};
-  const isAgent = roleCode === "AGENT";
+  const isAgent = roleCode === "PATIENT_COORDINATOR";
   const isCounsellor = roleCode === "COUNSELLOR";
 
   const funnelStages = [

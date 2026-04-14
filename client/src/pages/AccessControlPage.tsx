@@ -25,7 +25,7 @@ const ROLE_CODES = [
   { code: "ADMIN", label: "Admin" },
   { code: "MANAGER", label: "Manager" },
   { code: "COUNSELLOR", label: "Counsellor" },
-  { code: "AGENT", label: "Patient Coordinator" },
+  { code: "PATIENT_COORDINATOR", label: "Patient Coordinator" },
   { code: "TELECALLER", label: "Telecaller" },
   { code: "RECEPTIONIST", label: "Receptionist" },
   { code: "BILLING", label: "Billing Executive" },

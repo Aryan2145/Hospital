@@ -88,7 +88,7 @@ export function useCurrentUser() {
           "transactions", "quotation", "insurance", "reports",
         ].includes(page);
 
-      case "AGENT":
+      case "PATIENT_COORDINATOR":
         return [
           "dashboard", "leads", "episodes", "appointments",
           "transactions", "reports",
@@ -169,7 +169,7 @@ export function useCurrentUser() {
     if (["SYS_ADMIN", "ADMIN", "MANAGER", "COUNSELLOR"].includes(roleCode)) return true;
 
     switch (roleCode) {
-      case "AGENT":
+      case "PATIENT_COORDINATOR":
         // Can see clinical and family but NOT financial or insurance
         return ["clinical", "family"].includes(tab);
       case "BILLING":

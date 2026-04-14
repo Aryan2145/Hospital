@@ -124,7 +124,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Record<string, { canView: boolean
     insurance: { canView: true, canCreate: true, canEdit: true, canDelete: false },
     reports: { canView: true, canCreate: false, canEdit: false, canDelete: false },
   },
-  AGENT: {
+  PATIENT_COORDINATOR: {
     dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
     leads: { canView: true, canCreate: true, canEdit: true, canDelete: false },
     episodes: { canView: true, canCreate: false, canEdit: false, canDelete: false },
@@ -516,18 +516,18 @@ async function seedDatabase() {
     await db.insert(employmentTypes).values({ tenantId: tid, code: "PT", name: "Part Time", status: "Active", displayOrder: 2 });
     await db.insert(employmentTypes).values({ tenantId: tid, code: "VISITING", name: "Visiting Consultant", status: "Active", displayOrder: 3 });
 
-    // System Roles
+    // System Roles (12 canonical roles)
     await db.insert(systemRoles).values({ tenantId: tid, code: "SYS_ADMIN", name: "System Admin", status: "Active", displayOrder: 0 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "ADMIN", name: "Admin", status: "Active", displayOrder: 1 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "MANAGER", name: "Manager", status: "Active", displayOrder: 2 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "AGENT", name: "Patient Coordinator", status: "Active", displayOrder: 3 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "COUNSELLOR", name: "Counsellor", status: "Active", displayOrder: 4 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "COUNSELLOR", name: "Counsellor", status: "Active", displayOrder: 3 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "PATIENT_COORDINATOR", name: "Patient Coordinator", status: "Active", displayOrder: 4 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "TELECALLER", name: "Telecaller", status: "Active", displayOrder: 5 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "RECEPTIONIST", name: "Receptionist", status: "Active", displayOrder: 6 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "BILLING", name: "Billing Executive", status: "Active", displayOrder: 7 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "INSURANCE_DESK", name: "Insurance Desk", status: "Active", displayOrder: 8 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "DOCTOR", name: "Doctor", status: "Active", displayOrder: 9 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "MEDICAL_ASSISTANT", name: "Medical Assistant", status: "Active", displayOrder: 10 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "DOCTOR", name: "Doctor", status: "Active", displayOrder: 7 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "MEDICAL_ASSISTANT", name: "Medical Assistant", status: "Active", displayOrder: 8 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "BILLING", name: "Billing Executive", status: "Active", displayOrder: 9 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "INSURANCE_DESK", name: "Insurance Desk", status: "Active", displayOrder: 10 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "MIS_VIEWER", name: "MIS Viewer", status: "Active", displayOrder: 11 });
     // Seed role permissions for all roles
     await seedRolePermissions(tid);
@@ -638,7 +638,7 @@ async function seedDatabase() {
     // ── CRM Users (representative team) ──
     const [adminRoleRec] = await db.select().from(systemRoles).where(and(eq(systemRoles.code, "ADMIN"), eq(systemRoles.tenantId, tid)));
     const [mgrRoleRec] = await db.select().from(systemRoles).where(and(eq(systemRoles.code, "MANAGER"), eq(systemRoles.tenantId, tid)));
-    const [agentRoleRec] = await db.select().from(systemRoles).where(and(eq(systemRoles.code, "AGENT"), eq(systemRoles.tenantId, tid)));
+    const [agentRoleRec] = await db.select().from(systemRoles).where(and(eq(systemRoles.code, "PATIENT_COORDINATOR"), eq(systemRoles.tenantId, tid)));
     const [counsellorRoleRec] = await db.select().from(systemRoles).where(and(eq(systemRoles.code, "COUNSELLOR"), eq(systemRoles.tenantId, tid)));
 
     const [crmHead] = await db.insert(crmUsers).values({
@@ -1943,7 +1943,7 @@ export async function registerRoutes(
           }
           if (!(input as any).ownerTeam) {
             const roleTeamMap: Record<string, string> = {
-              AGENT: "Telecalling", COUNSELLOR: "Front Office", MANAGER: "Management", ADMIN: "Management"
+              PATIENT_COORDINATOR: "Telecalling", COUNSELLOR: "Front Office", MANAGER: "Management", ADMIN: "Management"
             };
             (input as any).ownerTeam = roleTeamMap[creatingUser.role_code] || "Telecalling";
           }
@@ -8339,7 +8339,7 @@ export async function registerRoutes(
     SYS_ADMIN: "Super Admin",
     ADMIN: "Medical Admin",
     MANAGER: "Doctor / Manager",
-    AGENT: "Agent",
+    PATIENT_COORDINATOR: "Patient Coordinator",
     COUNSELLOR: "Counsellor",
   };
 
@@ -9179,7 +9179,7 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const crmUserId = req.session?.crmUserId;
-      let roleCode = "AGENT";
+      let roleCode = "PATIENT_COORDINATOR";
       let userName = "User";
       if (crmUserId) {
         const [userRow] = (await pool.query(
@@ -9189,7 +9189,7 @@ export async function registerRoutes(
           [crmUserId, tid]
         )).rows;
         if (userRow) {
-          roleCode = userRow.role_code || "AGENT";
+          roleCode = userRow.role_code || "PATIENT_COORDINATOR";
           userName = userRow.name || "User";
         }
       }
@@ -9337,7 +9337,7 @@ export async function registerRoutes(
           LEFT JOIN system_roles sr ON cu.system_role_id = sr.id
           LEFT JOIN leads l ON (l.assigned_crm_user_id = cu.id OR l.assigned_to = cu.id::text) AND l.tenant_id = $1
           WHERE cu.tenant_id = $1 AND cu.is_active = true
-            AND sr.code IN ('AGENT', 'COUNSELLOR', 'MANAGER')
+            AND sr.code IN ('PATIENT_COORDINATOR', 'COUNSELLOR', 'MANAGER')
           GROUP BY cu.id, cu.name, sr.code
           ORDER BY total_leads DESC`,
           [tid, todayISO]
@@ -11256,17 +11256,138 @@ export async function registerRoutes(
   await ensureCostHeadsExist();
   await ensureCrmTeamDepartments();
   await consolidateDuplicateTeams();
+  await migrateAgentToPatientCoordinator();
   return httpServer;
+}
+
+const CANONICAL_ROLE_CODES = [
+  "ADMIN", "MANAGER", "COUNSELLOR", "PATIENT_COORDINATOR", "TELECALLER",
+  "RECEPTIONIST", "DOCTOR", "MEDICAL_ASSISTANT", "BILLING", "INSURANCE_DESK",
+  "MIS_VIEWER", "SYS_ADMIN",
+];
+
+async function migrateAgentToPatientCoordinator() {
+  try {
+    const allTenants = await pool.query(`SELECT id FROM tenants ORDER BY id`);
+    for (const t of allTenants.rows) {
+      const tid = t.id;
+
+      // Ensure PATIENT_COORDINATOR role exists for this tenant
+      const [existingPc] = (await pool.query(
+        `SELECT id FROM system_roles WHERE tenant_id = $1 AND code = 'PATIENT_COORDINATOR'`,
+        [tid]
+      )).rows;
+      let pcRoleId: number;
+      if (existingPc) {
+        pcRoleId = existingPc.id;
+      } else {
+        const [inserted] = (await pool.query(
+          `INSERT INTO system_roles (tenant_id, code, name, status, display_order) VALUES ($1, 'PATIENT_COORDINATOR', 'Patient Coordinator', 'Active', 4) RETURNING id`,
+          [tid]
+        )).rows;
+        pcRoleId = inserted.id;
+        console.log(`[Migration] Created PATIENT_COORDINATOR role for tenant ${tid}`);
+      }
+
+      // Find AGENT role for this tenant
+      const [agentRole] = (await pool.query(
+        `SELECT id FROM system_roles WHERE tenant_id = $1 AND code = 'AGENT'`,
+        [tid]
+      )).rows;
+      if (agentRole) {
+        const agentRoleId = agentRole.id;
+        // Move all users from AGENT to PATIENT_COORDINATOR
+        const updated = await pool.query(
+          `UPDATE crm_users SET system_role_id = $1 WHERE tenant_id = $2 AND system_role_id = $3`,
+          [pcRoleId, tid, agentRoleId]
+        );
+        if (updated.rowCount && updated.rowCount > 0) {
+          console.log(`[Migration] Migrated ${updated.rowCount} user(s) from AGENT to PATIENT_COORDINATOR for tenant ${tid}`);
+        }
+        // Delete AGENT role (no users left referencing it)
+        await pool.query(`DELETE FROM system_roles WHERE id = $1`, [agentRoleId]);
+        console.log(`[Migration] Deleted AGENT role for tenant ${tid}`);
+      }
+
+      // Remove any non-canonical roles that have no users
+      const nonCanonical = (await pool.query(
+        `SELECT sr.id, sr.code, COUNT(cu.id) as user_count
+         FROM system_roles sr
+         LEFT JOIN crm_users cu ON cu.system_role_id = sr.id AND cu.tenant_id = $1
+         WHERE sr.tenant_id = $1 AND sr.code NOT IN (${CANONICAL_ROLE_CODES.map((_, i) => `$${i + 2}`).join(",")})
+         GROUP BY sr.id, sr.code`,
+        [tid, ...CANONICAL_ROLE_CODES]
+      )).rows;
+
+      for (const row of nonCanonical) {
+        if (parseInt(row.user_count, 10) === 0) {
+          await pool.query(`DELETE FROM system_roles WHERE id = $1`, [row.id]);
+          console.log(`[Migration] Removed unused non-canonical role '${row.code}' for tenant ${tid}`);
+        } else {
+          console.warn(`[Migration] WARNING: Non-canonical role '${row.code}' (tenant ${tid}) still has ${row.user_count} user(s) — not deleted`);
+        }
+      }
+
+      // Seed role permissions for PATIENT_COORDINATOR if not already seeded
+      for (const module of ["dashboard", "leads", "episodes", "appointments", "campaigns", "transactions", "team", "masters", "connectors", "branding", "settings", "quotation", "insurance", "reports"]) {
+        const p = DEFAULT_ROLE_PERMISSIONS["PATIENT_COORDINATOR"]?.[module] || { canView: false, canCreate: false, canEdit: false, canDelete: false };
+        await db.insert(rolePermissions)
+          .values({ tenantId: tid, roleCode: "PATIENT_COORDINATOR", module, canView: p.canView, canCreate: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete })
+          .onConflictDoNothing();
+      }
+      // Remove any AGENT role_permissions rows
+      await pool.query(`DELETE FROM role_permissions WHERE tenant_id = $1 AND role_code = 'AGENT'`, [tid]);
+
+      // Update any other tables storing 'AGENT' as a role_code string
+      await pool.query(`UPDATE lead_merge_roles SET role_code = 'PATIENT_COORDINATOR' WHERE tenant_id = $1 AND role_code = 'AGENT'`, [tid]);
+      await pool.query(`UPDATE clinical_notes_edit_roles SET role_code = 'PATIENT_COORDINATOR' WHERE tenant_id = $1 AND role_code = 'AGENT'`, [tid]);
+
+      // Straggler check: verify no crm_users remain pointing to an AGENT system_role via system_role_id
+      // Note: crm_users has no direct role_code column — role code is derived from the system_roles FK join
+      const stragglers = (await pool.query(
+        `SELECT COUNT(*) as cnt FROM crm_users cu
+         JOIN system_roles sr ON cu.system_role_id = sr.id
+         WHERE cu.tenant_id = $1 AND sr.code = 'AGENT'`,
+        [tid]
+      )).rows[0];
+      if (parseInt(stragglers.cnt, 10) > 0) {
+        console.warn(`[Migration] WARNING: ${stragglers.cnt} crm_user(s) in tenant ${tid} still reference an AGENT system_role via system_role_id`);
+      } else {
+        console.log(`[Migration] Verified: 0 crm_users in tenant ${tid} reference an AGENT system_role`);
+      }
+
+      // Count active users now correctly assigned to PATIENT_COORDINATOR (verification)
+      const pcUserCount = (await pool.query(
+        `SELECT COUNT(*) as cnt FROM crm_users cu
+         JOIN system_roles sr ON cu.system_role_id = sr.id
+         WHERE cu.tenant_id = $1 AND sr.code = 'PATIENT_COORDINATOR' AND cu.is_active = true`,
+        [tid]
+      )).rows[0];
+      if (parseInt(pcUserCount.cnt, 10) > 0) {
+        console.log(`[Migration] Tenant ${tid}: ${pcUserCount.cnt} active user(s) assigned to PATIENT_COORDINATOR`);
+      }
+    }
+    console.log("[Migration] AGENT → PATIENT_COORDINATOR migration complete");
+  } catch (err) {
+    console.error("[Migration] Error during AGENT → PATIENT_COORDINATOR migration:", err);
+  }
 }
 
 async function provisionNewTenant(tid: number) {
   const safe = async (fn: () => Promise<any>) => { try { await fn(); } catch (_) {} };
 
   await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "SYS_ADMIN", name: "System Admin", status: "Active", displayOrder: 0 }));
-  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "ADMIN", name: "CRM Admin", status: "Active", displayOrder: 1 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "ADMIN", name: "Admin", status: "Active", displayOrder: 1 }));
   await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "MANAGER", name: "Manager", status: "Active", displayOrder: 2 }));
-  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "AGENT", name: "Agent", status: "Active", displayOrder: 3 }));
-  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "COUNSELLOR", name: "Counsellor", status: "Active", displayOrder: 4 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "COUNSELLOR", name: "Counsellor", status: "Active", displayOrder: 3 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "PATIENT_COORDINATOR", name: "Patient Coordinator", status: "Active", displayOrder: 4 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "TELECALLER", name: "Telecaller", status: "Active", displayOrder: 5 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "RECEPTIONIST", name: "Receptionist", status: "Active", displayOrder: 6 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "DOCTOR", name: "Doctor", status: "Active", displayOrder: 7 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "MEDICAL_ASSISTANT", name: "Medical Assistant", status: "Active", displayOrder: 8 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "BILLING", name: "Billing Executive", status: "Active", displayOrder: 9 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "INSURANCE_DESK", name: "Insurance Desk", status: "Active", displayOrder: 10 }));
+  await safe(() => db.insert(systemRoles).values({ tenantId: tid, code: "MIS_VIEWER", name: "MIS Viewer", status: "Active", displayOrder: 11 }));
 
   const teamList = [
     { code: "MKT", name: "Marketing", displayOrder: 1 },
@@ -11565,7 +11686,7 @@ async function ensureSuperAdmin() {
     const demoUsers = [
       { code: "DEMO-ADM", name: "Dr. Anil Mehta", email: "admin@demohospital.com", phone: "+919876500001", roleCode: "ADMIN" },
       { code: "DEMO-MGR", name: "Neha Kapoor", email: "manager@demohospital.com", phone: "+919876500002", roleCode: "MANAGER" },
-      { code: "DEMO-AGT", name: "Ravi Joshi", email: "agent@demohospital.com", phone: "+919876500003", roleCode: "AGENT" },
+      { code: "DEMO-AGT", name: "Ravi Joshi", email: "agent@demohospital.com", phone: "+919876500003", roleCode: "PATIENT_COORDINATOR" },
       { code: "DEMO-CNS", name: "Priya Desai", email: "counsellor@demohospital.com", phone: "+919876500004", roleCode: "COUNSELLOR" },
       { code: "NEHA-S", name: "Neha Sharma", email: "neha.sharma@viroc.in", phone: "+919227473123", roleCode: "MANAGER" },
     ];
@@ -12308,14 +12429,14 @@ async function seedGovernanceMasterData() {
       if (parseInt(existing.rows[0].cnt, 10) > 0) continue;
 
       await db.insert(slaRules).values([
-        { tenantId: tid, code: "SLA-LEAD-CONTACT", name: "Lead First Contact SLA", triggerEvent: "Lead Created → First Contact Attempt", timeLimitMinutes: 30, appliesToRole: "AGENT", escalationRole: "MANAGER", status: "Active", displayOrder: 1 },
+        { tenantId: tid, code: "SLA-LEAD-CONTACT", name: "Lead First Contact SLA", triggerEvent: "Lead Created → First Contact Attempt", timeLimitMinutes: 30, appliesToRole: "PATIENT_COORDINATOR", escalationRole: "MANAGER", status: "Active", displayOrder: 1 },
         { tenantId: tid, code: "SLA-LEAD-QUALIFY", name: "Lead Qualification SLA", triggerEvent: "Lead Contacted → Qualified", timeLimitMinutes: 1440, appliesToRole: "COUNSELLOR", escalationRole: "MANAGER", status: "Active", displayOrder: 2 },
         { tenantId: tid, code: "SLA-APPT-BOOK", name: "Appointment Booking SLA", triggerEvent: "Lead Qualified → Appointment Booked", timeLimitMinutes: 2880, appliesToRole: "COUNSELLOR", escalationRole: "MANAGER", status: "Active", displayOrder: 3 },
         { tenantId: tid, code: "SLA-HANDOVER-ACK", name: "Handover Acknowledgement SLA", triggerEvent: "Episode Handover → Acknowledged by Takeover Team", timeLimitMinutes: 120, appliesToRole: "All", escalationRole: "ADMIN", status: "Active", displayOrder: 4 },
         { tenantId: tid, code: "SLA-CONSULT-LOG", name: "Consultation Log SLA", triggerEvent: "Consultation Done → Log Submitted by Doctor", timeLimitMinutes: 480, appliesToRole: "All", escalationRole: "ADMIN", status: "Active", displayOrder: 5 },
         { tenantId: tid, code: "SLA-TREAT-PLAN", name: "Treatment Plan SLA", triggerEvent: "Consultation Done → Treatment Plan Created", timeLimitMinutes: 1440, appliesToRole: "COUNSELLOR", escalationRole: "MANAGER", status: "Active", displayOrder: 6 },
-        { tenantId: tid, code: "SLA-NOSHOW-FOLLOW", name: "No-Show Follow-up SLA", triggerEvent: "Appointment No-Show → Follow-up Call", timeLimitMinutes: 240, appliesToRole: "AGENT", escalationRole: "MANAGER", status: "Active", displayOrder: 7 },
-        { tenantId: tid, code: "SLA-DORMANT-REACT", name: "Dormant Lead Reactivation SLA", triggerEvent: "Lead Marked Dormant → Reactivation Attempt", timeLimitMinutes: 10080, appliesToRole: "AGENT", escalationRole: "MANAGER", status: "Active", displayOrder: 8 },
+        { tenantId: tid, code: "SLA-NOSHOW-FOLLOW", name: "No-Show Follow-up SLA", triggerEvent: "Appointment No-Show → Follow-up Call", timeLimitMinutes: 240, appliesToRole: "PATIENT_COORDINATOR", escalationRole: "MANAGER", status: "Active", displayOrder: 7 },
+        { tenantId: tid, code: "SLA-DORMANT-REACT", name: "Dormant Lead Reactivation SLA", triggerEvent: "Lead Marked Dormant → Reactivation Attempt", timeLimitMinutes: 10080, appliesToRole: "PATIENT_COORDINATOR", escalationRole: "MANAGER", status: "Active", displayOrder: 8 },
       ]);
 
       await db.insert(reminderPolicies).values([

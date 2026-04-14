@@ -103,7 +103,7 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "isBusinessAchieved", label: "Is Business Achieved", type: "boolean" },
     { key: "requiresNextTask", label: "Requires Next Task", type: "boolean" },
     { key: "allowNurtureOption", label: "Allow Nurture Option", type: "boolean" },
-    { key: "defaultOwnerRole", label: "Default Owner Role", type: "select", options: ["AGENT", "COUNSELLOR", "MANAGER", "ADMIN"] },
+    { key: "defaultOwnerRole", label: "Default Owner Role", type: "select", options: ["PATIENT_COORDINATOR", "COUNSELLOR", "MANAGER", "ADMIN"] },
   ],
   templates: [
     { key: "channel", label: "Channel", type: "select", options: ["SMS", "Email", "WhatsApp", "Push"] },
@@ -119,7 +119,7 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
   slaRules: [
     { key: "triggerEvent", label: "Trigger Event", type: "text" },
     { key: "timeLimitMinutes", label: "Time Limit (minutes)", type: "number" },
-    { key: "appliesToRole", label: "Applies To Role", type: "select", options: ["AGENT", "COUNSELLOR", "MANAGER", "ADMIN", "All"] },
+    { key: "appliesToRole", label: "Applies To Role", type: "select", options: ["PATIENT_COORDINATOR", "COUNSELLOR", "MANAGER", "ADMIN", "All"] },
     { key: "escalationRole", label: "Escalation Role", type: "select", options: ["MANAGER", "ADMIN", "SYS_ADMIN"] },
   ],
   reminderPolicies: [

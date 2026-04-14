@@ -59,7 +59,7 @@ interface CrmUserWithRole {
 const ROLE_COLORS: Record<string, string> = {
   ADMIN: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
   MANAGER: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-  AGENT: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+  PATIENT_COORDINATOR: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
   COUNSELLOR: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
 };
 
@@ -73,7 +73,7 @@ const ACCESS_SCOPE_LABELS: Record<string, string> = {
 const PAGES_BY_ROLE: Record<string, string[]> = {
   ADMIN: ["Dashboard", "Leads", "Appointments", "Team", "Masters", "Testing"],
   MANAGER: ["Dashboard", "Leads", "Appointments", "Team"],
-  AGENT: ["Dashboard", "Leads", "Appointments"],
+  PATIENT_COORDINATOR: ["Dashboard", "Leads", "Appointments"],
   COUNSELLOR: ["Dashboard", "Leads", "Appointments"],
 };
 

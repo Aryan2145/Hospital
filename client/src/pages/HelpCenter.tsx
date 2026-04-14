@@ -176,7 +176,7 @@ const COMPLIANCE_ITEMS: ComplianceItem[] = [
     status: "done",
     icon: Shield,
     details: [
-      "SYS_ADMIN, ADMIN, MANAGER, AGENT/COUNSELLOR roles",
+      "SYS_ADMIN, ADMIN, MANAGER, PATIENT_COORDINATOR/COUNSELLOR roles",
       "PHI access levels configurable per user (Full/Masked/None)",
       "Access scope types: All, Branch, Self",
       "Page-level visibility controls based on role",
@@ -600,7 +600,7 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
                 <div className="space-y-2">
                   {[
                     { role: "Counsellor", code: "COUNSELLOR", desc: "Manages consultation episodes, treatment planning, and patient follow-up. Has access to Clinical, Financial, Insurance, and Family tabs on episodes." },
-                    { role: "Patient Coordinator", code: "AGENT", desc: "Handles lead qualification, appointment booking, and basic episode management. Lands on the main Dashboard after login." },
+                    { role: "Patient Coordinator", code: "PATIENT_COORDINATOR", desc: "Handles lead qualification, appointment booking, and basic episode management. Lands on the main Dashboard after login." },
                     { role: "Telecaller", code: "TELECALLER", desc: "Handles outbound calling and lead follow-up. Lands directly on the Leads Workspace after login for quick access to the call queue." },
                     { role: "Receptionist", code: "RECEPTIONIST", desc: "Manages patient check-in, appointment booking, and front-desk operations. Lands on the Appointments page after login." },
                   ].map((item, i) => (

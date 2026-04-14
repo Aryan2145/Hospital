@@ -435,7 +435,7 @@ export default function PostCareProtocolsPage() {
                                 <SelectValue placeholder="Select role" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="AGENT">Agent / Tele-Caller</SelectItem>
+                                <SelectItem value="PATIENT_COORDINATOR">Patient Coordinator</SelectItem>
                                 <SelectItem value="COUNSELLOR">Counsellor</SelectItem>
                                 <SelectItem value="MANAGER">Manager</SelectItem>
                               </SelectContent>
