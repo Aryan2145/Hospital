@@ -386,6 +386,7 @@ const HELP_SECTIONS: HelpSection[] = [
       { id: "branding", title: "Branding Customization", icon: Paintbrush },
       { id: "intelligence-config", title: "Intelligence Config", icon: Brain },
       { id: "sla-reminders", title: "SLA & Reminder Policies", icon: Bell },
+      { id: "discount-approval", title: "Discount Approval & SLA", icon: Receipt },
     ],
   },
   {
@@ -418,6 +419,7 @@ const HELP_SECTIONS: HelpSection[] = [
     topics: [
       { id: "creating-users", title: "Creating CRM Users", icon: UserCheck },
       { id: "role-assignment", title: "Role & Access Assignment", icon: Shield },
+      { id: "access-control", title: "Access Control Page", icon: ShieldCheck },
       { id: "password-management", title: "Password Reset & Management", icon: KeyRound },
       { id: "branch-management", title: "Branch Management", icon: Settings },
     ],
@@ -570,28 +572,88 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
       content: (
         <div className="space-y-6">
           <section>
-            <h2 className="text-lg font-bold text-foreground mb-3">Role Hierarchy</h2>
+            <h2 className="text-lg font-bold text-foreground mb-3">The 12-Role System</h2>
             <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-              The CRM uses a 4-tier role hierarchy. Each role has specific permissions and sees a tailored view of the system:
+              The CRM assigns every user exactly one role. Your role controls which pages you can access, what actions you can perform, and where you land after logging in. Roles are grouped by function:
             </p>
-            <div className="space-y-3">
-              {[
-                { role: "System Admin (SYS_ADMIN)", desc: "Platform-level administrator. Manages hospitals (tenants), subscriptions, and system-wide settings. Accesses the separate Admin Panel.", color: "bg-red-50 text-red-700 border-red-200" },
-                { role: "Admin (ADMIN)", desc: "Hospital-level administrator. Full access to all data and configurations for their hospital. Manages users, master data, connectors, branding, and views all dashboards.", color: "bg-orange-50 text-orange-700 border-orange-200" },
-                { role: "Manager (MANAGER)", desc: "Team leader. Sees their team's data plus their own. Can view team performance dashboards, overdue tasks, and manage lead assignments. Access scope can be Branch-level or All.", color: "bg-blue-50 text-blue-700 border-blue-200" },
-                { role: "Agent / Counsellor", desc: "Frontline staff. Agents (Tele-Callers) handle initial lead contact and qualification. Counsellors manage consultation episodes and treatment follow-up. Both see only their own assigned data by default.", color: "bg-green-50 text-green-700 border-green-200" },
-              ].map((item, i) => (
-                <Card key={i} className={`p-3 border ${item.color.split(' ')[2]}`}>
-                  <h3 className="text-sm font-semibold text-foreground mb-1">{item.role}</h3>
-                  <p className="text-xs text-muted-foreground">{item.desc}</p>
-                </Card>
-              ))}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Management</h3>
+                <div className="space-y-2">
+                  {[
+                    { role: "Admin", code: "ADMIN", desc: "Full hospital-level access. Manages users, master data, connectors, branding, discount approvers, and access control. Sees all dashboards and data across branches." },
+                    { role: "Manager", code: "MANAGER", desc: "Team leader. Views team performance dashboards, overdue tasks, and manages lead assignments. Access scope is typically Branch or All." },
+                    { role: "MIS Viewer", code: "MIS_VIEWER", desc: "Analytics-only role. Sees the full Management Dashboard (KPIs, charts, pipeline) in read-only mode. Cannot open individual lead or episode records." },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-start gap-3 p-3 rounded-lg border bg-orange-50/40">
+                      <div className="flex-1">
+                        <span className="text-sm font-semibold text-foreground">{item.role} </span>
+                        <span className="text-xs text-muted-foreground font-mono">({item.code})</span>
+                        <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Patient Coordination</h3>
+                <div className="space-y-2">
+                  {[
+                    { role: "Counsellor", code: "COUNSELLOR", desc: "Manages consultation episodes, treatment planning, and patient follow-up. Has access to Clinical, Financial, Insurance, and Family tabs on episodes." },
+                    { role: "Patient Coordinator", code: "AGENT", desc: "Handles lead qualification, appointment booking, and basic episode management. Lands on the main Dashboard after login." },
+                    { role: "Telecaller", code: "TELECALLER", desc: "Handles outbound calling and lead follow-up. Lands directly on the Leads Workspace after login for quick access to the call queue." },
+                    { role: "Receptionist", code: "RECEPTIONIST", desc: "Manages patient check-in, appointment booking, and front-desk operations. Lands on the Appointments page after login." },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-start gap-3 p-3 rounded-lg border bg-blue-50/40">
+                      <div className="flex-1">
+                        <span className="text-sm font-semibold text-foreground">{item.role} </span>
+                        <span className="text-xs text-muted-foreground font-mono">({item.code})</span>
+                        <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Clinical Team</h3>
+                <div className="space-y-2">
+                  {[
+                    { role: "Doctor", code: "DOCTOR", desc: "Views clinical information and family/decision status for episodes. Lands on the Appointments page after login. Cannot access financial or insurance tabs." },
+                    { role: "Medical Assistant", code: "MEDICAL_ASSISTANT", desc: "Supports doctors with clinical documentation. Same episode tab access as Doctor. Lands on Appointments after login." },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-start gap-3 p-3 rounded-lg border bg-green-50/40">
+                      <div className="flex-1">
+                        <span className="text-sm font-semibold text-foreground">{item.role} </span>
+                        <span className="text-xs text-muted-foreground font-mono">({item.code})</span>
+                        <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Financial & Insurance</h3>
+                <div className="space-y-2">
+                  {[
+                    { role: "Billing", code: "BILLING", desc: "Manages episode billing and financial documentation. Sees Clinical and Financial episode tabs. Lands on the Transactions (episode list) page after login." },
+                    { role: "Insurance Desk", code: "INSURANCE_DESK", desc: "Handles insurance pre-authorization and claims. Sees Financial and Insurance episode tabs. Lands on the Transactions page after login." },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-start gap-3 p-3 rounded-lg border bg-purple-50/40">
+                      <div className="flex-1">
+                        <span className="text-sm font-semibold text-foreground">{item.role} </span>
+                        <span className="text-xs text-muted-foreground font-mono">({item.code})</span>
+                        <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
           <section>
             <h2 className="text-lg font-bold text-foreground mb-3">PHI Access Levels</h2>
             <p className="text-sm text-muted-foreground leading-relaxed mb-3">
-              Each user is assigned a Protected Health Information (PHI) access level that controls what patient data they can see:
+              In addition to your role, each user is assigned a Protected Health Information (PHI) access level that controls what patient data they can see:
             </p>
             <div className="space-y-2">
               <div className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -616,9 +678,10 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
             <ul className="space-y-1 text-sm text-muted-foreground">
               <li><strong>Self:</strong> Only records assigned to you.</li>
               <li><strong>Branch:</strong> Records assigned to anyone in your branch.</li>
-              <li><strong>All:</strong> Records across all branches (typically for Admins).</li>
+              <li><strong>All:</strong> Records across all branches (typically for Admins and Managers).</li>
             </ul>
           </section>
+          <TipBox>Your role is assigned by your hospital administrator. If you think your role is incorrect or you need additional access, contact your Admin — they can adjust your role or add a specific permission override through the Access Control page.</TipBox>
         </div>
       ),
     },
@@ -2552,6 +2615,114 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
         </div>
       ),
     },
+    "configurations/discount-approval": {
+      title: "Discount Approval & SLA",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is the Discount Approval Workflow?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              When a Counsellor negotiates a discount for a patient's treatment, they submit a discount request from the episode's Financial tab. The system then routes the request through a controlled approval process — no discount becomes effective until an authorised approver confirms it.
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              This keeps your revenue reporting accurate, prevents unauthorised price reductions, and creates a clear audit trail of every negotiated discount from request to approval.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Discount Status Flow</h2>
+            <div className="flex flex-wrap gap-2 items-center text-sm">
+              {["Draft", "→", "Pending", "→", "Approved / Rejected"].map((s, i) => (
+                s === "→" ? (
+                  <span key={i} className="text-muted-foreground">{s}</span>
+                ) : (
+                  <span key={i} className="px-2 py-0.5 rounded-full bg-muted text-xs font-medium text-foreground">{s}</span>
+                )
+              ))}
+            </div>
+            <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground">
+              <li><strong>Draft:</strong> No discount has been submitted yet. The episode is at standard quoted price.</li>
+              <li><strong>Pending:</strong> A discount has been submitted and is awaiting approver action. All configured approvers are notified.</li>
+              <li><strong>Approved:</strong> An approver has confirmed the discount. The final estimated amount reflects the approved reduction.</li>
+              <li><strong>Rejected:</strong> The discount was declined. The original quoted price applies. A new request can be submitted if needed.</li>
+            </ul>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Setting Up Discount Approvers</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Only designated approvers can approve or reject discount requests. Configure who they are from the Discount Approvers page:
+            </p>
+            <StepList steps={[
+              "Navigate to Configurations → Discount Approvers",
+              "In the 'Add Approver' section, search for a CRM user by name or role",
+              "Select the user and click 'Add Approver'",
+              "The user immediately appears in the Active Approvers list",
+              "To remove an approver, click the trash icon next to their name",
+            ]} />
+            <TipBox>Configure at least two approvers so discount requests are never blocked when one person is unavailable. Any active CRM user can be made an approver regardless of their role.</TipBox>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">How Approvers Are Notified</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              When a Counsellor submits a discount request, all configured approvers immediately receive notifications across three channels:
+            </p>
+            <FieldTable fields={[
+              { field: "In-App Notification", desc: "A notification appears in the bell icon (top of sidebar). The badge shows the unread count. Click the notification to go directly to the episode." },
+              { field: "Email", desc: "An email is sent to each approver's registered email address. It includes the patient name, episode ID, discount amount/percentage, requesting user, and a direct link to the episode." },
+              { field: "SMS", desc: "An SMS is sent to each approver's registered mobile number via the configured SMS provider (MSG91). This ensures approvers are reached even when away from the desk." },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">SLA Escalation Window</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              If no approver acts on a pending discount request within the configured time window, the system automatically escalates. The escalation window is set at the bottom of the Discount Approvers page:
+            </p>
+            <StepList steps={[
+              "Navigate to Configurations → Discount Approvers",
+              "Scroll to the 'Escalation SLA Window' section at the bottom of the page",
+              "Enter the number of hours after which pending discounts should escalate (1–720 hours, default is 4 hours)",
+              "Click 'Save SLA Window'",
+            ]} />
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3 mt-3">
+              When the SLA window expires on a pending discount, the system:
+            </p>
+            <ul className="list-disc ml-5 space-y-1 text-sm text-muted-foreground">
+              <li>Sends in-app, email, and SMS escalation alerts to all Admin users</li>
+              <li>Marks the episode discount as "Escalated" so it appears clearly in reports</li>
+              <li>Logs an escalation event in the audit trail with timestamp</li>
+              <li>Does not re-escalate the same request (each pending discount escalates once)</li>
+            </ul>
+            <TipBox>Set the SLA window to align with your team's shift patterns. A 4-hour SLA works for hospitals with same-day response expectations; a 24-hour window is more appropriate if approvers are not always available during the day.</TipBox>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Revoking an Approved Discount</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              If a discount was approved in error or circumstances change, an Admin can revoke it:
+            </p>
+            <StepList steps={[
+              "Open the episode and go to the Financial tab",
+              "In the Negotiation & Discount section, click 'Revoke Approval'",
+              "Enter a reason for revoking the discount",
+              "Confirm — the discount status resets to Draft",
+              "The Counsellor can now submit a new, corrected discount request if needed",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Approving or Rejecting a Discount</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              When you receive a discount notification:
+            </p>
+            <StepList steps={[
+              "Click the notification in the bell icon (or open the email/SMS link)",
+              "This opens the episode's Financial tab directly",
+              "Review the discount details: type (Percentage or Flat), amount, and the counsellor's notes",
+              "Click 'Approve' to confirm the discount, or 'Reject' to decline it",
+              "The requesting Counsellor is not automatically notified by the system — communicate the decision directly",
+            ]} />
+          </section>
+          <WarningBox>Once a discount is approved, the episode's Initial Quote and discount fields become read-only. Only an Admin can revoke the approval to make corrections.</WarningBox>
+        </div>
+      ),
+    },
     "dashboards/role-dashboards": {
       title: "Role-Based Dashboards",
       content: (
@@ -2732,46 +2903,137 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
       content: (
         <div className="space-y-6">
           <section>
-            <h2 className="text-lg font-bold text-foreground mb-3">RBAC Overview</h2>
-            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-              Role-Based Access Control (RBAC) ensures each user only sees and can modify the data appropriate to their role. The CRM implements a 4-tier role hierarchy with granular controls.
+            <h2 className="text-lg font-bold text-foreground mb-3">How RBAC Works</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Role-Based Access Control (RBAC) ensures every user only sees what their job requires. The CRM enforces this at two levels:
             </p>
-            <h3 className="text-sm font-semibold text-foreground mb-2">Role Permissions Matrix</h3>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <Shield className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>Role-level permissions:</strong> Each role has default permissions for every module (view, create, edit, delete). These apply to everyone with that role.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <UserCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>User-level overrides:</strong> An Admin can grant or deny specific permissions to an individual user, overriding the role default. Overrides can have an expiry date.</span>
+              </li>
+            </ul>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">All 12 Roles at a Glance</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
                 <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2 pr-4 font-semibold text-foreground">Capability</th>
-                    <th className="text-center py-2 px-2 font-semibold text-foreground">Admin</th>
-                    <th className="text-center py-2 px-2 font-semibold text-foreground">Manager</th>
-                    <th className="text-center py-2 px-2 font-semibold text-foreground">Agent</th>
-                    <th className="text-center py-2 px-2 font-semibold text-foreground">Counsellor</th>
+                  <tr className="border-b bg-muted/30">
+                    <th className="text-left py-2 pr-3 font-semibold text-foreground">Role</th>
+                    <th className="text-left py-2 font-semibold text-foreground">Primary Function</th>
+                    <th className="text-left py-2 font-semibold text-foreground pl-3">Lands On</th>
                   </tr>
                 </thead>
-                <tbody className="text-muted-foreground">
+                <tbody className="text-muted-foreground divide-y divide-muted/40">
                   {[
-                    { cap: "View All Leads", admin: true, mgr: true, agent: false, cns: false },
-                    { cap: "View Own Leads", admin: true, mgr: true, agent: true, cns: true },
-                    { cap: "Create Leads", admin: true, mgr: true, agent: true, cns: true },
-                    { cap: "Manage Master Data", admin: true, mgr: true, agent: false, cns: false },
-                    { cap: "Approve Master Data", admin: true, mgr: true, agent: false, cns: false },
-                    { cap: "Manage Users", admin: true, mgr: false, agent: false, cns: false },
-                    { cap: "Configure Connectors", admin: true, mgr: false, agent: false, cns: false },
-                    { cap: "View Dashboards", admin: true, mgr: true, agent: true, cns: true },
-                    { cap: "Branding Settings", admin: true, mgr: false, agent: false, cns: false },
+                    { role: "Admin", fn: "Full hospital access, all configurations", lands: "Dashboard" },
+                    { role: "Manager", fn: "Team oversight, performance dashboards", lands: "Dashboard" },
+                    { role: "Counsellor", fn: "Consultation episodes, treatment follow-up", lands: "Dashboard" },
+                    { role: "Patient Coordinator", fn: "Lead qualification, appointment booking", lands: "Dashboard" },
+                    { role: "Telecaller", fn: "Outbound calls, lead follow-up queue", lands: "Leads Workspace" },
+                    { role: "Receptionist", fn: "Check-in, front-desk appointment management", lands: "Appointments" },
+                    { role: "Doctor", fn: "Clinical review, surgery documentation", lands: "Appointments" },
+                    { role: "Medical Assistant", fn: "Clinical support, documentation", lands: "Appointments" },
+                    { role: "Billing", fn: "Episode billing, financial documentation", lands: "Transactions" },
+                    { role: "Insurance Desk", fn: "Pre-auth, claims management", lands: "Transactions" },
+                    { role: "MIS Viewer", fn: "Analytics overview, read-only dashboards", lands: "Analytics Overview" },
+                    { role: "SYS_ADMIN", fn: "Platform management (all hospitals)", lands: "Admin Panel" },
                   ].map((row, i) => (
-                    <tr key={i} className="border-b border-muted/50">
-                      <td className="py-1.5 pr-4">{row.cap}</td>
-                      <td className="text-center py-1.5 px-2">{row.admin ? "✓" : "—"}</td>
-                      <td className="text-center py-1.5 px-2">{row.mgr ? "✓" : "—"}</td>
-                      <td className="text-center py-1.5 px-2">{row.agent ? "✓" : "—"}</td>
-                      <td className="text-center py-1.5 px-2">{row.cns ? "✓" : "—"}</td>
+                    <tr key={i}>
+                      <td className="py-1.5 pr-3 font-medium text-foreground">{row.role}</td>
+                      <td className="py-1.5">{row.fn}</td>
+                      <td className="py-1.5 pl-3">{row.lands}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Episode Tab Access by Role</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              On the Episode Detail page, visible tabs are filtered by role. Only tabs relevant to each role's function appear:
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className="text-left py-2 pr-3 font-semibold text-foreground">Tab</th>
+                    <th className="text-left py-2 font-semibold text-foreground">Who Can See It</th>
+                  </tr>
+                </thead>
+                <tbody className="text-muted-foreground divide-y divide-muted/40">
+                  {[
+                    { tab: "Clinical", who: "Admin, Manager, Counsellor, Patient Coordinator, Billing, Telecaller, Receptionist, Doctor, Medical Assistant" },
+                    { tab: "Financial", who: "Admin, Manager, Counsellor, Billing, Insurance Desk" },
+                    { tab: "Insurance / Pre-Auth", who: "Admin, Manager, Counsellor, Insurance Desk" },
+                    { tab: "Family & Decision", who: "Admin, Manager, Counsellor, Patient Coordinator, Doctor, Medical Assistant" },
+                  ].map((row, i) => (
+                    <tr key={i}>
+                      <td className="py-1.5 pr-3 font-medium text-foreground">{row.tab}</td>
+                      <td className="py-1.5">{row.who}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Module Permissions Summary</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className="text-left py-2 pr-3 font-semibold text-foreground">Capability</th>
+                    <th className="text-center py-2 px-1 font-semibold text-foreground">Admin</th>
+                    <th className="text-center py-2 px-1 font-semibold text-foreground">Manager</th>
+                    <th className="text-center py-2 px-1 font-semibold text-foreground">Counsellor</th>
+                    <th className="text-center py-2 px-1 font-semibold text-foreground">Coordinator</th>
+                    <th className="text-center py-2 px-1 font-semibold text-foreground">Telecaller</th>
+                    <th className="text-center py-2 px-1 font-semibold text-foreground">Doctor</th>
+                    <th className="text-center py-2 px-1 font-semibold text-foreground">Billing</th>
+                    <th className="text-center py-2 px-1 font-semibold text-foreground">MIS</th>
+                  </tr>
+                </thead>
+                <tbody className="text-muted-foreground divide-y divide-muted/40">
+                  {[
+                    { cap: "View Leads",    a:1,m:1,c:1,ag:1,t:1,d:0,b:0,mis:1 },
+                    { cap: "Create Leads",  a:1,m:1,c:1,ag:1,t:1,d:0,b:0,mis:0 },
+                    { cap: "Edit Leads",    a:1,m:1,c:1,ag:1,t:1,d:0,b:0,mis:0 },
+                    { cap: "View Episodes", a:1,m:1,c:1,ag:1,t:0,d:1,b:1,mis:0 },
+                    { cap: "Create Episodes",a:1,m:1,c:1,ag:1,t:0,d:0,b:0,mis:0 },
+                    { cap: "Manage Master Data",a:1,m:1,c:0,ag:0,t:0,d:0,b:0,mis:0 },
+                    { cap: "Manage Users",  a:1,m:0,c:0,ag:0,t:0,d:0,b:0,mis:0 },
+                    { cap: "Configure Connectors",a:1,m:0,c:0,ag:0,t:0,d:0,b:0,mis:0 },
+                    { cap: "View Dashboard",a:1,m:1,c:1,ag:1,t:0,d:0,b:0,mis:1 },
+                    { cap: "Approve Discounts",a:1,m:0,c:0,ag:0,t:0,d:0,b:0,mis:0 },
+                    { cap: "Approve Master Data",a:1,m:1,c:0,ag:0,t:0,d:0,b:0,mis:0 },
+                    { cap: "Branding Settings",a:1,m:0,c:0,ag:0,t:0,d:0,b:0,mis:0 },
+                  ].map((row, i) => (
+                    <tr key={i}>
+                      <td className="py-1.5 pr-3">{row.cap}</td>
+                      {[row.a,row.m,row.c,row.ag,row.t,row.d,row.b,row.mis].map((v,j) => (
+                        <td key={j} className={`text-center py-1.5 px-1 ${v ? "text-green-600 font-semibold" : "text-muted-foreground/40"}`}>{v ? "✓" : "—"}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">Receptionist, Medical Assistant, and Insurance Desk follow similar patterns to Doctor and Billing respectively — contact your Admin for specifics.</p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Configuring Permissions</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Admins manage role permissions and per-user overrides from <strong>Configurations → Access Control</strong>. See the "Access Control Page" article in the User Management section for a step-by-step guide.
+            </p>
+          </section>
+          <TipBox>Fine-tuning permissions for an individual user (rather than changing the whole role) is done via user-level overrides on the Access Control page. This is useful for temporary elevated access or restricting a specific user without affecting everyone in the role.</TipBox>
         </div>
       ),
     },
@@ -2939,13 +3201,20 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
           <section>
             <h2 className="text-lg font-bold text-foreground mb-3">Assigning Roles</h2>
             <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-              When creating or editing a user, select the appropriate role based on their job function:
+              When creating or editing a user, select the role that matches their job function. The CRM has 12 roles across four functional groups:
             </p>
             <FieldTable fields={[
-              { field: "Admin", desc: "Hospital management staff who need full system access and configuration capabilities" },
-              { field: "Manager", desc: "Team leads who manage a group of agents/counsellors and need visibility into their team's performance" },
-              { field: "Agent", desc: "Tele-callers who handle initial lead contact, qualification, and appointment booking" },
-              { field: "Counsellor", desc: "Patient counsellors who manage consultations, treatment episodes, and patient follow-up" },
+              { field: "Admin", desc: "Full hospital-level access. Manages users, configurations, master data, branding, and access control. Sees all data across branches." },
+              { field: "Manager", desc: "Team leader. Views team performance, overdue tasks, and lead assignments. Typically Branch or All scope." },
+              { field: "MIS Viewer", desc: "Analytics-only. Read-only access to the Management Dashboard. Cannot open individual records." },
+              { field: "Counsellor", desc: "Manages consultation episodes, treatment planning, and patient follow-up. Full episode tab access." },
+              { field: "Patient Coordinator (Agent)", desc: "Lead qualification, appointment booking, and basic episode management." },
+              { field: "Telecaller", desc: "Outbound calling, lead follow-up. Lands on Leads Workspace after login." },
+              { field: "Receptionist", desc: "Patient check-in and appointment management. Lands on Appointments after login." },
+              { field: "Doctor", desc: "Reviews clinical information and family/decision status on episodes. Lands on Appointments." },
+              { field: "Medical Assistant", desc: "Supports clinical documentation alongside doctors. Lands on Appointments." },
+              { field: "Billing", desc: "Episode billing and financial documentation. Lands on Transactions (episode list)." },
+              { field: "Insurance Desk", desc: "Insurance pre-authorization and claims. Lands on Transactions." },
             ]} />
           </section>
           <section>
@@ -2954,11 +3223,80 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               In addition to the role, configure these access settings per user:
             </p>
             <ul className="list-disc ml-5 space-y-2 text-sm text-muted-foreground">
-              <li><strong>PHI Access Level:</strong> Controls how much patient health information the user can see. Set to "Masked" or "None" for users who don't need to see full patient contact details.</li>
-              <li><strong>Access Scope:</strong> Controls whose data the user can see. "Self" means only their own assigned records. "Branch" means all records in their branch. "All" means cross-branch visibility.</li>
+              <li><strong>PHI Access Level:</strong> Controls how much patient health information the user can see. Set to "Masked" or "None" for users who don't need full patient contact details.</li>
+              <li><strong>Access Scope:</strong> Controls whose data the user can see. "Self" = only their assigned records. "Branch" = all records in their branch. "All" = cross-branch visibility.</li>
             </ul>
           </section>
-          <WarningBox>Changing a user's role or access level takes effect immediately. The user may need to log out and back in for all UI changes to reflect.</WarningBox>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Fine-Grained Permission Overrides</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              If a specific user needs different permissions from the rest of their role group — for example, a Telecaller who also needs to create episodes temporarily — you can add a user-level override without changing their role. Go to <strong>Configurations → Access Control</strong> to manage overrides. Overrides can have an expiry date and apply only to the named individual.
+            </p>
+          </section>
+          <WarningBox>Changing a user's role takes effect immediately on the next page load. The user may need to log out and back in for all sidebar and UI changes to reflect correctly.</WarningBox>
+        </div>
+      ),
+    },
+    "user-management/access-control": {
+      title: "Access Control Page",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is the Access Control Page?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              The Access Control page (Configurations → Access Control) is the central hub for managing CRM permissions at your hospital. It has two panels:
+            </p>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <Shield className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>Role Permissions:</strong> View and edit the default module permissions for each of the 12 roles. Changes here affect everyone with that role.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <UserCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <span><strong>User Overrides:</strong> Add, view, and remove per-user permission exceptions. An override grants or denies a specific permission to one individual, overriding their role default.</span>
+              </li>
+            </ul>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Viewing Role Permissions</h2>
+            <StepList steps={[
+              "Navigate to Configurations → Access Control",
+              "In the Role Permissions panel, select a role from the dropdown",
+              "The permission grid shows each module (Leads, Episodes, Campaigns, etc.) with four action columns: View, Create, Edit, Delete",
+              "A filled circle indicates the permission is granted; an empty circle means it is denied",
+            ]} />
+            <TipBox>Role-level permissions are the baseline for every user in that role. Use user overrides (below) when you need an exception for a specific person.</TipBox>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Adding a User Override</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              A user override lets you grant or deny one specific permission for one user without changing their role:
+            </p>
+            <StepList steps={[
+              "Go to Configurations → Access Control and open the User Overrides tab",
+              "Click 'Add Override'",
+              "Search for and select the CRM user",
+              "Choose the module (e.g., Episodes) and the action (View / Create / Edit / Delete)",
+              "Set the override to Grant (give this permission) or Deny (remove this permission)",
+              "Optionally set an expiry date — the override will automatically deactivate on that date",
+              "Save — the override takes effect immediately",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Removing an Override</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Find the override in the User Overrides list and click the delete (trash) icon. The user reverts to their role's default permissions for that action immediately.
+            </p>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Common Use Cases</h2>
+            <FieldTable fields={[
+              { field: "Temporary elevated access", desc: "Grant a Telecaller episode-create permission for a week while covering for a Counsellor — set expiry to the last coverage day" },
+              { field: "Restrict a specific user", desc: "Deny campaign-delete permission for a new Manager while they are still onboarding" },
+              { field: "Role change without full reclassification", desc: "Give a Receptionist lead-create permission without moving them to the Patient Coordinator role" },
+            ]} />
+          </section>
+          <WarningBox>Role-level permission changes affect all users with that role across the entire hospital. Use role changes carefully. For individual exceptions, always prefer user-level overrides.</WarningBox>
         </div>
       ),
     },
