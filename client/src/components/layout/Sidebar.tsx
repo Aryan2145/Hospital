@@ -28,6 +28,8 @@ import {
   UserCheck,
   Bell,
   CheckCheck,
+  Eye,
+  EyeOff,
   ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
