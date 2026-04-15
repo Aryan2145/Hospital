@@ -33,7 +33,7 @@ import {
   type MasterRecord,
   MASTER_TABLE_REGISTRY,
 } from "@shared/schema";
-import { eq, and, desc, gte, lte, sql, ne, count } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql, ne, count, notInArray } from "drizzle-orm";
 
 export interface IStorage {
   // Tenant
@@ -404,7 +404,21 @@ export class DatabaseStorage implements IStorage {
 
   // --- CRM Users ---
   async getCrmUsers(tenantId: number): Promise<CrmUser[]> {
-    return await db.select().from(crmUsers).where(eq(crmUsers.tenantId, tenantId));
+    // Always exclude SYS_ADMIN users — they are developer-team accounts and must
+    // NEVER appear in any tenant-facing query (dropdowns, lists, dashboards, etc.)
+    const sysAdminRoles = await db
+      .select({ id: systemRoles.id })
+      .from(systemRoles)
+      .where(and(eq(systemRoles.tenantId, tenantId), eq(systemRoles.code, "SYS_ADMIN")));
+    const sysAdminRoleIds = sysAdminRoles.map(r => r.id);
+
+    const baseWhere = eq(crmUsers.tenantId, tenantId);
+    if (sysAdminRoleIds.length === 0) {
+      return await db.select().from(crmUsers).where(baseWhere);
+    }
+    return await db.select().from(crmUsers).where(
+      and(baseWhere, notInArray(crmUsers.systemRoleId, sysAdminRoleIds))
+    );
   }
 
   async getCrmUser(id: number, tenantId: number): Promise<CrmUser | undefined> {
