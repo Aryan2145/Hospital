@@ -8549,15 +8549,15 @@ export async function registerRoutes(
 
       const baseAmount = originalQuotedAmount || oldEpisode.initialQuote || oldEpisode.originalQuotedAmount || oldEpisode.estimatedCost || 0;
 
-      let calcPercent = discountPercent || 0;
-      let calcAmount = discountAmount || 0;
+      let calcPercent = 0;
+      let calcAmount = 0;
 
       if (discountType === "Percentage") {
         calcPercent = Math.min(100, Math.max(0, discountPercent || 0));
         calcAmount = Math.round(baseAmount * calcPercent / 100);
       } else {
         calcAmount = Math.min(baseAmount, Math.max(0, discountAmount || 0));
-        calcPercent = baseAmount > 0 ? Math.round((calcAmount / baseAmount) * 100) : 0;
+        calcPercent = 0;
       }
 
       const updates: Record<string, any> = {

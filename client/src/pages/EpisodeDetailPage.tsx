@@ -1398,8 +1398,15 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
   const isRevoked = episode.discountStatus === "Revoked";
 
   const [localInitialQuote, setLocalInitialQuote] = useState<number>(initialQuote);
-  const [localDiscountPercent, setLocalDiscountPercent] = useState<number>(episode.discountPercent ?? 0);
-  const [localDiscountAmount, setLocalDiscountAmount] = useState<number>(episode.discountAmount ?? 0);
+  const [discountMode, setDiscountMode] = useState<"flat" | "percent">(
+    episode.discountType === "Percentage" ? "percent" : "flat"
+  );
+  const [localDiscountPercent, setLocalDiscountPercent] = useState<number>(
+    episode.discountType === "Percentage" ? (episode.discountPercent ?? 0) : 0
+  );
+  const [localDiscountAmount, setLocalDiscountAmount] = useState<number>(
+    episode.discountType !== "Percentage" ? (episode.discountAmount ?? 0) : 0
+  );
   const [localDiscountNotes, setLocalDiscountNotes] = useState<string>(episode.discountNotes || "");
   const [localActualBill, setLocalActualBill] = useState<number>(actualBill);
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
@@ -1408,24 +1415,26 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
 
   useEffect(() => {
     setLocalInitialQuote(episode.initialQuote || 0);
-    setLocalDiscountPercent(episode.discountPercent ?? 0);
-    setLocalDiscountAmount(episode.discountAmount ?? 0);
     setLocalDiscountNotes(episode.discountNotes || "");
     setLocalActualBill(episode.actualBill || 0);
-  }, [episode.initialQuote, episode.discountPercent, episode.discountAmount, episode.discountNotes, episode.actualBill]);
+    if (episode.discountType === "Percentage") {
+      setDiscountMode("percent");
+      setLocalDiscountPercent(episode.discountPercent ?? 0);
+      setLocalDiscountAmount(0);
+    } else {
+      setDiscountMode("flat");
+      setLocalDiscountAmount(episode.discountAmount ?? 0);
+      setLocalDiscountPercent(0);
+    }
+  }, [episode.initialQuote, episode.discountPercent, episode.discountAmount, episode.discountNotes, episode.actualBill, episode.discountType]);
 
   const localFinalQuote = isDiscountApproved ? Math.max(0, localInitialQuote - approvedDiscount) : localInitialQuote;
   const localVariance = localFinalQuote - localActualBill;
 
-  const handlePercentChange = (pct: number) => {
-    const clamped = Math.min(100, Math.max(0, pct));
-    setLocalDiscountPercent(clamped);
-  };
-
-  const handleAmountChange = (amt: number) => {
-    const clamped = Math.min(localInitialQuote, Math.max(0, amt));
-    setLocalDiscountAmount(clamped);
-  };
+  const derivedAmountFromPercent = discountMode === "percent" && localInitialQuote > 0
+    ? Math.round(localInitialQuote * localDiscountPercent / 100)
+    : 0;
+  const effectiveDiscountAmount = discountMode === "flat" ? localDiscountAmount : derivedAmountFromPercent;
 
   const handleInitialQuoteChange = (val: number) => {
     setLocalInitialQuote(val);
@@ -1435,10 +1444,10 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/episodes/${episode.id}/discount`, {
         originalQuotedAmount: localInitialQuote,
-        discountPercent: localDiscountPercent,
-        discountAmount: localDiscountAmount,
+        discountPercent: discountMode === "percent" ? localDiscountPercent : 0,
+        discountAmount: effectiveDiscountAmount,
         discountNotes: localDiscountNotes,
-        discountType: localDiscountPercent > 0 ? "Percentage" : "Flat",
+        discountType: discountMode === "flat" ? "Flat" : "Percentage",
       });
       return res.json();
     },
@@ -1652,30 +1661,55 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
           )}
 
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Discount %</Label>
-                <Input
-                  type="number"
-                  value={localDiscountPercent || ""}
-                  onChange={(e) => handlePercentChange(Number(e.target.value) || 0)}
-                  disabled={fieldsReadOnly}
-                  className="text-xs"
-                  data-testid="input-discount-percent"
-                />
+            {!fieldsReadOnly && (
+              <div className="flex rounded-md border overflow-hidden w-fit text-xs">
+                <button
+                  type="button"
+                  onClick={() => { setDiscountMode("flat"); setLocalDiscountPercent(0); }}
+                  className={cn("px-3 py-1.5 font-medium transition-colors", discountMode === "flat" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted")}
+                  data-testid="button-discount-mode-flat"
+                >₹ Flat Amount</button>
+                <button
+                  type="button"
+                  onClick={() => { setDiscountMode("percent"); setLocalDiscountAmount(0); }}
+                  className={cn("px-3 py-1.5 font-medium transition-colors border-l", discountMode === "percent" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted")}
+                  data-testid="button-discount-mode-percent"
+                >% Percentage</button>
               </div>
-              <div className="space-y-1.5">
+            )}
+
+            {discountMode === "flat" && (
+              <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">Discount Amount (₹)</Label>
                 <Input
                   type="number"
                   value={localDiscountAmount || ""}
-                  onChange={(e) => handleAmountChange(Number(e.target.value) || 0)}
+                  onChange={(e) => setLocalDiscountAmount(Math.min(localInitialQuote, Math.max(0, Number(e.target.value) || 0)))}
                   disabled={fieldsReadOnly}
                   className="text-xs"
                   data-testid="input-discount-amount"
                 />
               </div>
-            </div>
+            )}
+
+            {discountMode === "percent" && (
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Discount %</Label>
+                <Input
+                  type="number"
+                  value={localDiscountPercent || ""}
+                  onChange={(e) => setLocalDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
+                  disabled={fieldsReadOnly}
+                  className="text-xs"
+                  data-testid="input-discount-percent"
+                />
+                {localDiscountPercent > 0 && localInitialQuote > 0 && (
+                  <p className="text-xs text-muted-foreground pt-0.5">
+                    = ₹{derivedAmountFromPercent.toLocaleString("en-IN")} discount
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">
@@ -1702,7 +1736,7 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
                 </Button>
               )}
 
-              {canApproveDiscount && (isPendingDiscount || isDraft) && localDiscountAmount > 0 && (
+              {canApproveDiscount && (isPendingDiscount || isDraft) && effectiveDiscountAmount > 0 && (
                 <Button
                   variant="outline"
                   onClick={() => approveDiscount.mutate()}
