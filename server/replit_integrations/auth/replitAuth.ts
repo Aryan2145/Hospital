@@ -1,5 +1,5 @@
 import session from "express-session";
-import type { Express, RequestHandler } from "express";
+import type { Express, Request, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
@@ -8,6 +8,22 @@ import { crmUsers, tenants, tenantSettings, systemRoles } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { sendPasswordResetEmail, TenantSmtpConfig } from "../../email";
 import { sendPasswordResetSMS, isMSG91Configured } from "../../sms";
+
+/**
+ * Resolves the tenant for a request using the subdomain of the Host header.
+ * Returns the tenant record if a matching subdomain is found, otherwise null.
+ * This ensures logins at viroc.rgbindia.com only authenticate viroc tenant users.
+ */
+async function resolveTenantFromRequest(req: Request): Promise<{ id: number } | null> {
+  const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "";
+  const hostname = host.split(":")[0]; // strip port
+  const parts = hostname.split(".");
+  if (parts.length < 2) return null; // no subdomain (e.g. localhost)
+  const subdomain = parts[0];
+  if (!subdomain || subdomain === "www") return null;
+  const [tenant] = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.subdomain, subdomain)).limit(1);
+  return tenant || null;
+}
 
 export function getSession() {
   const sessionTtl = 24 * 60 * 60 * 1000;
@@ -44,18 +60,28 @@ export async function setupAuth(app: Express) {
 
       const normalizedMobile = mobile.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
 
+      // Resolve tenant from subdomain FIRST — this is the primary isolation mechanism.
+      // viroc.rgbindia.com must only log in viroc (tenant 4) users, never rgb-demo users.
+      const subdomainTenant = await resolveTenantFromRequest(req);
+
       let allMatches = await db.select().from(crmUsers).where(
-        eq(crmUsers.phone, normalizedMobile)
+        and(
+          eq(crmUsers.phone, normalizedMobile),
+          ...(subdomainTenant ? [eq(crmUsers.tenantId, subdomainTenant.id)] : [])
+        )
       );
 
       if (allMatches.length === 0 && normalizedMobile.length === 10) {
         allMatches = await db.select().from(crmUsers).where(
-          eq(crmUsers.phone, `+91${normalizedMobile}`)
+          and(
+            eq(crmUsers.phone, `+91${normalizedMobile}`),
+            ...(subdomainTenant ? [eq(crmUsers.tenantId, subdomainTenant.id)] : [])
+          )
         );
       }
 
       if (allMatches.length === 0) {
-        console.log(`[login] No user found for mobile ${normalizedMobile}`);
+        console.log(`[login] No user found for mobile ${normalizedMobile} (tenant=${subdomainTenant?.id ?? "any"})`);
         return res.status(401).json({ message: "Invalid mobile number or password" });
       }
 

@@ -4458,9 +4458,25 @@ export async function registerRoutes(
 
   // Helper: get the default tenant ID
   async function getDefaultTenantId(req?: any): Promise<number> {
+    // 1. Use session tenantId (authoritative)
     const sessionTid = req?.session?.tenantId;
     if (sessionTid && !isNaN(Number(sessionTid))) return Number(sessionTid);
-    const [t] = await db.select({ id: tenants.id }).from(tenants).limit(1);
+
+    // 2. Recover tenantId from the authenticated user's own record
+    const sessionCrmUserId = req?.session?.crmUserId;
+    if (sessionCrmUserId) {
+      const [u] = await db.select({ tenantId: crmUsers.tenantId }).from(crmUsers).where(eq(crmUsers.id, sessionCrmUserId));
+      if (u?.tenantId) {
+        if (req?.session) {
+          req.session.tenantId = u.tenantId;
+          req.session.save?.(() => {});
+        }
+        return u.tenantId;
+      }
+    }
+
+    // 3. Last resort: first tenant (deterministic, ordered by id)
+    const [t] = await db.select({ id: tenants.id }).from(tenants).orderBy(tenants.id).limit(1);
     return t?.id ?? 1;
   }
 

@@ -101,10 +101,12 @@ function HomeRedirect() {
 }
 
 function SysAdminGate({ children }: { children: React.ReactNode }) {
-  const { isLoading, isRegistered, isSysAdmin } = useCurrentUser();
+  const { isLoading, isSysAdmin } = useCurrentUser();
 
   if (isLoading) return <div className="h-screen flex items-center justify-center"><LoadingSpinner /></div>;
-  if (!isRegistered || !isSysAdmin) return <Redirect to="/" />;
+  // Non-SYS_ADMIN (including regular tenant ADMIN users) must see the admin login,
+  // never get redirected back to the tenant dashboard.
+  if (!isSysAdmin) return <AdminLogin />;
 
   return <>{children}</>;
 }
@@ -321,22 +323,22 @@ function Router() {
       </Route>
 
       <Route path="/admin/login">
-        {isAuthenticated ? <SysAdminGate><Redirect to="/admin" /></SysAdminGate> : <AdminLogin />}
+        <SysAdminGate><Redirect to="/admin" /></SysAdminGate>
       </Route>
       <Route path="/admin">
-        {isAuthenticated ? <SysAdminGate><AdminDashboard /></SysAdminGate> : <AdminLogin />}
+        <SysAdminGate><AdminDashboard /></SysAdminGate>
       </Route>
       <Route path="/admin/hospitals">
-        {isAuthenticated ? <SysAdminGate><AdminHospitals /></SysAdminGate> : <AdminLogin />}
+        <SysAdminGate><AdminHospitals /></SysAdminGate>
       </Route>
       <Route path="/admin/plans">
-        {isAuthenticated ? <SysAdminGate><AdminPlans /></SysAdminGate> : <AdminLogin />}
+        <SysAdminGate><AdminPlans /></SysAdminGate>
       </Route>
       <Route path="/admin/subscriptions">
-        {isAuthenticated ? <SysAdminGate><AdminSubscriptions /></SysAdminGate> : <AdminLogin />}
+        <SysAdminGate><AdminSubscriptions /></SysAdminGate>
       </Route>
       <Route path="/admin/payments">
-        {isAuthenticated ? <SysAdminGate><AdminPayments /></SysAdminGate> : <AdminLogin />}
+        <SysAdminGate><AdminPayments /></SysAdminGate>
       </Route>
 
       <Route path="/support-tickets">
