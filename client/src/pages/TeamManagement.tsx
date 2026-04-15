@@ -161,7 +161,7 @@ export default function TeamManagement() {
     queryKey: usersQueryKey,
     queryFn: () => fetch(usersQueryUrl, { credentials: "include" }).then(r => r.json()),
   });
-  const { data: roles = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/systemRoles"] });
+  const { data: roles = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/systemRoles"], staleTime: 0 });
   const { data: branches = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/branches"] });
   const { data: departments = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/administrativeDepartments"] });
   const { data: designations = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/designations"] });

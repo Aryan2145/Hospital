@@ -11295,6 +11295,7 @@ export async function registerRoutes(
   await ensureCrmTeamDepartments();
   await consolidateDuplicateTeams();
   await migrateAgentToPatientCoordinator();
+  await ensureAllCanonicalRolesSeeded();
   return httpServer;
 }
 
@@ -11303,6 +11304,48 @@ const CANONICAL_ROLE_CODES = [
   "RECEPTIONIST", "DOCTOR", "MEDICAL_ASSISTANT", "BILLING", "INSURANCE_DESK",
   "MIS_VIEWER", "SYS_ADMIN",
 ];
+
+const CANONICAL_ROLE_DEFS: { code: string; name: string; displayOrder: number }[] = [
+  { code: "SYS_ADMIN", name: "System Admin", displayOrder: 0 },
+  { code: "ADMIN", name: "Admin", displayOrder: 1 },
+  { code: "MANAGER", name: "Manager", displayOrder: 2 },
+  { code: "PATIENT_COORDINATOR", name: "Patient Coordinator", displayOrder: 3 },
+  { code: "COUNSELLOR", name: "Counsellor", displayOrder: 4 },
+  { code: "TELECALLER", name: "Telecaller", displayOrder: 5 },
+  { code: "RECEPTIONIST", name: "Receptionist", displayOrder: 6 },
+  { code: "BILLING", name: "Billing", displayOrder: 7 },
+  { code: "INSURANCE_DESK", name: "Insurance Desk", displayOrder: 8 },
+  { code: "DOCTOR", name: "Doctor", displayOrder: 9 },
+  { code: "MEDICAL_ASSISTANT", name: "Medical Assistant", displayOrder: 10 },
+  { code: "MIS_VIEWER", name: "MIS Viewer", displayOrder: 11 },
+];
+
+async function ensureAllCanonicalRolesSeeded() {
+  try {
+    const allTenants = await pool.query(`SELECT id FROM tenants ORDER BY id`);
+    for (const t of allTenants.rows) {
+      const tid = t.id;
+      const existing = await pool.query(`SELECT code, name FROM system_roles WHERE tenant_id = $1`, [tid]);
+      const existingCodes = new Set(existing.rows.map((r: any) => r.code));
+      for (const def of CANONICAL_ROLE_DEFS) {
+        if (!existingCodes.has(def.code)) {
+          await pool.query(
+            `INSERT INTO system_roles (tenant_id, code, name, status, display_order, approval_status) VALUES ($1,$2,$3,'Active',$4,'Approved')`,
+            [tid, def.code, def.name, def.displayOrder]
+          );
+          console.log(`[Roles] Seeded missing role '${def.code}' for tenant ${tid}`);
+        }
+      }
+      // Rename "Billing Executive" → "Billing" to match canonical name
+      await pool.query(
+        `UPDATE system_roles SET name = 'Billing' WHERE tenant_id = $1 AND code = 'BILLING' AND name = 'Billing Executive'`,
+        [tid]
+      );
+    }
+  } catch (err: any) {
+    console.error("[Roles] Error in ensureAllCanonicalRolesSeeded:", err.message);
+  }
+}
 
 async function migrateAgentToPatientCoordinator() {
   try {
