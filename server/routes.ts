@@ -516,8 +516,7 @@ async function seedDatabase() {
     await db.insert(employmentTypes).values({ tenantId: tid, code: "PT", name: "Part Time", status: "Active", displayOrder: 2 });
     await db.insert(employmentTypes).values({ tenantId: tid, code: "VISITING", name: "Visiting Consultant", status: "Active", displayOrder: 3 });
 
-    // System Roles (12 canonical roles)
-    await db.insert(systemRoles).values({ tenantId: tid, code: "SYS_ADMIN", name: "System Admin", status: "Active", displayOrder: 0 });
+    // System Roles — 11 tenant-assignable roles (SYS_ADMIN is developer-team only, never seeded into tenants)
     await db.insert(systemRoles).values({ tenantId: tid, code: "ADMIN", name: "Admin", status: "Active", displayOrder: 1 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "MANAGER", name: "Manager", status: "Active", displayOrder: 2 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "PATIENT_COORDINATOR", name: "Patient Coordinator", status: "Active", displayOrder: 3 });
@@ -526,7 +525,7 @@ async function seedDatabase() {
     await db.insert(systemRoles).values({ tenantId: tid, code: "RECEPTIONIST", name: "Receptionist", status: "Active", displayOrder: 6 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "DOCTOR", name: "Doctor", status: "Active", displayOrder: 7 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "MEDICAL_ASSISTANT", name: "Medical Assistant", status: "Active", displayOrder: 8 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "BILLING", name: "Billing Executive", status: "Active", displayOrder: 9 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "BILLING", name: "Billing", status: "Active", displayOrder: 9 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "INSURANCE_DESK", name: "Insurance Desk", status: "Active", displayOrder: 10 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "MIS_VIEWER", name: "MIS Viewer", status: "Active", displayOrder: 11 });
     // Seed role permissions for all roles
@@ -4507,11 +4506,8 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       let records = await storage.getMasterRecords(tableName, tid);
       if (tableName === "systemRoles") {
-        const sessionUser = await getSessionCrmUserWithRole(req);
-        const callerRoleCode = sessionUser?.roleCode ?? null;
-        if (callerRoleCode !== "SYS_ADMIN") {
-          records = records.filter((r: any) => r.code !== "SYS_ADMIN");
-        }
+        // SYS_ADMIN is developer-team only — never expose it in tenant-facing role lists
+        records = records.filter((r: any) => r.code !== "SYS_ADMIN");
       }
       res.json(records);
     } catch (err: any) {
@@ -11299,14 +11295,14 @@ export async function registerRoutes(
   return httpServer;
 }
 
+// 11 tenant-assignable roles — SYS_ADMIN is deliberately excluded (developer-team only)
 const CANONICAL_ROLE_CODES = [
   "ADMIN", "MANAGER", "COUNSELLOR", "PATIENT_COORDINATOR", "TELECALLER",
   "RECEPTIONIST", "DOCTOR", "MEDICAL_ASSISTANT", "BILLING", "INSURANCE_DESK",
-  "MIS_VIEWER", "SYS_ADMIN",
+  "MIS_VIEWER",
 ];
 
 const CANONICAL_ROLE_DEFS: { code: string; name: string; displayOrder: number }[] = [
-  { code: "SYS_ADMIN", name: "System Admin", displayOrder: 0 },
   { code: "ADMIN", name: "Admin", displayOrder: 1 },
   { code: "MANAGER", name: "Manager", displayOrder: 2 },
   { code: "PATIENT_COORDINATOR", name: "Patient Coordinator", displayOrder: 3 },
@@ -11325,7 +11321,12 @@ async function ensureAllCanonicalRolesSeeded() {
     const allTenants = await pool.query(`SELECT id FROM tenants ORDER BY id`);
     for (const t of allTenants.rows) {
       const tid = t.id;
-      const existing = await pool.query(`SELECT code, name FROM system_roles WHERE tenant_id = $1`, [tid]);
+      // Ensure SYS_ADMIN is always Inactive in tenant system_roles (developer-team only)
+      await pool.query(
+        `UPDATE system_roles SET status = 'Inactive' WHERE tenant_id = $1 AND code = 'SYS_ADMIN' AND status != 'Inactive'`,
+        [tid]
+      );
+      const existing = await pool.query(`SELECT code FROM system_roles WHERE tenant_id = $1 AND code != 'SYS_ADMIN'`, [tid]);
       const existingCodes = new Set(existing.rows.map((r: any) => r.code));
       for (const def of CANONICAL_ROLE_DEFS) {
         if (!existingCodes.has(def.code)) {
@@ -11334,14 +11335,17 @@ async function ensureAllCanonicalRolesSeeded() {
             [tid, def.code, def.name, def.displayOrder]
           );
           console.log(`[Roles] Seeded missing role '${def.code}' for tenant ${tid}`);
+        } else {
+          // Ensure existing canonical roles are Active and Approved
+          await pool.query(
+            `UPDATE system_roles SET status = 'Active', approval_status = 'Approved', name = $3, display_order = $4
+             WHERE tenant_id = $1 AND code = $2`,
+            [tid, def.code, def.name, def.displayOrder]
+          );
         }
       }
-      // Rename "Billing Executive" → "Billing" to match canonical name
-      await pool.query(
-        `UPDATE system_roles SET name = 'Billing' WHERE tenant_id = $1 AND code = 'BILLING' AND name = 'Billing Executive'`,
-        [tid]
-      );
     }
+    console.log("[Roles] Canonical roles verified for all tenants");
   } catch (err: any) {
     console.error("[Roles] Error in ensureAllCanonicalRolesSeeded:", err.message);
   }
