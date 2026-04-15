@@ -148,7 +148,7 @@ async function escalateOverdueDiscounts(tenantId: number, tenantName: string): P
               "Discount Approval Overdue — Action Required",
               `A discount request of ${discountPercent}% (₹${discountAmount.toLocaleString("en-IN")}) for ${patientName} has been pending beyond the ${effectiveSla}-hour SLA. Immediate review required.`,
               ep.id,
-              `/transactions/${ep.id}`,
+              `/episodes/${ep.id}`,
             ]
           );
         }

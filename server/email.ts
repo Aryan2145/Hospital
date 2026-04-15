@@ -151,7 +151,7 @@ export async function sendDiscountApprovalEmail(params: DiscountApprovalEmailPar
         </div>
         <p style="font-size: 14px; color: #555;">Please log in to the CRM to review and approve or reject this request.</p>
         <div style="text-align: center; margin: 24px 0;">
-          <a href="${process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : ""}/transactions/${episodeId}" 
+          <a href="${process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : ""}/episodes/${episodeId}" 
              style="background: #0f4c81; color: #fff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 600; display: inline-block;">
             Review Discount Request
           </a>
