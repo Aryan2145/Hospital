@@ -151,8 +151,7 @@ export default function DiscountApproversPage() {
               </p>
               <p>
                 If <strong>no approvers are configured</strong>, the system falls back to allowing any{" "}
-                <Badge variant="outline" className="text-xs">Admin</Badge> or{" "}
-                <Badge variant="outline" className="text-xs">System Admin</Badge> to approve discounts.
+                <Badge variant="outline" className="text-xs">Admin</Badge> to approve discounts.
               </p>
               <p>
                 Approvers receive <strong>in-app notifications, email, and SMS alerts</strong> when a discount is requested.
@@ -251,7 +250,7 @@ export default function DiscountApproversPage() {
               <ShieldCheck className="w-8 h-8 mx-auto mb-2 text-muted-foreground opacity-40" />
               <p className="text-sm text-muted-foreground">No discount approvers configured</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Falling back to Admin / System Admin role for discount approvals
+                Falling back to Admin role for discount approvals
               </p>
             </div>
           ) : (

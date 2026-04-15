@@ -91,6 +91,13 @@ export async function setupAuth(app: Express) {
         if (candidate.lockedUntil && new Date(candidate.lockedUntil) > new Date()) continue;
         const isValid = await bcrypt.compare(password, candidate.passwordHash!);
         if (isValid) {
+          if (candidate.systemRoleId) {
+            const [candidateRole] = await db.select().from(systemRoles).where(eq(systemRoles.id, candidate.systemRoleId));
+            if (candidateRole && candidateRole.code === "SYS_ADMIN") {
+              return res.status(403).json({ message: "Invalid mobile number or password" });
+            }
+          }
+
           await db.update(crmUsers).set({
             failedLoginAttempts: 0,
             lockedUntil: null,

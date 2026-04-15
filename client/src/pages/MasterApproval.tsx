@@ -120,7 +120,7 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "triggerEvent", label: "Trigger Event", type: "text" },
     { key: "timeLimitMinutes", label: "Time Limit (minutes)", type: "number" },
     { key: "appliesToRole", label: "Applies To Role", type: "select", options: ["PATIENT_COORDINATOR", "COUNSELLOR", "MANAGER", "ADMIN", "All"] },
-    { key: "escalationRole", label: "Escalation Role", type: "select", options: ["MANAGER", "ADMIN", "SYS_ADMIN"] },
+    { key: "escalationRole", label: "Escalation Role", type: "select", options: ["MANAGER", "ADMIN"] },
   ],
   reminderPolicies: [
     { key: "offsetMinutes", label: "Offset (minutes before)", type: "number" },

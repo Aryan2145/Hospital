@@ -176,7 +176,7 @@ const COMPLIANCE_ITEMS: ComplianceItem[] = [
     status: "done",
     icon: Shield,
     details: [
-      "SYS_ADMIN, ADMIN, MANAGER, PATIENT_COORDINATOR/COUNSELLOR roles",
+      "ADMIN, MANAGER, PATIENT_COORDINATOR/COUNSELLOR roles",
       "PHI access levels configurable per user (Full/Masked/None)",
       "Access scope types: All, Branch, Self",
       "Page-level visibility controls based on role",
@@ -227,7 +227,7 @@ const COMPLIANCE_ITEMS: ComplianceItem[] = [
     status: "pending",
     icon: Lock,
     details: [
-      "SMS/Email OTP for ADMIN and SYS_ADMIN login",
+      "SMS/Email OTP for Admin login",
       "Configurable per-tenant enforcement policy",
       "Backup codes for account recovery",
     ],
@@ -3211,10 +3211,9 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
           <section>
             <h2 className="text-lg font-bold text-foreground mb-3">Assigning Roles</h2>
             <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-              When creating or editing a user, select the role that matches their job function. The CRM has 12 roles across four functional groups:
+              When creating or editing a user, select the role that matches their job function. The CRM has 11 assignable roles across four functional groups:
             </p>
             <FieldTable fields={[
-              { field: "SYS_ADMIN", desc: "Platform-level administrator. Manages all hospitals (tenants), subscriptions, and system-wide settings. Accesses a separate Admin Panel — not a hospital user." },
               { field: "Admin", desc: "Full hospital-level access. Manages users, configurations, master data, branding, and access control. Sees all data across branches." },
               { field: "Manager", desc: "Team leader. Views team performance, overdue tasks, and lead assignments. Typically Branch or All scope." },
               { field: "MIS Viewer", desc: "Analytics-only. Read-only access to the Management Dashboard. Cannot open individual records." },
