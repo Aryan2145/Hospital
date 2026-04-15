@@ -5748,31 +5748,114 @@ export async function registerRoutes(
 
       const leaves = await storage.getDoctorLeaveExceptions(doctorId, tid, date);
       if (leaves.length > 0) {
-        return res.json({ available: false, reason: "Doctor on leave", slots: [] });
+        return res.json({ available: false, reason: "Doctor on leave", slots: [], windows: [] });
       }
 
       const timings = await storage.getDoctorOpdTimings(doctorId, tid);
       const dayTimings = timings.filter((t: any) => t.dayOfWeek === dayOfWeek);
       if (dayTimings.length === 0) {
-        return res.json({ available: false, reason: "No OPD on this day", slots: [] });
+        return res.json({ available: false, reason: "No OPD on this day", slots: [], windows: [] });
       }
 
-      const existingAppts = await storage.getAppointmentsForDoctorOnDate(doctorId, tid, date);
+      // Fetch existing appointments enriched with patient/lead names for this doctor on this date
+      const enrichedAppts = (await pool.query(
+        `SELECT a.start_time,
+          COALESCE(
+            NULLIF(CONCAT(p.first_name, ' ', COALESCE(p.last_name,'')), ' '),
+            l.name,
+            'Patient'
+          ) as patient_name
+         FROM appointments a
+         LEFT JOIN leads l ON l.id = a.lead_id
+         LEFT JOIN patients p ON p.id = a.patient_id
+         WHERE a.doctor_id = $1 AND a.tenant_id = $2
+           AND DATE(a.appointment_date AT TIME ZONE 'UTC') = $3::date
+           AND a.status != 'Cancelled'`,
+        [doctorId, tid, date]
+      )).rows;
 
-      const slots: Array<{ startTime: string; endTime: string; maxPatients: number; booked: number; availableCount: number }> = [];
+      // Helper: convert "HH:MM" or "HH:MM:SS" to total minutes
+      function timeToMin(t: string): number {
+        const parts = t.split(":");
+        return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+      }
+      function minToTime(m: number): string {
+        const h = Math.floor(m / 60) % 24;
+        const mm = m % 60;
+        return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+      }
+
+      // For backward-compat: keep top-level slots as window summaries
+      interface WindowSlot {
+        startTime: string; endTime: string; maxPatients: number; booked: number; availableCount: number;
+      }
+      interface IndividualSlot {
+        startTime: string; endTime: string;
+        windowStart: string; windowEnd: string;
+        isBooked: boolean; patientName: string | null;
+        availableCount: number;
+      }
+
+      const windowSlots: WindowSlot[] = [];
+      const individualSlots: IndividualSlot[] = [];
+
       for (const timing of dayTimings) {
-        const booked = existingAppts.filter((a: any) => a.startTime === timing.startTime).length;
+        const winStart = timing.startTime.slice(0, 5);
+        const winEnd = timing.endTime.slice(0, 5);
+        const winStartMin = timeToMin(winStart);
+        const winEndMin = timeToMin(winEnd);
+        const slotDurMin = timing.slotDuration || 15;
         const maxP = timing.maxPatients || 20;
-        slots.push({
-          startTime: timing.startTime,
-          endTime: timing.endTime,
+
+        // Window-level summary (backward compat)
+        const winBooked = enrichedAppts.filter((a: any) => {
+          const t = (a.start_time || "").slice(0, 5);
+          const tMin = timeToMin(t || "00:00");
+          return tMin >= winStartMin && tMin < winEndMin;
+        }).length;
+        windowSlots.push({
+          startTime: winStart,
+          endTime: winEnd,
           maxPatients: maxP,
-          booked,
-          availableCount: Math.max(0, maxP - booked),
+          booked: winBooked,
+          availableCount: Math.max(0, maxP - winBooked),
         });
+
+        // Individual slots within this window
+        let cur = winStartMin;
+        while (cur + slotDurMin <= winEndMin) {
+          const slotStart = minToTime(cur);
+          const slotEnd = minToTime(cur + slotDurMin);
+          // Find appointment(s) whose start time falls in this slot
+          const apptInSlot = enrichedAppts.find((a: any) => {
+            const tMin = timeToMin((a.start_time || "00:00").slice(0, 5));
+            return tMin >= cur && tMin < cur + slotDurMin;
+          });
+          individualSlots.push({
+            startTime: slotStart,
+            endTime: slotEnd,
+            windowStart: winStart,
+            windowEnd: winEnd,
+            isBooked: !!apptInSlot,
+            patientName: apptInSlot ? apptInSlot.patient_name : null,
+            availableCount: apptInSlot ? 0 : 1,
+          });
+          cur += slotDurMin;
+        }
       }
 
-      res.json({ available: true, dayOfWeek, slots });
+      res.json({
+        available: true,
+        dayOfWeek,
+        slots: windowSlots,       // backward compat: window-level summary
+        individualSlots,          // new: individual 15-min slots for the slot grid
+        windows: dayTimings.map((t: any) => ({
+          startTime: t.startTime.slice(0, 5),
+          endTime: t.endTime.slice(0, 5),
+          maxPatients: t.maxPatients || 20,
+          slotDuration: t.slotDuration || 15,
+        })),
+      });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

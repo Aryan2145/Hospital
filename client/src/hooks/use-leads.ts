@@ -237,8 +237,22 @@ export function useDoctors() {
   });
 }
 
+export interface IndividualSlot {
+  startTime: string; endTime: string;
+  windowStart: string; windowEnd: string;
+  isBooked: boolean; patientName: string | null;
+  availableCount: number;
+}
+export interface DoctorAvailability {
+  available: boolean;
+  reason?: string;
+  dayOfWeek?: string;
+  slots: Array<{ startTime: string; endTime: string; maxPatients: number; booked: number; availableCount: number }>;
+  individualSlots?: IndividualSlot[];
+  windows?: Array<{ startTime: string; endTime: string; maxPatients: number; slotDuration: number }>;
+}
 export function useDoctorAvailability(doctorId: number | null, date: string | null) {
-  return useQuery<{ available: boolean; reason?: string; dayOfWeek?: string; slots: Array<{ startTime: string; endTime: string; maxPatients: number; booked: number; availableCount: number }> }>({
+  return useQuery<DoctorAvailability>({
     queryKey: ["/api/doctors", doctorId, "availability", date],
     queryFn: async () => {
       const res = await fetch(`/api/doctors/${doctorId}/availability?date=${date}`, { credentials: "include" });
