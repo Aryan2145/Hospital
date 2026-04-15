@@ -221,7 +221,7 @@ export function Sidebar() {
   const [location] = useLocation();
   const { logout, user } = useAuth();
   const { crmUser, roleName, roleCode, canViewPage } = useCurrentUser();
-  const { displayName: tenantDisplayName, logoUrl: tenantLogo } = useTenantBranding();
+  const { displayName: tenantDisplayName, logoUrl: tenantLogo, tenant: tenantData } = useTenantBranding();
   const { toast } = useToast();
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [cpCurrent, setCpCurrent] = useState("");
@@ -256,7 +256,17 @@ export function Sidebar() {
             )}
             <div>
               <h1 className="font-bold text-lg tracking-tight leading-tight" style={{color: 'hsl(208, 79%, 28%)'}} data-testid="text-sidebar-brand">{tenantDisplayName}</h1>
-              <p className="text-xs text-muted-foreground font-medium">Hospital CRM</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <p className="text-xs text-muted-foreground font-medium">Hospital CRM</p>
+                {tenantData?.subdomain && (
+                  <span
+                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 tracking-wide"
+                    data-testid="text-tenant-subdomain"
+                  >
+                    {tenantData.subdomain}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <NotificationBell />
