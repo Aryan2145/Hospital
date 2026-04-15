@@ -327,6 +327,8 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
         </div>
       </div>
 
+      {!readOnly && <PendingHandoversCard navigate={navigate} />}
+
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
         <KPICard title="Total Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} onClick={nav ? () => nav("/leads") : undefined} />
         <KPICard title="Active Episodes" value={(Number(ec.active_episodes) || 0).toString()} icon={FileText} trend={`${Number(ec.surgeries) || 0} surgeries`} up onClick={nav ? () => nav("/leads?view=list") : undefined} />
