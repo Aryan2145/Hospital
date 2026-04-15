@@ -228,6 +228,9 @@ export function Sidebar() {
   const [cpNew, setCpNew] = useState("");
   const [cpConfirm, setCpConfirm] = useState("");
   const [cpLoading, setCpLoading] = useState(false);
+  const [showCpCurrent, setShowCpCurrent] = useState(false);
+  const [showCpNew, setShowCpNew] = useState(false);
+  const [showCpConfirm, setShowCpConfirm] = useState(false);
 
   const displayName = crmUser?.name || `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User";
   const displayEmail = crmUser?.email || user?.email || "";
@@ -383,15 +386,30 @@ export function Sidebar() {
           >
             <div>
               <Label htmlFor="cp-current">Current Password</Label>
-              <Input id="cp-current" type="password" value={cpCurrent} onChange={(e) => setCpCurrent(e.target.value)} required data-testid="input-current-password" />
+              <div className="relative">
+                <Input id="cp-current" type={showCpCurrent ? "text" : "password"} value={cpCurrent} onChange={(e) => setCpCurrent(e.target.value)} required className="pr-10" data-testid="input-current-password" />
+                <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowCpCurrent(v => !v)} tabIndex={-1} data-testid="button-toggle-current-password">
+                  {showCpCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <div>
               <Label htmlFor="cp-new">New Password</Label>
-              <Input id="cp-new" type="password" value={cpNew} onChange={(e) => setCpNew(e.target.value)} required minLength={6} data-testid="input-new-password" />
+              <div className="relative">
+                <Input id="cp-new" type={showCpNew ? "text" : "password"} value={cpNew} onChange={(e) => setCpNew(e.target.value)} required minLength={6} className="pr-10" data-testid="input-new-password" />
+                <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowCpNew(v => !v)} tabIndex={-1} data-testid="button-toggle-new-password">
+                  {showCpNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <div>
               <Label htmlFor="cp-confirm">Confirm New Password</Label>
-              <Input id="cp-confirm" type="password" value={cpConfirm} onChange={(e) => setCpConfirm(e.target.value)} required minLength={6} data-testid="input-confirm-password" />
+              <div className="relative">
+                <Input id="cp-confirm" type={showCpConfirm ? "text" : "password"} value={cpConfirm} onChange={(e) => setCpConfirm(e.target.value)} required minLength={6} className="pr-10" data-testid="input-confirm-password" />
+                <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowCpConfirm(v => !v)} tabIndex={-1} data-testid="button-toggle-confirm-password">
+                  {showCpConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <Button type="submit" className="w-full" disabled={cpLoading} data-testid="button-submit-change-password">
               {cpLoading ? "Changing..." : "Change Password"}

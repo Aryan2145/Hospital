@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import {
-  Mail, Save, TestTube, Server, Lock, User, Hash, AtSign, Shield, Loader2,
+  Mail, Save, TestTube, Server, Lock, User, Hash, AtSign, Shield, Loader2, Eye, EyeOff,
 } from "lucide-react";
 
 interface EmailSettings {
@@ -39,6 +39,7 @@ export default function EmailSettingsPage() {
     smtp_from_name: "",
     smtp_secure: "true",
   });
+  const [showSmtpPass, setShowSmtpPass] = useState(false);
 
   useEffect(() => {
     if (settings) {
@@ -171,14 +172,20 @@ export default function EmailSettingsPage() {
                       <Lock className="w-3.5 h-3.5" />
                       SMTP Password
                     </Label>
-                    <Input
-                      id="smtp_pass"
-                      type="password"
-                      placeholder="App password or SMTP password"
-                      value={form.smtp_pass || ""}
-                      onChange={(e) => handleChange("smtp_pass", e.target.value)}
-                      data-testid="input-smtp-pass"
-                    />
+                    <div className="relative">
+                      <Input
+                        id="smtp_pass"
+                        type={showSmtpPass ? "text" : "password"}
+                        placeholder="App password or SMTP password"
+                        value={form.smtp_pass || ""}
+                        onChange={(e) => handleChange("smtp_pass", e.target.value)}
+                        className="pr-10"
+                        data-testid="input-smtp-pass"
+                      />
+                      <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowSmtpPass(v => !v)} tabIndex={-1} data-testid="button-toggle-smtp-pass">
+                        {showSmtpPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
 

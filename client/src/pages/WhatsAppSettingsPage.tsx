@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import {
-  MessageSquare, Save, TestTube, Key, Hash, Phone, Shield, Loader2, Send, CheckCircle2, Info, FileText,
+  MessageSquare, Save, TestTube, Key, Hash, Phone, Shield, Loader2, Send, CheckCircle2, Info, FileText, Eye, EyeOff,
 } from "lucide-react";
 
 interface WhatsAppSettings {
@@ -38,6 +38,7 @@ export default function WhatsAppSettingsPage() {
     wa_template_appointment: "",
     wa_test_phone: "",
   });
+  const [showAccessToken, setShowAccessToken] = useState(false);
 
   const [testPhone, setTestPhone] = useState("");
 
@@ -192,14 +193,20 @@ export default function WhatsAppSettingsPage() {
                     <Key className="w-3.5 h-3.5" />
                     Permanent Access Token *
                   </Label>
-                  <Input
-                    id="wa_access_token"
-                    type="password"
-                    placeholder="Your permanent access token from Meta"
-                    value={form.wa_access_token || ""}
-                    onChange={(e) => handleChange("wa_access_token", e.target.value)}
-                    data-testid="input-wa-access-token"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="wa_access_token"
+                      type={showAccessToken ? "text" : "password"}
+                      placeholder="Your permanent access token from Meta"
+                      value={form.wa_access_token || ""}
+                      onChange={(e) => handleChange("wa_access_token", e.target.value)}
+                      className="pr-10"
+                      data-testid="input-wa-access-token"
+                    />
+                    <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowAccessToken(v => !v)} tabIndex={-1} data-testid="button-toggle-wa-token">
+                      {showAccessToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                   <p className="text-[11px] text-muted-foreground">Generate a permanent token in Meta Business Suite &gt; System Users. Never share this token.</p>
                 </div>
               </CardContent>

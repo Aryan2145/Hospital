@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Headset, LogIn } from "lucide-react";
+import { Headset, LogIn, Eye, EyeOff } from "lucide-react";
 
 export default function SupportAdminLogin() {
   const { toast } = useToast();
@@ -13,6 +13,7 @@ export default function SupportAdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -70,14 +71,19 @@ export default function SupportAdminLogin() {
             </div>
             <div>
               <Label className="text-slate-300">Password</Label>
-              <Input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500"
-                data-testid="input-support-password"
-              />
+              <div className="relative">
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500 pr-10"
+                  data-testid="input-support-password"
+                />
+                <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200" onClick={() => setShowPassword(v => !v)} tabIndex={-1} data-testid="button-toggle-support-password">
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <Button type="submit" className="w-full" disabled={loading} data-testid="button-support-login">
               <LogIn className="w-4 h-4 mr-2" />

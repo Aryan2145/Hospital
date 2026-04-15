@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import {
   Plus, Settings, RefreshCw, Trash2, CheckCircle2, XCircle,
-  Wifi, WifiOff, ArrowUpRight, BarChart3, Eye, MousePointerClick,
+  Wifi, WifiOff, ArrowUpRight, BarChart3, Eye, EyeOff, MousePointerClick,
   IndianRupee, Target, Loader2, Zap, Globe, TrendingUp,
   Copy, Pencil, Link2, Phone, Mail, MessageSquare, FileSpreadsheet,
   Key, ExternalLink, Shield, Clock, PhoneCall,
@@ -392,6 +392,7 @@ export default function ConnectorsPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformTemplate | null>(null);
   const [editingConnector, setEditingConnector] = useState<PlatformConnector | null>(null);
   const [credentialValues, setCredentialValues] = useState<Record<string, string>>({});
+  const [showCredFields, setShowCredFields] = useState<Record<string, boolean>>({});
   const [metricsDialog, setMetricsDialog] = useState<PlatformConnector | null>(null);
   const [ruleDialog, setRuleDialog] = useState(false);
   const [editingRule, setEditingRule] = useState<LeadCaptureRule | null>(null);
@@ -540,6 +541,7 @@ export default function ConnectorsPage() {
     setSelectedPlatform(null);
     setEditingConnector(null);
     setCredentialValues({});
+    setShowCredFields({});
   }
 
   function closeRuleDialog() {
@@ -636,6 +638,7 @@ export default function ConnectorsPage() {
       setEditingConnector(null);
       setCredentialValues({});
     }
+    setShowCredFields({});
     setSelectedPlatform(template);
     setConfigDialog(true);
   }
@@ -1088,13 +1091,29 @@ export default function ConnectorsPage() {
               {selectedPlatform.credentialFields.filter(f => f.key !== "webhookUrl").map((field) => (
                 <div key={field.key} className="space-y-1.5">
                   <Label>{field.label}</Label>
-                  <Input
-                    type={field.type}
-                    placeholder={field.placeholder}
-                    value={credentialValues[field.key] || ""}
-                    onChange={(e) => setCredentialValues({ ...credentialValues, [field.key]: e.target.value })}
-                    data-testid={`input-cred-${field.key}`}
-                  />
+                  {field.type === "password" ? (
+                    <div className="relative">
+                      <Input
+                        type={showCredFields[field.key] ? "text" : "password"}
+                        placeholder={field.placeholder}
+                        value={credentialValues[field.key] || ""}
+                        onChange={(e) => setCredentialValues({ ...credentialValues, [field.key]: e.target.value })}
+                        className="pr-10"
+                        data-testid={`input-cred-${field.key}`}
+                      />
+                      <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowCredFields(prev => ({ ...prev, [field.key]: !prev[field.key] }))} tabIndex={-1} data-testid={`button-toggle-cred-${field.key}`}>
+                        {showCredFields[field.key] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  ) : (
+                    <Input
+                      type={field.type}
+                      placeholder={field.placeholder}
+                      value={credentialValues[field.key] || ""}
+                      onChange={(e) => setCredentialValues({ ...credentialValues, [field.key]: e.target.value })}
+                      data-testid={`input-cred-${field.key}`}
+                    />
+                  )}
                 </div>
               ))}
 
