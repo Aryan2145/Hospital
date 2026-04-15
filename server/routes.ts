@@ -1568,6 +1568,39 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/leads/pending-handovers", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const sessionCrmUserId = req.session?.crmUserId;
+      if (!sessionCrmUserId) return res.json([]);
+
+      const allLeads = await storage.getLeads(tid);
+      const allCrmUsers = await storage.getCrmUsers(tid);
+
+      const pending = allLeads.filter(l =>
+        l.handoverStatus === "Pending" &&
+        l.handoverToUserId === sessionCrmUserId
+      );
+
+      const enriched = pending.map(l => {
+        const fromUser = allCrmUsers.find((u: any) => u.id === l.handoverFromUserId);
+        return {
+          id: l.id,
+          patientName: l.name,
+          status: l.status,
+          handoverFromUserId: l.handoverFromUserId,
+          handoverFromUserName: fromUser?.name || `User #${l.handoverFromUserId}`,
+          handoverAt: l.handoverAt,
+          handoverReason: l.handoverReason,
+        };
+      });
+
+      res.json(enriched);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch pending handovers" });
+    }
+  });
+
   app.get("/api/leads/dormant", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId(req);

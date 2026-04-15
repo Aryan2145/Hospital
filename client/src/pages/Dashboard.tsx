@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { fmtTime } from "@/lib/date-utils";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -15,7 +15,8 @@ import {
   IndianRupee, BarChart3, PieChart as PieChartIcon,
   AlertTriangle, Phone, Clock, CheckCircle2, Flame, Snowflake, ChevronRight,
   Brain, Thermometer, TrendingDown, Ban, ShieldCheck, ClipboardList,
-  PhoneCall, ListChecks, Eye, FileText, User2, Building2
+  PhoneCall, ListChecks, Eye, FileText, User2, Building2,
+  ArrowRightLeft, Check, X
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
@@ -23,6 +24,7 @@ import {
 } from "recharts";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { useLocation } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
 
 const VIROC_BLUE = "#0f4c81";
 const VIROC_ORANGE = "#ff8c00";
@@ -161,6 +163,127 @@ export default function Dashboard() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+function PendingHandoversCard({ navigate }: { navigate: (path: string) => void }) {
+  const qc = useQueryClient();
+  const [rejectingId, setRejectingId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+
+  const { data: handovers } = useQuery<any[]>({
+    queryKey: ["/api/leads/pending-handovers"],
+    refetchInterval: 60000,
+    staleTime: 30000,
+  });
+
+  const handoverMutation = useMutation({
+    mutationFn: ({ leadId, action, rejectionReason }: { leadId: number; action: string; rejectionReason?: string }) =>
+      apiRequest("PATCH", `/api/leads/${leadId}/handover`, { action, rejectionReason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/leads/pending-handovers"] });
+      setRejectingId(null);
+      setRejectReason("");
+    },
+  });
+
+  if (!handovers || handovers.length === 0) return null;
+
+  return (
+    <Card className="border-orange-200 bg-orange-50/40 dark:bg-orange-950/10 dark:border-orange-900/40" data-testid="card-pending-handovers">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <ArrowRightLeft className="h-4 w-4 text-orange-500" />
+          Pending Handovers
+          <Badge className="ml-auto text-xs bg-orange-500 text-white">{handovers.length}</Badge>
+        </CardTitle>
+        <CardDescription className="text-xs">Leads transferred to you — accept or reject to proceed</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          {handovers.map((h: any) => (
+            <div
+              key={h.id}
+              className="flex items-center gap-3 p-3 bg-white dark:bg-background border border-orange-200 dark:border-orange-900/50 rounded-lg"
+              data-testid={`handover-row-${h.id}`}
+            >
+              <div className="flex-1 min-w-0">
+                <button
+                  className="text-sm font-semibold text-primary hover:underline text-left truncate block"
+                  onClick={() => navigate(`/leads/${h.id}`)}
+                  data-testid={`link-handover-lead-${h.id}`}
+                >
+                  {h.patientName}
+                </button>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  From <span className="font-medium text-foreground">{h.handoverFromUserName}</span>
+                  {h.handoverAt && (
+                    <span> · {formatDistanceToNow(new Date(h.handoverAt), { addSuffix: true })}</span>
+                  )}
+                  {h.handoverReason && (
+                    <span> · "{h.handoverReason}"</span>
+                  )}
+                </p>
+              </div>
+              {rejectingId === h.id ? (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <input
+                    className="text-xs border rounded px-2 py-1 w-36 bg-background"
+                    placeholder="Reason (optional)"
+                    value={rejectReason}
+                    onChange={e => setRejectReason(e.target.value)}
+                    data-testid={`input-reject-reason-${h.id}`}
+                  />
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="h-7 text-xs px-2"
+                    onClick={() => handoverMutation.mutate({ leadId: h.id, action: "reject", rejectionReason: rejectReason })}
+                    disabled={handoverMutation.isPending}
+                    data-testid={`button-confirm-reject-${h.id}`}
+                  >
+                    Confirm
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs px-2"
+                    onClick={() => { setRejectingId(null); setRejectReason(""); }}
+                    data-testid={`button-cancel-reject-${h.id}`}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs px-3 bg-primary text-white"
+                    onClick={() => handoverMutation.mutate({ leadId: h.id, action: "accept" })}
+                    disabled={handoverMutation.isPending}
+                    data-testid={`button-accept-handover-${h.id}`}
+                  >
+                    <Check className="w-3 h-3 mr-1" />
+                    Accept
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs px-3 border-red-300 text-red-600 hover:bg-red-50"
+                    onClick={() => setRejectingId(h.id)}
+                    disabled={handoverMutation.isPending}
+                    data-testid={`button-reject-handover-${h.id}`}
+                  >
+                    <X className="w-3 h-3 mr-1" />
+                    Reject
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -376,6 +499,8 @@ function ManagerDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, userNam
         </div>
       </div>
 
+      <PendingHandoversCard navigate={navigate} />
+
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <KPICard title="My Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} onClick={() => navigate("/leads")} />
         <KPICard title="Hot Leads" value={(Number(lc.hot_leads) || 0).toString()} icon={Flame} trend="Needs immediate attention" up onClick={() => navigate("/leads?filter=hot&view=list")} />
@@ -512,6 +637,8 @@ function IndividualDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, user
           <Badge variant="secondary" className="text-xs">Today</Badge>
         </div>
       </div>
+
+      <PendingHandoversCard navigate={navigate} />
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <KPICard title="My Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} onClick={() => navigate("/leads?filter=my-leads")} />
