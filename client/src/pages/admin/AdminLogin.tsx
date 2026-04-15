@@ -7,17 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Shield, Phone, Lock, AlertTriangle } from "lucide-react";
+import { Shield, Lock, AlertTriangle, Eye, EyeOff, AtSign } from "lucide-react";
 
 export default function AdminLogin() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [mobile, setMobile] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
   const loginMutation = useMutation({
-    mutationFn: async (data: { mobile: string; password: string }) => {
+    mutationFn: async (data: { identifier: string; password: string }) => {
       const res = await apiRequest("POST", "/api/auth/admin-login", data);
       return res.json();
     },
@@ -34,11 +35,11 @@ export default function AdminLogin() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!mobile.trim() || !password.trim()) {
-      setError("Please enter both mobile number and password.");
+    if (!identifier.trim() || !password.trim()) {
+      setError("Please enter both username and password.");
       return;
     }
-    loginMutation.mutate({ mobile: mobile.trim(), password: password.trim() });
+    loginMutation.mutate({ identifier: identifier.trim(), password: password.trim() });
   };
 
   return (
@@ -63,17 +64,18 @@ export default function AdminLogin() {
               )}
 
               <div className="space-y-2">
-                <Label className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.7)' }}>Mobile Number</Label>
+                <Label className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.7)' }}>Email or Mobile Number</Label>
                 <div className="relative">
-                  <Phone className="absolute left-3 top-3 h-4 w-4" style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <AtSign className="absolute left-3 top-3 h-4 w-4" style={{ color: 'rgba(255,255,255,0.35)' }} />
                   <Input
-                    type="tel"
-                    value={mobile}
-                    onChange={(e) => setMobile(e.target.value)}
-                    placeholder="e.g. 9033050100"
+                    type="text"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="e.g. support@rgbindia.com"
                     className="pl-10 text-white placeholder:text-white/30 focus:ring-orange-500/20"
                     style={{ backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.15)' }}
                     data-testid="input-admin-mobile"
+                    autoComplete="username"
                   />
                 </div>
               </div>
@@ -83,14 +85,25 @@ export default function AdminLogin() {
                 <div className="relative">
                   <Lock className="absolute left-3 top-3 h-4 w-4" style={{ color: 'rgba(255,255,255,0.35)' }} />
                   <Input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter your password"
-                    className="pl-10 text-white placeholder:text-white/30 focus:ring-orange-500/20"
+                    className="pl-10 pr-10 text-white placeholder:text-white/30 focus:ring-orange-500/20"
                     style={{ backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.15)' }}
                     data-testid="input-admin-password"
+                    autoComplete="current-password"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(v => !v)}
+                    className="absolute right-3 top-3 h-4 w-4"
+                    style={{ color: 'rgba(255,255,255,0.35)' }}
+                    tabIndex={-1}
+                    data-testid="button-toggle-admin-password"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 

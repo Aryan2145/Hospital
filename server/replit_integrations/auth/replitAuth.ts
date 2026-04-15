@@ -150,17 +150,27 @@ export async function setupAuth(app: Express) {
 
   app.post("/api/auth/admin-login", async (req, res) => {
     try {
-      const { mobile, password } = req.body;
-      if (!mobile || !password) {
-        return res.status(400).json({ message: "Mobile number and password are required" });
+      const { mobile, identifier, password } = req.body;
+      const loginId = (identifier || mobile || "").trim();
+      if (!loginId || !password) {
+        return res.status(400).json({ message: "Username and password are required" });
       }
 
-      const normalizedMobile = mobile.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
+      let allMatches: any[] = [];
 
-      let allMatches = await db.select().from(crmUsers).where(eq(crmUsers.phone, normalizedMobile));
+      // Try email lookup first
+      const emailLike = loginId.includes("@");
+      if (emailLike) {
+        allMatches = await db.select().from(crmUsers).where(eq(crmUsers.email, loginId));
+      }
 
-      if (allMatches.length === 0 && normalizedMobile.length === 10) {
-        allMatches = await db.select().from(crmUsers).where(eq(crmUsers.phone, `+91${normalizedMobile}`));
+      // Try phone lookup (mobile)
+      if (allMatches.length === 0) {
+        const normalizedMobile = loginId.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
+        allMatches = await db.select().from(crmUsers).where(eq(crmUsers.phone, normalizedMobile));
+        if (allMatches.length === 0 && normalizedMobile.length === 10) {
+          allMatches = await db.select().from(crmUsers).where(eq(crmUsers.phone, `+91${normalizedMobile}`));
+        }
       }
 
       const sysAdminMatches = allMatches.filter(u => u.systemRoleId !== null);

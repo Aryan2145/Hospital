@@ -10987,21 +10987,24 @@ export async function registerRoutes(
     }
   });
 
-  // --- Seed default support admin ---
+  // --- Seed default support admin (always enforce password) ---
   try {
+    const bcrypt = await import("bcryptjs");
+    const adminHash = await bcrypt.hash("HCRM@admin123", 10);
     const [existingAdmin] = await db.select().from(supportUsers)
       .where(eq(supportUsers.email, "support@rgbindia.com"));
     if (!existingAdmin) {
-      const bcrypt = await import("bcryptjs");
-      const hash = await bcrypt.hash("RGBSupport@123", 10);
       await db.insert(supportUsers).values({
         name: "RGB Support Admin",
         email: "support@rgbindia.com",
         phone: "+919033050100",
-        passwordHash: hash,
+        passwordHash: adminHash,
         role: "support_admin",
       });
-      console.log("[seed] Default support admin created: support@rgbindia.com / RGBSupport@123");
+      console.log("[seed] Default support admin created: support@rgbindia.com / HCRM@admin123");
+    } else {
+      await db.update(supportUsers).set({ passwordHash: adminHash }).where(eq(supportUsers.email, "support@rgbindia.com"));
+      console.log("[seed] Support admin password enforced: support@rgbindia.com / HCRM@admin123");
     }
   } catch (err: any) {
     console.error("[seed] Error seeding support admin:", err.message);
@@ -11797,26 +11800,32 @@ async function ensureSuperAdmin() {
     }
 
     const phone = "+919033050100";
-    const defaultPassword = "RGBTech@123";
-    const existingUsers = await db.select().from(crmUsers).where(
+    const adminEmail = "support@rgbindia.com";
+    const defaultPassword = "HCRM@admin123";
+
+    // Find by phone first, then by email
+    let existingUsers = await db.select().from(crmUsers).where(
       and(eq(crmUsers.phone, phone), eq(crmUsers.tenantId, tid))
     );
+    if (existingUsers.length === 0) {
+      existingUsers = await db.select().from(crmUsers).where(
+        and(eq(crmUsers.email, adminEmail), eq(crmUsers.tenantId, tid))
+      );
+    }
 
     if (existingUsers.length > 0) {
       const updates: Record<string, any> = {};
-      if (!existingUsers[0].passwordHash) {
-        updates.passwordHash = await hashPassword(defaultPassword);
-      }
+      // Always enforce email and password
+      if (existingUsers[0].email !== adminEmail) updates.email = adminEmail;
+      updates.passwordHash = await hashPassword(defaultPassword);
       const sysAdminRole = await db.select().from(systemRoles).where(
         and(eq(systemRoles.code, "SYS_ADMIN"), eq(systemRoles.tenantId, tid))
       );
       if (sysAdminRole.length > 0 && existingUsers[0].systemRoleId !== sysAdminRole[0].id) {
         updates.systemRoleId = sysAdminRole[0].id;
       }
-      if (Object.keys(updates).length > 0) {
-        await db.update(crmUsers).set(updates).where(eq(crmUsers.id, existingUsers[0].id));
-        console.log("Super Admin updated:", Object.keys(updates).join(", "));
-      }
+      await db.update(crmUsers).set(updates).where(eq(crmUsers.id, existingUsers[0].id));
+      console.log(`[seed] Super Admin enforced: ${adminEmail} / ${defaultPassword}`);
     } else {
       let roleRows = await db.select().from(systemRoles).where(
         and(eq(systemRoles.code, "SYS_ADMIN"), eq(systemRoles.tenantId, tid))
@@ -11833,7 +11842,7 @@ async function ensureSuperAdmin() {
         tenantId: tid,
         code: "SUPERADMIN",
         name: "Super Admin",
-        email: "superadmin@viroc.in",
+        email: adminEmail,
         phone,
         systemRoleId: adminRoleId,
         isActive: true,
