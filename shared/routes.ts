@@ -238,7 +238,7 @@ export const MASTER_CATEGORIES = [
     category: "Treatment & Providers",
     tables: [
       { key: "treatmentDepartments", label: "Treatment Department" },
-      { key: "consultationTypes", label: "Consultation Type" },
+      { key: "consultationTypes", label: "Treatment Sub-Department" },
     ]
   },
   {

@@ -185,6 +185,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
   const [newPatientPhone, setNewPatientPhone] = useState("");
   const [newPatientAge, setNewPatientAge] = useState("");
   const [newPatientGender, setNewPatientGender] = useState("");
+  const [newPatientTreatmentDeptId, setNewPatientTreatmentDeptId] = useState("");
   const [newPatientConsultationType, setNewPatientConsultationType] = useState("");
   const [isCreatingLead, setIsCreatingLead] = useState(false);
 
@@ -270,6 +271,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
           phoneE164: normalizePhone(newPatientPhone.trim()),
           status: "Qualified",
           doctorId: Number(bookDoctorId),
+          treatmentDepartmentId: newPatientTreatmentDeptId ? Number(newPatientTreatmentDeptId) : undefined,
           consultationTypeId: newPatientConsultationType ? Number(newPatientConsultationType) : undefined,
           notes: [
             newPatientAge ? `Age: ${newPatientAge}` : "",
@@ -332,6 +334,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
   const [episodeCreateMode, setEpisodeCreateMode] = useState(false);
   const [newEpisodeNotes, setNewEpisodeNotes] = useState("");
   const [newEpisodeTreatmentDeptId, setNewEpisodeTreatmentDeptId] = useState("");
+  const [newEpisodeSubDeptId, setNewEpisodeSubDeptId] = useState("");
   const [isCreatingEpisode, setIsCreatingEpisode] = useState(false);
   const [isLinkingEpisode, setIsLinkingEpisode] = useState(false);
 
@@ -351,7 +354,6 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
 
   const { data: treatmentDeptsList } = useQuery<any[]>({
     queryKey: ["/api/masters/treatmentDepartments"],
-    enabled: !!episodePrompt,
   });
 
 
@@ -371,6 +373,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
         setEpisodeCreateMode(false);
         setNewEpisodeNotes("");
         setNewEpisodeTreatmentDeptId("");
+        setNewEpisodeSubDeptId("");
       }
     } catch (err: any) {
       toast({ title: "Check-in failed", description: err.message, variant: "destructive" });
@@ -410,6 +413,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
         notes: newEpisodeNotes || undefined,
       };
       if (newEpisodeTreatmentDeptId) body.treatmentDepartmentId = Number(newEpisodeTreatmentDeptId);
+      if (newEpisodeSubDeptId) body.consultationTypeId = Number(newEpisodeSubDeptId);
       const res = await apiRequest("POST", "/api/episodes", body);
       const newEpisode = await res.json();
       await apiRequest("PATCH", `/api/appointments/${appt.id}`, {
@@ -1007,7 +1011,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                   <Label className="text-xs font-medium text-muted-foreground">Treatment Department</Label>
                   <SearchableSelect
                     value={newEpisodeTreatmentDeptId}
-                    onValueChange={setNewEpisodeTreatmentDeptId}
+                    onValueChange={(v) => { setNewEpisodeTreatmentDeptId(v); setNewEpisodeSubDeptId(""); }}
                     options={[
                       { value: "", label: "General" },
                       ...(treatmentDeptsList?.filter((d: any) => d.status === "Active").map((d: any) => ({
@@ -1017,6 +1021,22 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                     ]}
                     placeholder="Select department"
                     data-testid="select-episode-treatment-dept"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium text-muted-foreground">Treatment Sub-Department</Label>
+                  <SearchableSelect
+                    value={newEpisodeSubDeptId}
+                    onValueChange={setNewEpisodeSubDeptId}
+                    options={[
+                      { value: "", label: "None" },
+                      ...((consultationTypesList || [])
+                        .filter((c: any) => c.status === "Active" && (!c.treatmentDepartmentId || !newEpisodeTreatmentDeptId || c.treatmentDepartmentId === Number(newEpisodeTreatmentDeptId)))
+                        .map((c: any) => ({ value: String(c.id), label: c.name }))
+                      ),
+                    ]}
+                    placeholder="Select sub-department"
+                    data-testid="select-episode-sub-dept"
                   />
                 </div>
                 <div>
@@ -1358,16 +1378,32 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                       data-testid="book-select-patient-gender"
                     />
                   </div>
-                  <div className="col-span-2">
-                    <Label className="text-xs font-medium text-muted-foreground">Consultation Type</Label>
+                  <div>
+                    <Label className="text-xs font-medium text-muted-foreground">Treatment Department</Label>
+                    <SearchableSelect
+                      value={newPatientTreatmentDeptId}
+                      onValueChange={(v) => { setNewPatientTreatmentDeptId(v); setNewPatientConsultationType(""); }}
+                      options={[
+                        { value: "", label: "None" },
+                        ...(treatmentDeptsList?.filter((d: any) => d.status === "Active").map((d: any) => ({ value: String(d.id), label: d.name })) || []),
+                      ]}
+                      placeholder="Select department"
+                      data-testid="book-select-treatment-dept"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium text-muted-foreground">Treatment Sub-Department</Label>
                     <SearchableSelect
                       value={newPatientConsultationType}
                       onValueChange={setNewPatientConsultationType}
                       options={[
                         { value: "", label: "None" },
-                        ...(consultationTypesList?.filter((t: any) => t.status === "Active").map((t: any) => ({ value: String(t.id), label: t.name })) || []),
+                        ...((consultationTypesList || [])
+                          .filter((t: any) => t.status === "Active" && (!t.treatmentDepartmentId || !newPatientTreatmentDeptId || t.treatmentDepartmentId === Number(newPatientTreatmentDeptId)))
+                          .map((t: any) => ({ value: String(t.id), label: t.name }))
+                        ),
                       ]}
-                      placeholder="Select consultation type"
+                      placeholder="Select sub-department"
                       data-testid="book-select-consultation-type"
                     />
                   </div>

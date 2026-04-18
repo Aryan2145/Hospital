@@ -135,12 +135,16 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "phiAccessLevel", label: "PHI Access Level", type: "select", options: ["Full", "Masked", "None"] },
     { key: "isActive", label: "Is Active", type: "boolean" },
   ],
+  consultationTypes: [
+    { key: "treatmentDepartmentId", label: "Treatment Department", type: "ref", refTable: "treatmentDepartments" },
+  ],
   // CATEGORY 4: DOCTORS MASTERS
   doctors: [
     { key: "specialization", label: "Specialization", type: "text" },
     { key: "qualification", label: "Qualification", type: "text" },
     { key: "branchId", label: "Branch", type: "ref", refTable: "branches" },
-    { key: "treatmentDepartmentId", label: "Department", type: "ref", refTable: "treatmentDepartments" },
+    { key: "treatmentDepartmentId", label: "Treatment Department", type: "ref", refTable: "treatmentDepartments" },
+    { key: "consultationTypeId", label: "Treatment Sub-Department", type: "ref", refTable: "consultationTypes" },
     { key: "phone", label: "Phone", type: "text" },
     { key: "email", label: "Email", type: "text" },
   ],

@@ -1146,6 +1146,7 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
                     value={field.value ? String(field.value) : ""}
                     onValueChange={(v) => {
                       field.onChange(v ? Number(v) : null);
+                      form.setValue("consultationTypeId", null);
                     }}
                     options={treatmentDepartments.map((d: any) => ({ value: String(d.id), label: d.name }))}
                     placeholder="Select department"
@@ -1181,21 +1182,27 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
           <FormField
             control={form.control}
             name="consultationTypeId"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Consultation Type</FormLabel>
-                <FormControl>
-                  <SearchableSelect
-                    value={field.value ? String(field.value) : ""}
-                    onValueChange={(v) => field.onChange(v ? Number(v) : null)}
-                    options={consultationTypes.map((c: any) => ({ value: String(c.id), label: c.name }))}
-                    placeholder="Select type"
-                    data-testid="select-lead-consult-type"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+            render={({ field }) => {
+              const selectedDeptId = form.watch("treatmentDepartmentId");
+              const filteredSubDepts = selectedDeptId
+                ? consultationTypes.filter((c: any) => !c.treatmentDepartmentId || c.treatmentDepartmentId === Number(selectedDeptId))
+                : consultationTypes;
+              return (
+                <FormItem>
+                  <FormLabel>Treatment Sub-Department</FormLabel>
+                  <FormControl>
+                    <SearchableSelect
+                      value={field.value ? String(field.value) : ""}
+                      onValueChange={(v) => field.onChange(v ? Number(v) : null)}
+                      options={filteredSubDepts.map((c: any) => ({ value: String(c.id), label: c.name }))}
+                      placeholder="Select sub-department"
+                      data-testid="select-lead-consult-type"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              );
+            }}
           />
         </div>
 
