@@ -1262,17 +1262,7 @@ export async function registerRoutes(
     try {
       const sessionTenantId = (req.session as any)?.tenantId;
       if (!sessionTenantId) return res.status(401).json({ message: "Unauthorized" });
-
-      const sessionCrmUserId = (req.session as any)?.crmUserId;
-      const allCrmUsers = await storage.getCrmUsers(sessionTenantId);
-      const crmUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
-      if (!crmUser) return res.status(403).json({ message: "Forbidden" });
-
-      const allRoles = await storage.getMasterRecords("systemRoles", sessionTenantId);
-      const userRole = allRoles.find((r: any) => r.id === crmUser.systemRoleId);
-      if (!userRole || userRole.code !== "SYS_ADMIN") {
-        return res.status(403).json({ message: "Only System Admin can update branding" });
-      }
+      if (!(await requireAdminRole(req, res, sessionTenantId))) return;
 
       const brandingSchema = z.object({
         displayName: z.string().min(1).max(200).optional(),
@@ -1301,17 +1291,7 @@ export async function registerRoutes(
     try {
       const sessionTenantId = (req.session as any)?.tenantId;
       if (!sessionTenantId) return res.status(401).json({ message: "Unauthorized" });
-
-      const sessionCrmUserId = (req.session as any)?.crmUserId;
-      const allCrmUsers = await storage.getCrmUsers(sessionTenantId);
-      const crmUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
-      if (!crmUser) return res.status(403).json({ message: "Forbidden" });
-
-      const allRoles = await storage.getMasterRecords("systemRoles", sessionTenantId);
-      const userRole = allRoles.find((r: any) => r.id === crmUser.systemRoleId);
-      if (!userRole || userRole.code !== "SYS_ADMIN") {
-        return res.status(403).json({ message: "Only System Admin can update branding" });
-      }
+      if (!(await requireAdminRole(req, res, sessionTenantId))) return;
 
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
