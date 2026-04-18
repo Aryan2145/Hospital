@@ -10054,12 +10054,12 @@ export async function registerRoutes(
   });
 
   // =============================================
-  // WHATSAPP SETTINGS ROUTES (SYS_ADMIN only)
+  // WHATSAPP SETTINGS ROUTES (ADMIN+ access — each tenant admin manages their own)
   // =============================================
   const WA_SETTING_KEYS = ["wa_phone_number_id", "wa_access_token", "wa_business_account_id", "wa_enabled", "wa_template_appointment", "wa_test_phone"];
 
   app.get("/api/whatsapp-settings", isAuthenticated, async (req: any, res: any) => {
-    if (!(await requireSysAdmin(req, res))) return;
+    if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
     try {
       const tid = await getDefaultTenantId(req);
       const allSettings = await storage.getTenantSettings(tid);
@@ -10079,7 +10079,7 @@ export async function registerRoutes(
   });
 
   app.put("/api/whatsapp-settings", isAuthenticated, async (req: any, res: any) => {
-    if (!(await requireSysAdmin(req, res))) return;
+    if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
     try {
       const tid = await getDefaultTenantId(req);
       const body = req.body as Record<string, string | null>;
@@ -10101,7 +10101,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/whatsapp-settings/test", isAuthenticated, async (req: any, res: any) => {
-    if (!(await requireSysAdmin(req, res))) return;
+    if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
     try {
       const tid = await getDefaultTenantId(req);
       const allSettings = await storage.getTenantSettings(tid);
@@ -10119,7 +10119,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/whatsapp-settings/send-test", isAuthenticated, async (req: any, res: any) => {
-    if (!(await requireSysAdmin(req, res))) return;
+    if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
     try {
       const tid = await getDefaultTenantId(req);
       const { phone } = req.body;
