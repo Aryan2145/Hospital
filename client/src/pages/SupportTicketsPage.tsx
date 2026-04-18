@@ -84,6 +84,7 @@ export default function SupportTicketsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("open");
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
 
   const { data: tickets = [], isLoading } = useQuery<TicketType[]>({
     queryKey: ["/api/support-tickets"],
@@ -455,10 +456,11 @@ function TicketDetailView({ ticketId, onBack, toast }: { ticketId: number; onBac
                       <Label className="text-xs text-muted-foreground mb-2 block">Attachments</Label>
                       <div className="flex flex-wrap gap-2">
                         {(ticket.attachments as string[]).map((url, i) => (
-                          <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs bg-muted/50 rounded px-2 py-1 hover:bg-muted transition-colors">
-                            <Image className="w-3 h-3" /> Screenshot {i + 1}
-                          </a>
+                          <button key={i} onClick={() => setViewingImage(url)}
+                            className="border rounded overflow-hidden hover:ring-2 hover:ring-primary transition-all"
+                            data-testid={`btn-attachment-${i}`}>
+                            <img src={url} alt={`Screenshot ${i + 1}`} className="w-20 h-20 object-cover" />
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -504,12 +506,13 @@ function TicketDetailView({ ticketId, onBack, toast }: { ticketId: number; onBac
                         </div>
                         <p className="text-sm text-foreground/80 whitespace-pre-wrap">{comment.message}</p>
                         {comment.attachments && (comment.attachments as string[]).length > 0 && (
-                          <div className="flex gap-2 mt-1">
+                          <div className="flex flex-wrap gap-2 mt-2">
                             {(comment.attachments as string[]).map((url, i) => (
-                              <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                                className="text-xs text-primary hover:underline flex items-center gap-1">
-                                <Image className="w-3 h-3" /> Attachment {i + 1}
-                              </a>
+                              <button key={i} onClick={() => setViewingImage(url)}
+                                className="border rounded overflow-hidden hover:ring-2 hover:ring-primary transition-all"
+                                data-testid={`btn-comment-attachment-${i}`}>
+                                <img src={url} alt={`Attachment ${i + 1}`} className="w-16 h-16 object-cover" />
+                              </button>
                             ))}
                           </div>
                         )}
@@ -551,6 +554,18 @@ function TicketDetailView({ ticketId, onBack, toast }: { ticketId: number; onBac
           </Card>
         </div>
       </main>
+
+      {viewingImage && (
+        <div className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setViewingImage(null)}>
+          <div className="relative max-w-5xl max-h-full" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setViewingImage(null)}
+              className="absolute -top-10 right-0 text-white hover:text-gray-300 text-3xl font-bold leading-none"
+              data-testid="btn-close-lightbox">×</button>
+            <img src={viewingImage} alt="Screenshot" className="max-w-full max-h-[85vh] object-contain rounded shadow-2xl" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

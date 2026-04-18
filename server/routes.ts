@@ -10636,13 +10636,9 @@ export async function registerRoutes(
       const attachmentUrls: string[] = [];
       if (req.files && Array.isArray(req.files)) {
         for (const file of req.files) {
-          const fileName = `support_${Date.now()}_${Math.random().toString(36).slice(2)}_${file.originalname}`;
-          const fs = await import("fs");
-          const path = await import("path");
-          const dir = path.join(process.cwd(), "uploads", "support");
-          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-          fs.writeFileSync(path.join(dir, fileName), file.buffer);
-          attachmentUrls.push(`/uploads/support/${fileName}`);
+          const mimeType = file.mimetype || "application/octet-stream";
+          const dataUrl = `data:${mimeType};base64,${file.buffer.toString("base64")}`;
+          attachmentUrls.push(dataUrl);
         }
       }
 
@@ -10776,13 +10772,9 @@ export async function registerRoutes(
       const attachmentUrls: string[] = [];
       if (req.files && Array.isArray(req.files)) {
         for (const file of req.files) {
-          const fileName = `support_${Date.now()}_${Math.random().toString(36).slice(2)}_${file.originalname}`;
-          const fs = await import("fs");
-          const path = await import("path");
-          const dir = path.join(process.cwd(), "uploads", "support");
-          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-          fs.writeFileSync(path.join(dir, fileName), file.buffer);
-          attachmentUrls.push(`/uploads/support/${fileName}`);
+          const mimeType = file.mimetype || "application/octet-stream";
+          const dataUrl = `data:${mimeType};base64,${file.buffer.toString("base64")}`;
+          attachmentUrls.push(dataUrl);
         }
       }
 
@@ -10806,15 +10798,8 @@ export async function registerRoutes(
     }
   });
 
-  // --- Serve uploaded support files (auth-protected) ---
-  app.use("/uploads/support", (req, res, next) => {
-    if (req.session?.userId || req.session?.supportUserId) {
-      return next();
-    }
-    res.status(401).json({ message: "Authentication required" });
-  }, (await import("express")).static(
-    (await import("path")).join(process.cwd(), "uploads", "support")
-  ));
+  // Note: Support ticket attachments are now stored as base64 data URLs in the database
+  // No filesystem serving needed — data URLs are embedded directly in the response
 
   // =============================================
   // SUPPORT ADMIN PORTAL
@@ -11003,13 +10988,9 @@ export async function registerRoutes(
       const attachmentUrls: string[] = [];
       if (req.files && Array.isArray(req.files)) {
         for (const file of req.files) {
-          const fileName = `support_${Date.now()}_${Math.random().toString(36).slice(2)}_${file.originalname}`;
-          const fs = await import("fs");
-          const path = await import("path");
-          const dir = path.join(process.cwd(), "uploads", "support");
-          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-          fs.writeFileSync(path.join(dir, fileName), file.buffer);
-          attachmentUrls.push(`/uploads/support/${fileName}`);
+          const mimeType = file.mimetype || "application/octet-stream";
+          const dataUrl = `data:${mimeType};base64,${file.buffer.toString("base64")}`;
+          attachmentUrls.push(dataUrl);
         }
       }
 

@@ -108,6 +108,7 @@ export default function SupportAdminDashboard() {
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
 
   const { data: currentUser, isLoading: userLoading, error: userError } = useQuery<SupportUserType>({
     queryKey: ["/api/support-admin/me"],
@@ -441,10 +442,11 @@ function TicketDetail({ ticketId, currentUser, onBack, toast }: {
                         <Label className="text-xs text-muted-foreground mb-2 block">Attachments</Label>
                         <div className="flex flex-wrap gap-2">
                           {(ticket.attachments as string[]).map((url, i) => (
-                            <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs bg-muted/50 rounded px-2 py-1 hover:bg-muted">
-                              <Image className="w-3 h-3" /> Screenshot {i + 1}
-                            </a>
+                            <button key={i} onClick={() => setViewingImage(url)}
+                              className="border rounded overflow-hidden hover:ring-2 hover:ring-primary transition-all"
+                              data-testid={`btn-admin-attachment-${i}`}>
+                              <img src={url} alt={`Screenshot ${i + 1}`} className="w-20 h-20 object-cover" />
+                            </button>
                           ))}
                         </div>
                       </div>
@@ -621,6 +623,18 @@ function TicketDetail({ ticketId, currentUser, onBack, toast }: {
           </div>
         </div>
       </main>
+
+      {viewingImage && (
+        <div className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setViewingImage(null)}>
+          <div className="relative max-w-5xl max-h-full" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setViewingImage(null)}
+              className="absolute -top-10 right-0 text-white hover:text-gray-300 text-3xl font-bold leading-none"
+              data-testid="btn-admin-close-lightbox">×</button>
+            <img src={viewingImage} alt="Screenshot" className="max-w-full max-h-[85vh] object-contain rounded shadow-2xl" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
