@@ -298,6 +298,7 @@ export const userLineAssignments = pgTable("user_line_assignments", {
   isPrimary: boolean("is_primary").default(false),
   status: text("status").notNull().default("Active"),
   displayOrder: integer("display_order").default(0),
+  approvalStatus: text("approval_status").default("Pending"),
   createdAt: timestamp("created_at").defaultNow(),
   createdBy: varchar("created_by"),
   modifiedAt: timestamp("modified_at").defaultNow(),

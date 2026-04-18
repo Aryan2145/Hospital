@@ -898,13 +898,7 @@ export class DatabaseStorage implements IStorage {
       data.approval_status = "Pending";
     }
 
-    const noApprovalStatusTables = ["userLineAssignments"];
-
     const snakeData = this.toSnakeCase(data);
-
-    if (noApprovalStatusTables.includes(tableName)) {
-      delete snakeData.approval_status;
-    }
 
     for (const [k, v] of Object.entries(snakeData)) {
       if (v === "" || v === undefined) snakeData[k] = null;
