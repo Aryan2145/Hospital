@@ -108,7 +108,6 @@ export default function SupportAdminDashboard() {
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const [viewingImage, setViewingImage] = useState<string | null>(null);
 
   const { data: currentUser, isLoading: userLoading, error: userError } = useQuery<SupportUserType>({
     queryKey: ["/api/support-admin/me"],
@@ -362,6 +361,7 @@ function TicketDetail({ ticketId, currentUser, onBack, toast }: {
 }) {
   const [newComment, setNewComment] = useState("");
   const [isInternal, setIsInternal] = useState(false);
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
 
   const { data: ticket, isLoading } = useQuery<TicketType>({
     queryKey: ["/api/support-admin/tickets", ticketId],
