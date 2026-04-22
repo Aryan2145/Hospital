@@ -1,0 +1,97 @@
+Nuetech – Digital Marketing KRA (Darshan) | Summary
+
+Role Clarity
+Darshan is the Owner of Digital Demand + Lead Systems
+Not a posting role. Not a coordination role.
+He is responsible for Lead Generation, Lead Capture, Tracking, and ROI Visibility
+
+1. Core Responsibility Areas
+
+Campaign Management
+
+Plan → Approve → Launch → Optimize → Scale / Stop
+Continuous campaign pipeline aligned to PV, Heat Pump, SWH, and new geographies
+
+Budget & ROI Control
+
+Budget proposed vs approved vs spent
+CPL tracking
+Identify best and worst campaigns
+
+Lead Generation
+
+Distributor, Dealer, B2C leads
+Geography-wise expansion
+Product-wise visibility
+
+2. Lead Source Ownership
+
+Meta / Website
+
+Campaign-based lead generation with UTM tracking
+
+Indiamart
+
+Daily lead tracking + quality monitoring
+
+Bizcall (Most Critical)
+
+All incoming calls → CRM leads
+Missed calls tracking
+Daily call recording review for insights
+
+Tender Portals
+
+Identify tenders
+Convert into CRM leads
+Auto-assign to government team
+Build webhook/API integration over time
+
+3. Lead Capture & CRM Discipline
+
+100% lead capture from all sources
+No missed leads
+Webhook/API integrations monitored
+Source-wise tracking always visible
+
+4. Daily Operating Discipline
+
+Every Day:
+
+Campaigns reviewed and moved
+Leads generated (source-wise)
+CRM sync verified
+Budget tracking checked
+Issues identified and reported
+
+Daily Output Must Show:
+
+Leads generated
+Campaigns moved
+CPL
+Key issues
+
+5. Weekly Review Focus
+
+Which campaigns are working?
+Which campaigns to stop?
+Which geography/product is responding?
+Source-wise performance (Meta / Indiamart / Bizcall / Tender)
+Budget vs output
+
+6. Dashboards (Must Be Live)
+
+Campaign: Planned / Approved / Live / Stopped
+Budget: Proposed / Approved / Spend / CPL / ROI
+Leads: Source-wise
+CRM Sync: Received vs Created vs Failed
+Tender: Identified / Converted / Assigned
+
+7. Success Definition
+
+Consistent daily lead flow
+Clear visibility of CPL and ROI
+Zero missed leads
+Strong distributor & dealer pipeline
+Tender opportunities captured systematically
+Digital becomes a predictable demand engine
