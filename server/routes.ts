@@ -11975,6 +11975,24 @@ async function ensureSuperAdmin() {
       console.log("Super Admin user created.");
     }
 
+    // --- Emergency: Unlock Neha Sharma + reset password ---
+    try {
+      const nehaNormalized = "+919227473123";
+      const [nehaUser] = await db.select().from(crmUsers).where(
+        and(eq(crmUsers.phone, nehaNormalized), eq(crmUsers.tenantId, 4))
+      );
+      if (nehaUser) {
+        await db.update(crmUsers).set({
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+          passwordHash: await hashPassword("RGBTech@123"),
+        }).where(eq(crmUsers.id, nehaUser.id));
+        console.log(`[seed] Neha Sharma (id=${nehaUser.id}) unlocked & password reset to RGBTech@123`);
+      }
+    } catch (e) {
+      console.error("[seed] Failed to unlock Neha Sharma:", e);
+    }
+
     const allUsers = await db.select().from(crmUsers).where(eq(crmUsers.status, "Active"));
     let fixedCount = 0;
     for (const user of allUsers) {
