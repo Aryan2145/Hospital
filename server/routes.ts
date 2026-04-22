@@ -1123,8 +1123,7 @@ export async function registerRoutes(
       if (tenantRow?.subscriptionStatus === "Suspended") {
         const crmUserId = req.session?.crmUserId;
         if (crmUserId) {
-          const allCrmUsers = await storage.getCrmUsers(sessionTid);
-          const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
+          const crmUser = await storage.getCrmUser(crmUserId, sessionTid);
           if (crmUser?.systemRoleId) {
             const allRoles = await storage.getMasterRecords("systemRoles", sessionTid);
             const role = allRoles.find((r: any) => r.id === crmUser.systemRoleId);
@@ -1173,8 +1172,8 @@ export async function registerRoutes(
       if (!crmUserId) return res.status(401).json({ message: "Unauthorized" });
 
       const sessionTid = (req.session as any).tenantId || tid;
-      const allCrmUsers = await storage.getCrmUsers(sessionTid);
-      const crmUser = allCrmUsers.find(u => u.id === crmUserId);
+      // Use direct ID lookup so SYS_ADMIN users (excluded from getCrmUsers) can also be found
+      const crmUser = await storage.getCrmUser(crmUserId, sessionTid);
 
       if (!crmUser) {
         return res.status(401).json({ message: "User not found" });
@@ -1216,8 +1215,7 @@ export async function registerRoutes(
     try {
       const reqTid = req.session?.tenantId || tid;
       const sessionCrmUserId = req.session?.crmUserId;
-      const allCrmUsers = await storage.getCrmUsers(reqTid);
-      const currentCrmUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
+      const currentCrmUser = await storage.getCrmUser(sessionCrmUserId, reqTid);
       if (!currentCrmUser) return res.status(403).json({ message: "Not a CRM user" });
 
       let isAdmin = false;
@@ -1244,8 +1242,7 @@ export async function registerRoutes(
     try {
       const reqTid = req.session?.tenantId || tid;
       const sessionCrmUserId = req.session?.crmUserId;
-      const allCrmUsers = await storage.getCrmUsers(reqTid);
-      const currentCrmUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
+      const currentCrmUser = await storage.getCrmUser(sessionCrmUserId, reqTid);
       if (!currentCrmUser) return res.status(403).json({ message: "Not a CRM user" });
 
       let isAdmin = false;
