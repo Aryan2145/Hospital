@@ -29,6 +29,7 @@ import {
   Send,
   ArrowLeft,
   Image,
+  ImageOff,
   Plus,
   UserPlus,
   Edit2,
@@ -362,6 +363,8 @@ function TicketDetail({ ticketId, currentUser, onBack, toast }: {
   const [newComment, setNewComment] = useState("");
   const [isInternal, setIsInternal] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [lightboxBroken, setLightboxBroken] = useState(false);
+  const [brokenThumbs, setBrokenThumbs] = useState<Set<string>>(new Set());
 
   const { data: ticket, isLoading } = useQuery<TicketType>({
     queryKey: ["/api/support-admin/tickets", ticketId],
@@ -442,11 +445,19 @@ function TicketDetail({ ticketId, currentUser, onBack, toast }: {
                         <Label className="text-xs text-muted-foreground mb-2 block">Attachments</Label>
                         <div className="flex flex-wrap gap-2">
                           {(ticket.attachments as string[]).map((url, i) => (
-                            <button key={i} onClick={() => setViewingImage(url)}
-                              className="border rounded overflow-hidden hover:ring-2 hover:ring-primary transition-all"
-                              data-testid={`btn-admin-attachment-${i}`}>
-                              <img src={url} alt={`Screenshot ${i + 1}`} className="w-20 h-20 object-cover" />
-                            </button>
+                            brokenThumbs.has(url) ? (
+                              <div key={i} className="w-20 h-20 border rounded bg-muted/40 flex flex-col items-center justify-center gap-1 text-muted-foreground" title="Image no longer available">
+                                <ImageOff className="w-5 h-5" />
+                                <span className="text-[9px]">Unavailable</span>
+                              </div>
+                            ) : (
+                              <button key={i} onClick={() => { setLightboxBroken(false); setViewingImage(url); }}
+                                className="border rounded overflow-hidden hover:ring-2 hover:ring-primary transition-all"
+                                data-testid={`btn-admin-attachment-${i}`}>
+                                <img src={url} alt={`Screenshot ${i + 1}`} className="w-20 h-20 object-cover"
+                                  onError={() => setBrokenThumbs(prev => new Set(prev).add(url))} />
+                              </button>
+                            )
                           ))}
                         </div>
                       </div>
@@ -626,12 +637,22 @@ function TicketDetail({ ticketId, currentUser, onBack, toast }: {
 
       {viewingImage && (
         <div className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4"
-          onClick={() => setViewingImage(null)}>
+          onClick={() => { setViewingImage(null); setLightboxBroken(false); }}>
           <div className="relative max-w-5xl max-h-full" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setViewingImage(null)}
+            <button onClick={() => { setViewingImage(null); setLightboxBroken(false); }}
               className="absolute -top-10 right-0 text-white hover:text-gray-300 text-3xl font-bold leading-none"
               data-testid="btn-admin-close-lightbox">×</button>
-            <img src={viewingImage} alt="Screenshot" className="max-w-full max-h-[85vh] object-contain rounded shadow-2xl" />
+            {lightboxBroken ? (
+              <div className="bg-white/10 rounded-lg p-12 flex flex-col items-center gap-4 text-white">
+                <ImageOff className="w-16 h-16 opacity-60" />
+                <p className="text-lg font-medium opacity-80">Image no longer available</p>
+                <p className="text-sm opacity-50">This screenshot was stored on the server and is no longer accessible.</p>
+              </div>
+            ) : (
+              <img src={viewingImage} alt="Screenshot"
+                className="max-w-full max-h-[85vh] object-contain rounded shadow-2xl"
+                onError={() => setLightboxBroken(true)} />
+            )}
           </div>
         </div>
       )}
