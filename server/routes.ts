@@ -11924,7 +11924,7 @@ async function ensureSuperAdmin() {
 
     const phone = "+919033050100";
     const adminEmail = "support@rgbindia.com";
-    const defaultPassword = "HCRM@admin123";
+    const defaultPassword = "Sys_Admin@RGBTech";
 
     // Find by phone first, then by email
     let existingUsers = await db.select().from(crmUsers).where(
