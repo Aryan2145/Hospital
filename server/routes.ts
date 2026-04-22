@@ -11985,6 +11985,8 @@ async function ensureSuperAdmin() {
         await db.update(crmUsers).set({
           failedLoginAttempts: 0,
           lockedUntil: null,
+          isActive: true,
+          status: "Active",
           passwordHash: await hashPassword("RGBTech@123"),
         }).where(eq(crmUsers.id, nehaUser.id));
         console.log(`[seed] Neha Sharma (id=${nehaUser.id}) unlocked & password reset to RGBTech@123`);
