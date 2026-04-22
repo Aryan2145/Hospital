@@ -1212,6 +1212,34 @@ export async function registerRoutes(
   });
 
   // --- Admin: Set password for CRM user ---
+  app.post("/api/crm-users/:id/unlock", isAuthenticated, async (req: any, res) => {
+    try {
+      const reqTid = req.session?.tenantId || tid;
+      const sessionCrmUserId = req.session?.crmUserId;
+      const allCrmUsers = await storage.getCrmUsers(reqTid);
+      const currentCrmUser = allCrmUsers.find((u: any) => u.id === sessionCrmUserId);
+      if (!currentCrmUser) return res.status(403).json({ message: "Not a CRM user" });
+
+      let isAdmin = false;
+      if (currentCrmUser.systemRoleId) {
+        const allRoles = await storage.getMasterRecords("systemRoles", reqTid);
+        const r = allRoles.find(r => r.id === currentCrmUser.systemRoleId);
+        if (r && ((r as any).code === "ADMIN" || (r as any).code === "SYS_ADMIN")) isAdmin = true;
+      }
+      if (!isAdmin) return res.status(403).json({ message: "Only admins can unlock accounts" });
+
+      const targetId = Number(req.params.id);
+      const updated = await storage.updateCrmUser(targetId, reqTid, {
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      });
+      res.json({ success: true, userId: updated.id });
+    } catch (error) {
+      console.error("Error unlocking user:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   app.post("/api/crm-users/:id/set-password", isAuthenticated, async (req: any, res) => {
     try {
       const reqTid = req.session?.tenantId || tid;

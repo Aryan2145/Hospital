@@ -16,7 +16,7 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import type { CrmUser, MasterRecord } from "@shared/schema";
 import {
   UserPlus, Search, ChevronDown, ChevronRight, Mail, Phone, Shield, Eye, EyeOff,
-  Users, UserCog, Network, List, Pencil, Trash2, KeyRound, Building2, Briefcase, RotateCcw
+  Users, UserCog, Network, List, Pencil, Trash2, KeyRound, Building2, Briefcase, RotateCcw, LockOpen, Lock
 } from "lucide-react";
 
 type ViewMode = "list" | "tree";
@@ -214,6 +214,15 @@ export default function TeamManagement() {
       queryClient.invalidateQueries({ queryKey: ["/api/crm-users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/crm-users", "includeInactive"] });
       toast({ title: "User reactivated" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const unlockMutation = useMutation({
+    mutationFn: (id: number) => apiRequest("POST", `/api/crm-users/${id}/unlock`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm-users"] });
+      toast({ title: "Account unlocked", description: "The user can now log in again." });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -434,12 +443,14 @@ export default function TeamManagement() {
                     <tbody>
                       {filteredUsers.map(user => {
                         const isInactive = user.isActive === false;
+                        const isLocked = !isInactive && !!user.lockedUntil && new Date(user.lockedUntil) > new Date();
+                        const remainingMin = isLocked ? Math.ceil((new Date(user.lockedUntil!).getTime() - Date.now()) / 60000) : 0;
                         return (
-                          <tr key={user.id} className={`border-b last:border-0 ${isInactive ? 'opacity-60 bg-muted/20' : 'hover-elevate'}`} data-testid={`row-user-${user.id}`}>
+                          <tr key={user.id} className={`border-b last:border-0 ${isInactive ? 'opacity-60 bg-muted/20' : isLocked ? 'bg-red-50/50' : 'hover-elevate'}`} data-testid={`row-user-${user.id}`}>
                             <td className="p-3">
                               <div className="flex items-center gap-2">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isInactive ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'}`}>
-                                  {getInitials(user.name)}
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isInactive ? 'bg-muted text-muted-foreground' : isLocked ? 'bg-red-100 text-red-600' : 'bg-primary/10 text-primary'}`}>
+                                  {isLocked ? <Lock className="w-3.5 h-3.5" /> : getInitials(user.name)}
                                 </div>
                                 <span className={`font-medium ${isInactive ? 'text-muted-foreground line-through' : ''}`}>{user.name}</span>
                               </div>
@@ -468,9 +479,17 @@ export default function TeamManagement() {
                             <td className="p-3 text-muted-foreground text-xs">{getManagerName(user.reportingTo)}</td>
                             <td className="p-3"><AccessScopeBadge scope={user.accessScopeType} /></td>
                             <td className="p-3">
-                              <Badge variant={user.status === "Active" ? "default" : "secondary"}>
-                                {user.status}
-                              </Badge>
+                              <div className="flex flex-col gap-1">
+                                <Badge variant={user.status === "Active" ? "default" : "secondary"}>
+                                  {user.status}
+                                </Badge>
+                                {isLocked && (
+                                  <Badge variant="destructive" className="text-[10px] gap-1 w-fit">
+                                    <Lock className="w-2.5 h-2.5" />
+                                    Locked {remainingMin}m
+                                  </Badge>
+                                )}
+                              </div>
                             </td>
                             <td className="p-3 text-right">
                               {isInactive ? (
@@ -486,6 +505,16 @@ export default function TeamManagement() {
                                 </Button>
                               ) : (
                                 <div className="flex items-center justify-end gap-1">
+                                  {isLocked && (
+                                    <Button size="icon" variant="ghost"
+                                      onClick={() => unlockMutation.mutate(user.id)}
+                                      disabled={unlockMutation.isPending}
+                                      title="Unlock account"
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      data-testid={`button-unlock-user-${user.id}`}>
+                                      <LockOpen className="w-3.5 h-3.5" />
+                                    </Button>
+                                  )}
                                   <Button size="icon" variant="ghost" onClick={() => { setPasswordTarget(user); setNewPassword(""); setPasswordDialogOpen(true); }} title="Set Password" data-testid={`button-password-user-${user.id}`}><KeyRound className="w-3.5 h-3.5" /></Button>
                                   <Button size="icon" variant="ghost" onClick={() => openEdit(user)} data-testid={`button-edit-user-${user.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
                                   <Button size="icon" variant="ghost" onClick={() => confirmDelete(user.id)} data-testid={`button-delete-user-${user.id}`}><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
