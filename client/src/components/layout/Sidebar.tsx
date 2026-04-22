@@ -77,6 +77,12 @@ const sections: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
+    label: "Team",
+    items: [
+      { icon: UserCog, label: "Team Management", href: "/team", page: "team" },
+    ],
+  },
+  {
     label: "Configurations",
     items: [
       { icon: Plug, label: "Connectors", href: "/connectors", page: "connectors" },
