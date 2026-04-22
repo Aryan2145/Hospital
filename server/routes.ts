@@ -273,7 +273,7 @@ async function hasPermission(req: any, module: string, action: "canView" | "canC
   try {
     const crmUser = await getSessionCrmUserWithRole(req);
     if (!crmUser) return false;
-    if (crmUser.roleCode === "SYS_ADMIN") return true;
+    if (crmUser.roleCode === "SYS_ADMIN" || crmUser.roleCode === "ADMIN") return true;
     // Check user-level overrides first (they take priority over role defaults)
     const tid = await getDefaultTenantId(req);
     const now = new Date();
