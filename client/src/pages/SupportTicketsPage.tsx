@@ -84,7 +84,6 @@ export default function SupportTicketsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("open");
-  const [viewingImage, setViewingImage] = useState<string | null>(null);
 
   const { data: tickets = [], isLoading } = useQuery<TicketType[]>({
     queryKey: ["/api/support-tickets"],
@@ -394,6 +393,7 @@ function CreateTicketDialog({ open, onOpenChange, toast }: { open: boolean; onOp
 
 function TicketDetailView({ ticketId, onBack, toast }: { ticketId: number; onBack: () => void; toast: any }) {
   const [newComment, setNewComment] = useState("");
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
 
   const { data: ticket, isLoading } = useQuery<TicketType & { comments: CommentType[] }>({
     queryKey: ["/api/support-tickets", ticketId],
