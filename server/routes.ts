@@ -10254,8 +10254,8 @@ export async function registerRoutes(
       if (!crmUserId) return res.status(403).json({ message: "Forbidden" });
 
       const sessionTid = session?.tenantId || tid;
-      const allCrmUsers = await storage.getCrmUsers(sessionTid);
-      const crmUser = allCrmUsers.find((u: any) => u.id === crmUserId);
+      // Use direct lookup — getCrmUsers() deliberately excludes SYS_ADMIN users
+      const crmUser = await storage.getCrmUser(crmUserId, sessionTid);
       if (!crmUser) return res.status(403).json({ message: "Forbidden" });
 
       if (crmUser.systemRoleId) {
