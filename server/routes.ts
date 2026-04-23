@@ -267,43 +267,6 @@ async function seedRolePermissions(tenantId: number): Promise<void> {
   }
 }
 
-// Check if a user has a specific permission (module + action), respecting user overrides
-// action: "canView" | "canCreate" | "canEdit" | "canDelete"
-async function hasPermission(req: any, module: string, action: "canView" | "canCreate" | "canEdit" | "canDelete"): Promise<boolean> {
-  try {
-    const crmUser = await getSessionCrmUserWithRole(req);
-    if (!crmUser) return false;
-    if (crmUser.roleCode === "SYS_ADMIN" || crmUser.roleCode === "ADMIN") return true;
-    // Check user-level overrides first (they take priority over role defaults)
-    const tid = await getDefaultTenantId(req);
-    const now = new Date();
-    const overrides = await db.select()
-      .from(userPermissionOverrides)
-      .where(and(
-        eq(userPermissionOverrides.crmUserId, crmUser.id),
-        eq(userPermissionOverrides.tenantId, tid),
-        eq(userPermissionOverrides.module, module),
-        eq(userPermissionOverrides.action, action),
-        or(isNull(userPermissionOverrides.expiresAt), gte(userPermissionOverrides.expiresAt, now))
-      ))
-      .limit(1);
-    if (overrides.length > 0) return overrides[0].isGranted;
-    // Fall back to role permission defaults
-    const [rolePerm] = await db.select()
-      .from(rolePermissions)
-      .where(and(
-        eq(rolePermissions.tenantId, tid),
-        eq(rolePermissions.roleCode, crmUser.roleCode),
-        eq(rolePermissions.module, module)
-      ))
-      .limit(1);
-    if (rolePerm) return (rolePerm as any)[action] === true;
-    // Fall back to in-memory defaults if DB not seeded
-    return DEFAULT_ROLE_PERMISSIONS[crmUser.roleCode]?.[module]?.[action] ?? false;
-  } catch {
-    return false;
-  }
-}
 
 // Send in-app notification to a list of crm user IDs
 async function sendInAppNotification(tenantId: number, crmUserIds: number[], type: string, title: string, body: string, opts?: { entityType?: string; entityId?: number; link?: string }) {
@@ -1221,6 +1184,46 @@ export async function registerRoutes(
     let roleCode = row.roleCode || "";
     if (!roleCode && row.accessScopeType === "All") roleCode = "ADMIN";
     return { id: row.id, name: row.name || "", roleCode, employeeName: row.name || "" };
+  }
+
+  // Check if the current session user has a specific permission.
+  // MUST live inside registerRoutes so it can access getSessionCrmUserWithRole and getDefaultTenantId.
+  async function hasPermission(req: any, module: string, action: "canView" | "canCreate" | "canEdit" | "canDelete"): Promise<boolean> {
+    try {
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser) return false;
+      // SYS_ADMIN and ADMIN bypass all permission checks (Admins can do everything except delete)
+      if (crmUser.roleCode === "SYS_ADMIN" || crmUser.roleCode === "ADMIN") return true;
+      // User-level overrides take priority over role defaults
+      const tid = await getDefaultTenantId(req);
+      const now = new Date();
+      const overrides = await db.select()
+        .from(userPermissionOverrides)
+        .where(and(
+          eq(userPermissionOverrides.crmUserId, crmUser.id),
+          eq(userPermissionOverrides.tenantId, tid),
+          eq(userPermissionOverrides.module, module),
+          eq(userPermissionOverrides.action, action),
+          or(isNull(userPermissionOverrides.expiresAt), gte(userPermissionOverrides.expiresAt, now))
+        ))
+        .limit(1);
+      if (overrides.length > 0) return overrides[0].isGranted;
+      // Fall back to role permission defaults in DB
+      const [rolePerm] = await db.select()
+        .from(rolePermissions)
+        .where(and(
+          eq(rolePermissions.tenantId, tid),
+          eq(rolePermissions.roleCode, crmUser.roleCode),
+          eq(rolePermissions.module, module)
+        ))
+        .limit(1);
+      if (rolePerm) return (rolePerm as any)[action] === true;
+      // Final fallback: in-memory defaults
+      return DEFAULT_ROLE_PERMISSIONS[crmUser.roleCode]?.[module]?.[action] ?? false;
+    } catch (err: any) {
+      console.error("[hasPermission] Error:", err.message);
+      return false;
+    }
   }
 
   // --- /api/me: Get current user's CRM profile with role ---
