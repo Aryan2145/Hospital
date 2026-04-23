@@ -2241,6 +2241,27 @@ export type InsertInAppNotification = z.infer<typeof insertInAppNotificationSche
 export type InAppNotification = typeof inAppNotifications.$inferSelect;
 
 // =============================================
+// SYSTEM ERROR / AUDIT LOG
+// =============================================
+export const systemErrorLogs = pgTable("system_error_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id"),
+  crmUserId: integer("crm_user_id"),
+  userName: text("user_name"),
+  userPhone: text("user_phone"),
+  roleCode: text("role_code"),
+  method: text("method"),
+  endpoint: text("endpoint"),
+  statusCode: integer("status_code"),
+  errorMessage: text("error_message"),
+  errorDetails: text("error_details"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type SystemErrorLog = typeof systemErrorLogs.$inferSelect;
+
+// =============================================
 export const referralRewardLogs = pgTable("referral_reward_logs", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),

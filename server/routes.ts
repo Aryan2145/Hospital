@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema, systemErrorLogs } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -332,6 +332,42 @@ function rateLimit(windowMs: number, maxRequests: number) {
     }
     next();
   };
+}
+
+async function logSystemError(req: any, statusCode: number, errorMessage: string, errorDetails?: string) {
+  try {
+    const session = (req as any).session;
+    const crmUserId = session?.crmUserId || null;
+    const tenantId = session?.tenantId || null;
+    let userName: string | null = null;
+    let userPhone: string | null = null;
+    let roleCode: string | null = null;
+    if (crmUserId) {
+      const [u] = await db.select({ name: crmUsers.name, phone: crmUsers.phone, systemRoleId: crmUsers.systemRoleId })
+        .from(crmUsers).where(eq(crmUsers.id, crmUserId)).limit(1);
+      if (u) {
+        userName = u.name || null;
+        userPhone = u.phone || null;
+        if (u.systemRoleId) {
+          const [r] = await db.select({ code: systemRoles.code }).from(systemRoles).where(eq(systemRoles.id, u.systemRoleId)).limit(1);
+          if (r) roleCode = r.code;
+        }
+      }
+    }
+    await db.insert(systemErrorLogs).values({
+      tenantId,
+      crmUserId,
+      userName,
+      userPhone,
+      roleCode,
+      method: req.method || null,
+      endpoint: req.path || null,
+      statusCode,
+      errorMessage: errorMessage?.substring(0, 500) || null,
+      errorDetails: errorDetails?.substring(0, 2000) || null,
+      ipAddress: req.ip || null,
+    });
+  } catch {}
 }
 
 async function logAccess(tenantId: number, crmUserId: number, action: string, entityType: string, entityId: number | null, details: string | null, req: any) {
@@ -1112,6 +1148,23 @@ export async function registerRoutes(
     next();
   });
 
+  // Global error response interceptor — logs all 4xx/5xx API responses
+  app.use("/api", (req: any, res: any, next: any) => {
+    const origJson = res.json.bind(res);
+    res.json = (body: any) => {
+      const sc = res.statusCode;
+      if (sc >= 400 && body?.message) {
+        const skipPaths = ["/api/auth/", "/api/support-admin/login"];
+        const shouldLog = !skipPaths.some(p => req.path.startsWith(p));
+        if (shouldLog) {
+          logSystemError(req, sc, body.message).catch(() => {});
+        }
+      }
+      return origJson(body);
+    };
+    next();
+  });
+
   app.use("/api", async (req: any, res, next) => {
     const path = req.path;
     if (path === "/me" || path.startsWith("/auth") || path.startsWith("/admin") || path === "/login" || path === "/callback" || path === "/logout") {
@@ -1154,14 +1207,20 @@ export async function registerRoutes(
         id: crmUsers.id,
         name: crmUsers.name,
         roleCode: systemRoles.code,
+        accessScopeType: crmUsers.accessScopeType,
+        systemRoleId: crmUsers.systemRoleId,
       })
       .from(crmUsers)
-      .leftJoin(systemRoles, and(eq(crmUsers.systemRoleId, systemRoles.id), eq(systemRoles.tenantId, sessionTid)))
+      // Join only on ID — tenantId check on the join caused null roleCode when role tenantId didn't match session tenantId
+      .leftJoin(systemRoles, eq(crmUsers.systemRoleId, systemRoles.id))
       .where(and(eq(crmUsers.id, sessionCrmUserId), eq(crmUsers.tenantId, sessionTid)))
       .limit(1);
     if (!rows.length) return null;
     const row = rows[0];
-    return { id: row.id, name: row.name || "", roleCode: row.roleCode || "", employeeName: row.name || "" };
+    // Fallback: if role join returned nothing but user has All-scope access, treat as ADMIN
+    let roleCode = row.roleCode || "";
+    if (!roleCode && row.accessScopeType === "All") roleCode = "ADMIN";
+    return { id: row.id, name: row.name || "", roleCode, employeeName: row.name || "" };
   }
 
   // --- /api/me: Get current user's CRM profile with role ---
@@ -1896,6 +1955,8 @@ export async function registerRoutes(
   app.post(api.leads.create.path, isAuthenticated, async (req, res) => {
     try {
       if (!(await hasPermission(req, "leads", "canCreate"))) {
+        const sessionUser = await getSessionCrmUserWithRole(req);
+        await logSystemError(req, 403, "You do not have permission to create leads", `User: ${sessionUser?.name || "unknown"} (${sessionUser?.roleCode || "no-role"}), Endpoint: POST /api/leads`);
         return res.status(403).json({ message: "You do not have permission to create leads" });
       }
       const tid = await getDefaultTenantId(req);
@@ -10317,6 +10378,42 @@ export async function registerRoutes(
     }
   });
 
+  // System Error Logs — SYS_ADMIN only
+  app.get("/api/admin/error-logs", isAuthenticated, isSysAdmin, async (req: any, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 200, 500);
+      const offset = Number(req.query.offset) || 0;
+      const tenantFilter = req.query.tenantId ? Number(req.query.tenantId) : null;
+      const statusFilter = req.query.statusCode ? Number(req.query.statusCode) : null;
+
+      const conditions: any[] = [];
+      if (tenantFilter) conditions.push(eq(systemErrorLogs.tenantId, tenantFilter));
+      if (statusFilter) conditions.push(eq(systemErrorLogs.statusCode, statusFilter));
+
+      const rows = await db.select().from(systemErrorLogs)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(sql`${systemErrorLogs.createdAt} DESC`)
+        .limit(limit)
+        .offset(offset);
+
+      const [totalRow] = await db.select({ count: count() }).from(systemErrorLogs)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      res.json({ logs: rows, total: totalRow.count });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.delete("/api/admin/error-logs", isAuthenticated, isSysAdmin, async (req: any, res) => {
+    try {
+      await db.delete(systemErrorLogs);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   // Subscription Plans CRUD
   app.get("/api/admin/plans", isAuthenticated, isSysAdmin, async (req, res) => {
     try {
@@ -11993,6 +12090,34 @@ async function ensureSuperAdmin() {
       }
     } catch (e) {
       console.error("[seed] Failed to unlock Neha Sharma:", e);
+    }
+
+    // --- Ensure all "All-scope" ADMIN users have a valid ADMIN systemRoleId ---
+    try {
+      const allTenantsList = await db.select().from(tenants);
+      for (const tenant of allTenantsList) {
+        const [adminRole] = await db.select().from(systemRoles).where(
+          and(eq(systemRoles.tenantId, tenant.id), eq(systemRoles.code, "ADMIN"))
+        );
+        if (!adminRole) continue;
+        // Find active users in this tenant who have accessScopeType "All" but no systemRoleId or wrong role
+        const wideUsers = await db.select().from(crmUsers).where(
+          and(eq(crmUsers.tenantId, tenant.id), eq(crmUsers.accessScopeType, "All"), eq(crmUsers.isActive, true))
+        );
+        for (const u of wideUsers) {
+          if (u.systemRoleId !== adminRole.id) {
+            // Skip SYS_ADMIN users — they have their own role
+            if (u.systemRoleId) {
+              const [existingRole] = await db.select().from(systemRoles).where(eq(systemRoles.id, u.systemRoleId));
+              if (existingRole?.code === "SYS_ADMIN") continue;
+            }
+            await db.update(crmUsers).set({ systemRoleId: adminRole.id }).where(eq(crmUsers.id, u.id));
+            console.log(`[seed] Assigned ADMIN role to ${u.name} (id=${u.id}, tenant=${tenant.id})`);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[seed] Failed to assign ADMIN roles:", e);
     }
 
     const allUsers = await db.select().from(crmUsers).where(eq(crmUsers.status, "Active"));

@@ -38,6 +38,7 @@ import AdminHospitals from "@/pages/admin/AdminHospitals";
 import AdminPlans from "@/pages/admin/AdminPlans";
 import AdminSubscriptions from "@/pages/admin/AdminSubscriptions";
 import AdminPayments from "@/pages/admin/AdminPayments";
+import AdminErrorLogs from "@/pages/admin/AdminErrorLogs";
 import CallyzerReportsPage from "@/pages/CallyzerReportsPage";
 import IntelligenceConfigPage from "@/pages/IntelligenceConfigPage";
 import PostCareProtocolsPage from "@/pages/PostCareProtocolsPage";
@@ -339,6 +340,9 @@ function Router() {
       </Route>
       <Route path="/admin/payments">
         <SysAdminGate><AdminPayments /></SysAdminGate>
+      </Route>
+      <Route path="/admin/error-logs">
+        <SysAdminGate><AdminErrorLogs /></SysAdminGate>
       </Route>
 
       <Route path="/support-tickets">
