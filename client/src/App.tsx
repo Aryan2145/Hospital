@@ -171,6 +171,10 @@ function Router() {
         ) : <Landing />}
       </Route>
 
+      <Route path="/transactions/:id">
+        {(params: { id: string }) => <Redirect to={`/episodes/${params.id}`} />}
+      </Route>
+
       <Route path="/callyzer-reports">
         {isAuthenticated ? (
           <RoleGate page="connectors"><CallyzerReportsPage /></RoleGate>
