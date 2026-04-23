@@ -208,6 +208,15 @@ export default function WhatsAppSettingsPage() {
                     </button>
                   </div>
                   <p className="text-[11px] text-muted-foreground">Generate a permanent token in Meta Business Suite &gt; System Users. Never share this token.</p>
+                  <div className="mt-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] text-amber-800 flex gap-2">
+                    <span className="shrink-0 font-bold">!</span>
+                    <span>
+                      If you see <strong>"Access Token is invalid or expired"</strong> when testing: go to{" "}
+                      <strong>Meta Business Suite → Settings → System Users</strong>, select the system user,
+                      click <strong>Generate New Token</strong>, select your WhatsApp app with{" "}
+                      <em>whatsapp_business_messaging</em> permission, copy the new token, and paste it here.
+                    </span>
+                  </div>
                 </div>
               </CardContent>
             </Card>

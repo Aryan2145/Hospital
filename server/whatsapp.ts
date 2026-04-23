@@ -49,8 +49,8 @@ export async function sendWhatsAppTemplate(
     const data = await response.json();
 
     if (!response.ok) {
-      const errorMsg = data?.error?.message || `HTTP ${response.status}`;
-      console.error("[WhatsApp] Send failed:", errorMsg);
+      const errorMsg = humanizeMetaError(data, response.status);
+      console.error("[WhatsApp] Send failed:", data?.error?.message || response.status);
       return { success: false, error: errorMsg };
     }
 
@@ -61,6 +61,30 @@ export async function sendWhatsAppTemplate(
     console.error("[WhatsApp] Network error:", err.message);
     return { success: false, error: err.message };
   }
+}
+
+function humanizeMetaError(data: any, status: number): string {
+  const code = data?.error?.code;
+  const subcode = data?.error?.error_subcode;
+  const msg: string = data?.error?.message || `HTTP ${status}`;
+
+  // Token invalid / expired / malformed
+  if (code === 190 || msg.includes("postcard") || msg.includes("payload") || msg.includes("OAuthException")) {
+    return "Access Token is invalid or expired. Please generate a new Permanent Access Token in Meta Business Suite → System Users and update it in WhatsApp settings.";
+  }
+  // Recipient not in test whitelist
+  if (subcode === 131030 || msg.toLowerCase().includes("not a valid whatsapp")) {
+    return "Recipient phone number is not registered on WhatsApp. Verify the number and ensure it is active on WhatsApp.";
+  }
+  // Rate limit
+  if (code === 80007 || code === 130429) {
+    return "WhatsApp rate limit reached. Please wait a few minutes and try again.";
+  }
+  // Template not found
+  if (code === 132001) {
+    return "Message template not found or not approved. Check the template name in Meta Business Manager.";
+  }
+  return msg;
 }
 
 export async function sendWhatsAppText(
@@ -94,8 +118,8 @@ export async function sendWhatsAppText(
     const data = await response.json();
 
     if (!response.ok) {
-      const errorMsg = data?.error?.message || `HTTP ${response.status}`;
-      console.error("[WhatsApp] Text send failed:", errorMsg);
+      const errorMsg = humanizeMetaError(data, response.status);
+      console.error("[WhatsApp] Text send failed:", data?.error?.message || response.status);
       return { success: false, error: errorMsg };
     }
 
@@ -128,7 +152,7 @@ export async function testWhatsAppConnection(
     const data = await response.json();
 
     if (!response.ok) {
-      const errorMsg = data?.error?.message || `HTTP ${response.status}`;
+      const errorMsg = humanizeMetaError(data, response.status);
       return { success: false, message: `Connection failed: ${errorMsg}` };
     }
 
