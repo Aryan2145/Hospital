@@ -8807,7 +8807,7 @@ export async function registerRoutes(
             "discount_request",
             "Discount Approval Required",
             `${userName} requested ${calcPercent}% discount (₹${calcAmount.toLocaleString("en-IN")}) for ${patientName}. Please review and approve or reject.`,
-            { entityType: "episode", entityId: episodeId, link: `/episodes/${episodeId}` }
+            { entityType: "episode", entityId: episodeId, link: `/episodes/${episodeId}?tab=financial` }
           );
           // Email + SMS approvers
           const approverDetails = await db.select({ email: crmUsers.email, name: crmUsers.name, phone: crmUsers.phone })
@@ -8882,16 +8882,28 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Discount is already approved" });
       }
 
+      const { approvedAmount, approverRemark } = req.body;
+      if (!approverRemark || !String(approverRemark).trim()) {
+        return res.status(400).json({ message: "Approver remark is required" });
+      }
+
+      const requestedAmt = oldEpisode.discountAmount || 0;
+      // Approved amount defaults to requested if not provided; must not exceed the requested amount
+      const finalApprovedAmt = approvedAmount != null ? Math.max(0, Number(approvedAmount)) : requestedAmt;
+      if (finalApprovedAmt > requestedAmt) {
+        return res.status(400).json({ message: `Approved discount (₹${finalApprovedAmt.toLocaleString("en-IN")}) cannot exceed the requested discount (₹${requestedAmt.toLocaleString("en-IN")})` });
+      }
+
       const userName = crmUser?.employeeName || crmUser?.name || req.user?.email || "System";
-      const discountAmt = oldEpisode.discountAmount || 0;
       const baseAmt = oldEpisode.initialQuote || oldEpisode.originalQuotedAmount || oldEpisode.estimatedCost || 0;
-      const newFinalQuote = Math.max(0, baseAmt - discountAmt);
+      const newFinalQuote = Math.max(0, baseAmt - finalApprovedAmt);
       const updateFields: Record<string, any> = {
         discountStatus: "Approved",
         discountApprovedBy: userName,
         discountApprovedAt: new Date(),
+        discountApproverRemark: String(approverRemark).trim(),
         negotiationStatus: "Approved",
-        approvedDiscount: discountAmt,
+        approvedDiscount: finalApprovedAmt,
         finalQuote: newFinalQuote,
         finalEstimatedAmount: newFinalQuote,
       };
@@ -8906,9 +8918,81 @@ export async function registerRoutes(
         entityType: "episode",
         entityId: episodeId,
         action: "discount_approved",
-        oldValues: { discountStatus: oldEpisode.discountStatus },
-        newValues: { discountStatus: "Approved", approvedBy: userName },
-        changedFields: "discountStatus,discountApprovedBy,discountApprovedAt",
+        oldValues: { discountStatus: oldEpisode.discountStatus, requestedAmount: requestedAmt },
+        newValues: { discountStatus: "Approved", approvedBy: userName, requestedAmount: requestedAmt, approvedAmount: finalApprovedAmt, remark: String(approverRemark).trim() },
+        changedFields: "discountStatus,discountApprovedBy,discountApprovedAt,discountApproverRemark,approvedDiscount",
+        performedBy: userName,
+        performedByCrmUserId: crmUser?.id,
+      });
+
+      const freshEp = await storage.getEpisode(episodeId, tid);
+      res.json(freshEp);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/episodes/:id/discount/reject", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+
+      const hasApprovers = await storage.hasAnyDiscountApprovers(tid);
+      if (hasApprovers) {
+        const isApprover = await storage.isDiscountApprover(tid, crmUser.id);
+        if (!isApprover) {
+          return res.status(403).json({ message: "You are not designated as a discount approver for this hospital" });
+        }
+      } else {
+        const allowedRoles = ["SYS_ADMIN", "ADMIN"];
+        if (!allowedRoles.includes(crmUser.roleCode)) {
+          return res.status(403).json({ message: "Only Admins and System Admins can reject discounts" });
+        }
+      }
+
+      const { reason } = req.body;
+      if (!reason || !String(reason).trim()) {
+        return res.status(400).json({ message: "Rejection reason is required" });
+      }
+
+      const oldEpisode = await storage.getEpisode(episodeId, tid);
+      if (!oldEpisode) return res.status(404).json({ message: "Episode not found" });
+
+      if (oldEpisode.discountStatus !== "Pending") {
+        return res.status(400).json({ message: "Only a Pending discount request can be rejected" });
+      }
+
+      const userName = crmUser?.employeeName || crmUser?.name || req.user?.email || "System";
+      const baseAmt = oldEpisode.initialQuote || oldEpisode.originalQuotedAmount || oldEpisode.estimatedCost || 0;
+      const rejectFields: Record<string, any> = {
+        discountStatus: "Rejected",
+        discountApprovedBy: userName,
+        discountApprovedAt: new Date(),
+        discountApproverRemark: String(reason).trim(),
+        negotiationStatus: "In Discussion",
+        approvedDiscount: 0,
+        finalQuote: baseAmt,
+        finalEstimatedAmount: baseAmt,
+      };
+      if (oldEpisode.actualBill != null) {
+        rejectFields.variance = baseAmt - (oldEpisode.actualBill || 0);
+      }
+      await storage.updateEpisode(episodeId, tid, rejectFields);
+      await computeRevenueProbability(episodeId, tid);
+
+      await storage.createAuditLog({
+        tenantId: tid,
+        entityType: "episode",
+        entityId: episodeId,
+        action: "discount_rejected",
+        oldValues: { discountStatus: oldEpisode.discountStatus, requestedAmount: oldEpisode.discountAmount },
+        newValues: { discountStatus: "Rejected", rejectedBy: userName, reason: String(reason).trim() },
+        changedFields: "discountStatus,discountApprovedBy,discountApprovedAt,discountApproverRemark",
         performedBy: userName,
         performedByCrmUserId: crmUser?.id,
       });

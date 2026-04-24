@@ -1396,6 +1396,7 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
   const isDraft = !episode.discountStatus || episode.discountStatus === "Draft";
   const isPendingDiscount = episode.discountStatus === "Pending";
   const isRevoked = episode.discountStatus === "Revoked";
+  const isRejected = episode.discountStatus === "Rejected";
 
   const [localInitialQuote, setLocalInitialQuote] = useState<number>(initialQuote);
   const [discountMode, setDiscountMode] = useState<"flat" | "percent">(
@@ -1411,6 +1412,11 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
   const [localActualBill, setLocalActualBill] = useState<number>(actualBill);
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [revokeReason, setRevokeReason] = useState("");
+  const [approveDialogOpen, setApproveDialogOpen] = useState(false);
+  const [approveAmount, setApproveAmount] = useState<number>(0);
+  const [approveRemark, setApproveRemark] = useState("");
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
   const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -1454,18 +1460,40 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
     onSuccess: () => {
       toast({ title: "Discount submitted for approval" });
       queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/audit-logs", "episode", episode.id] });
     },
     onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const approveDiscount = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/episodes/${episode.id}/discount/approve`, {});
+    mutationFn: async ({ amount, remark }: { amount: number; remark: string }) => {
+      const res = await apiRequest("POST", `/api/episodes/${episode.id}/discount/approve`, {
+        approvedAmount: amount,
+        approverRemark: remark,
+      });
       return res.json();
     },
     onSuccess: () => {
       toast({ title: "Discount approved" });
+      setApproveDialogOpen(false);
+      setApproveRemark("");
       queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/audit-logs", "episode", episode.id] });
+    },
+    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const rejectDiscount = useMutation({
+    mutationFn: async (reason: string) => {
+      const res = await apiRequest("POST", `/api/episodes/${episode.id}/discount/reject`, { reason });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Discount request rejected" });
+      setRejectDialogOpen(false);
+      setRejectReason("");
+      queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/audit-logs", "episode", episode.id] });
     },
     onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -1476,10 +1504,11 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Discount revoked" });
+      toast({ title: "Discount approval revoked" });
       setRevokeDialogOpen(false);
       setRevokeReason("");
       queryClient.invalidateQueries({ queryKey: ["/api/episodes", episode.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/audit-logs", "episode", episode.id] });
     },
     onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -1496,11 +1525,24 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
     ? "bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300"
     : isPendingDiscount
       ? "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300"
-      : isRevoked
+      : isRevoked || isRejected
         ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300"
         : "bg-muted text-muted-foreground";
 
   const fieldsReadOnly = isApproved;
+
+  const { data: discountAuditLogs = [] } = useQuery<any[]>({
+    queryKey: ["/api/audit-logs", "episode", episode.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/audit-logs?entityType=episode&entityId=${episode.id}`, { credentials: "include" });
+      if (!res.ok) return [];
+      const all = await res.json();
+      return (all as any[]).filter((l: any) =>
+        ["discount_submitted", "discount_approved", "discount_rejected", "discount_revoked"].includes(l.action)
+      );
+    },
+    staleTime: 1000 * 15,
+  });
 
   const { data: quoteItems = [] } = useQuery<any[]>({
     queryKey: ["/api/episodes", episode.id, "quote-items"],
@@ -1654,10 +1696,35 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
           </div>
 
           {isApproved && episode.discountApprovedBy && (
-            <p className="text-xs text-green-700 dark:text-green-400 mb-3" data-testid="text-discount-approved-info">
-              Approved by {episode.discountApprovedBy}
-              {episode.discountApprovedAt && ` on ${fmtDate(episode.discountApprovedAt)}`}
-            </p>
+            <div className="text-xs rounded-md bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 px-3 py-2 mb-3 space-y-0.5" data-testid="text-discount-approved-info">
+              <div className="flex items-center justify-between flex-wrap gap-1">
+                <span className="font-medium text-green-800 dark:text-green-300">
+                  Approved by {episode.discountApprovedBy}
+                  {episode.discountApprovedAt && ` · ${fmtDate(episode.discountApprovedAt)}`}
+                </span>
+                {episode.approvedDiscount != null && episode.discountAmount != null && episode.approvedDiscount < episode.discountAmount && (
+                  <span className="text-amber-700 dark:text-amber-400">
+                    ₹{Number(episode.discountAmount).toLocaleString("en-IN")} → ₹{Number(episode.approvedDiscount).toLocaleString("en-IN")}
+                  </span>
+                )}
+              </div>
+              {episode.discountApproverRemark && (
+                <p className="text-green-700 dark:text-green-400 italic">"{episode.discountApproverRemark}"</p>
+              )}
+            </div>
+          )}
+
+          {isRejected && episode.discountApprovedBy && (
+            <div className="text-xs rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 px-3 py-2 mb-3 space-y-0.5" data-testid="text-discount-rejected-info">
+              <span className="font-medium text-red-800 dark:text-red-300">
+                Rejected by {episode.discountApprovedBy}
+                {episode.discountApprovedAt && ` · ${fmtDate(episode.discountApprovedAt)}`}
+              </span>
+              {episode.discountApproverRemark && (
+                <p className="text-red-700 dark:text-red-400 italic">"{episode.discountApproverRemark}"</p>
+              )}
+              <p className="text-red-600 dark:text-red-400 font-medium mt-0.5">You may update the discount and resubmit.</p>
+            </div>
           )}
 
           <div className="space-y-3">
@@ -1732,18 +1799,34 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
                   disabled={submitDiscount.isPending || !localDiscountNotes.trim() || localInitialQuote <= 0}
                   data-testid="button-submit-discount"
                 >
-                  {submitDiscount.isPending ? "Submitting..." : "Submit for Approval"}
+                  {submitDiscount.isPending ? "Submitting..." : isRejected ? "Resubmit for Approval" : "Submit for Approval"}
                 </Button>
               )}
 
               {canApproveDiscount && (isPendingDiscount || isDraft) && effectiveDiscountAmount > 0 && (
                 <Button
                   variant="outline"
-                  onClick={() => approveDiscount.mutate()}
+                  onClick={() => {
+                    setApproveAmount(episode.discountAmount || 0);
+                    setApproveRemark("");
+                    setApproveDialogOpen(true);
+                  }}
                   disabled={approveDiscount.isPending}
                   data-testid="button-approve-discount"
                 >
-                  {approveDiscount.isPending ? "Approving..." : "Approve"}
+                  Approve
+                </Button>
+              )}
+
+              {canApproveDiscount && isPendingDiscount && (
+                <Button
+                  variant="outline"
+                  className="text-destructive border-destructive hover:bg-destructive/10"
+                  onClick={() => { setRejectReason(""); setRejectDialogOpen(true); }}
+                  disabled={rejectDiscount.isPending}
+                  data-testid="button-reject-discount"
+                >
+                  Reject
                 </Button>
               )}
 
@@ -1757,6 +1840,64 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
                 </Button>
               )}
             </div>
+
+            {discountAuditLogs.length > 0 && (
+              <div className="mt-4 pt-3 border-t space-y-2" data-testid="section-discount-history">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Discount Activity</p>
+                <div className="space-y-2">
+                  {[...discountAuditLogs].reverse().map((log: any, idx: number) => {
+                    const nv = typeof log.newValues === "string" ? (() => { try { return JSON.parse(log.newValues); } catch { return {}; } })() : (log.newValues || {});
+                    const ov = typeof log.oldValues === "string" ? (() => { try { return JSON.parse(log.oldValues); } catch { return {}; } })() : (log.oldValues || {});
+                    const dotColor =
+                      log.action === "discount_approved" ? "bg-green-500" :
+                      log.action === "discount_rejected" ? "bg-red-500" :
+                      log.action === "discount_revoked" ? "bg-orange-500" :
+                      "bg-blue-500";
+                    const actionLabel =
+                      log.action === "discount_approved" ? "Approved" :
+                      log.action === "discount_rejected" ? "Rejected" :
+                      log.action === "discount_revoked" ? "Revoked" :
+                      "Submitted";
+                    return (
+                      <div key={idx} className="flex gap-2.5 text-xs" data-testid={`row-discount-history-${idx}`}>
+                        <div className="flex flex-col items-center pt-1">
+                          <div className={cn("w-2 h-2 rounded-full shrink-0", dotColor)} />
+                          {idx < discountAuditLogs.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
+                        </div>
+                        <div className="pb-2 flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-foreground">{actionLabel}</span>
+                            {log.action === "discount_submitted" && (ov.requestedAmount || nv.discountAmount) && (
+                              <span className="text-muted-foreground">₹{(ov.requestedAmount || nv.discountAmount || nv.requestedAmount || 0).toLocaleString("en-IN")}</span>
+                            )}
+                            {log.action === "discount_approved" && (
+                              <>
+                                {nv.requestedAmount != null && nv.approvedAmount != null && nv.requestedAmount !== nv.approvedAmount && (
+                                  <span className="text-muted-foreground">
+                                    ₹{Number(nv.requestedAmount).toLocaleString("en-IN")} → <span className="text-green-700 dark:text-green-400 font-medium">₹{Number(nv.approvedAmount).toLocaleString("en-IN")}</span>
+                                  </span>
+                                )}
+                                {(nv.requestedAmount == null || nv.requestedAmount === nv.approvedAmount) && nv.approvedAmount != null && (
+                                  <span className="text-green-700 dark:text-green-400 font-medium">₹{Number(nv.approvedAmount).toLocaleString("en-IN")}</span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                          <div className="text-muted-foreground">
+                            {log.performedBy} · {fmtDateTime(log.createdAt)}
+                          </div>
+                          {(nv.remark || nv.reason || nv.revokeReason) && (
+                            <div className="mt-0.5 italic text-muted-foreground truncate max-w-xs">
+                              "{nv.remark || nv.reason || nv.revokeReason}"
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </Card>
       </div>
@@ -1851,6 +1992,98 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
               data-testid="button-confirm-revoke"
             >
               {revokeDiscount.isPending ? "Revoking..." : "Revoke"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Approve Discount</DialogTitle>
+            <DialogDescription>
+              You may reduce the approved amount. You cannot approve more than what was requested.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="flex items-center justify-between text-sm rounded-md bg-muted px-3 py-2">
+              <span className="text-muted-foreground">Requested discount</span>
+              <span className="font-semibold text-foreground">
+                ₹{(episode.discountAmount || 0).toLocaleString("en-IN")}
+                {episode.discountType === "Percentage" && episode.discountPercent ? ` (${episode.discountPercent}%)` : ""}
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                Approved Amount (₹) <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                type="number"
+                value={approveAmount || ""}
+                onChange={(e) => setApproveAmount(Math.min(episode.discountAmount || 0, Math.max(0, Number(e.target.value) || 0)))}
+                className="text-sm"
+                data-testid="input-approve-amount"
+              />
+              {approveAmount < (episode.discountAmount || 0) && approveAmount > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Approving ₹{approveAmount.toLocaleString("en-IN")} — ₹{((episode.discountAmount || 0) - approveAmount).toLocaleString("en-IN")} less than requested
+                </p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                Approver Note <span className="text-destructive">*</span>
+              </Label>
+              <Textarea
+                value={approveRemark}
+                onChange={(e) => setApproveRemark(e.target.value)}
+                placeholder="Add a note about this approval decision..."
+                className="text-xs min-h-[72px] resize-none"
+                data-testid="textarea-approve-remark"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApproveDialogOpen(false)} data-testid="button-cancel-approve">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => approveDiscount.mutate({ amount: approveAmount, remark: approveRemark })}
+              disabled={!approveRemark.trim() || approveAmount <= 0 || approveDiscount.isPending}
+              data-testid="button-confirm-approve"
+            >
+              {approveDiscount.isPending ? "Approving..." : "Confirm Approval"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Discount Request</DialogTitle>
+            <DialogDescription>
+              Provide a reason for rejecting this discount. The requester will be able to resubmit a revised request.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Reason for rejection (mandatory)..."
+            className="text-xs min-h-[80px] resize-none"
+            data-testid="textarea-reject-reason"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectDialogOpen(false)} data-testid="button-cancel-reject">
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => rejectDiscount.mutate(rejectReason)}
+              disabled={!rejectReason.trim() || rejectDiscount.isPending}
+              data-testid="button-confirm-reject"
+            >
+              {rejectDiscount.isPending ? "Rejecting..." : "Reject Request"}
             </Button>
           </DialogFooter>
         </DialogContent>
