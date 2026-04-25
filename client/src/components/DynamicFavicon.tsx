@@ -19,9 +19,11 @@ export function DynamicFavicon() {
 
   useEffect(() => {
     if (tenant?.displayName) {
-      document.title = `${tenant.displayName} - Hospital CRM`;
+      document.title = `${tenant.displayName} Hospital CRM`;
     } else if (tenant?.name) {
-      document.title = `${tenant.name} - Hospital CRM`;
+      document.title = `${tenant.name} Hospital CRM`;
+    } else {
+      document.title = "RGB Hospital CRM";
     }
   }, [tenant]);
 
