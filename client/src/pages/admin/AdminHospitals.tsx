@@ -29,6 +29,8 @@ import {
   User,
   ExternalLink,
   Calendar,
+  RefreshCw,
+  FlaskConical,
 } from "lucide-react";
 
 function fmtDate(val: string | null | undefined) {
@@ -84,6 +86,15 @@ export default function AdminHospitals() {
       window.location.href = "/";
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const resetDemo = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/admin/seed-demo-tenant", {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "Demo data reset successfully", description: "1,050 leads, 368 episodes & 31 CRM users refreshed." });
+    },
+    onError: (err: any) => toast({ title: "Demo reset failed", description: err.message, variant: "destructive" }),
   });
 
   if (isLoading) {
@@ -154,10 +165,18 @@ export default function AdminHospitals() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {tenantList.map((t: any) => (
             <Card key={t.tenantId} className="p-5 border border-slate-200 shadow-sm hover:shadow-md transition-shadow" data-testid={`card-hospital-${t.tenantId}`}>
+              {t.subdomain === "rgb-demo" && (
+                <div className="flex items-center gap-1.5 bg-violet-50 border border-violet-200 rounded-md px-2.5 py-1.5 mb-3">
+                  <FlaskConical className="w-3.5 h-3.5 text-violet-600 shrink-0" />
+                  <span className="text-xs font-semibold text-violet-700">Demo Hospital</span>
+                  <span className="text-xs text-violet-500 ml-1">— for sales demos &amp; testing</span>
+                </div>
+              )}
+
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                    <Building2 className="w-5 h-5 text-blue-600" />
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${t.subdomain === "rgb-demo" ? "bg-violet-50" : "bg-blue-50"}`}>
+                    <Building2 className={`w-5 h-5 ${t.subdomain === "rgb-demo" ? "text-violet-600" : "text-blue-600"}`} />
                   </div>
                   <div>
                     <button
@@ -205,6 +224,27 @@ export default function AdminHospitals() {
                   <div className="text-[10px] text-slate-500 uppercase font-medium">Episodes</div>
                 </div>
               </div>
+
+              {t.subdomain === "rgb-demo" && (
+                <div className="mb-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-violet-700 border-violet-300 hover:bg-violet-50 font-medium"
+                    onClick={() => {
+                      if (window.confirm("Reset all demo data? This will wipe and re-seed 1,050 leads, 368 episodes, and 31 CRM users. Takes ~30 seconds.")) {
+                        resetDemo.mutate();
+                      }
+                    }}
+                    disabled={resetDemo.isPending}
+                    data-testid="button-reset-demo"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${resetDemo.isPending ? "animate-spin" : ""}`} />
+                    {resetDemo.isPending ? "Resetting demo data…" : "Reset Demo Data"}
+                  </Button>
+                  <p className="text-[10px] text-violet-400 text-center mt-1">Login: mobile <strong>4000400100</strong> · password <strong>HCRM@RGBTech</strong></p>
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <Button
