@@ -207,48 +207,87 @@ async function wipeTenantData(tenantId: number) {
     "tenant_domains",
   ];
 
-  // Execute all deletes inside a single transaction for atomic clean reset.
-  // We disable FK constraint triggers for this session so the delete order
-  // does not need to be perfectly maintained as the schema evolves.
+  // Tables that reference tenant-scoped tables but have no tenant_id themselves.
+  // These need a subquery-based delete executed BEFORE the main loop.
+  const subqueryDeletes: Array<{ tbl: string; sql: string }> = [
+    {
+      tbl: "support_ticket_comments",
+      sql: `DELETE FROM support_ticket_comments WHERE ticket_id IN (SELECT id FROM support_tickets WHERE tenant_id = $1)`,
+    },
+  ];
+
+  // Execute all deletes inside a single transaction with multi-pass retry.
+  // FK violations are retried in subsequent passes — tables that block due to
+  // child rows will succeed once their dependents are cleared in earlier passes.
+  // This eliminates the need to maintain a manually correct delete order.
   const client = await pool.connect();
   let committed = false;
   try {
     await client.query("BEGIN");
-    // Disable FK triggers for this session (safe within a transaction)
-    await client.query("SET session_replication_role = 'replica'");
-    for (const tbl of tbls) {
-      await client.query(`SAVEPOINT sp_${tbl.replace(/[^a-z0-9]/g, '_')}`);
+
+    // 1. Handle tables without tenant_id using custom subquery deletes (always first)
+    for (const { tbl, sql } of subqueryDeletes) {
+      const sp = `sp_pre_${tbl.replace(/[^a-z0-9]/g, '_')}`;
+      await client.query(`SAVEPOINT ${sp}`);
       try {
-        const res = await client.query(`DELETE FROM ${tbl} WHERE tenant_id = $1`, [tid]);
-        await client.query(`RELEASE SAVEPOINT sp_${tbl.replace(/[^a-z0-9]/g, '_')}`);
+        const res = await client.query(sql, [tid]);
+        await client.query(`RELEASE SAVEPOINT ${sp}`);
         if (res.rowCount && res.rowCount > 0) {
-          console.log(`[seedDemo] wipeTenantData: deleted ${res.rowCount} rows from ${tbl}`);
+          console.log(`[seedDemo] wipeTenantData: deleted ${res.rowCount} rows from ${tbl} (subquery)`);
         }
       } catch (err: unknown) {
-        // Roll back only this statement; the outer transaction stays alive
-        await client.query(`ROLLBACK TO SAVEPOINT sp_${tbl.replace(/[^a-z0-9]/g, '_')}`);
-        const msg = err instanceof Error ? err.message : String(err);
-        // Tables without a tenant_id column, missing tables, or other non-critical errors are skipped
-        const isSkippable = msg.includes("tenant_id") || msg.includes("does not exist") ||
-          msg.includes("column") || msg.includes("relation") || msg.includes("violates foreign key");
-        if (isSkippable) {
-          console.warn(`[seedDemo] wipeTenantData: skipped ${tbl} (${msg.split("\n")[0]})`);
-        } else {
-          await client.query("ROLLBACK");
-          committed = true;
-          console.error(`[seedDemo] wipeTenantData: ROLLBACK on failure in ${tbl}: ${msg}`);
-          throw err;
-        }
+        await client.query(`ROLLBACK TO SAVEPOINT ${sp}`);
+        console.warn(`[seedDemo] wipeTenantData: skipped subquery for ${tbl}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
       }
     }
-    // Re-enable FK triggers before commit
-    await client.query("SET session_replication_role = 'origin'");
+
+    // 2. Multi-pass deletion: retry FK-blocked tables until no more progress
+    let pending = [...tbls];
+    const MAX_PASSES = 10;
+    for (let pass = 1; pass <= MAX_PASSES && pending.length > 0; pass++) {
+      const stillPending: string[] = [];
+      for (const tbl of pending) {
+        const sp = `sp_${tbl.replace(/[^a-z0-9]/g, '_')}_p${pass}`;
+        await client.query(`SAVEPOINT ${sp}`);
+        try {
+          const res = await client.query(`DELETE FROM ${tbl} WHERE tenant_id = $1`, [tid]);
+          await client.query(`RELEASE SAVEPOINT ${sp}`);
+          if (res.rowCount && res.rowCount > 0) {
+            console.log(`[seedDemo] wipeTenantData [pass ${pass}]: deleted ${res.rowCount} rows from ${tbl}`);
+          }
+        } catch (err: unknown) {
+          await client.query(`ROLLBACK TO SAVEPOINT ${sp}`);
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("violates foreign key")) {
+            // Defer to next pass — dependent rows may be cleared by then
+            stillPending.push(tbl);
+          } else if (msg.includes("tenant_id") || msg.includes("does not exist") ||
+                     msg.includes("column") || msg.includes("relation")) {
+            // Table doesn't have tenant_id or doesn't exist — skip permanently
+            console.warn(`[seedDemo] wipeTenantData: skipped ${tbl} (${msg.split("\n")[0]})`);
+          } else {
+            await client.query("ROLLBACK");
+            committed = true;
+            console.error(`[seedDemo] wipeTenantData: ROLLBACK on failure in ${tbl}: ${msg}`);
+            throw err;
+          }
+        }
+      }
+      if (stillPending.length === pending.length) {
+        // No progress was made — circular FK or truly unresolvable
+        console.error(`[seedDemo] wipeTenantData: could not delete after ${pass} passes: ${stillPending.join(", ")}`);
+        await client.query("ROLLBACK");
+        committed = true;
+        throw new Error(`FK cycle or unresolvable dependency for tables: ${stillPending.join(", ")}`);
+      }
+      pending = stillPending;
+    }
+
     await client.query("COMMIT");
     committed = true;
     console.log(`[seedDemo] wipeTenantData: clean wipe committed for tenant #${tid}`);
   } finally {
     if (!committed) {
-      try { await client.query("SET session_replication_role = 'origin'"); } catch (_) {}
       try { await client.query("ROLLBACK"); } catch (_) {}
     }
     client.release();
