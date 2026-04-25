@@ -1084,6 +1084,69 @@ export async function seedDemoTenant(): Promise<{ message: string; stats: Record
   stats["quoteItems"] = totalQuoteItems;
   console.log(`[seedDemo] Created ${totalEpisodes} episodes and ${totalQuoteItems} quote items.`);
 
+  // ── 12b. Ensure all named scenario leads have episodes ─────────────────────
+  // Named scenario leads may fall beyond the 35% episode cutoff, so we
+  // explicitly create episodes for any that are still missing one.
+  const namedEpisodeLeads = [
+    ...highValueLeadIds,
+    ...insuranceHeavyLeadIds,
+    ...discountEscalationLeadIds,
+  ];
+  for (const leadId of namedEpisodeLeads) {
+    if (episodeIdsByLead[leadId]) continue; // already has one
+    const lead = (await db.select().from(leads).where(eq(leads.id, leadId))).at(0);
+    if (!lead) continue;
+    const doctorId = lead.doctorId || pick(doctorIds);
+    const branchId = lead.branchId || branchHub.id;
+    const estimatedCost = randInt(80000, 350000);
+    const [ep] = await db.insert(episodes).values({
+      tenantId: tid,
+      leadId,
+      patientId: lead.patientId,
+      episodeName: `${pick(["Cataract Surgery","Knee Replacement","Retina Surgery","Hip Replacement","Cholecystectomy"])} – ${pick(LAST_NAMES)}`,
+      doctorId,
+      branchId,
+      treatmentDepartmentId: lead.treatmentDepartmentId || pick(Object.values(deptIdMap)),
+      episodeType: pick(["OPD","IPD","Day Care"]),
+      visitType: "New",
+      status: "Consultation Done",
+      estimatedCost,
+      originalQuotedAmount: estimatedCost,
+      estimateShared: true,
+      estimateSharedAt: daysAgo(randInt(5, 30)),
+      negotiationStatus: "Negotiating",
+      diagnosis: pick(DIAGNOSIS_POOL),
+      treatmentPlan: pick(["Surgical intervention","Laparoscopic procedure","Laser therapy"]),
+      notes: pick(CONSULTATION_NOTE_POOL),
+      conversionStageId: pick(Object.values(convStageMap)),
+      discountStatus: "Draft",
+      decisionStatus: "Pending",
+      insuranceApplicable: false,
+      createdAt: daysAgo(randInt(5, 60)),
+      startDate: daysAgo(randInt(5, 60)),
+    }).returning();
+    episodeIdsByLead[leadId] = ep.id;
+    totalEpisodes++;
+
+    // 3-5 quote items per scenario episode
+    const numItems = randInt(3, 5);
+    const shuffledCostHeads = [...costHeadIds].sort(() => Math.random() - 0.5).slice(0, numItems);
+    let totalQuoteForEp = 0;
+    for (const chId of shuffledCostHeads) {
+      const amt = randInt(5000, 90000);
+      totalQuoteForEp += amt;
+      await db.insert(episodeQuoteItems).values({
+        tenantId: tid, episodeId: ep.id, costHeadId: chId,
+        amount: amt, remarks: null, displayOrder: 0, createdBy: "system-seed",
+      });
+      totalQuoteItems++;
+    }
+    await db.update(episodes).set({ initialQuote: totalQuoteForEp, finalQuote: Math.round(totalQuoteForEp * 0.9) }).where(eq(episodes.id, ep.id));
+  }
+  stats["episodes"] = totalEpisodes;
+  stats["quoteItems"] = totalQuoteItems;
+  console.log(`[seedDemo] Ensured episodes for ${namedEpisodeLeads.length} named scenario leads. Total episodes: ${totalEpisodes}`);
+
   // Link appointments to their episodes (appointment.episodeId → episode.id)
   let linkedAppts = 0;
   for (const [leadIdStr, epId] of Object.entries(episodeIdsByLead)) {
