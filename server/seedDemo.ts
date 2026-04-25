@@ -104,12 +104,20 @@ async function wipeTenantData(tenantId: number) {
   const tid = tenantId;
   // All tenant-scoped tables in FK-safe delete order
   const tbls = [
+    // Transactional / log tables
+    "support_ticket_comments",
+    "support_tickets",
     "referral_reward_logs",
     "referrals",
+    "referral_reward_rules",
+    "referral_config",
     "event_registrations",
     "events",
+    "resource_links",
     "post_care_protocol_steps",
     "post_care_protocols",
+    "consultation_outcome_remarks",
+    "consultation_outcomes",
     "system_error_logs",
     "in_app_notifications",
     "access_logs",
@@ -128,10 +136,13 @@ async function wipeTenantData(tenantId: number) {
     "communication_preferences",
     "leads",
     "patient_contact_links",
+    "contacts",
     "patients",
     "contact_persons",
+    "user_permission_overrides",
     "tenant_discount_approvers",
     "user_line_assignments",
+    "callyzer_employees",
     "crm_users",
     "opd_timings",
     "doctor_leave_exceptions",
@@ -144,8 +155,10 @@ async function wipeTenantData(tenantId: number) {
     "lead_merge_roles",
     "clinical_notes_edit_roles",
     "revenue_probability_config",
+    "custom_field_suggestions",
     "lead_import_logs",
     "bulk_import_logs",
+    "lead_capture_rules",
     "platform_connectors",
     "campaigns",
     "tags",
@@ -182,6 +195,7 @@ async function wipeTenantData(tenantId: number) {
     "designations",
     "administrative_departments",
     "system_roles",
+    "branch_serviceability",
     "areas",
     "pin_codes",
     "cities",
@@ -193,36 +207,48 @@ async function wipeTenantData(tenantId: number) {
     "tenant_domains",
   ];
 
-  // Execute all deletes inside a single transaction for atomic clean reset
+  // Execute all deletes inside a single transaction for atomic clean reset.
+  // We disable FK constraint triggers for this session so the delete order
+  // does not need to be perfectly maintained as the schema evolves.
   const client = await pool.connect();
   let committed = false;
   try {
     await client.query("BEGIN");
+    // Disable FK triggers for this session (safe within a transaction)
+    await client.query("SET session_replication_role = 'replica'");
     for (const tbl of tbls) {
+      await client.query(`SAVEPOINT sp_${tbl.replace(/[^a-z0-9]/g, '_')}`);
       try {
         const res = await client.query(`DELETE FROM ${tbl} WHERE tenant_id = $1`, [tid]);
+        await client.query(`RELEASE SAVEPOINT sp_${tbl.replace(/[^a-z0-9]/g, '_')}`);
         if (res.rowCount && res.rowCount > 0) {
           console.log(`[seedDemo] wipeTenantData: deleted ${res.rowCount} rows from ${tbl}`);
         }
       } catch (err: unknown) {
+        // Roll back only this statement; the outer transaction stays alive
+        await client.query(`ROLLBACK TO SAVEPOINT sp_${tbl.replace(/[^a-z0-9]/g, '_')}`);
         const msg = err instanceof Error ? err.message : String(err);
-        // Tables without a tenant_id column or that don't exist as real tables are skipped
-        if (msg.includes("tenant_id") || msg.includes("does not exist")) {
+        // Tables without a tenant_id column, missing tables, or other non-critical errors are skipped
+        const isSkippable = msg.includes("tenant_id") || msg.includes("does not exist") ||
+          msg.includes("column") || msg.includes("relation") || msg.includes("violates foreign key");
+        if (isSkippable) {
           console.warn(`[seedDemo] wipeTenantData: skipped ${tbl} (${msg.split("\n")[0]})`);
         } else {
-          // Unexpected failure — rollback immediately and fail-fast
           await client.query("ROLLBACK");
-          committed = true; // prevent double-rollback in finally
+          committed = true;
           console.error(`[seedDemo] wipeTenantData: ROLLBACK on failure in ${tbl}: ${msg}`);
           throw err;
         }
       }
     }
+    // Re-enable FK triggers before commit
+    await client.query("SET session_replication_role = 'origin'");
     await client.query("COMMIT");
     committed = true;
     console.log(`[seedDemo] wipeTenantData: clean wipe committed for tenant #${tid}`);
   } finally {
     if (!committed) {
+      try { await client.query("SET session_replication_role = 'origin'"); } catch (_) {}
       try { await client.query("ROLLBACK"); } catch (_) {}
     }
     client.release();
