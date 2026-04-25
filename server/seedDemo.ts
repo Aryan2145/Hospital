@@ -1374,6 +1374,66 @@ export async function seedDemoTenant(): Promise<{ message: string; stats: Record
   if (discountEscalationLeadIds.length < 2) assertionErrors.push(`discountEscalationLeadIds < 2 (actual: ${discountEscalationLeadIds.length})`);
   if (stats["demoScenarios"] < 14) assertionErrors.push(`Total named scenarios < 14 (actual: ${stats["demoScenarios"]})`);
 
+  // Named scenario leads must each have a non-null episode_id (8 episode-requiring leads)
+  const episodeRequiringLeadIds = [...highValueLeadIds, ...insuranceHeavyLeadIds, ...discountEscalationLeadIds];
+  if (episodeRequiringLeadIds.length > 0) {
+    const episodeLinkRes = await pool.query<{ id: number; episode_id: number | null }>(
+      `SELECT id, episode_id FROM leads WHERE id = ANY($1::int[])`,
+      [episodeRequiringLeadIds]
+    );
+    const missingEpisode = episodeLinkRes.rows.filter(r => r.episode_id == null).map(r => r.id);
+    if (missingEpisode.length > 0) {
+      assertionErrors.push(`Named scenario leads missing episode_id: [${missingEpisode.join(", ")}]`);
+    }
+  }
+
+  // DEMO:InsuranceHeavy — episodes must have insurance_applicable=true and preauth_approved_amount set
+  if (insuranceHeavyLeadIds.length > 0) {
+    const insEpRes = await pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM episodes e
+       JOIN leads l ON l.episode_id = e.id
+       WHERE l.id = ANY($1::int[])
+         AND (e.insurance_applicable IS NOT TRUE OR e.preauth_approved_amount IS NULL)`,
+      [insuranceHeavyLeadIds]
+    );
+    const badInsurance = insEpRes.rows[0]?.n ?? 0;
+    if (badInsurance > 0) {
+      assertionErrors.push(`${badInsurance} DEMO:InsuranceHeavy episode(s) missing insurance_applicable=true or preauth_approved_amount`);
+    }
+  }
+
+  // DEMO:DiscountEscalation — episodes must have discount_status='Pending'
+  if (discountEscalationLeadIds.length > 0) {
+    const discEpRes = await pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM episodes e
+       JOIN leads l ON l.episode_id = e.id
+       WHERE l.id = ANY($1::int[])
+         AND e.discount_status IS DISTINCT FROM 'Pending'`,
+      [discountEscalationLeadIds]
+    );
+    const badDiscount = discEpRes.rows[0]?.n ?? 0;
+    if (badDiscount > 0) {
+      assertionErrors.push(`${badDiscount} DEMO:DiscountEscalation episode(s) do not have discount_status='Pending'`);
+    }
+  }
+
+  // DEMO:HighValueSurgical — episodes must have at least 3 episode_quote_items each
+  if (highValueLeadIds.length > 0) {
+    const hvQiRes = await pool.query<{ lead_id: number; item_count: number }>(
+      `SELECT l.id AS lead_id, count(eqi.id)::int AS item_count
+       FROM leads l
+       JOIN episodes e ON l.episode_id = e.id
+       LEFT JOIN episode_quote_items eqi ON eqi.episode_id = e.id AND eqi.tenant_id = $2
+       WHERE l.id = ANY($1::int[])
+       GROUP BY l.id`,
+      [highValueLeadIds, tid]
+    );
+    const insufficientItems = hvQiRes.rows.filter(r => r.item_count < 3).map(r => `lead ${r.lead_id} (${r.item_count} items)`);
+    if (insufficientItems.length > 0) {
+      assertionErrors.push(`DEMO:HighValueSurgical episodes with < 3 quote items: ${insufficientItems.join(", ")}`);
+    }
+  }
+
   // Phone format: all patient primary phones must start with +915 (digit 5, 10-digit mobile)
   const [badPhoneRow] = await db.select({ n: sql<number>`count(*)::int` }).from(patients)
     .where(and(eq(patients.tenantId, tid), sql`primary_phone IS NOT NULL AND primary_phone NOT LIKE '+915%'`));
