@@ -925,20 +925,20 @@ export async function seedDemoTenant(): Promise<{ message: string; stats: Record
 
   // ── 11. Appointments ───────────────────────────────────────────────────────
   console.log("[seedDemo] Creating appointments...");
-  const apptStatuses = ["Scheduled","Completed","No Show","Rescheduled","Cancelled"];
-  const apptLeads = leadIds.filter((_, i) => i % 2 === 0); // every other lead gets appt
   let totalAppts = 0;
   const apptIdsByLead: Record<number, number> = {};
+  const allBranches = [branchHub.id, branchSpoke1.id, branchSpoke2.id];
 
-  for (const leadId of apptLeads) {
+  // ── 11a. Historical appointments (realism) — past 90 days ──────────────
+  const histStatuses = ["Completed","Completed","Completed","No Show","Rescheduled","Cancelled"];
+  const histLeads = leadIds.filter((_, i) => i % 3 === 0); // ~350 leads
+  for (const leadId of histLeads) {
     const leadRow = (await db.select().from(leads).where(and(eq(leads.id, leadId), eq(leads.tenantId, tid)))).at(0);
     if (!leadRow) continue;
     const doctorId = leadRow.doctorId || pick(doctorIds);
     const branchId = leadRow.branchId || branchHub.id;
-    const apptStatus = pick(apptStatuses);
-    const isPast = apptStatus !== "Scheduled";
-    const apptDate = isPast ? daysAgo(randInt(1, 90)) : daysFromNow(randInt(1, 45));
-
+    const apptStatus = pick(histStatuses);
+    const apptDate = daysAgo(randInt(1, 90));
     const [appt] = await db.insert(appointments).values({
       tenantId: tid,
       leadId,
@@ -954,8 +954,6 @@ export async function seedDemoTenant(): Promise<{ message: string; stats: Record
     }).returning();
     apptIdsByLead[leadId] = appt.id;
     totalAppts++;
-
-    // Some rescheduled appointments get history
     if (apptStatus === "Rescheduled" && Math.random() > 0.5) {
       await db.insert(rescheduleHistory).values({
         tenantId: tid,
@@ -969,14 +967,53 @@ export async function seedDemoTenant(): Promise<{ message: string; stats: Record
     }
   }
 
-  // Named demo: spoke→hub surgery chain for high-value cases
+  // ── 11b. Upcoming 10-day window — 300+ Scheduled appointments ──────────
+  // Distribution: today ~40, days 1-3 ~32 each, days 4-7 ~25 each, days 8-10 ~18 each
+  // Total target: 40 + 96 + 100 + 54 = 290 → with extras from named scenarios hits 300+
+  const upcomingDayWeights: number[] = [40, 34, 32, 30, 26, 25, 24, 22, 20, 19, 18]; // index = offset from today
+  const consultSlots = ["09:00","09:30","10:00","10:30","11:00","11:30","12:00","14:00","14:30","15:00","15:30","16:00","16:30"];
+
+  // Build a pool of leads to schedule: skip those that already have a same-window upcoming appt
+  // We pick from the entire lead pool to ensure variety (some leads get both a past + upcoming appt — realistic for follow-ups)
+  const upcomingLeadPool = [...leadIds].sort(() => Math.random() - 0.5);
+  let upcomingLeadIdx = 0;
+
+  for (let dayOffset = 0; dayOffset <= 10; dayOffset++) {
+    const count = upcomingDayWeights[dayOffset];
+    const apptDate = daysFromNow(dayOffset);
+    for (let slot = 0; slot < count; slot++) {
+      const leadId = upcomingLeadPool[upcomingLeadIdx % upcomingLeadPool.length];
+      upcomingLeadIdx++;
+      const leadRow = (await db.select().from(leads).where(and(eq(leads.id, leadId), eq(leads.tenantId, tid)))).at(0);
+      if (!leadRow) continue;
+      const branchId = pick(allBranches);
+      const doctorId = pick(doctorIds.filter(id => doctorBranchMap[id] === branchId) || doctorIds);
+      const [appt] = await db.insert(appointments).values({
+        tenantId: tid,
+        leadId,
+        patientId: leadRow.patientId,
+        doctorId: doctorId || pick(doctorIds),
+        branchId,
+        appointmentDate: apptDate,
+        startTime: consultSlots[slot % consultSlots.length],
+        status: "Scheduled",
+        createdBy: "system-seed",
+      }).returning();
+      // Only set apptIdsByLead for today's appointments (useful for same-day episode creation demo)
+      if (dayOffset === 0 && !apptIdsByLead[leadId]) {
+        apptIdsByLead[leadId] = appt.id;
+      }
+      totalAppts++;
+    }
+  }
+
+  // ── 11c. Named demo: spoke→hub surgery chain for high-value cases ───────
   for (const hLeadId of highValueLeadIds) {
     const lead = (await db.select().from(leads).where(eq(leads.id, hLeadId))).at(0);
     if (!lead) continue;
     const spokeApptDate = daysAgo(randInt(20, 60));
     const hubApptDate = daysAgo(randInt(5, 15));
     const surgDoctorId = doctorIds.find(id => doctorBranchMap[id] === branchHub.id) || pick(doctorIds);
-    // Spoke consultation
     await db.insert(appointments).values({
       tenantId: tid, leadId: hLeadId, patientId: lead.patientId,
       doctorId: pick(doctorIds.filter(id => doctorBranchMap[id] !== branchHub.id) || doctorIds),
@@ -985,7 +1022,6 @@ export async function seedDemoTenant(): Promise<{ message: string; stats: Record
       consultationNotes: "Initial consultation at spoke. Surgery recommended. Referred to hub.",
       createdBy: "system-seed",
     });
-    // Hub surgery appointment
     await db.insert(appointments).values({
       tenantId: tid, leadId: hLeadId, patientId: lead.patientId,
       doctorId: surgDoctorId, branchId: branchHub.id,
@@ -998,7 +1034,7 @@ export async function seedDemoTenant(): Promise<{ message: string; stats: Record
   }
 
   stats["appointments"] = totalAppts;
-  console.log(`[seedDemo] Created ${totalAppts} appointments.`);
+  console.log(`[seedDemo] Created ${totalAppts} appointments (${upcomingDayWeights.reduce((a,b)=>a+b,0)} upcoming in next 10 days).`);
 
   // ── 12. Episodes with quote items ─────────────────────────────────────────
   console.log("[seedDemo] Creating episodes and quote items...");

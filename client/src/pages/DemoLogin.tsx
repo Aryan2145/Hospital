@@ -6,13 +6,17 @@ import { Activity, Phone, Lock, Eye, EyeOff, Loader2, FlaskConical } from "lucid
 import { useQueryClient } from "@tanstack/react-query";
 
 const DEMO_USERS = [
-  { role: "Admin",             mobile: "4000400100", name: "Rajesh Admin Sharma" },
-  { role: "Manager",           mobile: "4000400102", name: "Sanjay Manager Verma" },
-  { role: "Counsellor",        mobile: "4000400104", name: "Vikram Counsellor Singh" },
+  { role: "Admin",               mobile: "4000400100", name: "Rajesh Admin Sharma" },
+  { role: "Manager",             mobile: "4000400102", name: "Sanjay Manager Verma" },
+  { role: "Counsellor",          mobile: "4000400104", name: "Vikram Counsellor Singh" },
   { role: "Patient Coordinator", mobile: "4000400106", name: "Amit PC Joshi" },
-  { role: "Telecaller",        mobile: "4000400108", name: "Rahul TC Yadav" },
-  { role: "Doctor",            mobile: "4000400112", name: "Dr. Vikas Kapoor" },
-  { role: "Billing",           mobile: "4000400128", name: "Suresh Billing Kumar" },
+  { role: "Telecaller",          mobile: "4000400108", name: "Rahul TC Yadav" },
+  { role: "Receptionist",        mobile: "4000400110", name: "Anita Rec Gupta" },
+  { role: "Doctor",              mobile: "4000400112", name: "Dr. Vikas Kapoor" },
+  { role: "Medical Assistant",   mobile: "4000400120", name: "Sunita MA Kapoor" },
+  { role: "Billing",             mobile: "4000400128", name: "Suresh Billing Kumar" },
+  { role: "Insurance Desk",      mobile: "4000400129", name: "Kavitha Insurance Nair" },
+  { role: "MIS Viewer",          mobile: "4000400130", name: "Ashok MIS Trivedi" },
 ];
 
 export default function DemoLogin() {
