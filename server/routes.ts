@@ -10637,6 +10637,111 @@ export async function registerRoutes(
     }
   });
 
+  // ── Export tenant data ──────────────────────────────────────────────────────
+  // POST /api/admin/export-tenant/:tenantId
+  // Returns an encrypted .hcrmx file download. Audit-logged on every request.
+  app.post("/api/admin/export-tenant/:tenantId", isAuthenticated, isSysAdmin, async (req: any, res) => {
+    try {
+      const { buildTenantExport, validatePassphrase } = await import("./exportTenant");
+      const tenantId = Number(req.params.tenantId);
+      const { passphrase, includePhiData, purpose, purposeNote } = req.body;
+
+      const passphraseErr = validatePassphrase(passphrase);
+      if (passphraseErr) return res.status(400).json({ message: passphraseErr });
+
+      const session = req.session as any;
+      const adminId = Number(session?.crmUserId) || 0;
+      // Resolve admin email from DB (session only stores crmUserId)
+      const [adminUser] = adminId
+        ? await db.select({ email: crmUsers.email, name: crmUsers.name })
+            .from(crmUsers).where(eq(crmUsers.id, adminId))
+        : [{ email: "unknown", name: "unknown" }];
+      const adminEmail = adminUser?.email || `user#${adminId}`;
+
+      const fileBuffer = await buildTenantExport({
+        tenantId,
+        includePhiData: includePhiData === true,
+        purpose: purpose || "BACKUP",
+        purposeNote: purposeNote || undefined,
+        exportedBy: adminEmail,
+        exportedByCrmUserId: adminId,
+        passphrase,
+        requestIp: req.ip || req.socket?.remoteAddress,
+      });
+
+      const ts = new Date().toISOString().slice(0, 10);
+      const filename = `hcrmx-${tenantId}-${ts}.hcrmx`;
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Length", fileBuffer.length);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      return res.send(fileBuffer);
+    } catch (err: any) {
+      console.error("[export-tenant] Error:", err);
+      return res.status(500).json({ message: err?.message || "Export failed" });
+    }
+  });
+
+  // ── Import: decrypt & preview (no data written) ─────────────────────────────
+  const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
+
+  app.post("/api/admin/import-tenant/preview", isAuthenticated, isSysAdmin,
+    importUpload.single("file"), async (req: any, res) => {
+    try {
+      const { parseTenantExport } = await import("./exportTenant");
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const { passphrase } = req.body;
+      if (!passphrase) return res.status(400).json({ message: "Passphrase is required" });
+
+      const parsed = parseTenantExport(req.file.buffer, passphrase);
+      // Return meta + counts — never return actual data rows in preview
+      return res.json({
+        meta:            parsed.meta,
+        compliance:      parsed.compliance,
+        counts:          parsed.counts,
+        includesPhiData: parsed.includesPhiData,
+        totalRecords:    Object.values(parsed.counts).reduce((a, b) => a + b, 0),
+      });
+    } catch (err: any) {
+      return res.status(400).json({ message: err?.message || "Preview failed" });
+    }
+  });
+
+  // ── Import: apply master data ────────────────────────────────────────────────
+  app.post("/api/admin/import-tenant/apply", isAuthenticated, isSysAdmin,
+    importUpload.single("file"), async (req: any, res) => {
+    try {
+      const { parseTenantExport, applyMasterDataImport } = await import("./exportTenant");
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const { passphrase, targetTenantId } = req.body;
+      if (!passphrase) return res.status(400).json({ message: "Passphrase is required" });
+      if (!targetTenantId) return res.status(400).json({ message: "Target tenant is required" });
+
+      const session = req.session as any;
+      const adminId = Number(session?.crmUserId) || 0;
+      const [adminUser2] = adminId
+        ? await db.select({ email: crmUsers.email })
+            .from(crmUsers).where(eq(crmUsers.id, adminId))
+        : [{ email: "unknown" }];
+      const adminEmail = adminUser2?.email || `user#${adminId}`;
+
+      const parsed = parseTenantExport(req.file.buffer, passphrase);
+      const applied = await applyMasterDataImport(
+        parsed,
+        Number(targetTenantId),
+        adminId,
+        adminEmail,
+        req.ip || req.socket?.remoteAddress
+      );
+
+      const total = Object.values(applied).reduce((a, b) => a + b, 0);
+      return res.json({ message: `Master data import complete — ${total} records restored.`, applied });
+    } catch (err: any) {
+      console.error("[import-tenant/apply] Error:", err);
+      return res.status(500).json({ message: err?.message || "Import failed" });
+    }
+  });
+
   // Update tenant details (admin)
   app.patch("/api/admin/tenants/:id", isAuthenticated, isSysAdmin, async (req, res) => {
     try {

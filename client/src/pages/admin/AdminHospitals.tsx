@@ -8,29 +8,27 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Building2,
-  Plus,
-  Ban,
-  CheckCircle,
-  Users,
-  UserPlus,
-  Globe,
-  Phone,
-  Mail,
-  User,
-  ExternalLink,
-  Calendar,
-  RefreshCw,
-  FlaskConical,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Building2, Plus, Ban, CheckCircle, Globe, Phone, Mail, User,
+  ExternalLink, Calendar, RefreshCw, FlaskConical, Download, Upload,
+  ShieldCheck, Eye, EyeOff, AlertTriangle, FileCheck, Lock,
+  Info, ChevronRight, CheckCircle2,
 } from "lucide-react";
 
 function fmtDate(val: string | null | undefined) {
@@ -39,14 +37,507 @@ function fmtDate(val: string | null | undefined) {
   return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+// ─── Passphrase strength checker ──────────────────────────────────────────────
+function passphraseStrength(p: string): { score: number; label: string; color: string } {
+  if (!p) return { score: 0, label: "", color: "" };
+  let score = 0;
+  if (p.length >= 12) score++;
+  if (p.length >= 16) score++;
+  if (/[A-Z]/.test(p)) score++;
+  if (/[a-z]/.test(p)) score++;
+  if (/[0-9]/.test(p)) score++;
+  if (/[^A-Za-z0-9]/.test(p)) score++;
+  if (score <= 2) return { score, label: "Weak", color: "bg-red-500" };
+  if (score <= 4) return { score, label: "Fair", color: "bg-amber-500" };
+  if (score === 5) return { score, label: "Good", color: "bg-blue-500" };
+  return { score, label: "Strong", color: "bg-emerald-500" };
+}
+
+const PURPOSES = [
+  { value: "BACKUP",            label: "Routine Backup" },
+  { value: "MIGRATION",         label: "System Migration" },
+  { value: "REGULATORY_AUDIT",  label: "Regulatory / Legal Audit" },
+  { value: "DISASTER_RECOVERY", label: "Disaster Recovery" },
+  { value: "OTHER",             label: "Other" },
+];
+
+// ─── Export Dialog ────────────────────────────────────────────────────────────
+function ExportDialog({ tenant, onClose }: { tenant: any; onClose: () => void }) {
+  const { toast } = useToast();
+  const [step, setStep]             = useState<"options" | "passphrase" | "done">("options");
+  const [purpose, setPurpose]       = useState("BACKUP");
+  const [purposeNote, setPurposeNote] = useState("");
+  const [includePhiData, setIncludePhiData] = useState(false);
+  const [passphrase, setPassphrase] = useState("");
+  const [showPass, setShowPass]     = useState(false);
+  const [confirm, setConfirm]       = useState("");
+  const [busy, setBusy]             = useState(false);
+
+  const strength = passphraseStrength(passphrase);
+  const mismatch = confirm.length > 0 && confirm !== passphrase;
+  const canExport =
+    passphrase.length >= 12 &&
+    passphrase === confirm &&
+    /[A-Z]/.test(passphrase) &&
+    /[a-z]/.test(passphrase) &&
+    /[0-9]/.test(passphrase) &&
+    /[^A-Za-z0-9]/.test(passphrase);
+
+  async function doExport() {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/export-tenant/${tenant.tenantId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ passphrase, includePhiData, purpose, purposeNote }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Export failed" }));
+        throw new Error(err.message);
+      }
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      const ts   = new Date().toISOString().slice(0, 10);
+      a.download = `hcrmx-${tenant.subdomain}-${ts}.hcrmx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setStep("done");
+      toast({ title: "Export downloaded", description: "Keep this file and passphrase secure." });
+    } catch (e: any) {
+      toast({ title: "Export failed", description: e.message, variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Compliance banner */}
+      <div className="flex gap-2.5 bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+        <div className="text-xs text-blue-800 space-y-0.5">
+          <p className="font-semibold">DPDP Act 2023 · IT Act 2000 · CERT-In Guidelines</p>
+          <p>Every export is audit-logged with your identity, timestamp, and stated purpose.
+            The file is encrypted with AES-256-GCM + PBKDF2-SHA256 (120,000 iterations).
+            You are responsible for securing this file and the passphrase.</p>
+        </div>
+      </div>
+
+      {step === "options" && (
+        <div className="space-y-4">
+          <div>
+            <Label className="text-sm font-medium">Export Purpose *</Label>
+            <Select value={purpose} onValueChange={setPurpose}>
+              <SelectTrigger className="mt-1" data-testid="select-export-purpose">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PURPOSES.map(p => (
+                  <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Recorded in the audit trail per DPDP Act data processing obligations.
+            </p>
+          </div>
+
+          {purpose === "OTHER" && (
+            <div>
+              <Label className="text-sm font-medium">Describe the purpose</Label>
+              <Textarea
+                value={purposeNote}
+                onChange={e => setPurposeNote(e.target.value)}
+                className="mt-1 text-sm"
+                rows={2}
+                placeholder="Briefly describe why you are exporting this data..."
+                data-testid="input-purpose-note"
+              />
+            </div>
+          )}
+
+          {/* PHI toggle */}
+          <div className={`rounded-lg border p-3 ${includePhiData ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-slate-50"}`}>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-2">
+                {includePhiData
+                  ? <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  : <Lock className="w-4 h-4 text-slate-400" />}
+                <span className="text-sm font-medium text-slate-800">
+                  Include patient data (PHI)
+                </span>
+              </div>
+              <Switch
+                checked={includePhiData}
+                onCheckedChange={setIncludePhiData}
+                data-testid="switch-include-phi"
+              />
+            </div>
+            {includePhiData ? (
+              <p className="text-xs text-amber-700">
+                <strong>Sensitive Personal Data will be included</strong> — names, phones, emails,
+                clinical notes, and health history. This file is classified <em>Restricted</em>
+                under DPDP Act 2023. Handle with strict confidentiality and destroy securely when
+                no longer required.
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500">
+                Only operational and master data (roles, stages, campaigns, users) is exported.
+                No patient names, phones, clinical data, or health records. <strong>Recommended default.</strong>
+              </p>
+            )}
+          </div>
+
+          <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+            <p className="font-medium text-slate-700">What's always excluded</p>
+            <ul className="space-y-0.5 text-slate-500">
+              <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500" />Password hashes &amp; login credentials</li>
+              <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500" />SMTP &amp; API secrets</li>
+              <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500" />Session tokens &amp; authentication keys</li>
+              <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3 text-emerald-500" />Audit logs from other tenants</li>
+            </ul>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button
+              className="flex-1 bg-blue-700 hover:bg-blue-800"
+              onClick={() => setStep("passphrase")}
+              disabled={purpose === "OTHER" && !purposeNote.trim()}
+              data-testid="button-export-next"
+            >
+              Continue <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {step === "passphrase" && (
+        <div className="space-y-4">
+          <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 flex items-center gap-2">
+            <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            Choose a strong passphrase. The file cannot be opened without it — even by RGB support.
+            Store it separately from the file.
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium">Encryption Passphrase *</Label>
+            <div className="relative mt-1">
+              <Input
+                type={showPass ? "text" : "password"}
+                value={passphrase}
+                onChange={e => setPassphrase(e.target.value)}
+                placeholder="Min 12 chars · uppercase · lowercase · number · symbol"
+                className="pr-10"
+                data-testid="input-export-passphrase"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                onClick={() => setShowPass(v => !v)}
+              >
+                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {passphrase && (
+              <div className="flex items-center gap-2 mt-1.5">
+                <div className="flex gap-0.5 flex-1">
+                  {[1,2,3,4,5,6].map(i => (
+                    <div key={i} className={`h-1 flex-1 rounded-full ${i <= strength.score ? strength.color : "bg-slate-200"}`} />
+                  ))}
+                </div>
+                <span className={`text-[11px] font-medium ${strength.score <= 2 ? "text-red-600" : strength.score <= 4 ? "text-amber-600" : "text-emerald-600"}`}>
+                  {strength.label}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium">Confirm Passphrase *</Label>
+            <Input
+              type="password"
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
+              placeholder="Re-enter passphrase"
+              className={`mt-1 ${mismatch ? "border-red-400" : ""}`}
+              data-testid="input-export-confirm"
+            />
+            {mismatch && <p className="text-xs text-red-500 mt-1">Passphrases do not match.</p>}
+          </div>
+
+          <div className="text-xs text-slate-500 space-y-0.5">
+            <p className="font-medium text-slate-700">Requirements (CERT-In compliant)</p>
+            {[
+              [passphrase.length >= 12,         "At least 12 characters"],
+              [/[A-Z]/.test(passphrase),         "One uppercase letter"],
+              [/[a-z]/.test(passphrase),         "One lowercase letter"],
+              [/[0-9]/.test(passphrase),         "One number"],
+              [/[^A-Za-z0-9]/.test(passphrase),  "One special character"],
+            ].map(([ok, label]) => (
+              <div key={label as string} className="flex items-center gap-1.5">
+                <CheckCircle2 className={`w-3 h-3 ${ok ? "text-emerald-500" : "text-slate-300"}`} />
+                <span className={ok ? "text-emerald-700" : "text-slate-400"}>{label as string}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" onClick={() => setStep("options")} className="flex-1">Back</Button>
+            <Button
+              className="flex-1 bg-blue-700 hover:bg-blue-800"
+              onClick={doExport}
+              disabled={!canExport || busy}
+              data-testid="button-export-download"
+            >
+              {busy ? (
+                <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Encrypting…</>
+              ) : (
+                <><Download className="w-4 h-4 mr-2" />Download Encrypted Export</>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {step === "done" && (
+        <div className="text-center py-4 space-y-3">
+          <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
+            <FileCheck className="w-6 h-6 text-emerald-600" />
+          </div>
+          <p className="font-semibold text-slate-800">Export downloaded successfully</p>
+          <div className="text-xs text-slate-500 text-left bg-slate-50 rounded-lg p-3 space-y-1">
+            <p className="font-medium text-slate-700">Important — your responsibilities</p>
+            <p>• Store the <strong>.hcrmx file</strong> and its passphrase in separate, secure locations.</p>
+            <p>• Do not email this file unencrypted or share it over unencrypted channels.</p>
+            <p>• Destroy the file securely when retention period ends (per your data retention policy).</p>
+            {includePhiData && <p className="text-amber-700">• This file contains patient PHI — handle as <strong>Restricted</strong> data per DPDP Act 2023.</p>}
+          </div>
+          <Button onClick={onClose} className="w-full">Done</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Import Dialog ────────────────────────────────────────────────────────────
+function ImportDialog({ tenants, onClose }: { tenants: any[]; onClose: () => void }) {
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [file, setFile]           = useState<File | null>(null);
+  const [passphrase, setPassphrase] = useState("");
+  const [showPass, setShowPass]   = useState(false);
+  const [targetTenantId, setTargetTenantId] = useState("");
+  const [preview, setPreview]     = useState<any | null>(null);
+  const [step, setStep]           = useState<"upload" | "preview" | "applying" | "done">("upload");
+  const [busy, setBusy]           = useState(false);
+
+  async function doPreview() {
+    if (!file || !passphrase) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("passphrase", passphrase);
+      const res = await fetch("/api/admin/import-tenant/preview", {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message);
+      setPreview(json);
+      setStep("preview");
+    } catch (e: any) {
+      toast({ title: "Preview failed", description: e.message, variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doApply() {
+    if (!file || !passphrase || !targetTenantId) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("passphrase", passphrase);
+      fd.append("targetTenantId", targetTenantId);
+      const res = await fetch("/api/admin/import-tenant/apply", {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message);
+      setStep("done");
+      toast({ title: "Import complete", description: json.message });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+    } catch (e: any) {
+      toast({ title: "Import failed", description: e.message, variant: "destructive" });
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
+        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+        <div className="text-xs text-amber-800">
+          <p className="font-semibold">Master data restore only</p>
+          <p>This tool imports operational data (roles, stages, users, master lists).
+            Patient PHI is never imported automatically — it requires a separate controlled process.
+            Existing master data for the target hospital will be overwritten.</p>
+        </div>
+      </div>
+
+      {step === "upload" && (
+        <div className="space-y-4">
+          <div>
+            <Label className="text-sm font-medium">HCRMX Export File</Label>
+            <div
+              className="mt-1 border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+              onClick={() => fileRef.current?.click()}
+              data-testid="dropzone-import-file"
+            >
+              <Upload className="w-6 h-6 text-slate-400 mx-auto mb-2" />
+              {file
+                ? <p className="text-sm text-slate-700 font-medium">{file.name}</p>
+                : <p className="text-sm text-slate-500">Click to select a <code>.hcrmx</code> file</p>}
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".hcrmx,application/json"
+                className="hidden"
+                onChange={e => setFile(e.target.files?.[0] || null)}
+                data-testid="input-import-file"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium">Decryption Passphrase *</Label>
+            <div className="relative mt-1">
+              <Input
+                type={showPass ? "text" : "password"}
+                value={passphrase}
+                onChange={e => setPassphrase(e.target.value)}
+                placeholder="Passphrase used when the file was exported"
+                className="pr-10"
+                data-testid="input-import-passphrase"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                onClick={() => setShowPass(v => !v)}
+              >
+                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button
+              className="flex-1 bg-blue-700 hover:bg-blue-800"
+              disabled={!file || !passphrase || busy}
+              onClick={doPreview}
+              data-testid="button-import-preview"
+            >
+              {busy
+                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Decrypting…</>
+                : <><Eye className="w-4 h-4 mr-2" />Decrypt &amp; Preview</>}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {step === "preview" && preview && (
+        <div className="space-y-4">
+          <div className="bg-slate-50 rounded-lg p-3 space-y-2">
+            <p className="text-sm font-semibold text-slate-800">File verified ✓</p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-600">
+              <span className="text-slate-400">Source hospital</span>
+              <span>{preview.meta?.tenantName}</span>
+              <span className="text-slate-400">Exported</span>
+              <span>{fmtDate(preview.meta?.exportedAt)}</span>
+              <span className="text-slate-400">Purpose</span>
+              <span>{preview.meta?.purpose}</span>
+              <span className="text-slate-400">Records</span>
+              <span>{preview.totalRecords?.toLocaleString()}</span>
+              <span className="text-slate-400">PHI data</span>
+              <span className={preview.includesPhiData ? "text-amber-600 font-medium" : "text-emerald-600"}>
+                {preview.includesPhiData ? "Yes (not imported)" : "Not included"}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium">Restore into Hospital *</Label>
+            <Select value={targetTenantId} onValueChange={setTargetTenantId}>
+              <SelectTrigger className="mt-1" data-testid="select-import-target">
+                <SelectValue placeholder="Select target hospital…" />
+              </SelectTrigger>
+              <SelectContent>
+                {tenants.map((t: any) => (
+                  <SelectItem key={t.tenantId} value={String(t.tenantId)}>
+                    {t.displayName || t.tenantName} ({t.subdomain})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-red-500 mt-1">
+              Warning: existing master data for the selected hospital will be overwritten.
+            </p>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" onClick={() => setStep("upload")} className="flex-1">Back</Button>
+            <Button
+              className="flex-1 bg-blue-700 hover:bg-blue-800"
+              disabled={!targetTenantId || busy}
+              onClick={doApply}
+              data-testid="button-import-apply"
+            >
+              {busy
+                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Importing…</>
+                : <>Apply Import</>}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {step === "done" && (
+        <div className="text-center py-4 space-y-3">
+          <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
+            <CheckCircle className="w-6 h-6 text-emerald-600" />
+          </div>
+          <p className="font-semibold text-slate-800">Import completed successfully</p>
+          <p className="text-xs text-slate-500">Master data has been restored. CRM users have been imported without passwords — they will need to reset their passwords on first login.</p>
+          <Button onClick={onClose} className="w-full">Done</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main page ─────────────────────────────────────────────────────────────────
 export default function AdminHospitals() {
   const { toast } = useToast();
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: "", subdomain: "", displayName: "", contactPerson: "", contactEmail: "", contactPhone: "" });
-
-  const { data: stats, isLoading } = useQuery<any>({
-    queryKey: ["/api/admin/stats"],
+  const [showAdd, setShowAdd]         = useState(false);
+  const [exportTenant, setExportTenant] = useState<any | null>(null);
+  const [showImport, setShowImport]   = useState(false);
+  const [form, setForm] = useState({
+    name: "", subdomain: "", displayName: "",
+    contactPerson: "", contactEmail: "", contactPhone: "",
   });
+
+  const { data: stats, isLoading } = useQuery<any>({ queryKey: ["/api/admin/stats"] });
 
   const createTenant = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/tenants", data),
@@ -62,18 +553,12 @@ export default function AdminHospitals() {
 
   const suspendTenant = useMutation({
     mutationFn: (id: number) => apiRequest("POST", `/api/admin/tenants/${id}/suspend`, { reason: "Manual suspension by admin" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
-      toast({ title: "Hospital suspended" });
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] }); toast({ title: "Hospital suspended" }); },
   });
 
   const activateTenant = useMutation({
     mutationFn: (id: number) => apiRequest("POST", `/api/admin/tenants/${id}/activate`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
-      toast({ title: "Hospital activated" });
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] }); toast({ title: "Hospital activated" }); },
   });
 
   const switchTenant = useMutation({
@@ -106,62 +591,32 @@ export default function AdminHospitals() {
   return (
     <AdminLayout>
       <div className="p-6 max-w-7xl mx-auto">
+        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl font-bold text-slate-900" data-testid="text-hospitals-title">Hospital Management</h1>
             <p className="text-slate-500 mt-1">Onboard and manage hospitals on the platform</p>
           </div>
-          <Dialog open={showAdd} onOpenChange={setShowAdd}>
-            <DialogTrigger asChild>
-              <Button className="bg-orange-600 hover:bg-orange-700" data-testid="button-add-hospital">
-                <Plus className="w-4 h-4 mr-2" /> Add Hospital
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Onboard New Hospital</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={(e) => { e.preventDefault(); createTenant.mutate(form); }} className="space-y-4 mt-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <Label>Hospital Name *</Label>
-                    <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Apollo Hospital" required data-testid="input-hospital-name" />
-                  </div>
-                  <div>
-                    <Label>Subdomain *</Label>
-                    <Input value={form.subdomain} onChange={e => setForm(f => ({ ...f, subdomain: e.target.value }))} placeholder="e.g. apollo" required data-testid="input-hospital-subdomain" />
-                  </div>
-                  <div>
-                    <Label>Display Name</Label>
-                    <Input value={form.displayName} onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} placeholder="Short display name" data-testid="input-hospital-display" />
-                  </div>
-                  <div className="col-span-2 border-t pt-4">
-                    <p className="text-sm font-medium text-slate-700 mb-3">Contact Person</p>
-                  </div>
-                  <div>
-                    <Label>Name</Label>
-                    <Input value={form.contactPerson} onChange={e => setForm(f => ({ ...f, contactPerson: e.target.value }))} placeholder="Contact person name" data-testid="input-contact-person" />
-                  </div>
-                  <div>
-                    <Label>Phone</Label>
-                    <Input value={form.contactPhone} onChange={e => setForm(f => ({ ...f, contactPhone: e.target.value }))} placeholder="+91 98765 43210" data-testid="input-contact-phone" />
-                  </div>
-                  <div className="col-span-2">
-                    <Label>Email</Label>
-                    <Input value={form.contactEmail} onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))} placeholder="admin@hospital.com" type="email" data-testid="input-contact-email" />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-                  <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={createTenant.isPending} data-testid="button-submit-hospital">
-                    {createTenant.isPending ? "Adding..." : "Add Hospital"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="text-blue-700 border-blue-200 hover:bg-blue-50"
+              onClick={() => setShowImport(true)}
+              data-testid="button-import-data"
+            >
+              <Upload className="w-4 h-4 mr-2" /> Import Data
+            </Button>
+            <Button
+              className="bg-orange-600 hover:bg-orange-700"
+              onClick={() => setShowAdd(true)}
+              data-testid="button-add-hospital"
+            >
+              <Plus className="w-4 h-4 mr-2" /> Add Hospital
+            </Button>
+          </div>
         </div>
 
+        {/* Hospital cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {tenantList.map((t: any) => (
             <Card key={t.tenantId} className="p-5 border border-slate-200 shadow-sm hover:shadow-md transition-shadow" data-testid={`card-hospital-${t.tenantId}`}>
@@ -187,7 +642,9 @@ export default function AdminHospitals() {
                     >
                       {t.displayName || t.tenantName}
                     </button>
-                    <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5"><Globe className="w-3 h-3" />{t.subdomain}</p>
+                    <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                      <Globe className="w-3 h-3" />{t.subdomain}
+                    </p>
                   </div>
                 </div>
                 <Badge
@@ -228,8 +685,7 @@ export default function AdminHospitals() {
               {t.subdomain === "rgb-demo" && (
                 <div className="mb-2">
                   <Button
-                    variant="outline"
-                    size="sm"
+                    variant="outline" size="sm"
                     className="w-full text-violet-700 border-violet-300 hover:bg-violet-50 font-medium"
                     onClick={() => {
                       if (window.confirm("Reset all demo data? This will wipe and re-seed 1,050 leads, 368 episodes, and 31 CRM users. Takes ~30 seconds.")) {
@@ -242,25 +698,35 @@ export default function AdminHospitals() {
                     <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${resetDemo.isPending ? "animate-spin" : ""}`} />
                     {resetDemo.isPending ? "Resetting demo data…" : "Reset Demo Data"}
                   </Button>
-                  <p className="text-[10px] text-violet-400 text-center mt-1">Login: mobile <strong>4000400100</strong> · password <strong>HCRM@RGBTech</strong></p>
+                  <p className="text-[10px] text-violet-400 text-center mt-1">
+                    Login: mobile <strong>4000400100</strong> · password <strong>HCRM@RGBTech</strong>
+                  </p>
                 </div>
               )}
 
               <div className="flex gap-2">
                 <Button
-                  variant="outline"
-                  size="sm"
+                  variant="outline" size="sm"
                   className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50"
                   onClick={() => switchTenant.mutate(t.tenantId)}
                   disabled={switchTenant.isPending}
                   data-testid={`button-open-hospital-${t.tenantId}`}
                 >
-                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Open Hospital
+                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Open
                 </Button>
+
+                <Button
+                  variant="outline" size="sm"
+                  className="flex-1 text-slate-600 border-slate-200 hover:bg-slate-50"
+                  onClick={() => setExportTenant(t)}
+                  data-testid={`button-export-${t.tenantId}`}
+                >
+                  <Download className="w-3.5 h-3.5 mr-1" /> Export
+                </Button>
+
                 {t.subscriptionStatus === "Active" ? (
                   <Button
-                    variant="outline"
-                    size="sm"
+                    variant="outline" size="sm"
                     className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
                     onClick={() => suspendTenant.mutate(t.tenantId)}
                     disabled={suspendTenant.isPending}
@@ -270,8 +736,7 @@ export default function AdminHospitals() {
                   </Button>
                 ) : (
                   <Button
-                    variant="outline"
-                    size="sm"
+                    variant="outline" size="sm"
                     className="flex-1 text-emerald-600 border-emerald-200 hover:bg-emerald-50"
                     onClick={() => activateTenant.mutate(t.tenantId)}
                     disabled={activateTenant.isPending}
@@ -292,6 +757,80 @@ export default function AdminHospitals() {
             <p className="text-sm">Click "Add Hospital" to get started</p>
           </div>
         )}
+
+        {/* Add Hospital Dialog */}
+        <Dialog open={showAdd} onOpenChange={setShowAdd}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Onboard New Hospital</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={(e) => { e.preventDefault(); createTenant.mutate(form); }} className="space-y-4 mt-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <Label>Hospital Name *</Label>
+                  <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Apollo Hospital" required data-testid="input-hospital-name" />
+                </div>
+                <div>
+                  <Label>Subdomain *</Label>
+                  <Input value={form.subdomain} onChange={e => setForm(f => ({ ...f, subdomain: e.target.value }))} placeholder="e.g. apollo" required data-testid="input-hospital-subdomain" />
+                </div>
+                <div>
+                  <Label>Display Name</Label>
+                  <Input value={form.displayName} onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} placeholder="Short display name" data-testid="input-hospital-display" />
+                </div>
+                <div className="col-span-2 border-t pt-4">
+                  <p className="text-sm font-medium text-slate-700 mb-3">Contact Person</p>
+                </div>
+                <div>
+                  <Label>Name</Label>
+                  <Input value={form.contactPerson} onChange={e => setForm(f => ({ ...f, contactPerson: e.target.value }))} placeholder="Contact person name" data-testid="input-contact-person" />
+                </div>
+                <div>
+                  <Label>Phone</Label>
+                  <Input value={form.contactPhone} onChange={e => setForm(f => ({ ...f, contactPhone: e.target.value }))} placeholder="+91 98765 43210" data-testid="input-contact-phone" />
+                </div>
+                <div className="col-span-2">
+                  <Label>Email</Label>
+                  <Input value={form.contactEmail} onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))} placeholder="admin@hospital.com" type="email" data-testid="input-contact-email" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+                <Button type="submit" className="bg-orange-600 hover:bg-orange-700" disabled={createTenant.isPending} data-testid="button-submit-hospital">
+                  {createTenant.isPending ? "Adding..." : "Add Hospital"}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Export Dialog */}
+        <Dialog open={!!exportTenant} onOpenChange={v => { if (!v) setExportTenant(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Download className="w-4 h-4 text-blue-600" />
+                Export — {exportTenant?.displayName || exportTenant?.tenantName}
+              </DialogTitle>
+            </DialogHeader>
+            {exportTenant && (
+              <ExportDialog tenant={exportTenant} onClose={() => setExportTenant(null)} />
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Import Dialog */}
+        <Dialog open={showImport} onOpenChange={setShowImport}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Upload className="w-4 h-4 text-blue-600" />
+                Import Hospital Data
+              </DialogTitle>
+            </DialogHeader>
+            <ImportDialog tenants={tenantList} onClose={() => setShowImport(false)} />
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );
