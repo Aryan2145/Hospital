@@ -28,7 +28,14 @@ import {
   Mail,
   User,
   ExternalLink,
+  Calendar,
 } from "lucide-react";
+
+function fmtDate(val: string | null | undefined) {
+  if (!val) return "—";
+  const d = new Date(val);
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
 
 export default function AdminHospitals() {
   const { toast } = useToast();
@@ -147,21 +154,21 @@ export default function AdminHospitals() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {tenantList.map((t: any) => (
             <Card key={t.tenantId} className="p-5 border border-slate-200 shadow-sm hover:shadow-md transition-shadow" data-testid={`card-hospital-${t.tenantId}`}>
-              <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
                     <Building2 className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
                     <button
-                      className="font-semibold text-slate-900 hover:text-blue-600 hover:underline text-left cursor-pointer transition-colors"
+                      className="font-semibold text-slate-900 hover:text-blue-600 hover:underline text-left cursor-pointer transition-colors leading-tight"
                       onClick={() => switchTenant.mutate(t.tenantId)}
                       disabled={switchTenant.isPending}
                       data-testid={`link-open-hospital-${t.tenantId}`}
                     >
                       {t.displayName || t.tenantName}
                     </button>
-                    <p className="text-xs text-slate-400 flex items-center gap-1"><Globe className="w-3 h-3" />{t.subdomain}</p>
+                    <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5"><Globe className="w-3 h-3" />{t.subdomain}</p>
                   </div>
                 </div>
                 <Badge
@@ -172,17 +179,29 @@ export default function AdminHospitals() {
                 </Badge>
               </div>
 
+              <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-3" data-testid={`text-created-${t.tenantId}`}>
+                <Calendar className="w-3 h-3 shrink-0" />
+                <span>Onboarded {fmtDate(t.createdAt)}</span>
+                {t.contactPerson && (
+                  <>
+                    <span className="text-slate-300">·</span>
+                    <User className="w-3 h-3 shrink-0" />
+                    <span className="truncate max-w-[120px]">{t.contactPerson}</span>
+                  </>
+                )}
+              </div>
+
               <div className="grid grid-cols-3 gap-3 mb-4">
                 <div className="bg-slate-50 rounded-md p-2 text-center">
-                  <div className="text-lg font-bold text-slate-900">{t.users}</div>
+                  <div className="text-lg font-bold text-slate-900" data-testid={`stat-users-${t.tenantId}`}>{t.users}</div>
                   <div className="text-[10px] text-slate-500 uppercase font-medium">Users</div>
                 </div>
                 <div className="bg-slate-50 rounded-md p-2 text-center">
-                  <div className="text-lg font-bold text-slate-900">{t.leads}</div>
+                  <div className="text-lg font-bold text-slate-900" data-testid={`stat-leads-${t.tenantId}`}>{t.leads}</div>
                   <div className="text-[10px] text-slate-500 uppercase font-medium">Leads</div>
                 </div>
                 <div className="bg-slate-50 rounded-md p-2 text-center">
-                  <div className="text-lg font-bold text-slate-900">{t.episodes}</div>
+                  <div className="text-lg font-bold text-slate-900" data-testid={`stat-episodes-${t.tenantId}`}>{t.episodes}</div>
                   <div className="text-[10px] text-slate-500 uppercase font-medium">Episodes</div>
                 </div>
               </div>
