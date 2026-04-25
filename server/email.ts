@@ -38,7 +38,7 @@ function createGlobalTransporter() {
       auth: { user, pass },
     }),
     fromEmail: process.env.SMTP_FROM_EMAIL || user,
-    fromName: "myProSys Hospital CRM",
+    fromName: "RGB Hospital CRM",
   };
 }
 

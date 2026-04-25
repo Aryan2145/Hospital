@@ -1,7 +1,7 @@
-# myProSys Hospital CRM Platform
+# RGB Hospital CRM Platform
 
 ## Overview
-myProSys Hospital CRM is a multi-tenant, white-labeled platform designed to streamline the patient (Lead) and treatment journey (Episode) lifecycle for hospitals. It manages the entire Lead→Episode→Conversion process, offering features like SLA tracking, telephony integration, role-based access control, and master data approval workflows. The platform aims to enhance efficiency in patient management and treatment opportunities. Each hospital can customize branding elements, supporting a comprehensive business vision to revolutionize healthcare patient management.
+RGB Hospital CRM is a multi-tenant, white-labeled platform designed to streamline the patient (Lead) and treatment journey (Episode) lifecycle for hospitals. It manages the entire Lead→Episode→Conversion process, offering features like SLA tracking, telephony integration, role-based access control, and master data approval workflows. The platform aims to enhance efficiency in patient management and treatment opportunities. Each hospital can customize branding elements, supporting a comprehensive business vision to revolutionize healthcare patient management.
 
 ## User Preferences
 I prefer iterative development with a focus on clear, modular code. I appreciate detailed explanations for complex architectural decisions. Before making any major structural changes or adding new external dependencies, please ask for my approval. I expect the agent to prioritize security and data privacy, especially concerning patient health information (PHI). Do not make changes to files related to deployment configurations or sensitive API keys without explicit instruction.

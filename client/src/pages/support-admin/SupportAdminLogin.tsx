@@ -54,7 +54,7 @@ export default function SupportAdminLogin() {
           <CardTitle className="text-2xl text-white" data-testid="text-support-login-title">
             Support Portal
           </CardTitle>
-          <p className="text-sm text-slate-400 mt-1">myProSys Technical Support Team</p>
+          <p className="text-sm text-slate-400 mt-1">RGB Hospital CRM Technical Support Team</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">

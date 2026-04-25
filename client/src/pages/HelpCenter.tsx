@@ -444,9 +444,9 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
       content: (
         <div className="space-y-6">
           <section>
-            <h2 className="text-lg font-bold text-foreground mb-3">What is myProSys Hospital CRM?</h2>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is RGB Hospital CRM?</h2>
             <p className="text-sm text-muted-foreground leading-relaxed mb-3">
-              myProSys Hospital CRM is a comprehensive, multi-tenant platform designed specifically for hospitals and healthcare organizations. It streamlines the entire patient journey — from initial lead capture through consultation, treatment, post-care, and referral — in one unified system.
+              RGB Hospital CRM is a comprehensive, multi-tenant platform designed specifically for hospitals and healthcare organizations. It streamlines the entire patient journey — from initial lead capture through consultation, treatment, post-care, and referral — in one unified system.
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
               The platform replaces spreadsheets, disconnected tools, and manual tracking with an intelligent CRM that automates follow-ups, manages appointments, tracks treatment episodes, and provides real-time dashboards for every level of your organization.
@@ -2311,7 +2311,7 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               <li>A <strong>Google Workspace</strong> account (e.g., noreply@yourhospital.com) — this will be your sender email</li>
               <li><strong>2-Step Verification</strong> must be turned ON for that Google account</li>
               <li>Access to <strong>Google Workspace Admin Console</strong> (admin.google.com) if 2-Step Verification is not yet enabled</li>
-              <li><strong>Admin</strong> or <strong>System Admin</strong> role in myProSys Hospital CRM</li>
+              <li><strong>Admin</strong> or <strong>System Admin</strong> role in RGB Hospital CRM</li>
             </ul>
           </section>
 
@@ -2344,7 +2344,7 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               <ol className="list-decimal ml-5 space-y-1.5 text-sm text-blue-700 dark:text-blue-300">
                 <li>While still signed in as the sender account, go to <strong>myaccount.google.com/apppasswords</strong></li>
                 <li>You may need to re-enter your password</li>
-                <li>Under <strong>"App name"</strong>, type <strong>myProSys CRM</strong> (or any name you prefer)</li>
+                <li>Under <strong>"App name"</strong>, type <strong>RGB Hospital CRM</strong> (or any name you prefer)</li>
                 <li>Click <strong>Create</strong></li>
                 <li>Google will show a <strong>16-character password</strong> (e.g., <code>abcd efgh ijkl mnop</code>)</li>
                 <li><strong>Copy this password immediately</strong> — it is shown only once</li>
@@ -3853,7 +3853,7 @@ export default function HelpCenter() {
                 </Link>
               </div>
               <p className="text-xs text-muted-foreground text-center mt-4">
-                myProSys Hospital CRM — Help & Resources
+                RGB Hospital CRM — Help & Resources
               </p>
             </div>
           </div>
@@ -3959,7 +3959,7 @@ function DataSecurityPage() {
               <div>
                 <h3 className="text-sm font-semibold text-foreground mb-1">Compliance Notice</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  This compliance tracker reflects the current state of security measures implemented in the myProSys Hospital CRM platform. Planned items are on the roadmap and will be implemented in upcoming releases. For regulatory inquiries or compliance audits, please contact your system administrator.
+                  This compliance tracker reflects the current state of security measures implemented in the RGB Hospital CRM platform. Planned items are on the roadmap and will be implemented in upcoming releases. For regulatory inquiries or compliance audits, please contact your system administrator.
                 </p>
               </div>
             </div>

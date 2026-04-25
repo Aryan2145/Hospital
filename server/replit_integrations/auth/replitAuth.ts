@@ -487,7 +487,7 @@ export async function setupAuth(app: Express) {
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const resetLink = `${baseUrl}/reset-password?token=${token}`;
 
-      let hospitalName = "Hospital CRM";
+      let hospitalName = "RGB Hospital CRM";
 
       if (user.tenantId) {
         const [tenant] = await db.select().from(tenants).where(eq(tenants.id, user.tenantId));

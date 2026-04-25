@@ -50,7 +50,7 @@ export default function AdminLogin() {
             <Shield className="w-9 h-9 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight" data-testid="text-admin-login-title">System Admin Portal</h1>
-          <p className="mt-2 text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>myProSys Platform Administration</p>
+          <p className="mt-2 text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>RGB Hospital CRM Platform Administration</p>
         </div>
 
         <Card className="border shadow-2xl" style={{ borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.06)' }}>

@@ -70,7 +70,7 @@ function TenantSuspended() {
           Your CRM access is currently on hold while we sort out a few account details. This is typically related to a subscription renewal and is usually resolved quickly.
         </p>
         <p className="text-sm text-slate-400 leading-relaxed">
-          If you believe this is an error or need immediate assistance, please reach out to your hospital administrator or contact the myProSys support team. We appreciate your patience and are happy to help.
+          If you believe this is an error or need immediate assistance, please reach out to your hospital administrator or contact the RGB Hospital CRM support team. We appreciate your patience and are happy to help.
         </p>
       </div>
     </div>

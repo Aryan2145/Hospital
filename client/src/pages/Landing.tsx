@@ -66,7 +66,7 @@ export default function Landing() {
             <div className="bg-white/10 p-2 rounded-xl backdrop-blur-sm">
               <Activity className="w-8 h-8 text-white" />
             </div>
-            <span className="text-2xl font-bold tracking-tight">myProSys</span>
+            <span className="text-2xl font-bold tracking-tight">RGB Hospital CRM</span>
           </div>
 
           <div className="space-y-6 max-w-lg">
@@ -74,7 +74,7 @@ export default function Landing() {
               Transforming <span className="text-accent">Patient Care</span> Relationships
             </h1>
             <p className="text-lg text-blue-100 leading-relaxed">
-              The intelligent Hospital CRM platform by myProSys. Manage leads, appointments, and patient lifecycles with surgical precision.
+              The intelligent Hospital CRM platform by RGB Technologies. Manage leads, appointments, and patient lifecycles with surgical precision.
             </p>
           </div>
         </div>
@@ -93,7 +93,7 @@ export default function Landing() {
         </div>
 
         <div className="relative z-10 mt-auto pt-12">
-           <p className="text-xs text-blue-200">© 2024 myProSys Technologies. All rights reserved.</p>
+           <p className="text-xs text-blue-200">© 2024 RGB Technologies. All rights reserved.</p>
         </div>
       </div>
 

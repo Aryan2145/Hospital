@@ -145,7 +145,7 @@ export default function SupportAdminDashboard() {
         <div className="flex items-center gap-3">
           <Headset className="w-6 h-6 text-primary" />
           <div>
-            <h1 className="text-lg font-semibold">myProSys Support Portal</h1>
+            <h1 className="text-lg font-semibold">RGB Hospital CRM Support Portal</h1>
             <p className="text-xs text-slate-400">Logged in as {currentUser.name} ({currentUser.role})</p>
           </div>
         </div>

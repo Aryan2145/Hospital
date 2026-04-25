@@ -24,7 +24,7 @@ export async function sendPasswordResetSMS(
   phone: string,
   userName: string,
   resetLink: string,
-  hospitalName: string = "Hospital CRM"
+  hospitalName: string = "RGB Hospital CRM"
 ): Promise<SmsResult> {
   const authKey = process.env.MSG91_AUTH_KEY;
   const senderId = process.env.MSG91_SENDER_ID;

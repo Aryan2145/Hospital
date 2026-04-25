@@ -46,7 +46,7 @@ function AdminSidebar() {
             <Shield className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="font-bold text-lg tracking-tight leading-tight text-white" data-testid="text-admin-brand">myProSys</h1>
+            <h1 className="font-bold text-lg tracking-tight leading-tight text-white" data-testid="text-admin-brand">RGB Hospital CRM</h1>
             <p className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.5)' }}>System Admin</p>
           </div>
         </div>
@@ -163,7 +163,7 @@ export function AdminLayout({ children, className }: { children: React.ReactNode
           </Sheet>
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-orange-500" />
-            <span className="font-bold text-lg tracking-tight text-white">myProSys</span>
+            <span className="font-bold text-lg tracking-tight text-white">RGB Hospital CRM</span>
             <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.5)' }}>Admin</span>
           </div>
         </header>

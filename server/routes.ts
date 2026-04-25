@@ -10284,7 +10284,7 @@ export async function registerRoutes(
       const { getWhatsAppConfigFromSettings, sendWhatsAppText, formatPhoneForWhatsApp } = await import("./whatsapp");
       const config = getWhatsAppConfigFromSettings(allSettings);
       if (!config.enabled) return res.status(400).json({ message: "WhatsApp is not enabled" });
-      const result = await sendWhatsAppText(config, formatPhoneForWhatsApp(phone), "Hello from VIROC Hospital CRM! This is a test message to confirm your WhatsApp integration is working.");
+      const result = await sendWhatsAppText(config, formatPhoneForWhatsApp(phone), "Hello from RGB Hospital CRM! This is a test message to confirm your WhatsApp integration is working.");
       if (result.success) {
         res.json({ success: true, message: `Test message sent successfully! Message ID: ${result.messageId}` });
       } else {
@@ -10357,7 +10357,7 @@ export async function registerRoutes(
       const smtpPort = parseInt(getSetting("smtp_port") || "587");
       const smtpSecure = getSetting("smtp_secure") !== "false";
       const fromEmail = getSetting("smtp_from_email") || smtpUser;
-      const fromName = getSetting("smtp_from_name") || "Hospital CRM";
+      const fromName = getSetting("smtp_from_name") || "RGB Hospital CRM";
 
       const nodemailer = await import("nodemailer");
       const transporter = nodemailer.default.createTransport({
