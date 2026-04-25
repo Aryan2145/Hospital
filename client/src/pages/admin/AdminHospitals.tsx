@@ -28,7 +28,7 @@ import {
   Building2, Plus, Ban, CheckCircle, Globe, Phone, Mail, User,
   ExternalLink, Calendar, RefreshCw, FlaskConical, Download, Upload,
   ShieldCheck, Eye, EyeOff, AlertTriangle, FileCheck, Lock,
-  Info, ChevronRight, CheckCircle2,
+  Info, ChevronRight, CheckCircle2, CalendarClock,
 } from "lucide-react";
 
 function fmtDate(val: string | null | undefined) {
@@ -582,6 +582,14 @@ export default function AdminHospitals() {
     onError: (err: any) => toast({ title: "Demo reset failed", description: err.message, variant: "destructive" }),
   });
 
+  const reseedAppts = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/admin/reseed-demo-appointments", {}),
+    onSuccess: (data: any) => {
+      toast({ title: "Appointments reseeded", description: data?.message || "290+ appointments created for today + next 10 days." });
+    },
+    onError: (err: any) => toast({ title: "Reseed failed", description: err.message, variant: "destructive" }),
+  });
+
   if (isLoading) {
     return <AdminLayout><div className="h-full flex items-center justify-center"><LoadingSpinner /></div></AdminLayout>;
   }
@@ -692,11 +700,21 @@ export default function AdminHospitals() {
                         resetDemo.mutate();
                       }
                     }}
-                    disabled={resetDemo.isPending}
+                    disabled={resetDemo.isPending || reseedAppts.isPending}
                     data-testid="button-reset-demo"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${resetDemo.isPending ? "animate-spin" : ""}`} />
                     {resetDemo.isPending ? "Resetting demo data…" : "Reset Demo Data"}
+                  </Button>
+                  <Button
+                    variant="outline" size="sm"
+                    className="w-full text-emerald-600 border-emerald-300 hover:bg-emerald-50 font-medium mt-1"
+                    onClick={() => reseedAppts.mutate()}
+                    disabled={reseedAppts.isPending || resetDemo.isPending}
+                    data-testid="button-reseed-appointments"
+                  >
+                    <CalendarClock className={`w-3.5 h-3.5 mr-1.5 ${reseedAppts.isPending ? "animate-spin" : ""}`} />
+                    {reseedAppts.isPending ? "Creating appointments…" : "Fix Today's Appointments"}
                   </Button>
                   <p className="text-[10px] text-violet-400 text-center mt-1">
                     <a href="/demo-login" target="_blank" rel="noopener noreferrer"

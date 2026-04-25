@@ -172,7 +172,7 @@ function Router() {
 
       <Route path="/transactions">
         {isAuthenticated ? (
-          <RoleGate page="transactions"><TransactionsPage /></RoleGate>
+          <RoleGate page="episodes"><TransactionsPage /></RoleGate>
         ) : <Landing />}
       </Route>
 
@@ -224,7 +224,7 @@ function Router() {
 
       <Route path="/episodes/:id">
         {isAuthenticated ? (
-          <RoleGate page="transactions"><EpisodeDetailPage /></RoleGate>
+          <RoleGate page="episodes"><EpisodeDetailPage /></RoleGate>
         ) : <Landing />}
       </Route>
 
@@ -272,13 +272,13 @@ function Router() {
 
       <Route path="/referrals">
         {isAuthenticated ? (
-          <RoleGate page="transactions"><ReferralsPage /></RoleGate>
+          <RoleGate page="episodes"><ReferralsPage /></RoleGate>
         ) : <Landing />}
       </Route>
 
       <Route path="/surgery-calendar">
         {isAuthenticated ? (
-          <RoleGate page="transactions"><SurgeryCalendarPage /></RoleGate>
+          <RoleGate page="episodes"><SurgeryCalendarPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

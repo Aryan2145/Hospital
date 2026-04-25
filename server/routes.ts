@@ -10637,6 +10637,85 @@ export async function registerRoutes(
     }
   });
 
+  // ── Fast appointment reseed for demo tenant (no full data wipe) ────────────
+  // Deletes only Scheduled appointments for the demo tenant and recreates 290+
+  // distributed across today + next 10 days. Completes in a few seconds.
+  app.post("/api/admin/reseed-demo-appointments", isAuthenticated, isSysAdmin, async (req: any, res) => {
+    try {
+      const [demoTenant] = await db.select({ id: tenants.id })
+        .from(tenants).where(eq(tenants.subdomain, "rgb-demo")).limit(1);
+      if (!demoTenant) return res.status(404).json({ message: "Demo tenant not found" });
+      const tid = demoTenant.id;
+
+      // Fetch lookup data
+      const doctorRows = await pool.query(
+        `SELECT id, branch_id FROM doctors WHERE tenant_id = $1 ORDER BY id`, [tid]
+      );
+      const branchRows = await pool.query(
+        `SELECT id FROM branches WHERE tenant_id = $1 AND status = 'Active' ORDER BY id`, [tid]
+      );
+      const leadRows = await pool.query(
+        `SELECT l.id AS lead_id, l.patient_id, l.branch_id AS lead_branch FROM leads l WHERE l.tenant_id = $1 ORDER BY RANDOM()`, [tid]
+      );
+
+      const doctorList: { id: number; branchId: number }[] = doctorRows.rows.map((r: any) => ({ id: r.id, branchId: r.branch_id }));
+      const branchIds: number[] = branchRows.rows.map((r: any) => r.id);
+      const leadPool: { leadId: number; patientId: number | null }[] = leadRows.rows.map((r: any) => ({ leadId: r.lead_id, patientId: r.patient_id }));
+
+      if (!doctorList.length || !branchIds.length || !leadPool.length) {
+        return res.status(400).json({ message: "Demo data not seeded yet — run a full seed first." });
+      }
+
+      const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+      const consultSlots = ["09:00","09:30","10:00","10:30","11:00","11:30","12:00","14:00","14:30","15:00","15:30","16:00","16:30"];
+      const dayWeights = [40, 34, 32, 30, 26, 25, 24, 22, 20, 19, 18]; // today → day+10
+
+      // Delete only Scheduled appointments (keep historical completed/cancelled)
+      const deleted = await pool.query(
+        `DELETE FROM appointments WHERE tenant_id = $1 AND status = 'Scheduled' RETURNING id`, [tid]
+      );
+
+      // Shuffle leads
+      const shuffled = [...leadPool].sort(() => Math.random() - 0.5);
+      let idx = 0;
+      let created = 0;
+
+      for (let dayOffset = 0; dayOffset <= 10; dayOffset++) {
+        const count = dayWeights[dayOffset];
+        const apptDate = new Date();
+        apptDate.setHours(0, 0, 0, 0);
+        apptDate.setDate(apptDate.getDate() + dayOffset);
+        const apptDateStr = apptDate.toISOString();
+
+        for (let slot = 0; slot < count; slot++) {
+          const lead = shuffled[idx % shuffled.length];
+          idx++;
+          const branchId = pick(branchIds);
+          const branchDoctors = doctorList.filter(d => d.branchId === branchId);
+          const doctor = pick(branchDoctors.length ? branchDoctors : doctorList);
+          await pool.query(
+            `INSERT INTO appointments (tenant_id, lead_id, patient_id, doctor_id, branch_id, appointment_date, start_time, status, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'Scheduled','system-reseed')`,
+            [tid, lead.leadId, lead.patientId, doctor.id, branchId, apptDateStr, consultSlots[slot % consultSlots.length]]
+          );
+          created++;
+        }
+      }
+
+      console.log(`[reseed-demo-appointments] Deleted ${deleted.rowCount} old, created ${created} new Scheduled appointments for tenant ${tid}`);
+      res.json({
+        success: true,
+        deleted: deleted.rowCount,
+        created,
+        todayCount: dayWeights[0],
+        message: `Reseeded ${created} appointments across today + next 10 days. Today has ${dayWeights[0]} scheduled.`,
+      });
+    } catch (err: any) {
+      console.error("[reseed-demo-appointments] Error:", err);
+      res.status(500).json({ message: humanizeError(err), detail: err?.message });
+    }
+  });
+
   // ── Export tenant data ──────────────────────────────────────────────────────
   // POST /api/admin/export-tenant/:tenantId
   // Returns an encrypted .hcrmx file download. Audit-logged on every request.
