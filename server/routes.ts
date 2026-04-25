@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema, systemErrorLogs } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema, systemErrorLogs, tenantSettings } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -10626,11 +10626,74 @@ export async function registerRoutes(
   });
 
   // ── Demo Tenant Seed ──────────────────────────────────────────────────────
+  app.get("/api/admin/seed-demo-stats", isAuthenticated, isSysAdmin, async (req: any, res) => {
+    try {
+      const DEMO_SUBDOMAIN = "rgb-demo";
+      const [demoTenant] = await db
+        .select({ id: tenants.id, name: tenants.name, createdAt: tenants.createdAt })
+        .from(tenants)
+        .where(eq(tenants.subdomain, DEMO_SUBDOMAIN));
+
+      if (!demoTenant) {
+        return res.json({ exists: false });
+      }
+
+      const tid = demoTenant.id;
+      const [[leadCount], [episodeCount], [appointmentCount], [userCount], lastSeedRow] = await Promise.all([
+        db.select({ count: sql<number>`count(*)::int` }).from(leads).where(eq(leads.tenantId, tid)),
+        db.select({ count: sql<number>`count(*)::int` }).from(episodes).where(eq(episodes.tenantId, tid)),
+        db.select({ count: sql<number>`count(*)::int` }).from(appointments).where(eq(appointments.tenantId, tid)),
+        db.select({ count: sql<number>`count(*)::int` }).from(crmUsers).where(eq(crmUsers.tenantId, tid)),
+        db.select({ settingValue: tenantSettings.settingValue }).from(tenantSettings).where(and(eq(tenantSettings.tenantId, tid), eq(tenantSettings.settingKey, "lastDemoSeedAt"))),
+      ]);
+
+      return res.json({
+        exists: true,
+        tenantId: tid,
+        tenantName: demoTenant.name,
+        tenantCreatedAt: demoTenant.createdAt,
+        lastSeededAt: lastSeedRow?.[0]?.settingValue ?? null,
+        leads: leadCount.count,
+        episodes: episodeCount.count,
+        appointments: appointmentCount.count,
+        users: userCount.count,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.post("/api/admin/seed-demo-tenant", isAuthenticated, isSysAdmin, async (req: any, res) => {
     try {
       const { seedDemoTenant } = await import("./seedDemo");
       const result = await seedDemoTenant();
-      res.json(result);
+      // Persist last-seed timestamp for the demo tenant
+      let lastSeededAt: string | null = null;
+      let timestampPersisted = false;
+      try {
+        lastSeededAt = new Date().toISOString();
+        const existing = await db
+          .select({ id: tenantSettings.id })
+          .from(tenantSettings)
+          .where(and(eq(tenantSettings.tenantId, result.stats.tenantId as number), eq(tenantSettings.settingKey, "lastDemoSeedAt")));
+        if (existing.length > 0) {
+          await db.update(tenantSettings)
+            .set({ settingValue: lastSeededAt, modifiedAt: new Date() })
+            .where(and(eq(tenantSettings.tenantId, result.stats.tenantId as number), eq(tenantSettings.settingKey, "lastDemoSeedAt")));
+        } else {
+          await db.insert(tenantSettings).values({
+            tenantId: result.stats.tenantId as number,
+            settingKey: "lastDemoSeedAt",
+            settingValue: lastSeededAt,
+            settingType: "string",
+            description: "Timestamp of the last demo tenant seed run",
+          });
+        }
+        timestampPersisted = true;
+      } catch (settingErr) {
+        console.warn("[seed-demo-tenant] Failed to persist lastDemoSeedAt:", settingErr);
+      }
+      res.json({ ...result, lastSeededAt: timestampPersisted ? lastSeededAt : null, timestampPersisted });
     } catch (err: any) {
       console.error("[seed-demo-tenant] Error:", err);
       res.status(500).json({ message: humanizeError(err), detail: err?.message });
