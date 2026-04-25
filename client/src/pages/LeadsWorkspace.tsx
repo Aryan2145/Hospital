@@ -5,7 +5,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Calendar, ArrowUpDown, ChevronUp, ChevronDown, ChevronRight, X, Clock, Users, Flame, Moon, AlertCircle, Headphones, Building2, Stethoscope, Shield, GitMerge, ChevronDown as ChevronDownIcon, UserPlus, Trash2 } from "lucide-react";
+import { Plus, Search, Filter, FileUp, LayoutGrid, List, Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Calendar, ArrowUpDown, ChevronUp, ChevronDown, ChevronRight, X, Clock, Users, GitMerge, ChevronDown as ChevronDownIcon, UserPlus, Trash2, Tag } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
@@ -31,19 +31,16 @@ import { fmtDate, fmtDateTimeShort } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
-type QuickFilter = "all" | "my-leads" | "hot" | "dormant" | "overdue" | "telecalling" | "front-office" | "doctor" | "insurance";
-
-const QUICK_FILTERS: { id: QuickFilter; label: string; icon: typeof Flame }[] = [
-  { id: "all", label: "All", icon: Users },
-  { id: "my-leads", label: "My Leads", icon: Users },
-  { id: "hot", label: "Hot", icon: Flame },
-  { id: "dormant", label: "Dormant", icon: Moon },
-  { id: "overdue", label: "Overdue", icon: AlertCircle },
-  { id: "telecalling", label: "Telecalling", icon: Headphones },
-  { id: "front-office", label: "Front Office", icon: Building2 },
-  { id: "doctor", label: "Doctor", icon: Stethoscope },
-  { id: "insurance", label: "Insurance", icon: Shield },
-];
+const QUICK_FILTER_LABELS: Record<string, string> = {
+  "my-leads": "My Leads",
+  "hot": "Hot Leads",
+  "dormant": "Dormant Leads",
+  "overdue": "Overdue",
+  "telecalling": "Telecalling",
+  "front-office": "Front Office",
+  "doctor": "Doctor",
+  "insurance": "Insurance",
+};
 
 export default function LeadsWorkspace() {
   const [search, setSearch] = useState("");
@@ -84,18 +81,20 @@ export default function LeadsWorkspace() {
   const [viewMode, setViewMode] = useState<"kanban" | "list">("list");
   const [showDuplicatePanel, setShowDuplicatePanel] = useState<boolean | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
+  const [quickFilter, setQuickFilter] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string[]>([]);
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterSource, setFilterSource] = useState<string>("");
+  const { data: leadSourcesForFilter = [] } = useMasterData("lead_sources");
   const [, navigate] = useLocation();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const qf = params.get("filter") as QuickFilter | null;
+    const qf = params.get("filter");
     const st = params.get("status");
     const view = params.get("view");
-    if (qf && ["all", "my-leads", "hot", "dormant", "overdue", "telecalling", "front-office", "doctor", "insurance"].includes(qf)) {
+    if (qf && Object.keys(QUICK_FILTER_LABELS).concat(["all"]).includes(qf)) {
       setQuickFilter(qf);
     }
     if (st) {
@@ -108,7 +107,7 @@ export default function LeadsWorkspace() {
     }
   }, []);
 
-  const activeFilterCount = filterStatus.length + (filterDateFrom ? 1 : 0) + (filterDateTo ? 1 : 0);
+  const activeFilterCount = filterStatus.length + (filterDateFrom ? 1 : 0) + (filterDateTo ? 1 : 0) + (filterSource ? 1 : 0);
 
   const filteredLeads = useMemo(() => {
     return (leads || []).filter((lead: any) => {
@@ -124,14 +123,16 @@ export default function LeadsWorkspace() {
       if (filterStatus.length > 0 && !filterStatus.includes(lead.status)) return false;
       if (filterDateFrom && lead.createdAt && new Date(lead.createdAt) < new Date(filterDateFrom)) return false;
       if (filterDateTo && lead.createdAt && new Date(lead.createdAt) > new Date(filterDateTo + "T23:59:59")) return false;
+      if (filterSource && lead.leadSourceId !== Number(filterSource)) return false;
       return true;
     });
-  }, [leads, quickFilter, crmUser, filterStatus, filterDateFrom, filterDateTo]);
+  }, [leads, quickFilter, crmUser, filterStatus, filterDateFrom, filterDateTo, filterSource]);
 
   const clearAllFilters = () => {
     setFilterStatus([]);
     setFilterDateFrom("");
     setFilterDateTo("");
+    setFilterSource("");
   };
 
   return (
@@ -258,31 +259,22 @@ export default function LeadsWorkspace() {
           </div>
         </div>
 
-        <div className="px-4 md:px-6 py-2 border-b border-border bg-muted/20 z-10 overflow-x-auto">
-          <div className="flex items-center gap-1.5 min-w-max">
-            {QUICK_FILTERS.map((qf) => {
-              const isActive = quickFilter === qf.id;
-              const Icon = qf.icon;
-              return (
-                <button
-                  key={qf.id}
-                  type="button"
-                  className={cn(
-                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap",
-                    isActive
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background text-muted-foreground border-border"
-                  )}
-                  onClick={() => setQuickFilter(qf.id)}
-                  data-testid={`quick-filter-${qf.id}`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {qf.label}
-                </button>
-              );
-            })}
+        {quickFilter !== "all" && (
+          <div className="px-4 md:px-6 py-1.5 border-b border-border bg-primary/5 z-10 flex items-center gap-2">
+            <Tag className="w-3.5 h-3.5 text-primary" />
+            <span className="text-xs font-medium text-primary">
+              Filtered: {QUICK_FILTER_LABELS[quickFilter] || quickFilter}
+            </span>
+            <button
+              type="button"
+              className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+              onClick={() => setQuickFilter("all")}
+              data-testid="button-clear-quick-filter"
+            >
+              <X className="w-3 h-3" /> Clear
+            </button>
           </div>
-        </div>
+        )}
 
         {showFilters && (
           <div className="px-4 md:px-6 py-3 border-b border-border bg-muted/30 z-10" data-testid="filter-panel">
@@ -328,6 +320,24 @@ export default function LeadsWorkspace() {
                     className="h-8 text-xs w-[130px]"
                     data-testid="filter-date-to"
                   />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Lead Source</label>
+                <div className="relative">
+                  <select
+                    value={filterSource}
+                    onChange={(e) => setFilterSource(e.target.value)}
+                    className="h-8 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring appearance-none pr-7 w-[180px]"
+                    data-testid="filter-lead-source"
+                  >
+                    <option value="">All Sources</option>
+                    {(leadSourcesForFilter as any[]).filter((s: any) => s.status === "Active").map((s: any) => (
+                      <option key={s.id} value={String(s.id)}>{s.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 </div>
               </div>
 

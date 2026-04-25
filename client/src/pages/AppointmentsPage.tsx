@@ -188,6 +188,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
   const [newPatientTreatmentDeptId, setNewPatientTreatmentDeptId] = useState("");
   const [newPatientConsultationType, setNewPatientConsultationType] = useState("");
   const [isCreatingLead, setIsCreatingLead] = useState(false);
+  const [phoneLookupMatches, setPhoneLookupMatches] = useState<Array<{type:"lead"|"patient";id:string;name:string;leadId?:string;patientId?:string}>>([]);
 
   const availability = useDoctorAvailability(
     bookDoctorId ? Number(bookDoctorId) : null,
@@ -213,6 +214,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
     setNewPatientAge("");
     setNewPatientGender("");
     setNewPatientConsultationType("");
+    setPhoneLookupMatches([]);
   };
 
   const selectedLeadForEpisodes = bookMode === "existing" && bookLeadId && bookLeadId !== "none" ? bookLeadId : null;
@@ -1274,31 +1276,32 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                     onChange={(e) => {
                       const val = e.target.value.replace(/\D/g, "").slice(0, 10);
                       setNewPatientPhone(val);
+                      setPhoneLookupMatches([]);
                       if (val.length === 10) {
-                        const matchedLead = (leadsList || []).find((l: any) => {
+                        const matchedLeads = (leadsList || []).filter((l: any) => {
                           const lPhone = (l.phoneE164 || l.phone || "").replace(/\D/g, "").slice(-10);
                           return lPhone === val;
                         });
-                        const matchedPatient = (patientsList || []).find((p: any) => {
+                        const matchedPatients = (patientsList || []).filter((p: any) => {
                           const pPhone = (p.primaryPhone || "").replace(/\D/g, "").slice(-10);
                           return pPhone === val;
                         });
-                        if (matchedLead) {
-                          setBookLeadId(String(matchedLead.id));
-                          setNewPatientName(matchedLead.name || "");
+                        const allMatches = [
+                          ...matchedLeads.map((l: any) => ({ type: "lead" as const, id: String(l.id), name: l.name || "Unnamed", leadId: String(l.id), patientId: l.patientId ? String(l.patientId) : undefined })),
+                          ...matchedPatients.filter((p: any) => !matchedLeads.some((l: any) => l.patientId === p.id)).map((p: any) => ({ type: "patient" as const, id: String(p.id), name: [p.firstName, p.lastName].filter(Boolean).join(" ") || "Unnamed", leadId: undefined, patientId: String(p.id) })),
+                        ];
+                        if (allMatches.length === 1) {
+                          const m = allMatches[0];
+                          setBookLeadId(m.leadId || "");
+                          setBookPatientId(m.patientId || "");
+                          setNewPatientName(m.name);
                           setBookMode("existing");
-                          if (matchedLead.patientId) {
-                            setBookPatientId(String(matchedLead.patientId));
-                          } else if (matchedPatient) {
-                            setBookPatientId(String(matchedPatient.id));
-                          } else {
-                            setBookPatientId("");
-                          }
-                        } else if (matchedPatient) {
-                          setBookPatientId(String(matchedPatient.id));
-                          setNewPatientName([matchedPatient.firstName, matchedPatient.lastName].filter(Boolean).join(" "));
-                          setBookMode("existing");
+                        } else if (allMatches.length > 1) {
+                          setPhoneLookupMatches(allMatches);
                           setBookLeadId("");
+                          setBookPatientId("");
+                          setNewPatientName("");
+                          setBookMode("existing");
                         } else {
                           setBookLeadId("");
                           setBookPatientId("");
@@ -1317,7 +1320,34 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                 </div>
               </div>
 
-              {newPatientPhone.length === 10 && (bookLeadId || bookPatientId) && (
+              {newPatientPhone.length === 10 && phoneLookupMatches.length > 1 && (
+                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-md space-y-2">
+                  <p className="text-xs font-semibold text-blue-800 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5" />
+                    {phoneLookupMatches.length} patients found with this number — select the correct one:
+                  </p>
+                  {phoneLookupMatches.map((m) => (
+                    <button
+                      key={`${m.type}-${m.id}`}
+                      type="button"
+                      onClick={() => {
+                        setBookLeadId(m.leadId || "");
+                        setBookPatientId(m.patientId || "");
+                        setNewPatientName(m.name);
+                        setBookMode("existing");
+                        setPhoneLookupMatches([]);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-md border border-blue-200 bg-white hover:bg-blue-50 transition-colors"
+                      data-testid={`book-phone-match-${m.id}`}
+                    >
+                      <span className="text-xs font-medium text-blue-900">{m.name}</span>
+                      <span className="ml-2 text-[10px] text-blue-500">{m.type === "lead" ? "Lead" : "Patient"}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {newPatientPhone.length === 10 && phoneLookupMatches.length === 0 && (bookLeadId || bookPatientId) && (
                 <div className="p-2.5 bg-green-100/60 border border-green-200 rounded-md">
                   <p className="text-xs font-medium text-green-800 flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1329,7 +1359,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                 </div>
               )}
 
-              {newPatientPhone.length === 10 && !bookLeadId && !bookPatientId && (
+              {newPatientPhone.length === 10 && phoneLookupMatches.length === 0 && !bookLeadId && !bookPatientId && (
                 <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-md">
                   <p className="text-xs font-medium text-amber-700 flex items-center gap-1.5">
                     <UserPlus className="w-3.5 h-3.5" />

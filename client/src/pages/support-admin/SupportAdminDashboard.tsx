@@ -221,7 +221,8 @@ function TicketListSection({ currentUser, statusFilter, setStatusFilter, searchT
         t.ticketNumber.toLowerCase().includes(term) ||
         t.subject.toLowerCase().includes(term) ||
         t.crmUserName?.toLowerCase().includes(term) ||
-        t.tenantName?.toLowerCase().includes(term)
+        t.tenantName?.toLowerCase().includes(term) ||
+        t.description?.toLowerCase().includes(term)
       );
     }
     return true;

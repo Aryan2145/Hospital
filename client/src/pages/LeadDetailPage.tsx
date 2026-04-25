@@ -1,7 +1,7 @@
 import { useRoute, useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
-import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers, useDoctors, useDoctorAvailability, useCreateAppointment, useNextActionTypes, useEpisodes, useLeadStatuses } from "@/hooks/use-leads";
+import { useLead, useLeadActivities, useUpdateLead, useCreateActivity, useTasks, useCreateTask, useUpdateTask, useHandoverAction, useAssignLead, useActiveCrmUsers, useDoctors, useDoctorAvailability, useCreateAppointment, useNextActionTypes, useEpisodes, useLeadStatuses, type IndividualSlot } from "@/hooks/use-leads";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1461,6 +1461,58 @@ function QuickActions({ lead }: { lead: any }) {
                     <p className="text-xs text-muted-foreground py-2">Loading slots...</p>
                   ) : availability && !availability.available ? (
                     <p className="text-xs text-destructive py-2">{availability.reason}</p>
+                  ) : availability && availability.individualSlots && availability.individualSlots.length > 0 ? (
+                    <div className="mt-1 space-y-2 max-h-60 overflow-y-auto" data-testid="slot-grid-individual">
+                      {availability.windows?.map((win) => {
+                        const fmt12 = (t: string) => { const [h, m] = t.split(":").map(Number); return `${h % 12 || 12}:${String(m).padStart(2,"0")} ${h >= 12 ? "PM" : "AM"}`; };
+                        const winSlots = (availability.individualSlots || []).filter((s: IndividualSlot) => s.windowStart === win.startTime);
+                        const freeCount = winSlots.filter((s: IndividualSlot) => !s.isBooked).length;
+                        return (
+                          <div key={win.startTime} className="border rounded-lg overflow-hidden">
+                            <div className="flex items-center justify-between px-2.5 py-1.5 bg-blue-50/60 border-b">
+                              <span className="text-[11px] font-semibold text-primary">{fmt12(win.startTime)} – {fmt12(win.endTime)}</span>
+                              <span className={cn("text-[10px] font-medium", freeCount > 0 ? "text-green-600" : "text-muted-foreground")}>
+                                {freeCount > 0 ? `${freeCount} free` : "Full"}
+                              </span>
+                            </div>
+                            <div className="p-1.5 grid grid-cols-4 gap-1 bg-white">
+                              {winSlots.map((slot: IndividualSlot) => (
+                                <button
+                                  key={slot.startTime}
+                                  disabled={slot.isBooked}
+                                  onClick={() => { if (apptSlot === slot.startTime) { setApptSlot(""); } else { setApptSlot(slot.startTime); setApptManualTime(""); } }}
+                                  title={slot.isBooked ? `Booked${slot.patientName ? `: ${slot.patientName}` : ""}` : `Select ${slot.startTime}`}
+                                  data-testid={`appt-slot-${slot.startTime}`}
+                                  className={cn(
+                                    "rounded px-1 py-1 text-[10px] font-medium transition-all border text-center",
+                                    slot.isBooked
+                                      ? "bg-red-50 border-red-100 text-red-400 cursor-not-allowed line-through opacity-70"
+                                      : apptSlot === slot.startTime
+                                        ? "bg-primary text-white border-primary shadow-sm"
+                                        : "bg-green-50 border-green-200 text-green-700 hover:bg-green-100 cursor-pointer"
+                                  )}
+                                >
+                                  {slot.startTime.substring(0,5)}
+                                  {slot.isBooked && slot.patientName && (
+                                    <div className="text-[8px] truncate leading-tight mt-0.5 text-red-400">{slot.patientName.split(" ")[0]}</div>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {apptSlot && (
+                        <div className="flex items-center gap-2 text-xs text-primary font-medium p-1.5 bg-primary/5 rounded-lg border border-primary/20">
+                          Selected: <span className="font-bold">{apptSlot.substring(0,5)}</span>
+                          <button onClick={() => setApptSlot("")} className="ml-auto text-muted-foreground hover:text-foreground text-[10px]">Clear</button>
+                        </div>
+                      )}
+                      <div className="border-t pt-1.5">
+                        <p className="text-[10px] text-muted-foreground mb-1">Or enter a specific time:</p>
+                        <Input type="time" value={apptManualTime} onChange={(e) => { setApptManualTime(e.target.value); setApptSlot(""); }} className="h-7 text-xs" data-testid="input-appt-manual-time" />
+                      </div>
+                    </div>
                   ) : availability && availability.slots.length > 0 ? (
                     <div className="space-y-2 mt-1">
                       <div className="grid grid-cols-2 gap-2">
@@ -1469,13 +1521,13 @@ function QuickActions({ lead }: { lead: any }) {
                             key={slot.startTime}
                             variant={apptSlot === slot.startTime ? "default" : "outline"}
                             size="sm"
-                            className="text-xs"
+                            className={cn("text-xs", slot.availableCount === 0 ? "opacity-50 line-through" : "")}
                             disabled={slot.availableCount === 0}
                             onClick={() => { setApptSlot(slot.startTime); setApptManualTime(""); }}
                             data-testid={`button-slot-${slot.startTime}`}
                           >
                             {slot.startTime?.substring(0, 5)} - {slot.endTime?.substring(0, 5)}
-                            <span className="ml-1 text-muted-foreground">({slot.availableCount})</span>
+                            <span className={cn("ml-1", slot.availableCount === 0 ? "text-red-400" : "text-muted-foreground")}>({slot.availableCount})</span>
                           </Button>
                         ))}
                       </div>
@@ -1510,14 +1562,16 @@ function QuickActions({ lead }: { lead: any }) {
                     toast({ title: "Appointment time is required", variant: "destructive" });
                     return;
                   }
-                  const selectedSlot = availability?.slots.find(s => s.startTime === apptSlot);
+                  const selectedIndivSlot = availability?.individualSlots?.find(s => s.startTime === apptSlot);
+                  const selectedWinSlot = availability?.slots.find(s => s.startTime === apptSlot);
+                  const resolvedEndTime = selectedIndivSlot?.endTime || selectedWinSlot?.endTime;
                   createAppointment.mutate(
                     {
                       leadId: lead.id,
                       doctorId: Number(apptDoctorId),
                       appointmentDate: apptDate,
                       startTime: effectiveApptTime,
-                      endTime: selectedSlot?.endTime || undefined,
+                      endTime: resolvedEndTime || undefined,
                       notes: apptNotes || undefined,
                       status: "Scheduled",
                     },
