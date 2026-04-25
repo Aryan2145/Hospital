@@ -10400,22 +10400,34 @@ export async function registerRoutes(
     try {
       const session = req.session as any;
       const crmUserId = session?.crmUserId;
-      if (!crmUserId) return res.status(403).json({ message: "Forbidden" });
+      if (!crmUserId) {
+        console.warn("[isSysAdmin] No crmUserId in session");
+        return res.status(403).json({ message: "Forbidden" });
+      }
 
       const sessionTid = session?.tenantId || tid;
-      // Use direct lookup — getCrmUsers() deliberately excludes SYS_ADMIN users
-      const crmUser = await storage.getCrmUser(crmUserId, sessionTid);
-      if (!crmUser) return res.status(403).json({ message: "Forbidden" });
+      // Use direct DB lookup — getCrmUser uses tenant scoping, getCrmUsers excludes SYS_ADMIN
+      const [crmUser] = await db.select().from(crmUsers).where(
+        and(eq(crmUsers.id, crmUserId), eq(crmUsers.tenantId, sessionTid))
+      );
+      if (!crmUser) {
+        console.warn(`[isSysAdmin] crmUser ${crmUserId} not found in tenant ${sessionTid}`);
+        return res.status(403).json({ message: "Forbidden" });
+      }
 
       if (crmUser.systemRoleId) {
-        const allRoles = await storage.getMasterRecords("systemRoles", sessionTid);
-        const role = allRoles.find((r: any) => r.id === crmUser.systemRoleId);
-        if (role && (role as any).code === "SYS_ADMIN") {
+        // Direct DB query — bypasses status filter so Inactive SYS_ADMIN role still grants access
+        const [role] = await db.select().from(systemRoles).where(eq(systemRoles.id, crmUser.systemRoleId));
+        if (role && role.code === "SYS_ADMIN") {
           return next();
         }
+        console.warn(`[isSysAdmin] User ${crmUserId} role is ${role?.code ?? "unknown"} — not SYS_ADMIN`);
+      } else {
+        console.warn(`[isSysAdmin] User ${crmUserId} has no systemRoleId`);
       }
       return res.status(403).json({ message: "Forbidden: System Admin access required" });
     } catch (err) {
+      console.error("[isSysAdmin] Unexpected error:", err);
       return res.status(403).json({ message: "Forbidden" });
     }
   }
