@@ -174,6 +174,71 @@ export async function setupAuth(app: Express) {
     }
   });
 
+  // ── Demo tenant login ──────────────────────────────────────────────────────
+  // Accessible from any domain/subdomain — only authenticates users in the
+  // demo tenant (subdomain "rgb-demo"). Safe because it is strictly scoped.
+  app.post("/api/auth/demo-login", async (req, res) => {
+    try {
+      const { mobile, password } = req.body;
+      if (!mobile || !password) {
+        return res.status(400).json({ message: "Mobile number and password are required" });
+      }
+
+      // Resolve demo tenant ID from DB
+      const [demoTenant] = await db.select({ id: tenants.id })
+        .from(tenants).where(eq(tenants.subdomain, "rgb-demo")).limit(1);
+      if (!demoTenant) {
+        return res.status(503).json({ message: "Demo environment is not available." });
+      }
+
+      const normalizedMobile = mobile.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
+
+      let allMatches = await db.select().from(crmUsers).where(
+        and(eq(crmUsers.phone, normalizedMobile), eq(crmUsers.tenantId, demoTenant.id))
+      );
+      if (allMatches.length === 0 && normalizedMobile.length === 10) {
+        allMatches = await db.select().from(crmUsers).where(
+          and(eq(crmUsers.phone, `+91${normalizedMobile}`), eq(crmUsers.tenantId, demoTenant.id))
+        );
+      }
+
+      if (allMatches.length === 0) {
+        return res.status(401).json({ message: "Invalid mobile number or password" });
+      }
+
+      const activeMatches = allMatches.filter(u => u.isActive && u.status === "Active" && u.passwordHash);
+      if (activeMatches.length === 0) {
+        return res.status(401).json({ message: "Account inactive or password not set" });
+      }
+
+      for (const candidate of activeMatches) {
+        const isValid = await bcrypt.compare(password, candidate.passwordHash!);
+        if (isValid) {
+          await db.update(crmUsers).set({
+            failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date(),
+          }).where(eq(crmUsers.id, candidate.id));
+
+          (req.session as any).crmUserId = candidate.id;
+          (req.session as any).tenantId  = candidate.tenantId;
+
+          return req.session.save((err: any) => {
+            if (err) return res.status(500).json({ message: "Login failed" });
+            console.log(`[demo-login] Success: userId=${candidate.id}, tenantId=${candidate.tenantId}`);
+            return res.json({
+              success: true,
+              user: { id: String(candidate.id), name: candidate.name, phone: candidate.phone },
+            });
+          });
+        }
+      }
+
+      return res.status(401).json({ message: "Invalid mobile number or password" });
+    } catch (error) {
+      console.error("[demo-login] Error:", error);
+      return res.status(500).json({ message: "Login failed" });
+    }
+  });
+
   app.post("/api/auth/admin-login", async (req, res) => {
     try {
       const { mobile, identifier, password } = req.body;

@@ -699,7 +699,11 @@ export default function AdminHospitals() {
                     {resetDemo.isPending ? "Resetting demo data…" : "Reset Demo Data"}
                   </Button>
                   <p className="text-[10px] text-violet-400 text-center mt-1">
-                    Login: mobile <strong>4000400100</strong> · password <strong>HCRM@RGBTech</strong>
+                    <a href="/demo-login" target="_blank" rel="noopener noreferrer"
+                       className="underline hover:text-violet-200 font-medium">
+                      Open Demo Login →
+                    </a>
+                    {" "}· all passwords: <strong>HCRM@RGBTech</strong>
                   </p>
                 </div>
               )}

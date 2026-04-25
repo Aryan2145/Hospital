@@ -12,6 +12,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { AlertTriangle } from "lucide-react";
 
 import Landing from "@/pages/Landing";
+import DemoLogin from "@/pages/DemoLogin";
 import Dashboard from "@/pages/Dashboard";
 import LeadsWorkspace from "@/pages/LeadsWorkspace";
 import LeadDetailPage from "@/pages/LeadDetailPage";
@@ -121,6 +122,10 @@ function Router() {
     <Switch>
       <Route path="/">
         {isAuthenticated ? <HomeRedirect /> : <Landing />}
+      </Route>
+
+      <Route path="/demo-login">
+        {isAuthenticated ? <HomeRedirect /> : <DemoLogin />}
       </Route>
 
       <Route path="/dashboard">

@@ -228,7 +228,7 @@ export async function buildTenantExport(opts: ExportOptions): Promise<Buffer> {
 
   // 2. CRM users — passwords, salts, and session tokens stripped
   data["crm_users"] = await safeQuery(
-    `SELECT id, tenant_id, name, email, phone, mobile_normalized,
+    `SELECT id, tenant_id, name, email, phone,
             system_role_id, status, is_active, designation_id, branch_id,
             reporting_to, access_scope_type, phi_access_level, display_order, created_at
      FROM crm_users WHERE tenant_id = $1 ORDER BY id`,
