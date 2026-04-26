@@ -1429,7 +1429,7 @@ function QuickActions({ lead }: { lead: any }) {
               Book Appointment
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md">
+          <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Book Appointment</DialogTitle>
             </DialogHeader>
@@ -1475,7 +1475,7 @@ function QuickActions({ lead }: { lead: any }) {
                                 {freeCount > 0 ? `${freeCount} free` : "Full"}
                               </span>
                             </div>
-                            <div className="p-1.5 grid grid-cols-4 gap-1 bg-white">
+                            <div className="p-2 flex flex-wrap gap-1.5 bg-white">
                               {winSlots.map((slot: IndividualSlot) => (
                                 <button
                                   key={slot.startTime}
@@ -1483,18 +1483,19 @@ function QuickActions({ lead }: { lead: any }) {
                                   onClick={() => { if (apptSlot === slot.startTime) { setApptSlot(""); } else { setApptSlot(slot.startTime); setApptManualTime(""); } }}
                                   title={slot.isBooked ? `Booked${slot.patientName ? `: ${slot.patientName}` : ""}` : `Select ${slot.startTime}`}
                                   data-testid={`appt-slot-${slot.startTime}`}
+                                  style={{ minWidth: "72px" }}
                                   className={cn(
-                                    "rounded px-1 py-1 text-[10px] font-medium transition-all border text-center",
+                                    "rounded px-2 py-1.5 text-[11px] font-medium transition-all border text-center leading-tight",
                                     slot.isBooked
-                                      ? "bg-red-50 border-red-100 text-red-400 cursor-not-allowed line-through opacity-70"
+                                      ? "bg-red-50 border-red-200 text-red-500 cursor-not-allowed opacity-70"
                                       : apptSlot === slot.startTime
                                         ? "bg-primary text-white border-primary shadow-sm"
                                         : "bg-green-50 border-green-200 text-green-700 hover:bg-green-100 cursor-pointer"
                                   )}
                                 >
-                                  {slot.startTime.substring(0,5)}
+                                  <div>{slot.startTime.substring(0,5)}</div>
                                   {slot.isBooked && slot.patientName && (
-                                    <div className="text-[8px] truncate leading-tight mt-0.5 text-red-400">{slot.patientName.split(" ")[0]}</div>
+                                    <div className="text-[9px] truncate leading-tight text-red-400 max-w-[68px]">{slot.patientName.split(" ")[0]}</div>
                                   )}
                                 </button>
                               ))}
