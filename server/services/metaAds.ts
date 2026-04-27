@@ -140,6 +140,36 @@ function extractConversions(actions?: Array<{ action_type: string; value: string
   return total;
 }
 
+export interface MetaLeadgenData {
+  id: string;
+  created_time: string;
+  ad_id?: string;
+  form_id?: string;
+  page_id?: string;
+  field_data: Array<{ name: string; values: string[] }>;
+}
+
+/**
+ * Fetch the actual lead data from Meta using a leadgen_id.
+ * Called after receiving a Meta Lead Ads webhook notification.
+ * accessToken is passed explicitly (not from tenant creds) so this
+ * can be called without a full connector context.
+ */
+export async function fetchLeadgenData(leadgenId: string, accessToken: string): Promise<MetaLeadgenData> {
+  const url = new URL(`${META_GRAPH_API_BASE}/${leadgenId}`);
+  url.searchParams.set("access_token", accessToken);
+  url.searchParams.set("fields", "id,created_time,ad_id,form_id,page_id,field_data");
+
+  const response = await fetch(url.toString());
+  const data = await response.json();
+
+  if (data.error) {
+    throw new Error(`Meta API Error (${data.error.code}): ${data.error.message}`);
+  }
+
+  return data as MetaLeadgenData;
+}
+
 export async function testMetaConnection(): Promise<{ success: boolean; accountName?: string; error?: string }> {
   try {
     const { adAccountId } = getCredentials();

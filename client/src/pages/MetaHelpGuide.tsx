@@ -379,17 +379,40 @@ export default function MetaHelpGuide() {
               <Step number={6} title='Click "Create Rule"'>
                 <p>Once the rule is created, the system generates a unique <strong>Webhook URL</strong>. This URL is shown on the rule card. Copy it — you will need it in the next step.</p>
               </Step>
-              <Step number={7} title="Configure Meta to send leads to the CRM">
-                <p>This is a critical step. You need to tell Meta where to send lead data. There are two common approaches:</p>
-                <ul className="list-disc list-inside mt-1 space-y-1.5">
-                  <li><strong>Option A — Direct Webhook:</strong> In the Meta Developer Portal, go to your app &rarr; Webhooks &rarr; subscribe to the "leadgen" topic on your Facebook Page. Set the callback URL to the Webhook URL copied from the CRM.</li>
-                  <li><strong>Option B — Integration Platform:</strong> Use a tool like <strong>Zapier</strong> or <strong>Make (Integromat)</strong> to connect your Meta Lead Ads as a trigger, and set the action to send a POST request to the CRM's Webhook URL with the lead data mapped.</li>
-                </ul>
-                <div className="mt-2">
-                  <InfoBox type="warning">
-                    <strong>Without this step, leads will NOT flow into the CRM.</strong> The CRM provides the webhook endpoint, but Meta must be configured to push data to it. This is a one-time setup per lead form source.
+              <Step number={7} title="Register the webhook in Meta Developer Portal (Direct — Recommended)">
+                <p>This is the critical step. The CRM now supports Meta's native webhook protocol, including automatic verification. Follow these steps exactly:</p>
+                <ol className="list-decimal list-inside mt-2 space-y-1.5 ml-1">
+                  <li>Go to <strong>developers.facebook.com</strong> and open your App</li>
+                  <li>In the left menu, go to <strong>Webhooks</strong></li>
+                  <li>Click <strong>"Add Subscription"</strong> and choose the <strong>Page</strong> object</li>
+                  <li>In the <strong>"Callback URL"</strong> field, paste the <strong>Webhook URL</strong> you copied from the CRM's Lead Capture Rule card</li>
+                  <li>In the <strong>"Verify Token"</strong> field, paste the <strong>same Webhook URL token</strong> (the last part of the URL after <code className="bg-slate-100 px-1 rounded text-xs">/lead-capture/</code>)</li>
+                  <li>Click <strong>"Verify and Save"</strong> — Meta will send a challenge to the CRM, which will automatically confirm it. You should see a green checkmark.</li>
+                  <li>After verification, click <strong>"Subscribe"</strong> on the <strong>"leadgen"</strong> field in the subscription list</li>
+                  <li>Finally, go to <strong>App Settings &rarr; Advanced</strong> and make sure your app is linked to the correct <strong>Facebook Page</strong> that hosts your Lead Ads</li>
+                </ol>
+                <div className="mt-3">
+                  <InfoBox type="info">
+                    <strong>The Verify Token is just the token portion of your webhook URL.</strong> For example, if your webhook URL is <code>https://viroc.rgbindia.com/api/webhook/lead-capture/abc123xyz</code>, the verify token to enter in Meta is <code>abc123xyz</code>.
                   </InfoBox>
                 </div>
+                <div className="mt-2">
+                  <InfoBox type="success">
+                    <strong>No middleware needed.</strong> The CRM directly handles Meta's webhook format — it receives the leadgen notification, calls back to Meta to fetch the lead's actual details (name, phone, email), and creates the lead record automatically.
+                  </InfoBox>
+                </div>
+                <div className="mt-2">
+                  <InfoBox type="warning">
+                    <strong>Access Token Permissions required for lead retrieval:</strong> Your System User token must have <code>leads_retrieval</code>, <code>pages_read_engagement</code>, <code>pages_manage_ads</code>, and <code>ads_read</code> permissions. Without <code>leads_retrieval</code>, the CRM can verify the webhook but cannot fetch the lead's contact details.
+                  </InfoBox>
+                </div>
+              </Step>
+              <Step number={8} title="Alternative: Use Zapier or Make (if you cannot access Meta Developer Portal)">
+                <p>If you do not have access to the Meta Developer Portal, you can use a no-code tool:</p>
+                <ul className="list-disc list-inside mt-1 space-y-1.5">
+                  <li>In <strong>Zapier</strong>: Set trigger as "Meta Lead Ads — New Lead" and action as "Webhooks — POST" to the CRM's Webhook URL, mapping Name, Phone, and Email fields</li>
+                  <li>In <strong>Make (Integromat)</strong>: Use the "Facebook Lead Ads — Watch Leads" module as trigger and "HTTP — Make a Request" as the action, sending a JSON body with the lead fields</li>
+                </ul>
               </Step>
             </Section>
 

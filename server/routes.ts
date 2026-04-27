@@ -3856,6 +3856,36 @@ export async function registerRoutes(
   });
 
   // --- Webhook Endpoint for Lead Capture ---
+
+  // GET: Meta webhook verification challenge (hub.mode=subscribe)
+  app.get("/api/webhook/lead-capture/:token", async (req, res) => {
+    try {
+      const token = req.params.token;
+      const mode = req.query["hub.mode"] as string;
+      const verifyToken = req.query["hub.verify_token"] as string;
+      const challenge = req.query["hub.challenge"] as string;
+
+      // Only respond to Meta's subscribe verification
+      if (mode === "subscribe") {
+        // Verify the token matches the stored rule token (or use it directly as the verify token)
+        const [rule] = await db.select().from(leadCaptureRules)
+          .where(and(eq(leadCaptureRules.webhookToken, token), eq(leadCaptureRules.isActive, true)));
+
+        if (rule && (verifyToken === token || verifyToken === rule.webhookToken)) {
+          console.log(`[MetaWebhook] Verification successful for rule ${rule.id} (${rule.name})`);
+          return res.status(200).send(challenge);
+        }
+        console.warn(`[MetaWebhook] Verification failed — token mismatch. Expected: ${token}, Got: ${verifyToken}`);
+        return res.status(403).json({ message: "Verification token mismatch" });
+      }
+
+      res.status(400).json({ message: "Invalid request" });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // POST: Handle incoming lead capture webhooks (generic JSON + Meta Lead Ads format)
   app.post("/api/webhook/lead-capture/:token", async (req, res) => {
     try {
       const token = req.params.token;
@@ -3867,8 +3897,147 @@ export async function registerRoutes(
       }
 
       const tid = rule.tenantId;
-      const fieldMapping = (rule.fieldMapping || {}) as Record<string, string>;
       const payload = req.body;
+
+      // ── Detect Meta Lead Ads webhook format ─────────────────────────────
+      // Meta sends: { object: "page", entry: [{ changes: [{ field: "leadgen", value: { leadgen_id: "..." } }] }] }
+      const isMetaLeadAdsFormat =
+        payload.object === "page" &&
+        Array.isArray(payload.entry) &&
+        payload.entry.length > 0;
+
+      if (isMetaLeadAdsFormat) {
+        // Acknowledge immediately — Meta requires a 200 response within 5 seconds
+        res.status(200).json({ status: "received" });
+
+        // Process all lead changes asynchronously
+        (async () => {
+          try {
+            // Find the Meta connector credentials for this tenant
+            const connectors = await storage.getPlatformConnectors(tid);
+            const metaConn = connectors.find((c: any) => c.platform === "meta" && c.status === "connected");
+            const creds = metaConn?.credentials as any;
+            const accessToken = creds?.accessToken || process.env.META_ACCESS_TOKEN;
+
+            if (!accessToken) {
+              console.error(`[MetaWebhook] No Meta access token found for tenant ${tid}`);
+              return;
+            }
+
+            const { fetchLeadgenData } = await import("./services/metaAds");
+
+            for (const entry of payload.entry) {
+              if (!Array.isArray(entry.changes)) continue;
+              for (const change of entry.changes) {
+                if (change.field !== "leadgen") continue;
+                const leadgenId = change.value?.leadgen_id;
+                if (!leadgenId) continue;
+
+                try {
+                  // Fetch actual lead data from Meta Graph API
+                  const leadData = await fetchLeadgenData(leadgenId, accessToken);
+                  const fields: Record<string, string> = {};
+                  for (const f of leadData.field_data || []) {
+                    fields[f.name] = (f.values || [])[0] || "";
+                  }
+
+                  // Standard Meta Lead Ads field names → CRM fields
+                  const rawName = [
+                    fields["full_name"],
+                    fields["first_name"] ? `${fields["first_name"]} ${fields["last_name"] || ""}`.trim() : "",
+                  ].find(Boolean) || "";
+                  const name = toProperCase(rawName.trim());
+
+                  const rawPhone = fields["phone_number"] || fields["mobile_number"] || fields["phone"] || "";
+                  const phone = rawPhone ? normalizePhone(rawPhone) : "";
+                  const email = fields["email"] || fields["email_address"] || "";
+                  const city = fields["city"] || fields["location"] || "";
+
+                  // Apply field mapping overrides if configured
+                  const fieldMapping = (rule.fieldMapping || {}) as Record<string, string>;
+                  const mapped: Record<string, string> = { ...fields };
+                  for (const [crmField, sourceField] of Object.entries(fieldMapping)) {
+                    if (sourceField && fields[sourceField] !== undefined) {
+                      mapped[crmField] = fields[sourceField];
+                    }
+                  }
+
+                  const finalName = toProperCase((mapped.name || name || "").trim());
+                  const finalPhone = phone || normalizePhone(mapped.phoneE164 || mapped.phone || "");
+                  const finalEmail = email || mapped.email || "";
+
+                  if (!finalPhone) {
+                    console.warn(`[MetaWebhook] Leadgen ${leadgenId} has no phone — skipping`);
+                    continue;
+                  }
+
+                  const existingLead = await storage.findLeadByPhone(tid, finalPhone);
+                  if (existingLead) {
+                    const dupOption = rule.duplicateLeadOption || "skip";
+                    if (dupOption === "skip") {
+                      console.log(`[MetaWebhook] Duplicate lead phone ${finalPhone} — skipped`);
+                      continue;
+                    } else if (dupOption === "update_blank") {
+                      const updates: Record<string, any> = {};
+                      if (!existingLead.email && finalEmail) updates.email = finalEmail;
+                      if (!existingLead.name && finalName) updates.name = finalName;
+                      if (Object.keys(updates).length > 0) await storage.updateLead(existingLead.id, updates);
+                      console.log(`[MetaWebhook] Duplicate lead ${existingLead.id} — updated blank fields`);
+                      continue;
+                    }
+                  }
+
+                  let assignedUser = null;
+                  const strategy = rule.assignmentStrategy || "round_robin";
+                  if (strategy === "round_robin") {
+                    assignedUser = await storage.getNextAssignableCrmUser(tid);
+                  } else if (strategy === "specific" && rule.assignToEmployeeIds) {
+                    const empIds = rule.assignToEmployeeIds as number[];
+                    if (empIds.length > 0) {
+                      const users = await storage.getCrmUsers(tid);
+                      const randomIdx = Math.floor(Math.random() * empIds.length);
+                      assignedUser = users.find(u => u.id === empIds[randomIdx]) || null;
+                    }
+                  }
+
+                  const newLead = await storage.createLead({
+                    tenantId: tid,
+                    name: finalName || "Unknown",
+                    phoneE164: finalPhone,
+                    email: finalEmail || undefined,
+                    status: rule.defaultLeadStatus || "Raw Lead Captured",
+                    tags: mapped.tags || rule.defaultTags || "facebook,lead-ad",
+                    utmSource: "facebook",
+                    utmMedium: "lead-ad",
+                    utmCampaign: String(change.value?.ad_id || leadData.ad_id || ""),
+                    notes: city ? `City: ${city}` : undefined,
+                    priority: "Normal",
+                    assignedCrmUserId: assignedUser?.id,
+                    assignedTo: assignedUser?.name,
+                  });
+
+                  await storage.createActivity({
+                    leadId: newLead.id, tenantId: tid, createdBy: "meta-webhook",
+                    type: "note",
+                    description: `Lead captured from Meta Lead Ads (Form ID: ${leadData.form_id || "N/A"})${assignedUser ? ` — auto-assigned to ${assignedUser.name}` : ""}`,
+                  });
+
+                  console.log(`[MetaWebhook] Created lead ${newLead.id} for ${finalName} (${finalPhone}) from leadgen ${leadgenId}`);
+                } catch (leadErr: any) {
+                  console.error(`[MetaWebhook] Failed to process leadgen ${leadgenId}:`, leadErr.message);
+                }
+              }
+            }
+          } catch (asyncErr: any) {
+            console.error("[MetaWebhook] Async processing error:", asyncErr.message);
+          }
+        })();
+
+        return; // Response already sent above
+      }
+
+      // ── Generic JSON webhook (Zapier / Make / manual POST) ────────────────
+      const fieldMapping = (rule.fieldMapping || {}) as Record<string, string>;
 
       const mapped: Record<string, string> = {};
       for (const [crmField, sourceField] of Object.entries(fieldMapping)) {
