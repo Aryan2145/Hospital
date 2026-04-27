@@ -1402,6 +1402,28 @@ export const insertLeadCaptureRuleSchema = createInsertSchema(leadCaptureRules).
 export type InsertLeadCaptureRule = z.infer<typeof insertLeadCaptureRuleSchema>;
 export type LeadCaptureRule = typeof leadCaptureRules.$inferSelect;
 
+// --- Meta Lead Capture Logs ---
+export const metaLeadCaptureLogs = pgTable("meta_lead_capture_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  ruleId: integer("rule_id").references(() => leadCaptureRules.id),
+  leadId: integer("lead_id").references(() => leads.id),
+  formId: text("form_id"),
+  adId: text("ad_id"),
+  leadgenId: text("leadgen_id"),
+  rawPayload: jsonb("raw_payload"),
+  leadgenPayload: jsonb("leadgen_payload"),
+  leadName: text("lead_name"),
+  leadPhone: text("lead_phone"),
+  processingStatus: text("processing_status").notNull().default("received"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMetaLeadCaptureLogSchema = createInsertSchema(metaLeadCaptureLogs).omit({ id: true, createdAt: true });
+export type InsertMetaLeadCaptureLog = z.infer<typeof insertMetaLeadCaptureLogSchema>;
+export type MetaLeadCaptureLog = typeof metaLeadCaptureLogs.$inferSelect;
+
 // --- Callyzer Employees ---
 export const callyzerEmployees = pgTable("callyzer_employees", {
   id: serial("id").primaryKey(),

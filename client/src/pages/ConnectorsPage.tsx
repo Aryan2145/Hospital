@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -18,7 +19,8 @@ import {
   Wifi, WifiOff, ArrowUpRight, BarChart3, Eye, EyeOff, MousePointerClick,
   IndianRupee, Target, Loader2, Zap, Globe, TrendingUp,
   Copy, Pencil, Link2, Phone, Mail, MessageSquare, FileSpreadsheet,
-  Key, ExternalLink, Shield, Clock, PhoneCall,
+  Key, ExternalLink, Shield, Clock, PhoneCall, List, ChevronDown, ChevronUp,
+  AlertCircle, CheckCircle, SkipForward, Edit3,
 } from "lucide-react";
 import { SiFacebook, SiGoogle, SiLinkedin, SiX } from "react-icons/si";
 
@@ -69,6 +71,32 @@ interface LeadCaptureRule {
   mapCallLogs: boolean | null;
   createdAt: string;
   modifiedAt: string;
+}
+
+interface MetaLeadCaptureLog {
+  id: number;
+  tenantId: number;
+  ruleId: number | null;
+  leadId: number | null;
+  formId: string | null;
+  adId: string | null;
+  leadgenId: string | null;
+  rawPayload: Record<string, any> | null;
+  leadgenPayload: Record<string, any> | null;
+  leadName: string | null;
+  leadPhone: string | null;
+  processingStatus: string;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+interface MetaLogStats {
+  total: number;
+  created: number;
+  duplicateSkipped: number;
+  duplicateUpdated: number;
+  errors: number;
+  lastReceivedAt: string | null;
 }
 
 interface CrmUser {
@@ -397,6 +425,8 @@ export default function ConnectorsPage() {
   const [ruleDialog, setRuleDialog] = useState(false);
   const [editingRule, setEditingRule] = useState<LeadCaptureRule | null>(null);
   const [ruleForm, setRuleForm] = useState({ ...DEFAULT_RULE_FORM });
+  const [logsOpenRuleId, setLogsOpenRuleId] = useState<number | null>(null);
+  const [payloadViewerLog, setPayloadViewerLog] = useState<MetaLeadCaptureLog | null>(null);
 
   const { data: connectors = [], isLoading } = useQuery<PlatformConnector[]>({
     queryKey: ["/api/connectors"],
@@ -412,6 +442,18 @@ export default function ConnectorsPage() {
 
   const { data: importFields = [] } = useQuery<ImportField[]>({
     queryKey: ["/api/leads/import-fields"],
+  });
+
+  const { data: openRuleLogs = [], isLoading: logsLoading } = useQuery<MetaLeadCaptureLog[]>({
+    queryKey: ["/api/lead-capture-rules", logsOpenRuleId, "logs"],
+    enabled: logsOpenRuleId !== null,
+    refetchInterval: 30000,
+  });
+
+  const { data: openRuleStats } = useQuery<MetaLogStats>({
+    queryKey: ["/api/lead-capture-rules", logsOpenRuleId, "logs/stats"],
+    enabled: logsOpenRuleId !== null,
+    refetchInterval: 30000,
   });
 
   const createMutation = useMutation({
@@ -1121,6 +1163,124 @@ export default function ConnectorsPage() {
                                 )}
                               </div>
                             )}
+
+                            {/* Meta Logs toggle button */}
+                            {isMetaRule && (
+                              <div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full h-8 text-xs gap-1.5"
+                                  onClick={() => setLogsOpenRuleId(logsOpenRuleId === rule.id ? null : rule.id)}
+                                  data-testid={`button-toggle-logs-${rule.id}`}
+                                >
+                                  <List className="h-3.5 w-3.5" />
+                                  Webhook Logs
+                                  {logsOpenRuleId === rule.id ? <ChevronUp className="h-3.5 w-3.5 ml-auto" /> : <ChevronDown className="h-3.5 w-3.5 ml-auto" />}
+                                </Button>
+
+                                {logsOpenRuleId === rule.id && (
+                                  <div className="mt-2 rounded-lg border bg-slate-50 dark:bg-slate-900/50 overflow-hidden">
+                                    {/* Stats row */}
+                                    {openRuleStats && (
+                                      <div className="flex items-center gap-3 px-3 py-2 border-b text-[11px] flex-wrap">
+                                        <span className="text-muted-foreground font-medium">
+                                          {openRuleStats.total} total
+                                        </span>
+                                        <span className="flex items-center gap-1 text-green-700 dark:text-green-400">
+                                          <CheckCircle className="h-3 w-3" /> {openRuleStats.created} created
+                                        </span>
+                                        <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                                          <SkipForward className="h-3 w-3" /> {openRuleStats.duplicateSkipped} skipped
+                                        </span>
+                                        <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                                          <Edit3 className="h-3 w-3" /> {openRuleStats.duplicateUpdated} updated
+                                        </span>
+                                        <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
+                                          <AlertCircle className="h-3 w-3" /> {openRuleStats.errors} errors
+                                        </span>
+                                        {openRuleStats.lastReceivedAt && (
+                                          <span className="ml-auto text-muted-foreground flex items-center gap-1">
+                                            <Clock className="h-3 w-3" />
+                                            Last: {new Date(openRuleStats.lastReceivedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                          </span>
+                                        )}
+                                        {!openRuleStats.lastReceivedAt && (
+                                          <span className="ml-auto text-muted-foreground text-[10px]">No events yet</span>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    {/* Logs table */}
+                                    {logsLoading ? (
+                                      <div className="flex items-center justify-center py-6">
+                                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                      </div>
+                                    ) : openRuleLogs.length === 0 ? (
+                                      <p className="text-center text-xs text-muted-foreground py-6" data-testid="text-no-logs">
+                                        No webhook events received yet. Submit a test lead via Meta's Lead Ads Testing Tool.
+                                      </p>
+                                    ) : (
+                                      <ScrollArea className="max-h-72">
+                                        <table className="w-full text-xs">
+                                          <thead>
+                                            <tr className="border-b bg-white dark:bg-slate-800 text-muted-foreground">
+                                              <th className="px-3 py-2 text-left font-medium">Received</th>
+                                              <th className="px-3 py-2 text-left font-medium">Lead</th>
+                                              <th className="px-3 py-2 text-left font-medium">Form ID</th>
+                                              <th className="px-3 py-2 text-left font-medium">Status</th>
+                                              <th className="px-3 py-2 text-left font-medium"></th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {openRuleLogs.map((log) => (
+                                              <tr key={log.id} className="border-b last:border-0 hover:bg-white/60 dark:hover:bg-slate-800/60" data-testid={`row-log-${log.id}`}>
+                                                <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                                                  {new Date(log.createdAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                  <div className="font-medium text-foreground">{log.leadName || <span className="text-muted-foreground italic">Unknown</span>}</div>
+                                                  {log.leadPhone && <div className="text-muted-foreground">{log.leadPhone}</div>}
+                                                </td>
+                                                <td className="px-3 py-2 text-muted-foreground font-mono">{log.formId || "—"}</td>
+                                                <td className="px-3 py-2">
+                                                  {log.processingStatus === "created" && (
+                                                    <Badge variant="default" className="text-[10px] py-0 px-1.5 bg-green-600">Created</Badge>
+                                                  )}
+                                                  {log.processingStatus === "duplicate_skipped" && (
+                                                    <Badge variant="secondary" className="text-[10px] py-0 px-1.5">Duplicate</Badge>
+                                                  )}
+                                                  {log.processingStatus === "duplicate_updated" && (
+                                                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-blue-400 text-blue-600">Updated</Badge>
+                                                  )}
+                                                  {log.processingStatus === "error" && (
+                                                    <Badge variant="destructive" className="text-[10px] py-0 px-1.5">Error</Badge>
+                                                  )}
+                                                  {log.processingStatus === "received" && (
+                                                    <Badge variant="outline" className="text-[10px] py-0 px-1.5">Processing</Badge>
+                                                  )}
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                  <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="h-6 px-2 text-[10px]"
+                                                    onClick={() => setPayloadViewerLog(log)}
+                                                    data-testid={`button-view-payload-${log.id}`}
+                                                  >
+                                                    Payload
+                                                  </Button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </ScrollArea>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </CardContent>
                         </Card>
                         );
@@ -1133,6 +1293,94 @@ export default function ConnectorsPage() {
           )}
         </div>
       </div>
+
+      {/* Payload Viewer Dialog */}
+      <Dialog open={!!payloadViewerLog} onOpenChange={(open) => { if (!open) setPayloadViewerLog(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <List className="h-4 w-4" />
+              Webhook Payload
+              {payloadViewerLog && (
+                <span className="text-sm font-normal text-muted-foreground ml-1">
+                  — {new Date(payloadViewerLog.createdAt).toLocaleString("en-IN")}
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {payloadViewerLog && (
+            <div className="space-y-3">
+              {payloadViewerLog.leadName && (
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="text-muted-foreground">Lead:</span>
+                  <span className="font-medium">{payloadViewerLog.leadName}</span>
+                  {payloadViewerLog.leadPhone && <span className="text-muted-foreground">{payloadViewerLog.leadPhone}</span>}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Meta Notification (raw)</p>
+                  <div className="relative rounded-md border bg-slate-950">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="absolute top-1 right-1 h-6 px-2 text-[10px] text-slate-400 hover:text-white"
+                      onClick={() => {
+                        navigator.clipboard.writeText(JSON.stringify(payloadViewerLog.rawPayload, null, 2));
+                        toast({ title: "Raw payload copied" });
+                      }}
+                      data-testid="button-copy-raw-payload"
+                    >
+                      <Copy className="h-3 w-3 mr-1" /> Copy
+                    </Button>
+                    <ScrollArea className="h-64 p-3">
+                      <pre className="text-[11px] text-green-400 font-mono whitespace-pre-wrap break-all">
+                        {JSON.stringify(payloadViewerLog.rawPayload, null, 2)}
+                      </pre>
+                    </ScrollArea>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Lead Fields (fetched from Meta)</p>
+                  <div className="relative rounded-md border bg-slate-950">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="absolute top-1 right-1 h-6 px-2 text-[10px] text-slate-400 hover:text-white"
+                      onClick={() => {
+                        navigator.clipboard.writeText(JSON.stringify(payloadViewerLog.leadgenPayload, null, 2));
+                        toast({ title: "Lead payload copied" });
+                      }}
+                      data-testid="button-copy-leadgen-payload"
+                    >
+                      <Copy className="h-3 w-3 mr-1" /> Copy
+                    </Button>
+                    <ScrollArea className="h-64 p-3">
+                      <pre className="text-[11px] text-green-400 font-mono whitespace-pre-wrap break-all">
+                        {payloadViewerLog.leadgenPayload
+                          ? JSON.stringify(payloadViewerLog.leadgenPayload, null, 2)
+                          : <span className="text-slate-500 italic">Not available (lead fetch may have failed)</span>
+                        }
+                      </pre>
+                    </ScrollArea>
+                  </div>
+                </div>
+              </div>
+              {payloadViewerLog.errorMessage && (
+                <div className="rounded-md border border-red-200 bg-red-50 dark:bg-red-950/30 p-3">
+                  <p className="text-xs font-semibold text-red-700 dark:text-red-400 mb-1">Error</p>
+                  <p className="text-xs text-red-600 dark:text-red-300">{payloadViewerLog.errorMessage}</p>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayloadViewerLog(null)} data-testid="button-close-payload-viewer">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={configDialog} onOpenChange={(open) => { if (!open) closeDialog(); }}>
         <DialogContent className="max-w-lg">

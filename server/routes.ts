@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema, systemErrorLogs, tenantSettings } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema, systemErrorLogs, tenantSettings, metaLeadCaptureLogs } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -3855,6 +3855,44 @@ export async function registerRoutes(
     }
   });
 
+  // GET: Meta lead capture logs for a rule
+  app.get("/api/lead-capture-rules/:id/logs", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const ruleId = Number(req.params.id);
+      const limit = Math.min(Number(req.query.limit || 50), 200);
+      const logs = await db.select()
+        .from(metaLeadCaptureLogs)
+        .where(and(eq(metaLeadCaptureLogs.tenantId, tid), eq(metaLeadCaptureLogs.ruleId, ruleId)))
+        .orderBy(desc(metaLeadCaptureLogs.createdAt))
+        .limit(limit);
+      res.json(logs);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // GET: Stats for a Meta lead capture rule (last received, counts)
+  app.get("/api/lead-capture-rules/:id/logs/stats", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const ruleId = Number(req.params.id);
+      const [stats] = await db.select({
+        total: sql<number>`COUNT(*)::int`,
+        created: sql<number>`COUNT(*) FILTER (WHERE ${metaLeadCaptureLogs.processingStatus} = 'created')::int`,
+        duplicateSkipped: sql<number>`COUNT(*) FILTER (WHERE ${metaLeadCaptureLogs.processingStatus} = 'duplicate_skipped')::int`,
+        duplicateUpdated: sql<number>`COUNT(*) FILTER (WHERE ${metaLeadCaptureLogs.processingStatus} = 'duplicate_updated')::int`,
+        errors: sql<number>`COUNT(*) FILTER (WHERE ${metaLeadCaptureLogs.processingStatus} = 'error')::int`,
+        lastReceivedAt: sql<string>`MAX(${metaLeadCaptureLogs.createdAt})`,
+      })
+        .from(metaLeadCaptureLogs)
+        .where(and(eq(metaLeadCaptureLogs.tenantId, tid), eq(metaLeadCaptureLogs.ruleId, ruleId)));
+      res.json(stats);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   // --- Webhook Endpoint for Lead Capture ---
 
   // GET: Meta webhook verification challenge (hub.mode=subscribe)
@@ -3933,6 +3971,17 @@ export async function registerRoutes(
                 const leadgenId = change.value?.leadgen_id;
                 if (!leadgenId) continue;
 
+                // Insert an initial log entry immediately
+                const [logEntry] = await db.insert(metaLeadCaptureLogs).values({
+                  tenantId: tid,
+                  ruleId: rule.id,
+                  leadgenId,
+                  formId: String(change.value?.form_id || ""),
+                  adId: String(change.value?.ad_id || ""),
+                  rawPayload: change.value as any,
+                  processingStatus: "received",
+                }).returning();
+
                 try {
                   // Fetch actual lead data from Meta Graph API
                   const leadData = await fetchLeadgenData(leadgenId, accessToken);
@@ -3966,8 +4015,22 @@ export async function registerRoutes(
                   const finalPhone = phone || normalizePhone(mapped.phoneE164 || mapped.phone || "");
                   const finalEmail = email || mapped.email || "";
 
+                  // Update log with fetched lead info
+                  await db.update(metaLeadCaptureLogs)
+                    .set({
+                      leadgenPayload: leadData as any,
+                      formId: leadData.form_id || logEntry.formId,
+                      adId: leadData.ad_id || logEntry.adId,
+                      leadName: finalName || undefined,
+                      leadPhone: finalPhone || undefined,
+                    })
+                    .where(eq(metaLeadCaptureLogs.id, logEntry.id));
+
                   if (!finalPhone) {
                     console.warn(`[MetaWebhook] Leadgen ${leadgenId} has no phone — skipping`);
+                    await db.update(metaLeadCaptureLogs)
+                      .set({ processingStatus: "error", errorMessage: "No phone number found in lead data" })
+                      .where(eq(metaLeadCaptureLogs.id, logEntry.id));
                     continue;
                   }
 
@@ -3976,6 +4039,9 @@ export async function registerRoutes(
                     const dupOption = rule.duplicateLeadOption || "skip";
                     if (dupOption === "skip") {
                       console.log(`[MetaWebhook] Duplicate lead phone ${finalPhone} — skipped`);
+                      await db.update(metaLeadCaptureLogs)
+                        .set({ processingStatus: "duplicate_skipped", leadId: existingLead.id })
+                        .where(eq(metaLeadCaptureLogs.id, logEntry.id));
                       continue;
                     } else if (dupOption === "update_blank") {
                       const updates: Record<string, any> = {};
@@ -3983,6 +4049,9 @@ export async function registerRoutes(
                       if (!existingLead.name && finalName) updates.name = finalName;
                       if (Object.keys(updates).length > 0) await storage.updateLead(existingLead.id, updates);
                       console.log(`[MetaWebhook] Duplicate lead ${existingLead.id} — updated blank fields`);
+                      await db.update(metaLeadCaptureLogs)
+                        .set({ processingStatus: "duplicate_updated", leadId: existingLead.id })
+                        .where(eq(metaLeadCaptureLogs.id, logEntry.id));
                       continue;
                     }
                   }
@@ -4022,9 +4091,16 @@ export async function registerRoutes(
                     description: `Lead captured from Meta Lead Ads (Form ID: ${leadData.form_id || "N/A"})${assignedUser ? ` — auto-assigned to ${assignedUser.name}` : ""}`,
                   });
 
+                  await db.update(metaLeadCaptureLogs)
+                    .set({ processingStatus: "created", leadId: newLead.id })
+                    .where(eq(metaLeadCaptureLogs.id, logEntry.id));
+
                   console.log(`[MetaWebhook] Created lead ${newLead.id} for ${finalName} (${finalPhone}) from leadgen ${leadgenId}`);
                 } catch (leadErr: any) {
                   console.error(`[MetaWebhook] Failed to process leadgen ${leadgenId}:`, leadErr.message);
+                  await db.update(metaLeadCaptureLogs)
+                    .set({ processingStatus: "error", errorMessage: leadErr.message })
+                    .where(eq(metaLeadCaptureLogs.id, logEntry.id));
                 }
               }
             }
