@@ -7298,6 +7298,89 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/connectors/meta/campaigns/:metaCampaignId/insights
+  // Fetches insights for a single linked Meta campaign. Cached for 1 hour in-memory.
+  app.get("/api/connectors/meta/campaigns/:metaCampaignId/insights", isAuthenticated, async (req: any, res: any) => {
+    try {
+      if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+      const tid = await getDefaultTenantId(req);
+      const { metaCampaignId } = req.params;
+      const datePreset = (req.query.datePreset as string) || "last_30d";
+      const { fetchSingleCampaignInsights, setTenantCredentials, clearTenantCredentials } = await import("./services/metaAds");
+      const connectors = await storage.getPlatformConnectors(tid);
+      const metaConn = connectors.find((cn: any) => cn.platform === "meta" && cn.status === "connected");
+      if (metaConn) {
+        const creds = metaConn.credentials as any;
+        if (creds?.accessToken && creds?.adAccountId) {
+          setTenantCredentials({ accessToken: creds.accessToken, adAccountId: creds.adAccountId, appId: creds.appId });
+        }
+      }
+      try {
+        const insights = await fetchSingleCampaignInsights(metaCampaignId, datePreset);
+        res.json(insights || {});
+      } finally {
+        clearTenantCredentials();
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // GET /api/analytics/utm-funnel?dateFrom=YYYY-MM-DD&dateTo=YYYY-MM-DD
+  // Attribution funnel grouped by utmCampaign value.
+  app.get("/api/analytics/utm-funnel", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const { dateFrom, dateTo } = req.query as { dateFrom?: string; dateTo?: string };
+
+      const fromDate = dateFrom ? new Date(dateFrom) : (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d; })();
+      const toDate = dateTo ? new Date(dateTo + "T23:59:59Z") : new Date();
+
+      // Raw query: group leads by utmCampaign, join appointments and episodes
+      const rows = await db.execute(sql`
+        SELECT
+          l.utm_campaign                                                        AS utm_campaign,
+          MAX(l.utm_source)                                                     AS utm_source,
+          MAX(l.utm_medium)                                                     AS utm_medium,
+          COUNT(DISTINCT l.id)                                                  AS leads,
+          COUNT(DISTINCT a.lead_id)                                             AS appointments,
+          COUNT(DISTINCT e.id)                                                  AS episodes,
+          COUNT(DISTINCT CASE
+            WHEN e.status NOT IN ('Consultation In Progress','Consultation Done','Treatment Planning')
+            THEN e.id END)                                                      AS treatment_started,
+          COUNT(DISTINCT CASE WHEN e.surgery_date IS NOT NULL THEN e.id END)   AS surgery_done,
+          COALESCE(SUM(CASE WHEN e.surgery_date IS NOT NULL
+            THEN COALESCE(e.actual_bill, e.estimated_cost, 0) ELSE 0 END), 0) AS revenue
+        FROM leads l
+        LEFT JOIN appointments a ON a.lead_id = l.id AND a.tenant_id = l.tenant_id
+        LEFT JOIN episodes e      ON e.lead_id  = l.id AND e.tenant_id = l.tenant_id
+        WHERE l.tenant_id = ${tid}
+          AND l.utm_campaign IS NOT NULL
+          AND l.utm_campaign <> ''
+          AND l.created_at >= ${fromDate}
+          AND l.created_at <= ${toDate}
+        GROUP BY l.utm_campaign
+        ORDER BY leads DESC
+      `);
+
+      const result = (rows.rows || rows as any[]).map((r: any) => ({
+        utmCampaign: r.utm_campaign,
+        utmSource: r.utm_source,
+        utmMedium: r.utm_medium,
+        leads: Number(r.leads),
+        appointments: Number(r.appointments),
+        episodes: Number(r.episodes),
+        treatmentStarted: Number(r.treatment_started),
+        surgeryDone: Number(r.surgery_done),
+        revenue: Number(r.revenue),
+      }));
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   // =============================================
   // EPISODE ROUTES
   // =============================================

@@ -980,6 +980,8 @@ export const campaigns = pgTable("campaigns", {
   utmTerm: text("utm_term"),
   utmContent: text("utm_content"),
   connectorId: integer("connector_id").references(() => platformConnectors.id),
+  metaCampaignId: text("meta_campaign_id"),
+  metaCampaignName: text("meta_campaign_name"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });

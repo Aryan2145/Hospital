@@ -251,6 +251,39 @@ export async function fetchCampaignInsights(datePreset: string = "last_30d"): Pr
   }
 }
 
+/**
+ * Fetch insights for a single Meta campaign by its campaign ID.
+ * Results are cached in-memory for 1 hour to avoid hitting rate limits.
+ */
+const _singleCampaignInsightsCache = new Map<string, { data: MetaAdMetrics; expiresAt: number }>();
+
+export async function fetchSingleCampaignInsights(metaCampaignId: string, datePreset: string = "last_30d"): Promise<MetaAdMetrics | null> {
+  const cacheKey = `${metaCampaignId}:${datePreset}`;
+  const cached = _singleCampaignInsightsCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.data;
+
+  const data = await metaApiGet<MetaInsightsResponse>(
+    `/${metaCampaignId}/insights`,
+    { fields: "impressions,clicks,spend,ctr,cpc,reach,actions", date_preset: datePreset }
+  );
+
+  if (!data.data || data.data.length === 0) return null;
+  const row = data.data[0];
+  const result: MetaAdMetrics = {
+    impressions: parseInt(row.impressions || "0", 10),
+    clicks: parseInt(row.clicks || "0", 10),
+    spend: parseFloat(row.spend || "0"),
+    ctr: parseFloat(row.ctr || "0"),
+    cpc: parseFloat(row.cpc || "0"),
+    reach: parseInt(row.reach || "0", 10),
+    conversions: extractConversions(row.actions),
+    dateStart: row.date_start,
+    dateStop: row.date_stop,
+  };
+  _singleCampaignInsightsCache.set(cacheKey, { data: result, expiresAt: Date.now() + 60 * 60 * 1000 });
+  return result;
+}
+
 export async function fetchDailyInsights(days: number = 7): Promise<MetaAdMetrics[]> {
   try {
     const { adAccountId } = getCredentials();
