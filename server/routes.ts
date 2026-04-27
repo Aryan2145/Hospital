@@ -7317,7 +7317,7 @@ export async function registerRoutes(
         }
       }
       try {
-        const insights = await fetchSingleCampaignInsights(metaCampaignId, datePreset, force);
+        const insights = await fetchSingleCampaignInsights(metaCampaignId, datePreset, force, tid);
         res.json(insights || {});
       } finally {
         clearTenantCredentials();

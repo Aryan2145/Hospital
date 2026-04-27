@@ -257,8 +257,8 @@ export async function fetchCampaignInsights(datePreset: string = "last_30d"): Pr
  */
 const _singleCampaignInsightsCache = new Map<string, { data: MetaAdMetrics; expiresAt: number }>();
 
-export async function fetchSingleCampaignInsights(metaCampaignId: string, datePreset: string = "last_30d", force: boolean = false): Promise<MetaAdMetrics | null> {
-  const cacheKey = `${metaCampaignId}:${datePreset}`;
+export async function fetchSingleCampaignInsights(metaCampaignId: string, datePreset: string = "last_30d", force: boolean = false, tenantId?: number): Promise<MetaAdMetrics | null> {
+  const cacheKey = `${tenantId ?? "global"}:${metaCampaignId}:${datePreset}`;
   if (force) _singleCampaignInsightsCache.delete(cacheKey);
   const cached = _singleCampaignInsightsCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.data;
