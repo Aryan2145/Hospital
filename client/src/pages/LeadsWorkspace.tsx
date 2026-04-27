@@ -86,6 +86,7 @@ export default function LeadsWorkspace() {
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [filterSource, setFilterSource] = useState<string>("");
+  const [filterUtmCampaign, setFilterUtmCampaign] = useState<string>("");
   const { data: leadSourcesForFilter = [] } = useMasterData("lead_sources");
   const [, navigate] = useLocation();
 
@@ -94,6 +95,7 @@ export default function LeadsWorkspace() {
     const qf = params.get("filter");
     const st = params.get("status");
     const view = params.get("view");
+    const utm = params.get("utmCampaign");
     if (qf && Object.keys(QUICK_FILTER_LABELS).concat(["all"]).includes(qf)) {
       setQuickFilter(qf);
     }
@@ -101,13 +103,17 @@ export default function LeadsWorkspace() {
       setFilterStatus(st.split(",").filter(Boolean));
       setShowFilters(true);
     }
+    if (utm) {
+      setFilterUtmCampaign(utm);
+      setShowFilters(true);
+    }
     if (view === "list") setViewMode("list");
-    if (qf || st || view) {
+    if (qf || st || view || utm) {
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
 
-  const activeFilterCount = filterStatus.length + (filterDateFrom ? 1 : 0) + (filterDateTo ? 1 : 0) + (filterSource ? 1 : 0);
+  const activeFilterCount = filterStatus.length + (filterDateFrom ? 1 : 0) + (filterDateTo ? 1 : 0) + (filterSource ? 1 : 0) + (filterUtmCampaign ? 1 : 0);
 
   const filteredLeads = useMemo(() => {
     return (leads || []).filter((lead: any) => {
@@ -124,15 +130,17 @@ export default function LeadsWorkspace() {
       if (filterDateFrom && lead.createdAt && new Date(lead.createdAt) < new Date(filterDateFrom)) return false;
       if (filterDateTo && lead.createdAt && new Date(lead.createdAt) > new Date(filterDateTo + "T23:59:59")) return false;
       if (filterSource && lead.leadSourceId !== Number(filterSource)) return false;
+      if (filterUtmCampaign && lead.utmCampaign !== filterUtmCampaign) return false;
       return true;
     });
-  }, [leads, quickFilter, crmUser, filterStatus, filterDateFrom, filterDateTo, filterSource]);
+  }, [leads, quickFilter, crmUser, filterStatus, filterDateFrom, filterDateTo, filterSource, filterUtmCampaign]);
 
   const clearAllFilters = () => {
     setFilterStatus([]);
     setFilterDateFrom("");
     setFilterDateTo("");
     setFilterSource("");
+    setFilterUtmCampaign("");
   };
 
   return (
@@ -339,6 +347,30 @@ export default function LeadsWorkspace() {
                   </select>
                   <ChevronDown className="absolute right-2 top-2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">UTM Campaign</label>
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="text"
+                    value={filterUtmCampaign}
+                    onChange={(e) => setFilterUtmCampaign(e.target.value)}
+                    placeholder="utm_campaign value…"
+                    className="h-8 text-xs w-[200px]"
+                    data-testid="filter-utm-campaign"
+                  />
+                  {filterUtmCampaign && (
+                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setFilterUtmCampaign("")}>
+                      <X className="w-3 h-3" />
+                    </Button>
+                  )}
+                </div>
+                {filterUtmCampaign && (
+                  <p className="text-[10px] text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                    Filtering by: <span className="font-mono font-medium">{filterUtmCampaign}</span>
+                  </p>
+                )}
               </div>
 
               {activeFilterCount > 0 && (
