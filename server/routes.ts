@@ -3981,18 +3981,13 @@ export async function registerRoutes(
         // Process all lead changes asynchronously
         (async () => {
           try {
-            // Find the Meta connector credentials for this tenant
-            const connectors = await storage.getPlatformConnectors(tid);
-            const metaConn = connectors.find((c: any) => c.platform === "meta" && c.status === "connected");
-            const creds = metaConn?.credentials as any;
-            const accessToken = creds?.accessToken || process.env.META_ACCESS_TOKEN;
+            // Full envelope for logging (stored once per leadgen event for full audit trail)
+            const envelopePayload = payload as Record<string, unknown>;
 
-            if (!accessToken) {
-              console.error(`[MetaWebhook] No Meta access token found for tenant ${tid}`);
-              return;
-            }
-
-            const { fetchLeadgenData } = await import("./services/metaAds");
+            // ── Step 1: Create log rows for every leadgen ID BEFORE access-token check ──
+            // This ensures every incoming event is recorded even if token/credentials are missing.
+            type LogRowRef = { logId: number; leadgenId: string; changeValue: Record<string, unknown> };
+            const logRows: LogRowRef[] = [];
 
             for (const entry of payload.entry) {
               if (!Array.isArray(entry.changes)) continue;
@@ -4001,17 +3996,42 @@ export async function registerRoutes(
                 const leadgenId = change.value?.leadgen_id;
                 if (!leadgenId) continue;
 
-                // Insert an initial log entry immediately
                 const changeValue = change.value as Record<string, unknown>;
                 const [logEntry] = await db.insert(metaLeadCaptureLogs).values({
                   tenantId: tid,
                   ruleId: rule.id,
+                  ruleName: rule.name,
                   leadgenId,
                   formId: String(changeValue?.form_id || ""),
                   adId: String(changeValue?.ad_id || ""),
-                  rawPayload: changeValue,
+                  rawPayload: envelopePayload,
                   processingStatus: "received",
                 }).returning();
+                logRows.push({ logId: logEntry.id, leadgenId, changeValue });
+              }
+            }
+
+            // ── Step 2: Resolve access token ──
+            const connectors = await storage.getPlatformConnectors(tid);
+            const metaConn = connectors.find((c: any) => c.platform === "meta" && c.status === "connected");
+            const creds = metaConn?.credentials as any;
+            const accessToken = creds?.accessToken || process.env.META_ACCESS_TOKEN;
+
+            if (!accessToken) {
+              console.error(`[MetaWebhook] No Meta access token found for tenant ${tid}`);
+              // Mark all log rows as error
+              for (const { logId } of logRows) {
+                await db.update(metaLeadCaptureLogs)
+                  .set({ processingStatus: "error", errorMessage: "No Meta access token configured for this tenant" })
+                  .where(eq(metaLeadCaptureLogs.id, logId));
+              }
+              return;
+            }
+
+            const { fetchLeadgenData } = await import("./services/metaAds");
+
+            // ── Step 3: Process each logged leadgen event ──
+            for (const { logId, leadgenId, changeValue } of logRows) {
 
                 try {
                   // Fetch actual lead data from Meta Graph API
@@ -4050,18 +4070,18 @@ export async function registerRoutes(
                   await db.update(metaLeadCaptureLogs)
                     .set({
                       leadgenPayload: leadData as unknown as Record<string, unknown>,
-                      formId: leadData.form_id || logEntry.formId,
-                      adId: leadData.ad_id || logEntry.adId,
+                      formId: leadData.form_id || String(changeValue?.form_id || ""),
+                      adId: leadData.ad_id || String(changeValue?.ad_id || ""),
                       leadName: finalName || undefined,
                       leadPhone: finalPhone || undefined,
                     })
-                    .where(eq(metaLeadCaptureLogs.id, logEntry.id));
+                    .where(eq(metaLeadCaptureLogs.id, logId));
 
                   if (!finalPhone) {
                     console.warn(`[MetaWebhook] Leadgen ${leadgenId} has no phone — skipping`);
                     await db.update(metaLeadCaptureLogs)
                       .set({ processingStatus: "error", errorMessage: "No phone number found in lead data" })
-                      .where(eq(metaLeadCaptureLogs.id, logEntry.id));
+                      .where(eq(metaLeadCaptureLogs.id, logId));
                     continue;
                   }
 
@@ -4072,7 +4092,7 @@ export async function registerRoutes(
                       console.log(`[MetaWebhook] Duplicate lead phone ${finalPhone} — skipped`);
                       await db.update(metaLeadCaptureLogs)
                         .set({ processingStatus: "duplicate_skipped", leadId: existingLead.id })
-                        .where(eq(metaLeadCaptureLogs.id, logEntry.id));
+                        .where(eq(metaLeadCaptureLogs.id, logId));
                       continue;
                     } else if (dupOption === "update_blank") {
                       const updates: Record<string, any> = {};
@@ -4082,7 +4102,7 @@ export async function registerRoutes(
                       console.log(`[MetaWebhook] Duplicate lead ${existingLead.id} — updated blank fields`);
                       await db.update(metaLeadCaptureLogs)
                         .set({ processingStatus: "duplicate_updated", leadId: existingLead.id })
-                        .where(eq(metaLeadCaptureLogs.id, logEntry.id));
+                        .where(eq(metaLeadCaptureLogs.id, logId));
                       continue;
                     }
                   }
@@ -4124,16 +4144,15 @@ export async function registerRoutes(
 
                   await db.update(metaLeadCaptureLogs)
                     .set({ processingStatus: "created", leadId: newLead.id })
-                    .where(eq(metaLeadCaptureLogs.id, logEntry.id));
+                    .where(eq(metaLeadCaptureLogs.id, logId));
 
                   console.log(`[MetaWebhook] Created lead ${newLead.id} for ${finalName} (${finalPhone}) from leadgen ${leadgenId}`);
                 } catch (leadErr: any) {
                   console.error(`[MetaWebhook] Failed to process leadgen ${leadgenId}:`, leadErr.message);
                   await db.update(metaLeadCaptureLogs)
                     .set({ processingStatus: "error", errorMessage: leadErr.message })
-                    .where(eq(metaLeadCaptureLogs.id, logEntry.id));
+                    .where(eq(metaLeadCaptureLogs.id, logId));
                 }
-              }
             }
           } catch (asyncErr: any) {
             console.error("[MetaWebhook] Async processing error:", asyncErr.message);

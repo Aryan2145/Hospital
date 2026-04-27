@@ -77,6 +77,7 @@ interface MetaLeadCaptureLog {
   id: number;
   tenantId: number;
   ruleId: number | null;
+  ruleName: string | null;
   leadId: number | null;
   formId: string | null;
   adId: string | null;

@@ -1407,6 +1407,7 @@ export const metaLeadCaptureLogs = pgTable("meta_lead_capture_logs", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
   ruleId: integer("rule_id").references(() => leadCaptureRules.id),
+  ruleName: text("rule_name"),
   leadId: integer("lead_id").references(() => leads.id),
   formId: text("form_id"),
   adId: text("ad_id"),
