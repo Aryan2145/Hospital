@@ -209,6 +209,26 @@ async function escalateOverdueDiscounts(tenantId: number, tenantName: string): P
   }
 }
 
+let lastMetaLogPurgeDate: string | null = null;
+
+async function purgeOldMetaWebhookLogs(): Promise<void> {
+  const today = new Date().toISOString().split("T")[0];
+  if (lastMetaLogPurgeDate === today) return;
+
+  try {
+    const result = await pool.query(
+      `DELETE FROM meta_lead_capture_logs WHERE created_at < NOW() - INTERVAL '30 days'`
+    );
+    const deleted = result.rowCount ?? 0;
+    if (deleted > 0) {
+      console.log(`[scheduler] Purged ${deleted} Meta webhook log(s) older than 30 days`);
+    }
+    lastMetaLogPurgeDate = today;
+  } catch (err: any) {
+    console.error("[scheduler] Error purging old Meta webhook logs:", err.message);
+  }
+}
+
 async function runScheduledTasks(): Promise<void> {
   try {
     const tenantsResult = await pool.query(
@@ -235,6 +255,9 @@ async function runScheduledTasks(): Promise<void> {
         console.error(`[scheduler] Error processing tenant ${tenant.id}:`, err.message);
       }
     }
+
+    // Global daily cleanup — not tenant-specific
+    await purgeOldMetaWebhookLogs();
   } catch (err: any) {
     console.error("[scheduler] Fatal error in scheduled tasks:", err.message);
   }

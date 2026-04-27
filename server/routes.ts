@@ -3855,17 +3855,47 @@ export async function registerRoutes(
     }
   });
 
+  // GET: Combined stats for ALL meta lead capture rules for the tenant (used for card headers)
+  app.get("/api/lead-capture-rules/meta-stats", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const rows = await db.select({
+        ruleId: metaLeadCaptureLogs.ruleId,
+        total: sql<number>`COUNT(*)::int`,
+        created: sql<number>`COUNT(*) FILTER (WHERE ${metaLeadCaptureLogs.processingStatus} = 'created')::int`,
+        errors: sql<number>`COUNT(*) FILTER (WHERE ${metaLeadCaptureLogs.processingStatus} = 'error')::int`,
+        lastReceivedAt: sql<string>`MAX(${metaLeadCaptureLogs.createdAt})`,
+      })
+        .from(metaLeadCaptureLogs)
+        .where(eq(metaLeadCaptureLogs.tenantId, tid))
+        .groupBy(metaLeadCaptureLogs.ruleId);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   // GET: Meta lead capture logs for a rule
   app.get("/api/lead-capture-rules/:id/logs", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
       const ruleId = Number(req.params.id);
       const limit = Math.min(Number(req.query.limit || 50), 200);
+      const page = Math.max(0, Number(req.query.page || 0));
+      const statusFilter = req.query.status as string | undefined;
+      const conditions: any[] = [
+        eq(metaLeadCaptureLogs.tenantId, tid),
+        eq(metaLeadCaptureLogs.ruleId, ruleId),
+      ];
+      if (statusFilter && statusFilter !== "all") {
+        conditions.push(eq(metaLeadCaptureLogs.processingStatus, statusFilter));
+      }
       const logs = await db.select()
         .from(metaLeadCaptureLogs)
-        .where(and(eq(metaLeadCaptureLogs.tenantId, tid), eq(metaLeadCaptureLogs.ruleId, ruleId)))
+        .where(and(...conditions))
         .orderBy(desc(metaLeadCaptureLogs.createdAt))
-        .limit(limit);
+        .limit(limit)
+        .offset(page * limit);
       res.json(logs);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
@@ -3972,13 +4002,14 @@ export async function registerRoutes(
                 if (!leadgenId) continue;
 
                 // Insert an initial log entry immediately
+                const changeValue = change.value as Record<string, unknown>;
                 const [logEntry] = await db.insert(metaLeadCaptureLogs).values({
                   tenantId: tid,
                   ruleId: rule.id,
                   leadgenId,
-                  formId: String(change.value?.form_id || ""),
-                  adId: String(change.value?.ad_id || ""),
-                  rawPayload: change.value as any,
+                  formId: String(changeValue?.form_id || ""),
+                  adId: String(changeValue?.ad_id || ""),
+                  rawPayload: changeValue,
                   processingStatus: "received",
                 }).returning();
 
@@ -4018,7 +4049,7 @@ export async function registerRoutes(
                   // Update log with fetched lead info
                   await db.update(metaLeadCaptureLogs)
                     .set({
-                      leadgenPayload: leadData as any,
+                      leadgenPayload: leadData as unknown as Record<string, unknown>,
                       formId: leadData.form_id || logEntry.formId,
                       adId: leadData.ad_id || logEntry.adId,
                       leadName: finalName || undefined,
@@ -4078,7 +4109,7 @@ export async function registerRoutes(
                     tags: mapped.tags || rule.defaultTags || "facebook,lead-ad",
                     utmSource: "facebook",
                     utmMedium: "lead-ad",
-                    utmCampaign: String(change.value?.ad_id || leadData.ad_id || ""),
+                    utmCampaign: String(changeValue?.ad_id || leadData.ad_id || ""),
                     notes: city ? `City: ${city}` : undefined,
                     priority: "Normal",
                     assignedCrmUserId: assignedUser?.id,

@@ -426,6 +426,7 @@ export default function ConnectorsPage() {
   const [editingRule, setEditingRule] = useState<LeadCaptureRule | null>(null);
   const [ruleForm, setRuleForm] = useState({ ...DEFAULT_RULE_FORM });
   const [logsOpenRuleId, setLogsOpenRuleId] = useState<number | null>(null);
+  const [logsStatusFilter, setLogsStatusFilter] = useState<string>("all");
   const [payloadViewerLog, setPayloadViewerLog] = useState<MetaLeadCaptureLog | null>(null);
 
   const { data: connectors = [], isLoading } = useQuery<PlatformConnector[]>({
@@ -444,10 +445,34 @@ export default function ConnectorsPage() {
     queryKey: ["/api/leads/import-fields"],
   });
 
+  interface MetaRuleSummaryStats {
+    ruleId: number | null;
+    total: number;
+    created: number;
+    errors: number;
+    lastReceivedAt: string | null;
+  }
+
+  const { data: metaRuleStats = [] } = useQuery<MetaRuleSummaryStats[]>({
+    queryKey: ["/api/lead-capture-rules/meta-stats"],
+    refetchInterval: 60000,
+  });
+
+  const metaStatsMap = Object.fromEntries(
+    metaRuleStats.filter(s => s.ruleId !== null).map(s => [s.ruleId!, s])
+  );
+
   const { data: openRuleLogs = [], isLoading: logsLoading } = useQuery<MetaLeadCaptureLog[]>({
-    queryKey: ["/api/lead-capture-rules", logsOpenRuleId, "logs"],
+    queryKey: ["/api/lead-capture-rules", logsOpenRuleId, "logs", logsStatusFilter],
     enabled: logsOpenRuleId !== null,
     refetchInterval: 30000,
+    queryFn: async () => {
+      if (logsOpenRuleId === null) return [];
+      const url = `/api/lead-capture-rules/${logsOpenRuleId}/logs?status=${logsStatusFilter}&limit=50`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
   });
 
   const { data: openRuleStats } = useQuery<MetaLogStats>({
@@ -1059,19 +1084,43 @@ export default function ConnectorsPage() {
                           <CardContent className="p-4 space-y-3">
                             {/* Header row */}
                             <div className="flex items-start justify-between gap-3 flex-wrap">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium" data-testid={`text-rule-name-${rule.id}`}>{rule.name}</span>
-                                <Badge variant="secondary" data-testid={`badge-rule-source-${rule.id}`}>
-                                  {getSourceTypeLabel(rule.sourceType)}
-                                </Badge>
-                                {rule.isActive ? (
-                                  <Badge variant="default" data-testid={`badge-rule-status-${rule.id}`}>Active</Badge>
-                                ) : (
-                                  <Badge variant="outline" className="text-muted-foreground" data-testid={`badge-rule-status-${rule.id}`}>Inactive</Badge>
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium" data-testid={`text-rule-name-${rule.id}`}>{rule.name}</span>
+                                  <Badge variant="secondary" data-testid={`badge-rule-source-${rule.id}`}>
+                                    {getSourceTypeLabel(rule.sourceType)}
+                                  </Badge>
+                                  {rule.isActive ? (
+                                    <Badge variant="default" data-testid={`badge-rule-status-${rule.id}`}>Active</Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="text-muted-foreground" data-testid={`badge-rule-status-${rule.id}`}>Inactive</Badge>
+                                  )}
+                                  <span className="text-xs text-muted-foreground">
+                                    {rule.assignmentStrategy === "round_robin" ? "· Round Robin" : "· Specific Employees"}
+                                  </span>
+                                </div>
+                                {isMetaRule && (
+                                  <span className="text-[11px] text-muted-foreground flex items-center gap-1" data-testid={`text-rule-last-received-${rule.id}`}>
+                                    <Clock className="h-3 w-3" />
+                                    {metaStatsMap[rule.id]?.lastReceivedAt
+                                      ? `Last received: ${(() => {
+                                          const diff = Date.now() - new Date(metaStatsMap[rule.id].lastReceivedAt!).getTime();
+                                          const mins = Math.floor(diff / 60000);
+                                          if (mins < 1) return "just now";
+                                          if (mins < 60) return `${mins} min ago`;
+                                          const hrs = Math.floor(mins / 60);
+                                          if (hrs < 24) return `${hrs}h ago`;
+                                          return `${Math.floor(hrs / 24)}d ago`;
+                                        })()}`
+                                      : "Last received: Never"}
+                                    {metaStatsMap[rule.id]?.total > 0 && (
+                                      <span className="ml-1">· {metaStatsMap[rule.id].total} total</span>
+                                    )}
+                                    {(metaStatsMap[rule.id]?.errors ?? 0) > 0 && (
+                                      <span className="text-red-500 ml-1">· {metaStatsMap[rule.id].errors} error(s)</span>
+                                    )}
+                                  </span>
                                 )}
-                                <span className="text-xs text-muted-foreground">
-                                  {rule.assignmentStrategy === "round_robin" ? "· Round Robin" : "· Specific Employees"}
-                                </span>
                               </div>
                               <div className="flex items-center gap-1">
                                 <Button
@@ -1171,7 +1220,14 @@ export default function ConnectorsPage() {
                                   variant="outline"
                                   size="sm"
                                   className="w-full h-8 text-xs gap-1.5"
-                                  onClick={() => setLogsOpenRuleId(logsOpenRuleId === rule.id ? null : rule.id)}
+                                  onClick={() => {
+                                    if (logsOpenRuleId === rule.id) {
+                                      setLogsOpenRuleId(null);
+                                    } else {
+                                      setLogsOpenRuleId(rule.id);
+                                      setLogsStatusFilter("all");
+                                    }
+                                  }}
                                   data-testid={`button-toggle-logs-${rule.id}`}
                                 >
                                   <List className="h-3.5 w-3.5" />
@@ -1210,6 +1266,25 @@ export default function ConnectorsPage() {
                                         )}
                                       </div>
                                     )}
+
+                                    {/* Status filter */}
+                                    <div className="flex items-center gap-2 px-3 py-2 border-b bg-white dark:bg-slate-800">
+                                      <span className="text-[11px] text-muted-foreground">Filter:</span>
+                                      {["all", "created", "duplicate_skipped", "duplicate_updated", "error"].map((s) => (
+                                        <button
+                                          key={s}
+                                          onClick={() => setLogsStatusFilter(s)}
+                                          className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                                            logsStatusFilter === s
+                                              ? "bg-primary text-primary-foreground border-primary"
+                                              : "border-border text-muted-foreground hover:border-primary/50"
+                                          }`}
+                                          data-testid={`button-filter-status-${s}`}
+                                        >
+                                          {s === "all" ? "All" : s === "created" ? "Created" : s === "duplicate_skipped" ? "Duplicate" : s === "duplicate_updated" ? "Updated" : "Error"}
+                                        </button>
+                                      ))}
+                                    </div>
 
                                     {/* Logs table */}
                                     {logsLoading ? (
