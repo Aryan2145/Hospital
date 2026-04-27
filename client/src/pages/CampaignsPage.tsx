@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -254,6 +255,48 @@ function UtmRow({ label, value, onCopy }: { label: string; value: string | null 
   );
 }
 
+function InlineMetaCard({ metaCampaignId }: { metaCampaignId: string }) {
+  const { data: insights, isLoading, refetch, isRefetching } = useQuery<MetaInsights>({
+    queryKey: ["/api/connectors/meta/campaigns", metaCampaignId, "insights"],
+    queryFn: async () => {
+      const res = await fetch(`/api/connectors/meta/campaigns/${metaCampaignId}/insights`, { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    staleTime: 60 * 60 * 1000,
+    retry: false,
+  });
+
+  if (isLoading) return <div className="text-[10px] text-muted-foreground flex items-center gap-1"><Loader2 className="w-2.5 h-2.5 animate-spin" /> Fetching Meta metrics…</div>;
+  if (!insights || Object.keys(insights).length === 0) return null;
+
+  return (
+    <div className="mt-2 pt-2 border-t space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 flex items-center gap-1"><SiFacebook className="w-2.5 h-2.5" /> Live Meta Metrics</span>
+        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={(e) => { e.stopPropagation(); refetch(); }} disabled={isRefetching}>
+          {isRefetching ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <RefreshCw className="w-2.5 h-2.5" />}
+        </Button>
+      </div>
+      <div className="grid grid-cols-3 gap-1">
+        {[
+          { label: "Impr.", value: insights.impressions != null ? insights.impressions.toLocaleString() : "—" },
+          { label: "Clicks", value: insights.clicks != null ? insights.clicks.toLocaleString() : "—" },
+          { label: "Spend", value: insights.spend != null ? `₹${insights.spend.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "—" },
+          { label: "CTR", value: insights.ctr != null ? `${insights.ctr.toFixed(2)}%` : "—" },
+          { label: "CPC", value: insights.cpc != null ? `₹${insights.cpc.toFixed(2)}` : "—" },
+          { label: "Conv.", value: insights.conversions != null ? insights.conversions.toLocaleString() : "—" },
+        ].map(({ label, value }) => (
+          <div key={label} className="bg-blue-50/60 dark:bg-blue-950/20 rounded px-1.5 py-1 text-center">
+            <p className="text-[9px] text-muted-foreground">{label}</p>
+            <p className="text-[11px] font-semibold text-blue-700 dark:text-blue-300">{value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MetaInsightsPanel({ metaCampaignId }: { metaCampaignId: string }) {
   const { data: insights, isLoading, refetch, isRefetching } = useQuery<MetaInsights>({
     queryKey: ["/api/connectors/meta/campaigns", metaCampaignId, "insights"],
@@ -298,6 +341,7 @@ function MetaInsightsPanel({ metaCampaignId }: { metaCampaignId: string }) {
 
 export default function CampaignsPage() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [pageTab, setPageTab] = useState("campaigns");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
@@ -325,6 +369,10 @@ export default function CampaignsPage() {
   const [formCreativeLinks, setFormCreativeLinks] = useState<{ linkType: string; label: string; url: string }[]>([]);
   const [formMetaCampaignId, setFormMetaCampaignId] = useState("");
   const [formMetaCampaignName, setFormMetaCampaignName] = useState("");
+
+  const [detailMetaEditMode, setDetailMetaEditMode] = useState(false);
+  const [detailMetaCampaignId, setDetailMetaCampaignId] = useState("");
+  const [detailMetaCampaignName, setDetailMetaCampaignName] = useState("");
 
   const [utmDatePreset, setUtmDatePreset] = useState("30d");
   const [utmDateFrom, setUtmDateFrom] = useState("");
@@ -361,7 +409,7 @@ export default function CampaignsPage() {
 
   const { data: metaCampaigns = [], isLoading: metaCampaignsLoading } = useQuery<MetaCampaignOption[]>({
     queryKey: ["/api/connectors/meta/campaigns"],
-    enabled: metaConnected && formPlatform === "Meta" && dialogOpen,
+    enabled: metaConnected && ((formPlatform === "Meta" && dialogOpen) || (detailMetaEditMode && detailCampaign?.platform === "Meta")),
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
@@ -457,6 +505,28 @@ export default function CampaignsPage() {
     },
     onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
+
+  const quickLinkMutation = useMutation({
+    mutationFn: async ({ id, metaCampaignId, metaCampaignName }: { id: number; metaCampaignId: string | null; metaCampaignName: string | null }) => {
+      const res = await apiRequest("PATCH", `/api/campaigns/${id}`, { metaCampaignId, metaCampaignName });
+      return res.json();
+    },
+    onSuccess: (updated: Campaign) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      setDetailCampaign(updated);
+      setDetailMetaEditMode(false);
+      toast({ title: updated.metaCampaignId ? "Meta campaign linked" : "Meta campaign unlinked" });
+    },
+    onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  useEffect(() => {
+    if (detailCampaign) {
+      setDetailMetaCampaignId(detailCampaign.metaCampaignId || "");
+      setDetailMetaCampaignName(detailCampaign.metaCampaignName || "");
+      setDetailMetaEditMode(false);
+    }
+  }, [detailCampaign?.id]);
 
   const openCreate = () => {
     setEditing(null);
@@ -774,6 +844,9 @@ export default function CampaignsPage() {
                             <span className="truncate">{c.metaCampaignName}</span>
                           </div>
                         )}
+                        {c.metaCampaignId && (
+                          <InlineMetaCard metaCampaignId={c.metaCampaignId} />
+                        )}
                       </CardContent>
                     </Card>
                   ))}
@@ -840,11 +913,16 @@ export default function CampaignsPage() {
                       {utmFunnelRows.map((row, i) => (
                         <tr
                           key={row.utmCampaign}
-                          className="border-b last:border-0 hover:bg-muted/30 transition-colors"
+                          className="border-b last:border-0 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-colors cursor-pointer"
                           data-testid={`row-utm-${i}`}
+                          onClick={() => navigate(`/leads?utmCampaign=${encodeURIComponent(row.utmCampaign)}`)}
+                          title={`View leads from ${row.utmCampaign}`}
                         >
                           <td className="px-3 py-2 font-medium text-xs max-w-[200px]">
-                            <span className="block truncate" title={row.utmCampaign}>{row.utmCampaign}</span>
+                            <span className="flex items-center gap-1 truncate" title={row.utmCampaign}>
+                              {row.utmCampaign}
+                              <ExternalLink className="w-2.5 h-2.5 text-muted-foreground flex-shrink-0" />
+                            </span>
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
                             {row.utmSource || "—"} / {row.utmMedium || "—"}
@@ -945,13 +1023,67 @@ export default function CampaignsPage() {
                         label="End Date"
                         value={detailCampaign.endDate ? fmtDate(detailCampaign.endDate) : null}
                       />
-                      {detailCampaign.metaCampaignName && (
+                      {/* Meta Campaign Linking — visible for Meta platform campaigns */}
+                      {(detailCampaign.platform === "Meta") && (
                         <div className="col-span-2">
-                          <p className="text-xs font-medium text-muted-foreground">Linked Meta Campaign</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <SiFacebook className="w-4 h-4 text-blue-600" />
-                            <span className="text-sm">{detailCampaign.metaCampaignName}</span>
-                            <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-300">ID: {detailCampaign.metaCampaignId}</Badge>
+                          <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/10 p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <SiFacebook className="w-4 h-4 text-blue-600" />
+                                <span className="text-xs font-semibold text-blue-800 dark:text-blue-300">Meta Campaign Link</span>
+                              </div>
+                              {!detailMetaEditMode ? (
+                                <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setDetailMetaEditMode(true)} data-testid="button-detail-link-meta">
+                                  {detailCampaign.metaCampaignId ? <Pencil className="w-3 h-3 mr-1" /> : <Link2 className="w-3 h-3 mr-1" />}
+                                  {detailCampaign.metaCampaignId ? "Change" : "Link"}
+                                </Button>
+                              ) : null}
+                            </div>
+                            {!detailMetaEditMode ? (
+                              detailCampaign.metaCampaignId ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-blue-700 dark:text-blue-300">{detailCampaign.metaCampaignName}</span>
+                                  <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-300">ID: {detailCampaign.metaCampaignId}</Badge>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">No Meta campaign linked yet.</p>
+                              )
+                            ) : (
+                              <div className="space-y-2">
+                                {!metaConnected ? (
+                                  <p className="text-xs text-amber-600">Meta connector not connected. Configure it in Connectors first.</p>
+                                ) : metaCampaignsLoading ? (
+                                  <div className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Loading Meta campaigns…</div>
+                                ) : (
+                                  <SearchableSelect
+                                    value={detailMetaCampaignId}
+                                    onValueChange={(v) => {
+                                      setDetailMetaCampaignId(v);
+                                      const found = metaCampaigns.find(mc => mc.id === v);
+                                      setDetailMetaCampaignName(found?.name || "");
+                                    }}
+                                    placeholder="Search Meta campaigns…"
+                                    options={[{ value: "", label: "None (unlink)" }, ...metaCampaignOptions]}
+                                    data-testid="select-detail-meta-campaign"
+                                  />
+                                )}
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    className="h-7 text-xs"
+                                    disabled={quickLinkMutation.isPending}
+                                    onClick={() => quickLinkMutation.mutate({ id: detailCampaign.id, metaCampaignId: detailMetaCampaignId || null, metaCampaignName: detailMetaCampaignName || null })}
+                                    data-testid="button-detail-meta-save"
+                                  >
+                                    {quickLinkMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
+                                    Save
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setDetailMetaEditMode(false)} data-testid="button-detail-meta-cancel">
+                                    Cancel
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
