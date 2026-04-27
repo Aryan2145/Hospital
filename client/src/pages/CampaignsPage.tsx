@@ -256,8 +256,9 @@ function UtmRow({ label, value, onCopy }: { label: string; value: string | null 
 }
 
 function InlineMetaCard({ metaCampaignId }: { metaCampaignId: string }) {
-  const { data: insights, isLoading, refetch, isRefetching } = useQuery<MetaInsights>({
-    queryKey: ["/api/connectors/meta/campaigns", metaCampaignId, "insights"],
+  const queryKey = ["/api/connectors/meta/campaigns", metaCampaignId, "insights"];
+  const { data: insights, isLoading } = useQuery<MetaInsights>({
+    queryKey,
     queryFn: async () => {
       const res = await fetch(`/api/connectors/meta/campaigns/${metaCampaignId}/insights`, { credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
@@ -267,6 +268,15 @@ function InlineMetaCard({ metaCampaignId }: { metaCampaignId: string }) {
     retry: false,
   });
 
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/connectors/meta/campaigns/${metaCampaignId}/insights?force=true`, { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: (data) => { queryClient.setQueryData(queryKey, data); },
+  });
+
   if (isLoading) return <div className="text-[10px] text-muted-foreground flex items-center gap-1"><Loader2 className="w-2.5 h-2.5 animate-spin" /> Fetching Meta metrics…</div>;
   if (!insights || Object.keys(insights).length === 0) return null;
 
@@ -274,8 +284,8 @@ function InlineMetaCard({ metaCampaignId }: { metaCampaignId: string }) {
     <div className="mt-2 pt-2 border-t space-y-1.5">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 flex items-center gap-1"><SiFacebook className="w-2.5 h-2.5" /> Live Meta Metrics</span>
-        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={(e) => { e.stopPropagation(); refetch(); }} disabled={isRefetching}>
-          {isRefetching ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <RefreshCw className="w-2.5 h-2.5" />}
+        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={(e) => { e.stopPropagation(); syncMutation.mutate(); }} disabled={syncMutation.isPending}>
+          {syncMutation.isPending ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <RefreshCw className="w-2.5 h-2.5" />}
         </Button>
       </div>
       <div className="grid grid-cols-3 gap-1">
@@ -298,8 +308,9 @@ function InlineMetaCard({ metaCampaignId }: { metaCampaignId: string }) {
 }
 
 function MetaInsightsPanel({ metaCampaignId }: { metaCampaignId: string }) {
-  const { data: insights, isLoading, refetch, isRefetching } = useQuery<MetaInsights>({
-    queryKey: ["/api/connectors/meta/campaigns", metaCampaignId, "insights"],
+  const queryKey = ["/api/connectors/meta/campaigns", metaCampaignId, "insights"];
+  const { data: insights, isLoading } = useQuery<MetaInsights>({
+    queryKey,
     queryFn: async () => {
       const res = await fetch(`/api/connectors/meta/campaigns/${metaCampaignId}/insights`, { credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
@@ -307,6 +318,15 @@ function MetaInsightsPanel({ metaCampaignId }: { metaCampaignId: string }) {
     },
     staleTime: 60 * 60 * 1000,
     retry: false,
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/connectors/meta/campaigns/${metaCampaignId}/insights?force=true`, { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: (data) => { queryClient.setQueryData(queryKey, data); },
   });
 
   if (isLoading) return <div className="text-xs text-muted-foreground flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" /> Loading Meta metrics…</div>;
@@ -331,9 +351,9 @@ function MetaInsightsPanel({ metaCampaignId }: { metaCampaignId: string }) {
           </div>
         ))}
       </div>
-      <Button size="sm" variant="ghost" className="h-7 text-xs w-full" onClick={() => refetch()} disabled={isRefetching} data-testid="button-sync-meta-insights">
-        {isRefetching ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-        Sync
+      <Button size="sm" variant="ghost" className="h-7 text-xs w-full" onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending} data-testid="button-sync-meta-insights">
+        {syncMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+        Sync from Meta
       </Button>
     </div>
   );

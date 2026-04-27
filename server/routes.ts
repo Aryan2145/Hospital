@@ -7306,6 +7306,7 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const { metaCampaignId } = req.params;
       const datePreset = (req.query.datePreset as string) || "last_30d";
+      const force = req.query.force === "true";
       const { fetchSingleCampaignInsights, setTenantCredentials, clearTenantCredentials } = await import("./services/metaAds");
       const connectors = await storage.getPlatformConnectors(tid);
       const metaConn = connectors.find((cn: any) => cn.platform === "meta" && cn.status === "connected");
@@ -7316,7 +7317,7 @@ export async function registerRoutes(
         }
       }
       try {
-        const insights = await fetchSingleCampaignInsights(metaCampaignId, datePreset);
+        const insights = await fetchSingleCampaignInsights(metaCampaignId, datePreset, force);
         res.json(insights || {});
       } finally {
         clearTenantCredentials();
@@ -7336,30 +7337,49 @@ export async function registerRoutes(
       const fromDate = dateFrom ? new Date(dateFrom) : (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d; })();
       const toDate = dateTo ? new Date(dateTo + "T23:59:59Z") : new Date();
 
-      // Raw query: group leads by utmCampaign, join appointments and episodes
+      // Use CTEs to avoid join-multiplication when a lead has multiple appointments AND episodes.
       const rows = await db.execute(sql`
+        WITH base AS (
+          SELECT l.id AS lead_id, l.utm_campaign, l.utm_source, l.utm_medium
+          FROM leads l
+          WHERE l.tenant_id = ${tid}
+            AND l.utm_campaign IS NOT NULL
+            AND l.utm_campaign <> ''
+            AND l.created_at >= ${fromDate}
+            AND l.created_at <= ${toDate}
+        ),
+        appt_agg AS (
+          SELECT DISTINCT a.lead_id
+          FROM appointments a
+          WHERE a.tenant_id = ${tid}
+            AND a.lead_id IN (SELECT lead_id FROM base)
+        ),
+        ep_agg AS (
+          SELECT
+            e.lead_id,
+            COUNT(e.id)                                                                        AS ep_count,
+            COUNT(CASE WHEN e.status NOT IN ('Consultation In Progress','Consultation Done','Treatment Planning') THEN 1 END) AS tx_count,
+            COUNT(CASE WHEN e.surgery_date IS NOT NULL THEN 1 END)                            AS surg_count,
+            SUM(CASE WHEN e.surgery_date IS NOT NULL THEN COALESCE(e.actual_bill, e.estimated_cost, 0) ELSE 0 END) AS revenue
+          FROM episodes e
+          WHERE e.tenant_id = ${tid}
+            AND e.lead_id IN (SELECT lead_id FROM base)
+          GROUP BY e.lead_id
+        )
         SELECT
-          l.utm_campaign                                                        AS utm_campaign,
-          MAX(l.utm_source)                                                     AS utm_source,
-          MAX(l.utm_medium)                                                     AS utm_medium,
-          COUNT(DISTINCT l.id)                                                  AS leads,
-          COUNT(DISTINCT a.lead_id)                                             AS appointments,
-          COUNT(DISTINCT e.id)                                                  AS episodes,
-          COUNT(DISTINCT CASE
-            WHEN e.status NOT IN ('Consultation In Progress','Consultation Done','Treatment Planning')
-            THEN e.id END)                                                      AS treatment_started,
-          COUNT(DISTINCT CASE WHEN e.surgery_date IS NOT NULL THEN e.id END)   AS surgery_done,
-          COALESCE(SUM(CASE WHEN e.surgery_date IS NOT NULL
-            THEN COALESCE(e.actual_bill, e.estimated_cost, 0) ELSE 0 END), 0) AS revenue
-        FROM leads l
-        LEFT JOIN appointments a ON a.lead_id = l.id AND a.tenant_id = l.tenant_id
-        LEFT JOIN episodes e      ON e.lead_id  = l.id AND e.tenant_id = l.tenant_id
-        WHERE l.tenant_id = ${tid}
-          AND l.utm_campaign IS NOT NULL
-          AND l.utm_campaign <> ''
-          AND l.created_at >= ${fromDate}
-          AND l.created_at <= ${toDate}
-        GROUP BY l.utm_campaign
+          b.utm_campaign,
+          MAX(b.utm_source)                                                                  AS utm_source,
+          MAX(b.utm_medium)                                                                  AS utm_medium,
+          COUNT(DISTINCT b.lead_id)                                                          AS leads,
+          COUNT(DISTINCT aa.lead_id)                                                         AS appointments,
+          COUNT(DISTINCT CASE WHEN ea.ep_count > 0    THEN b.lead_id END)                   AS episodes,
+          COUNT(DISTINCT CASE WHEN ea.tx_count > 0    THEN b.lead_id END)                   AS treatment_started,
+          COUNT(DISTINCT CASE WHEN ea.surg_count > 0  THEN b.lead_id END)                   AS surgery_done,
+          COALESCE(SUM(ea.revenue), 0)                                                       AS revenue
+        FROM base b
+        LEFT JOIN appt_agg aa ON aa.lead_id = b.lead_id
+        LEFT JOIN ep_agg   ea ON ea.lead_id  = b.lead_id
+        GROUP BY b.utm_campaign
         ORDER BY leads DESC
       `);
 
