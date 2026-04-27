@@ -1006,49 +1006,38 @@ export default function ConnectorsPage() {
                     </p>
                   ) : (
                     <div className="space-y-3">
-                      {captureRules.map((rule) => (
-                        <Card key={rule.id} data-testid={`card-rule-${rule.id}`}>
-                          <CardContent className="p-4">
+                      {captureRules.map((rule) => {
+                        const webhookUrl = rule.webhookToken
+                          ? `${window.location.origin}/api/webhook/lead-capture/${rule.webhookToken}`
+                          : null;
+                        const verifyToken = rule.webhookToken || null;
+                        const isMetaRule = rule.sourceType === "meta_lead_ads";
+                        return (
+                        <Card key={rule.id} data-testid={`card-rule-${rule.id}`} className="border">
+                          <CardContent className="p-4 space-y-3">
+                            {/* Header row */}
                             <div className="flex items-start justify-between gap-3 flex-wrap">
-                              <div className="space-y-1.5 min-w-0 flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-medium" data-testid={`text-rule-name-${rule.id}`}>{rule.name}</span>
-                                  <Badge variant="secondary" data-testid={`badge-rule-source-${rule.id}`}>
-                                    {getSourceTypeLabel(rule.sourceType)}
-                                  </Badge>
-                                  {rule.isActive ? (
-                                    <Badge variant="default" data-testid={`badge-rule-status-${rule.id}`}>Active</Badge>
-                                  ) : (
-                                    <Badge variant="secondary" data-testid={`badge-rule-status-${rule.id}`}>Inactive</Badge>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                                  <span data-testid={`text-rule-strategy-${rule.id}`}>
-                                    {rule.assignmentStrategy === "round_robin" ? "Round Robin" : "Specific Employees"}
-                                  </span>
-                                  {rule.webhookToken && (
-                                    <span className="flex items-center gap-1 font-mono text-[11px] truncate max-w-xs" data-testid={`text-rule-webhook-${rule.id}`}>
-                                      {`${window.location.origin}/api/webhook/lead-capture/${rule.webhookToken.slice(0, 8)}...`}
-                                    </span>
-                                  )}
-                                </div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium" data-testid={`text-rule-name-${rule.id}`}>{rule.name}</span>
+                                <Badge variant="secondary" data-testid={`badge-rule-source-${rule.id}`}>
+                                  {getSourceTypeLabel(rule.sourceType)}
+                                </Badge>
+                                {rule.isActive ? (
+                                  <Badge variant="default" data-testid={`badge-rule-status-${rule.id}`}>Active</Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-muted-foreground" data-testid={`badge-rule-status-${rule.id}`}>Inactive</Badge>
+                                )}
+                                <span className="text-xs text-muted-foreground">
+                                  {rule.assignmentStrategy === "round_robin" ? "· Round Robin" : "· Specific Employees"}
+                                </span>
                               </div>
                               <div className="flex items-center gap-1">
-                                {rule.webhookToken && (
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    onClick={() => copyWebhookUrl(rule.webhookToken!)}
-                                    data-testid={`button-copy-webhook-${rule.id}`}
-                                  >
-                                    <Copy className="h-3.5 w-3.5" />
-                                  </Button>
-                                )}
                                 <Button
                                   size="icon"
                                   variant="ghost"
                                   onClick={() => openEditRule(rule)}
                                   data-testid={`button-edit-rule-${rule.id}`}
+                                  title="Edit rule"
                                 >
                                   <Pencil className="h-3.5 w-3.5" />
                                 </Button>
@@ -1061,14 +1050,81 @@ export default function ConnectorsPage() {
                                     }
                                   }}
                                   data-testid={`button-delete-rule-${rule.id}`}
+                                  title="Delete rule"
                                 >
                                   <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
                                 </Button>
                               </div>
                             </div>
+
+                            {/* Webhook URL + Verify Token — prominent copy boxes */}
+                            {webhookUrl && (
+                              <div className="rounded-lg border bg-slate-50 p-3 space-y-2.5">
+                                {isMetaRule && (
+                                  <p className="text-[11px] font-medium text-primary flex items-center gap-1.5">
+                                    <Link2 className="h-3 w-3" />
+                                    Meta Developer Portal · Webhooks setup
+                                  </p>
+                                )}
+
+                                {/* Callback / Webhook URL */}
+                                <div className="space-y-1">
+                                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                                    {isMetaRule ? "① Callback URL" : "Webhook URL"}
+                                  </p>
+                                  <div className="flex items-center gap-1.5">
+                                    <code
+                                      className="flex-1 text-[11px] font-mono bg-white border rounded px-2 py-1.5 truncate text-foreground"
+                                      data-testid={`text-rule-webhook-${rule.id}`}
+                                    >
+                                      {webhookUrl}
+                                    </code>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 px-2 text-xs shrink-0"
+                                      onClick={() => copyWebhookUrl(rule.webhookToken!)}
+                                      data-testid={`button-copy-webhook-${rule.id}`}
+                                    >
+                                      <Copy className="h-3 w-3 mr-1" /> Copy
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                {/* Verify Token (Meta only) */}
+                                {isMetaRule && verifyToken && (
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                                      ② Verify Token
+                                    </p>
+                                    <div className="flex items-center gap-1.5">
+                                      <code className="flex-1 text-[11px] font-mono bg-white border rounded px-2 py-1.5 truncate text-foreground">
+                                        {verifyToken}
+                                      </code>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 px-2 text-xs shrink-0"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(verifyToken);
+                                          toast({ title: "Verify Token copied to clipboard" });
+                                        }}
+                                        data-testid={`button-copy-verifytoken-${rule.id}`}
+                                      >
+                                        <Copy className="h-3 w-3 mr-1" /> Copy
+                                      </Button>
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground">
+                                      Paste ① as "Callback URL" and ② as "Verify Token" in Meta → Webhooks → Subscribe to Page → leadgen
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </CardContent>
                         </Card>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </CardContent>
