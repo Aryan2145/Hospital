@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema, systemErrorLogs, tenantSettings, metaLeadCaptureLogs } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema, systemErrorLogs, tenantSettings, metaLeadCaptureLogs, googleSheetsSyncConfigs } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -3799,6 +3799,92 @@ export async function registerRoutes(
     return match ? match[1] : null;
   }
 
+  // --- Google Sheets Auto-Sync CRUD ---
+  app.get("/api/google-sheets/sync-configs", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const configs = await db.select().from(googleSheetsSyncConfigs)
+        .where(eq(googleSheetsSyncConfigs.tenantId, tid))
+        .orderBy(desc(googleSheetsSyncConfigs.createdAt));
+      // Strip encrypted API key from response, return masked version
+      const safe = configs.map(c => ({ ...c, apiKeyEncrypted: undefined, apiKeyMasked: "••••••••" + c.apiKeyEncrypted.slice(-4) }));
+      res.json(safe);
+    } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
+  });
+
+  app.post("/api/google-sheets/sync-configs", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const userId = String(req.session?.crmUserId || "system");
+      const { name, spreadsheetId, apiKey, sheetName, columnMapping, duplicateStrategy, defaultLeadStatus, defaultTags } = req.body;
+      if (!name || !spreadsheetId || !apiKey || !columnMapping) return res.status(400).json({ message: "name, spreadsheetId, apiKey, and columnMapping are required" });
+
+      const [created] = await db.insert(googleSheetsSyncConfigs).values({
+        tenantId: tid, name, spreadsheetId,
+        apiKeyEncrypted: encryptValue(apiKey),
+        sheetName: sheetName || "Sheet1",
+        columnMapping, duplicateStrategy: duplicateStrategy || "skip",
+        defaultLeadStatus: defaultLeadStatus || "Raw Lead Captured",
+        defaultTags: defaultTags || null,
+        isActive: true, lastSyncedRow: 1,
+        createdBy: userId,
+      }).returning();
+      res.json({ ...created, apiKeyEncrypted: undefined, apiKeyMasked: "••••••••" });
+    } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
+  });
+
+  app.patch("/api/google-sheets/sync-configs/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      const { name, sheetName, columnMapping, duplicateStrategy, defaultLeadStatus, defaultTags, isActive, apiKey } = req.body;
+      const updates: Record<string, any> = { modifiedAt: new Date() };
+      if (name !== undefined) updates.name = name;
+      if (sheetName !== undefined) updates.sheetName = sheetName;
+      if (columnMapping !== undefined) updates.columnMapping = columnMapping;
+      if (duplicateStrategy !== undefined) updates.duplicateStrategy = duplicateStrategy;
+      if (defaultLeadStatus !== undefined) updates.defaultLeadStatus = defaultLeadStatus;
+      if (defaultTags !== undefined) updates.defaultTags = defaultTags;
+      if (isActive !== undefined) updates.isActive = isActive;
+      if (apiKey) updates.apiKeyEncrypted = encryptValue(apiKey);
+      const [updated] = await db.update(googleSheetsSyncConfigs).set(updates)
+        .where(and(eq(googleSheetsSyncConfigs.id, id), eq(googleSheetsSyncConfigs.tenantId, tid)))
+        .returning();
+      if (!updated) return res.status(404).json({ message: "Config not found" });
+      res.json({ ...updated, apiKeyEncrypted: undefined, apiKeyMasked: "••••••••" });
+    } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
+  });
+
+  app.delete("/api/google-sheets/sync-configs/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      await db.delete(googleSheetsSyncConfigs)
+        .where(and(eq(googleSheetsSyncConfigs.id, id), eq(googleSheetsSyncConfigs.tenantId, tid)));
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
+  });
+
+  app.post("/api/google-sheets/sync-configs/:id/sync", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      const userId = String(req.session?.crmUserId || "manual");
+      const { runGoogleSheetsSync } = await import("./services/googleSheetsSync");
+      const result = await runGoogleSheetsSync(id, tid, `manual:${userId}`);
+      res.json(result);
+    } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
+  });
+
+  app.post("/api/google-sheets/sync-configs/:id/reset", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const id = Number(req.params.id);
+      await db.update(googleSheetsSyncConfigs).set({ lastSyncedRow: 1, lastSyncedAt: null, lastSyncStatus: null, lastSyncMessage: null, modifiedAt: new Date() })
+        .where(and(eq(googleSheetsSyncConfigs.id, id), eq(googleSheetsSyncConfigs.tenantId, tid)));
+      res.json({ success: true, message: "Sync position reset. Next sync will re-import all rows." });
+    } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
+  });
 
   // --- Lead Capture Rules CRUD ---
   app.get("/api/lead-capture-rules", isAuthenticated, async (req, res) => {

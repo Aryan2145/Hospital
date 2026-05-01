@@ -2304,3 +2304,34 @@ export const referralRewardLogs = pgTable("referral_reward_logs", {
   processedAt: timestamp("processed_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// --- Google Sheets Auto-Sync Configs ---
+export const googleSheetsSyncConfigs = pgTable("google_sheets_sync_configs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  spreadsheetId: text("spreadsheet_id").notNull(),
+  apiKeyEncrypted: text("api_key_encrypted").notNull(),
+  sheetName: text("sheet_name").notNull().default("Sheet1"),
+  columnMapping: jsonb("column_mapping").notNull().$type<Record<string, string>>(),
+  duplicateStrategy: text("duplicate_strategy").notNull().default("skip"),
+  defaultLeadStatus: text("default_lead_status").notNull().default("Raw Lead Captured"),
+  defaultTags: text("default_tags"),
+  isActive: boolean("is_active").notNull().default(true),
+  lastSyncedRow: integer("last_synced_row").default(1),
+  lastSyncedAt: timestamp("last_synced_at"),
+  lastSyncStatus: text("last_sync_status"),
+  lastSyncLeadsCreated: integer("last_sync_leads_created").default(0),
+  lastSyncLeadsSkipped: integer("last_sync_leads_skipped").default(0),
+  lastSyncMessage: text("last_sync_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: varchar("created_by"),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+});
+
+export type GoogleSheetsSyncConfig = typeof googleSheetsSyncConfigs.$inferSelect;
+export const insertGoogleSheetsSyncConfigSchema = createInsertSchema(googleSheetsSyncConfigs).omit({
+  id: true, createdAt: true, modifiedAt: true,
+  lastSyncedRow: true, lastSyncedAt: true, lastSyncStatus: true,
+  lastSyncLeadsCreated: true, lastSyncLeadsSkipped: true, lastSyncMessage: true,
+});

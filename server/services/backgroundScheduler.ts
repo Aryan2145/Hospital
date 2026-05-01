@@ -3,6 +3,7 @@ import { processDormantLeadsAndStaleAppointments } from "./nurtureEngine";
 import { checkDormantLeads } from "./temperatureEngine";
 import { sendDiscountApprovalEmail } from "../email";
 import { sendDiscountApprovalSMS } from "../sms";
+import { syncAllActiveGoogleSheetConfigs } from "./googleSheetsSync";
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 
@@ -258,6 +259,9 @@ async function runScheduledTasks(): Promise<void> {
 
     // Global daily cleanup — not tenant-specific
     await purgeOldMetaWebhookLogs();
+
+    // Google Sheets auto-sync — all active configs across all tenants
+    await syncAllActiveGoogleSheetConfigs();
   } catch (err: any) {
     console.error("[scheduler] Fatal error in scheduled tasks:", err.message);
   }
