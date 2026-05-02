@@ -110,6 +110,7 @@ export default function WhatsAppSettingsPage() {
         wati_template_appointment: watiSettings.wati_template_appointment || "",
         wati_template_reminder: watiSettings.wati_template_reminder || "",
         wati_test_phone: watiSettings.wati_test_phone || "",
+        hospital_contact_phone: watiSettings.hospital_contact_phone || "",
       });
       setWatiTestPhone(watiSettings.wati_test_phone || "");
     }
@@ -348,7 +349,7 @@ export default function WhatsAppSettingsPage() {
                     Message Templates
                   </CardTitle>
                   <CardDescription>
-                    Configure pre-approved WATI templates for automated messages. Leave blank to send plain session messages (only works within 24h of patient's last message).
+                    Enter the exact template names as approved in your WATI dashboard. Both templates use the same 6 variables listed below.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -360,13 +361,13 @@ export default function WhatsAppSettingsPage() {
                       </Label>
                       <Input
                         id="wati_template_appointment"
-                        placeholder="e.g., appointment_confirmation"
+                        placeholder="viroc_appointment_confirmation"
                         value={watiForm.wati_template_appointment || ""}
                         onChange={(e) => setWatiForm(p => ({ ...p, wati_template_appointment: e.target.value }))}
                         data-testid="input-wati-template-appointment"
                       />
                       <p className="text-[11px] text-muted-foreground">
-                        Sent immediately when an appointment is booked. Parameters: patient_name, doctor_name, appointment_date, appointment_time, token_number.
+                        Sent instantly when an appointment is booked.
                       </p>
                     </div>
                     <div className="space-y-2">
@@ -376,15 +377,62 @@ export default function WhatsAppSettingsPage() {
                       </Label>
                       <Input
                         id="wati_template_reminder"
-                        placeholder="e.g., appointment_reminder"
+                        placeholder="viroc_appointment_reminder"
                         value={watiForm.wati_template_reminder || ""}
                         onChange={(e) => setWatiForm(p => ({ ...p, wati_template_reminder: e.target.value }))}
                         data-testid="input-wati-template-reminder"
                       />
                       <p className="text-[11px] text-muted-foreground">
-                        Sent automatically ~24h before the appointment. Parameters: patient_name, doctor_name, appointment_date, appointment_time, hospital_name.
+                        Sent automatically 24 hrs and 2 hrs before the appointment.
                       </p>
                     </div>
+                  </div>
+
+                  {/* Hospital Contact Number */}
+                  <div className="space-y-2">
+                    <Label htmlFor="hospital_contact_phone" className="flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5" />
+                      Hospital Contact Number
+                    </Label>
+                    <Input
+                      id="hospital_contact_phone"
+                      placeholder="e.g., 022-12345678 or +91 98765 43210"
+                      value={watiForm.hospital_contact_phone || ""}
+                      onChange={(e) => setWatiForm(p => ({ ...p, hospital_contact_phone: e.target.value }))}
+                      data-testid="input-hospital-contact-phone"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Sent as the <code className="bg-muted px-1 rounded text-[10px]">hospital_contact</code> variable (param 6) in both templates. Save WATI Settings to update.
+                    </p>
+                  </div>
+
+                  {/* Template variable mapping table */}
+                  <div className="rounded-md border overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/60">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Variable</th>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Parameter name</th>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Value sent</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {[
+                          ["{{1}}", "patient_name",     "Patient's full name"],
+                          ["{{2}}", "doctor_name",      "Doctor name (with Dr. prefix)"],
+                          ["{{3}}", "appointment_date", "e.g., 10 May 2026"],
+                          ["{{4}}", "appointment_time", "e.g., 11:30 AM"],
+                          ["{{5}}", "hospital_name",    "Your hospital's display name"],
+                          ["{{6}}", "hospital_contact", "Hospital contact number (field above)"],
+                        ].map(([variable, param, value]) => (
+                          <tr key={param} className="hover:bg-muted/30">
+                            <td className="px-3 py-1.5 font-mono text-muted-foreground">{variable}</td>
+                            <td className="px-3 py-1.5 font-mono text-primary">{param}</td>
+                            <td className="px-3 py-1.5 text-muted-foreground">{value}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
 
                   <div className="rounded-md bg-muted/50 px-4 py-3 space-y-2">
@@ -393,10 +441,11 @@ export default function WhatsAppSettingsPage() {
                       How WATI Messages Work
                     </p>
                     <ul className="text-xs text-muted-foreground list-disc pl-5 space-y-1">
-                      <li><strong>Appointment confirmation</strong> — sent instantly when a new appointment is booked (template or session message)</li>
-                      <li><strong>Appointment reminder</strong> — sent automatically ~24h before the appointment by the background scheduler</li>
+                      <li><strong>Appointment confirmation</strong> — sent instantly when a new appointment is booked (duplicate-guarded)</li>
+                      <li><strong>24-hour reminder</strong> — sent automatically ~24 hours before the appointment</li>
+                      <li><strong>2-hour reminder</strong> — sent automatically ~2 hours before the appointment</li>
                       <li><strong>Incoming messages</strong> — patient replies are captured via webhook and logged on the lead timeline</li>
-                      <li>WATI templates must be approved in your WATI dashboard before use</li>
+                      <li>Templates must be approved in your WATI dashboard before use</li>
                     </ul>
                   </div>
                 </CardContent>

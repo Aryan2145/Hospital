@@ -11390,6 +11390,9 @@ export async function registerRoutes(
           watiSettings[key] = found?.settingValue ?? null;
         }
       }
+      // Also include hospital contact phone from tenants table
+      const tenantRow = await pool.query(`SELECT contact_phone FROM tenants WHERE id = $1`, [tid]);
+      watiSettings["hospital_contact_phone"] = tenantRow.rows[0]?.contact_phone ?? null;
       res.json(watiSettings);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
@@ -11411,6 +11414,12 @@ export async function registerRoutes(
           if (key === "wati_access_token" && body[key] === "••••••••") continue;
           await storage.setTenantSetting(tid, key, body[key] ?? null);
         }
+      }
+      // Save hospital contact phone to tenants table if provided
+      if ("hospital_contact_phone" in body) {
+        await db.update(tenants)
+          .set({ contactPhone: body["hospital_contact_phone"] || null })
+          .where(eq(tenants.id, tid));
       }
       res.json({ success: true, message: "WATI settings saved" });
     } catch (err: any) {
