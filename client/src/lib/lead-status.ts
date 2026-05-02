@@ -46,7 +46,7 @@ const EPISODE_TRANSITIONS: Record<string, string[]> = {
   "Consultation In Progress": ["Consultation Done", "Discontinued"],
   "Consultation Done": ["Treatment Planning", "Surgery Scheduled", "In Treatment", "Discontinued"],
   "Treatment Planning": ["Surgery Scheduled", "In Treatment", "Discontinued"],
-  "Surgery Scheduled": ["Pre-op Assessment", "Surgery Done", "Discontinued"],
+  "Surgery Scheduled": ["Pre-op Assessment", "Discontinued"],
   "Pre-op Assessment": ["Surgery Done", "Discontinued"],
   "Surgery Done": ["In Treatment", "Post Care", "Follow Up", "Completed"],
   "In Treatment": ["Post Care", "Follow Up", "Completed", "Discontinued"],

@@ -7693,20 +7693,19 @@ export async function registerRoutes(
         }
       }
 
-      if (body.status === "Surgery Done" && oldEpisode?.status === "Pre-op Assessment") {
-        const clearanceGiven = oldEpisode?.preopClearanceGiven;
-        const managerOverride = body.preopClearanceOverrideBy;
-        if (!clearanceGiven && !managerOverride) {
+      if (body.status === "Surgery Done") {
+        const isFromPreop = oldEpisode?.status === "Pre-op Assessment";
+        const isFromSurgeryScheduled = oldEpisode?.status === "Surgery Scheduled";
+        const preopEverEntered = !!(oldEpisode?.preopEnteredAt);
+        if ((isFromPreop || (isFromSurgeryScheduled && preopEverEntered)) && !oldEpisode?.preopClearanceGiven) {
           return res.status(422).json({
-            message: "Pre-op clearance has not been given. A manager override is required to proceed to Surgery Done.",
+            message: "Pre-op clearance has not been given. A manager must grant override clearance before marking Surgery Done.",
             code: "PREOP_CLEARANCE_REQUIRED",
             preopClearanceRequired: true,
           });
         }
-        if (managerOverride) {
-          body.preopClearanceOverrideBy = managerOverride;
-          body.preopClearanceOverrideAt = new Date();
-        }
+        delete body.preopClearanceOverrideBy;
+        delete body.preopClearanceOverrideAt;
       }
 
       if (body.status === "Pre-op Assessment" && oldEpisode?.status === "Surgery Scheduled") {
@@ -7949,6 +7948,10 @@ export async function registerRoutes(
       }
 
       const { overrideReason } = req.body;
+      if (!overrideReason || String(overrideReason).trim().length < 10) {
+        return res.status(400).json({ message: "Override reason is required (minimum 10 characters) for audit purposes." });
+      }
+
       await storage.updateEpisode(episodeId, tid, {
         preopClearanceGiven: true,
         preopClearanceOverrideBy: user.name,
@@ -7966,8 +7969,18 @@ export async function registerRoutes(
           tid,
           episodeId,
           `Pre-op Override Granted — Episode #${episodeId}`,
-          `${user.name} has granted a manager override for surgery clearance. Reason: ${overrideReason || "Not provided"}. Episode can now proceed to Surgery Done.`,
+          `${user.name} has granted a manager override for surgery clearance. Reason: ${overrideReason.trim()}. Episode can now proceed to Surgery Done.`,
           `/episodes/${episodeId}`,
+        ]
+      );
+
+      await pool.query(
+        `INSERT INTO audit_logs (tenant_id, entity_type, entity_id, action, new_values, performed_by, created_at)
+         VALUES ($1, 'episode', $2, 'preop_override_granted', $3::jsonb, $4, NOW())`,
+        [
+          tid, episodeId,
+          JSON.stringify({ overrideBy: user.name, overrideReason: overrideReason.trim(), roleCode: user.role_code }),
+          user.name,
         ]
       );
 

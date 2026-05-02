@@ -149,26 +149,62 @@ export async function escalateOverduePreopCases(tenantId: number): Promise<numbe
   let escalated = 0;
   try {
     const overdue = await pool.query(
-      `SELECT e.id, e.preop_entered_at, e.surgery_date, e.preop_clearance_given,
-              COALESCE(l.name, CONCAT(p.first_name, ' ', p.last_name)) as patient_name
+      `SELECT e.id, e.lead_id, e.preop_entered_at, e.surgery_date, e.preop_clearance_given,
+              COALESCE(l.name, CONCAT(p.first_name, ' ', p.last_name)) as patient_name,
+              EXTRACT(EPOCH FROM (NOW() - e.preop_entered_at))/3600 as hours_since_entry
        FROM episodes e
        LEFT JOIN leads l ON e.lead_id = l.id
        LEFT JOIN patients p ON e.patient_id = p.id
        WHERE e.tenant_id = $1
          AND e.status = 'Pre-op Assessment'
          AND e.preop_clearance_given = FALSE
-         AND e.preop_entered_at < NOW() - INTERVAL '48 hours'
-         AND NOT EXISTS (
-           SELECT 1 FROM tasks t
-           WHERE t.lead_id = e.lead_id AND t.tenant_id = $1
-             AND t.title LIKE 'ESCALATION: Pre-op Assessment Overdue%'
-             AND t.status = 'Pending'
-         )`,
+         AND e.preop_entered_at < NOW() - INTERVAL '24 hours'`,
       [tenantId]
     );
 
+    const now = new Date();
+
     for (const ep of overdue.rows) {
       try {
+        const hoursSinceEntry = Number(ep.hours_since_entry) || 0;
+        const hasSurgeryDateSoon = ep.surgery_date
+          ? (new Date(ep.surgery_date).getTime() - now.getTime()) < 24 * 60 * 60 * 1000
+          : false;
+
+        let reminderType: string;
+        let priority: string;
+        let dueHours: number;
+        if (hasSurgeryDateSoon) {
+          reminderType = "urgent_surgery_imminent";
+          priority = "Urgent";
+          dueHours = 1;
+        } else if (hoursSinceEntry >= 168) {
+          reminderType = "7d_escalation";
+          priority = "Urgent";
+          dueHours = 2;
+        } else if (hoursSinceEntry >= 96) {
+          reminderType = "4d_escalation";
+          priority = "Urgent";
+          dueHours = 4;
+        } else if (hoursSinceEntry >= 48) {
+          reminderType = "48h_escalation";
+          priority = "Urgent";
+          dueHours = 4;
+        } else {
+          reminderType = "24h_reminder";
+          priority = "High";
+          dueHours = 12;
+        }
+
+        const alreadySent = await pool.query(
+          `SELECT 1 FROM preop_reminder_log
+           WHERE tenant_id = $1 AND episode_id = $2 AND reminder_type = $3
+             AND sent_at > NOW() - INTERVAL '${reminderType === "24h_reminder" ? "20 hours" : "40 hours"}'
+           LIMIT 1`,
+          [tenantId, ep.id, reminderType]
+        );
+        if (alreadySent.rows.length > 0) continue;
+
         const managerRow = await pool.query(
           `SELECT cu.id FROM crm_users cu
            JOIN system_roles sr ON cu.system_role_id = sr.id
@@ -178,32 +214,48 @@ export async function escalateOverduePreopCases(tenantId: number): Promise<numbe
         );
         const managerId = managerRow.rows[0]?.id || null;
 
-        await pool.query(
-          `INSERT INTO tasks (tenant_id, lead_id, title, description, priority, due_date, assigned_crm_user_id, status, created_by)
-           VALUES ($1, $2, $3, $4, 'Urgent', NOW() + INTERVAL '4 hours', $5, 'Pending', 'system-scheduler')`,
-          [
-            tenantId,
-            ep.lead_id,
-            `ESCALATION: Pre-op Assessment Overdue — ${ep.patient_name}`,
-            `Pre-op assessment for ${ep.patient_name} (Episode #${ep.id}) has been pending for 48+ hours without clearance. ${ep.surgery_date ? `Surgery is on ${new Date(ep.surgery_date).toLocaleDateString("en-IN")}. ` : ""}Immediate review required.`,
-            managerId,
-          ]
-        );
+        const surgeryStr = ep.surgery_date
+          ? `Surgery is ${hasSurgeryDateSoon ? "IMMINENT" : "scheduled"} for ${new Date(ep.surgery_date).toLocaleDateString("en-IN")}.`
+          : "";
+
+        const taskTitle = hasSurgeryDateSoon
+          ? `URGENT: Pre-op — Surgery Imminent — ${ep.patient_name}`
+          : `ESCALATION [${reminderType.replace(/_/g, " ").toUpperCase()}]: Pre-op Overdue — ${ep.patient_name}`;
+
+        if (ep.lead_id) {
+          await pool.query(
+            `INSERT INTO tasks (tenant_id, lead_id, title, description, priority, due_date, assigned_crm_user_id, status, created_by)
+             VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '${dueHours} hours', $6, 'Pending', 'system-scheduler')`,
+            [
+              tenantId, ep.lead_id, taskTitle,
+              `Pre-op assessment for ${ep.patient_name} (Episode #${ep.id}) pending ${Math.round(hoursSinceEntry)}h without clearance. ${surgeryStr} Immediate action required.`,
+              priority, managerId,
+            ]
+          );
+        }
 
         if (managerId) {
           await pool.query(
             `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
              VALUES ($1, $2, 'preop_escalation', $3, $4, 'episode', $5, $6, FALSE, NOW())`,
             [
-              tenantId,
-              managerId,
-              `Pre-op Assessment Overdue — ${ep.patient_name}`,
-              `The pre-op assessment for ${ep.patient_name} has been pending 48+ hours. Clearance not yet given. Immediate action required.`,
-              ep.id,
-              `/episodes/${ep.id}`,
+              tenantId, managerId,
+              `Pre-op Assessment Overdue (${reminderType.replace(/_/g," ")}) — ${ep.patient_name}`,
+              `Pre-op pending ${Math.round(hoursSinceEntry)}h. ${surgeryStr} Clearance not given.`,
+              ep.id, `/episodes/${ep.id}`,
             ]
           );
         }
+
+        await pool.query(
+          `INSERT INTO preop_reminder_log (tenant_id, episode_id, reminder_type, sent_to, sent_at, details)
+           VALUES ($1, $2, $3, $4, NOW(), $5)`,
+          [
+            tenantId, ep.id, reminderType,
+            managerId ? String(managerId) : "no-manager",
+            JSON.stringify({ hoursSinceEntry: Math.round(hoursSinceEntry), hasSurgeryDateSoon, priority }),
+          ]
+        );
 
         escalated++;
       } catch (err: any) {

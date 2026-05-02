@@ -1407,28 +1407,51 @@ function PreopCasesWidget({ navigate, readOnly }: { navigate: (path: string) => 
               onClick={() => !readOnly && navigate(`/episodes/${c.id}`)}
               data-testid={`preop-case-row-${c.id}`}
             >
-              <div className={`w-2 h-2 rounded-full shrink-0 ${c.preopClearanceGiven ? "bg-green-500" : "bg-amber-500"}`} />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-foreground truncate">{c.patientName || c.episodeName || `Episode #${c.id}`}</p>
-                <p className="text-[10px] text-muted-foreground">
-                  {c.treatmentDepartment || "General"}
-                  {c.assignedCrmUserName ? ` · ${c.assignedCrmUserName}` : ""}
-                  {c.preopEnteredAt
-                    ? ` · Since ${new Date(c.preopEnteredAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}`
-                    : ""}
-                </p>
-              </div>
-              <Badge
-                className={`text-[10px] h-4 shrink-0 ${
-                  c.preopClearanceGiven
-                    ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                    : c.preopReadinessStatus === "Not Ready"
-                    ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-                    : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
-                }`}
-              >
-                {c.preopClearanceGiven ? "Cleared" : c.preopReadinessStatus || "Pending"}
-              </Badge>
+              {(() => {
+                const surgeryDate = c.surgery_date ? new Date(c.surgery_date) : null;
+                const hoursUntilSurgery = surgeryDate ? (surgeryDate.getTime() - Date.now()) / (1000 * 60 * 60) : null;
+                const enteredAt = c.preop_entered_at ? new Date(c.preop_entered_at) : null;
+                const hoursOverdue = enteredAt ? (Date.now() - enteredAt.getTime()) / (1000 * 60 * 60) : 0;
+                const isUrgent = !c.preop_clearance_given && (
+                  (hoursUntilSurgery !== null && hoursUntilSurgery < 24) || hoursOverdue > 96
+                );
+                const isWarning = !c.preop_clearance_given && hoursOverdue >= 48;
+                const dotColor = c.preop_clearance_given ? "bg-green-500" : isUrgent ? "bg-red-500 animate-pulse" : isWarning ? "bg-orange-500" : "bg-amber-500";
+                const surgeryLabel = surgeryDate
+                  ? hoursUntilSurgery !== null && hoursUntilSurgery < 0
+                    ? "Surgery past"
+                    : hoursUntilSurgery !== null && hoursUntilSurgery < 24
+                    ? `Surgery in ${Math.round(hoursUntilSurgery)}h ⚠️`
+                    : hoursUntilSurgery !== null
+                    ? `Surgery in ${Math.ceil(hoursUntilSurgery / 24)}d`
+                    : ""
+                  : "";
+                return (
+                  <>
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-foreground truncate">{c.patient_name || c.episode_name || `Episode #${c.id}`}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {surgeryLabel || (enteredAt ? `${Math.round(hoursOverdue)}h since entry` : "")}
+                        {c.assigned_user_name ? ` · ${c.assigned_user_name}` : ""}
+                      </p>
+                    </div>
+                    <Badge
+                      className={`text-[10px] h-4 shrink-0 ${
+                        c.preop_clearance_given
+                          ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                          : isUrgent
+                          ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                          : isWarning
+                          ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
+                          : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                      }`}
+                    >
+                      {c.preop_clearance_given ? "Cleared" : isUrgent ? "🚨 Urgent" : isWarning ? "⚠ Overdue" : c.preop_readiness_status || "Pending"}
+                    </Badge>
+                  </>
+                );
+              })()}
             </div>
           ))}
         </div>

@@ -3060,13 +3060,13 @@ function PreopAssessmentTab({
   };
 
   const CHECKLIST_ITEMS = [
-    { key: "bloodworkDone", label: "Bloodwork / Lab Reports Complete" },
-    { key: "ecgDone", label: "ECG / Cardiac Clearance" },
+    { key: "bloodWorkDone", label: "Bloodwork / Lab Reports Complete" },
+    { key: "vitalsStable", label: "Vitals Stable & Cleared" },
     { key: "anesthesiaConsultDone", label: "Anaesthesia Consultation Done" },
-    { key: "consentSigned", label: "Patient Consent Signed" },
-    { key: "fastingConfirmed", label: "Pre-surgical Fasting Confirmed" },
-    { key: "allergyScreeningDone", label: "Allergy Screening Done" },
-    { key: "imagingComplete", label: "Pre-op Imaging Complete" },
+    { key: "consentFormSigned", label: "Patient Consent Signed" },
+    { key: "npoConfirmed", label: "NPO / Pre-surgical Fasting Confirmed" },
+    { key: "allergiesReviewed", label: "Allergy Screening Done" },
+    { key: "imagingDone", label: "Pre-op Imaging Complete" },
     { key: "medicationsReviewed", label: "Medications Reviewed & Adjusted" },
   ];
 
@@ -3164,17 +3164,17 @@ function PreopAssessmentTab({
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs font-medium">Readiness Status</Label>
+          <Label className="text-xs font-medium">Overall Readiness</Label>
           <Select
-            value={readinessStatus}
-            onValueChange={(val) => handleSave({ preopReadinessStatus: val })}
+            value={assessment.overallReadiness || "Not Started"}
+            onValueChange={(val) => handleSave({ overallReadiness: val })}
             disabled={saving}
           >
             <SelectTrigger className="h-8 text-xs" data-testid="select-preop-readiness">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Pending">Pending</SelectItem>
+              <SelectItem value="Not Started">Not Started</SelectItem>
               <SelectItem value="In Progress">In Progress</SelectItem>
               <SelectItem value="Cleared">Cleared</SelectItem>
               <SelectItem value="Not Ready">Not Ready</SelectItem>
@@ -3185,18 +3185,18 @@ function PreopAssessmentTab({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-xs font-medium">Remarks / Notes</Label>
+        <Label className="text-xs font-medium">Clinical Notes</Label>
         <Textarea
-          key={`preop-remarks-${assessment.remarks}`}
-          defaultValue={assessment.remarks || ""}
+          key={`preop-notes-${assessment.notes}`}
+          defaultValue={assessment.notes || ""}
           onBlur={(e) => {
-            if (e.target.value !== (assessment.remarks || "")) {
-              handleSave({ remarks: e.target.value });
+            if (e.target.value !== (assessment.notes || "")) {
+              handleSave({ notes: e.target.value });
             }
           }}
           placeholder="Add any clinical notes or observations for this pre-op assessment..."
           className="text-xs min-h-[80px] resize-none"
-          data-testid="textarea-preop-remarks"
+          data-testid="textarea-preop-notes"
         />
       </div>
 
@@ -3209,7 +3209,7 @@ function PreopAssessmentTab({
           <Button
             size="sm"
             className="bg-green-600 hover:bg-green-700 text-white text-xs"
-            onClick={() => handleSave({ preopClearanceGiven: true })}
+            onClick={() => handleSave({ grantClearance: true })}
             disabled={saving}
             data-testid="button-grant-preop-clearance"
           >
