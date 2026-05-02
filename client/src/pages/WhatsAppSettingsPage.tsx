@@ -188,10 +188,14 @@ export default function WhatsAppSettingsPage() {
       return res.json();
     },
     onSuccess: (data: any) => {
-      toast({ title: "Test Message Sent via WATI", description: data.message });
+      if (data.sessionFailed) {
+        toast({ title: "WATI Credentials Verified", description: data.message });
+      } else {
+        toast({ title: "Test Message Sent", description: data.message });
+      }
     },
     onError: (err: Error) => {
-      toast({ title: "Send Failed", description: err.message, variant: "destructive" });
+      toast({ title: "WATI Test Failed", description: err.message, variant: "destructive" });
     },
   });
 

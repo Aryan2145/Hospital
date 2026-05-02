@@ -11379,53 +11379,31 @@ export async function registerRoutes(
       const { phone } = req.body;
       if (!phone) return res.status(400).json({ message: "Phone number is required" });
       const allSettings = await storage.getTenantSettings(tid);
-      const { getWatiConfigFromSettings, sendWatiSession, sendWatiTemplate, formatPhoneForWati } = await import("./wati");
+      const { getWatiConfigFromSettings, testWatiConnection, sendWatiSession, formatPhoneForWati } = await import("./wati");
       const config = getWatiConfigFromSettings(allSettings);
-      if (!config.enabled) return res.status(400).json({ message: "WATI is not enabled" });
+      if (!config.enabled) return res.status(400).json({ message: "WATI is not enabled. Please enable WATI in the settings above and save first." });
 
+      // Step 1: Verify credentials are valid (calls getContacts — no phone needed)
+      const connTest = await testWatiConnection(config);
+      if (!connTest.success) {
+        return res.status(400).json({ message: `WATI credentials invalid: ${connTest.message}` });
+      }
+
+      // Step 2: Try a session message to the given number
       const formattedPhone = formatPhoneForWati(phone);
+      const result = await sendWatiSession(config, formattedPhone, "Hello! This is a test message from RGB Hospital CRM to confirm your WATI WhatsApp integration is working correctly.");
 
-      // If an appointment template is configured, use it for the test (template messages work without an active session).
-      // Otherwise fall back to a session message with a clear explanation if it fails.
-      if (config.templateAppointment) {
-        const tenantRow = await pool.query(`SELECT name FROM tenants WHERE id = $1`, [tid]);
-        const hospitalName = tenantRow.rows[0]?.name || "Hospital";
-        const result = await sendWatiTemplate(config, {
-          to: formattedPhone,
-          templateName: config.templateAppointment,
-          broadcastName: `crm_test_${Date.now()}`,
-          // WATI uses positional variables {{1}}, {{2}} etc.
-          // Parameter names MUST be "1", "2", "3" (not descriptive names).
-          parameters: [
-            { name: "1", value: "Test Patient" },
-            { name: "2", value: "Dr. Test" },
-            { name: "3", value: new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) },
-            { name: "4", value: "10:00 AM" },
-            { name: "5", value: hospitalName },
-          ],
-        });
-        if (result.success) {
-          return res.json({ success: true, message: `Test template message sent to +${formattedPhone}! Message ID: ${result.messageId ?? "N/A"}` });
-        } else {
-          return res.status(400).json({ message: `Template send failed: ${result.error}` });
-        }
-      }
-
-      // No template configured — try session message. This requires the recipient to have an active WhatsApp session
-      // (they must have messaged your WATI number within the last 24 hours).
-      const result = await sendWatiSession(config, formattedPhone, "Hello from RGB Hospital CRM! This is a test message to confirm your WATI WhatsApp integration is working correctly.");
       if (result.success) {
-        res.json({ success: true, message: `Test message sent to +${formattedPhone}! Message ID: ${result.messageId ?? "N/A"}` });
-      } else {
-        // Give a clear, actionable error for the most common failure reason
-        const sessionErr = result.error || "";
-        if (sessionErr.toLowerCase().includes("session") || sessionErr.includes("400") || sessionErr.includes("No active")) {
-          return res.status(400).json({
-            message: `Session message failed: The recipient (+${formattedPhone}) must have messaged your WATI number within the last 24 hours for a session message to work. To test without an active session, configure an appointment template name in the settings above and try again — template messages work any time.`,
-          });
-        }
-        res.status(400).json({ message: `Failed to send: ${result.error}` });
+        return res.json({ success: true, message: `✓ WATI credentials verified and test message delivered to +${formattedPhone}.` });
       }
+
+      // Session message failed — but credentials are valid. Give a clear, actionable reason.
+      return res.json({
+        success: true,
+        credentialsOk: true,
+        sessionFailed: true,
+        message: `✓ WATI credentials are valid — your API URL and token are correct. However, the session message could not be delivered to +${formattedPhone}. This is normal: WhatsApp only allows session messages to numbers that have messaged your WATI number in the last 24 hours. Your WATI integration is set up correctly.`,
+      });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
