@@ -7952,10 +7952,12 @@ export async function registerRoutes(
       if (!episode) return res.status(404).json({ message: "Episode not found" });
       const assessment = await getOrCreatePreopAssessment(episodeId, tid);
       const reminderLogResult = await pool.query(
-        `SELECT id, reminder_type, sent_to, recipient_role, channel, trigger_source, sent_at, details
-         FROM preop_reminder_log
-         WHERE episode_id = $1 AND tenant_id = $2
-         ORDER BY sent_at DESC
+        `SELECT prl.id, prl.reminder_type, prl.sent_to, prl.recipient_role, prl.channel, prl.trigger_source, prl.sent_at, prl.details,
+                COALESCE(cu.name, prl.sent_to) as recipient_name
+         FROM preop_reminder_log prl
+         LEFT JOIN crm_users cu ON cu.id::text = prl.sent_to AND cu.tenant_id = $2
+         WHERE prl.episode_id = $1 AND prl.tenant_id = $2
+         ORDER BY prl.sent_at DESC
          LIMIT 50`,
         [episodeId, tid]
       );

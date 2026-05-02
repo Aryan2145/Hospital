@@ -3197,10 +3197,8 @@ function PreopAssessmentTab({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="Pending">Pending</SelectItem>
-              <SelectItem value="In Progress">In Progress</SelectItem>
               <SelectItem value="Ready">Ready</SelectItem>
               <SelectItem value="Not Ready">Not Ready</SelectItem>
-              <SelectItem value="Deferred">Deferred</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -3247,7 +3245,7 @@ function PreopAssessmentTab({
       <div className="space-y-1.5">
         <Label className="text-xs font-medium">Mental / Psychological Readiness</Label>
         <Select
-          value={assessment.mental_readiness || assessment.mentalReadiness || "Not Assessed"}
+          value={assessment.mental_readiness || assessment.mentalReadiness || "Calm"}
           onValueChange={(val) => handleSave({ mentalReadiness: val })}
           disabled={saving}
         >
@@ -3255,11 +3253,10 @@ function PreopAssessmentTab({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="Not Assessed">Not Assessed</SelectItem>
-            <SelectItem value="Calm and Ready">Calm & Ready</SelectItem>
-            <SelectItem value="Anxious but Consented">Anxious but Consented</SelectItem>
-            <SelectItem value="Requires Counselling">Requires Counselling</SelectItem>
-            <SelectItem value="Declined Surgery">Declined Surgery</SelectItem>
+            <SelectItem value="Calm">Calm</SelectItem>
+            <SelectItem value="Hesitant">Hesitant</SelectItem>
+            <SelectItem value="Fearful">Fearful</SelectItem>
+            <SelectItem value="Refusing">Refusing</SelectItem>
           </SelectContent>
         </Select>
       </div>

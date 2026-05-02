@@ -394,7 +394,14 @@ export function useUpdateEpisode() {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || "Failed to update episode");
+        // Preserve all structured error fields so callers can distinguish typed errors
+        // (e.g. preopClearanceRequired) from generic ones
+        const errorObj = new Error(err.message || "Failed to update episode") as any;
+        errorObj.status = res.status;
+        errorObj.code = err.code;
+        errorObj.preopClearanceRequired = err.preopClearanceRequired ?? false;
+        errorObj.assessmentReadinessStatus = err.assessmentReadinessStatus ?? null;
+        throw errorObj;
       }
       return res.json();
     },
