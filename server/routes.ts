@@ -7703,10 +7703,19 @@ export async function registerRoutes(
         delete body.preopClearanceOverrideBy;
         delete body.preopClearanceOverrideAt;
 
-        const preopEverEntered = !!(oldEpisode?.preopEnteredAt);
-        // Gate fires for ANY transition to Surgery Done when pre-op was ever entered,
-        // regardless of current status. This prevents bypass via direct API calls.
-        if (preopEverEntered) {
+        // Gate fires unconditionally for any transition to Surgery Done from
+        // Surgery Scheduled or later (including Pre-op Assessment, or if preopEnteredAt
+        // is already set). This prevents bypass via direct API calls that skip
+        // the Pre-op Assessment stage entirely.
+        const postSurgeryScheduledStatuses = [
+          "Surgery Scheduled", "Pre-op Assessment",
+        ];
+        const requiresPreopGate = !!(
+          oldEpisode?.preopEnteredAt ||
+          postSurgeryScheduledStatuses.includes(oldEpisode?.status || "")
+        );
+
+        if (requiresPreopGate) {
           // Gate: check structured assessment readiness_status === 'Ready' OR preopClearanceGiven
           const assessmentRow = await pool.query(
             `SELECT readiness_status FROM episode_preop_assessments WHERE episode_id = $1 AND tenant_id = $2 ORDER BY id DESC LIMIT 1`,
@@ -7715,39 +7724,39 @@ export async function registerRoutes(
           const assessmentIsReady = assessmentRow.rows[0]?.readiness_status === "Ready";
           const clearanceAlreadyGiven = !!(oldEpisode?.preopClearanceGiven);
           if (!assessmentIsReady && !clearanceAlreadyGiven) {
-          if (!managerOverrideFlag) {
-            return res.status(422).json({
-              message: assessmentRow.rows[0]
-                ? `Pre-op assessment status is '${assessmentRow.rows[0].readiness_status}' — must be 'Ready' before marking Surgery Done. A manager can grant an override.`
-                : "Pre-op assessment is incomplete. Readiness status must be 'Ready' before marking Surgery Done. A manager can grant an override.",
-              code: "PREOP_CLEARANCE_REQUIRED",
-              preopClearanceRequired: true,
-              assessmentReadinessStatus: assessmentRow.rows[0]?.readiness_status || null,
+            if (!managerOverrideFlag) {
+              return res.status(422).json({
+                message: assessmentRow.rows[0]
+                  ? `Pre-op assessment status is '${assessmentRow.rows[0].readiness_status}' — must be 'Ready' before marking Surgery Done. A manager can grant an override.`
+                  : "Pre-op assessment required. The patient must complete the pre-operative readiness checklist before Surgery Done can be recorded. A manager can grant an override.",
+                code: "PREOP_CLEARANCE_REQUIRED",
+                preopClearanceRequired: true,
+                assessmentReadinessStatus: assessmentRow.rows[0]?.readiness_status || null,
+              });
+            }
+            // Validate override reason
+            if (!managerOverrideReason || String(managerOverrideReason).trim().length < 10) {
+              return res.status(400).json({ message: "Override reason is required (minimum 10 characters) for audit purposes." });
+            }
+            // Validate role server-side
+            const overrideUserRow = await pool.query(
+              `SELECT cu.id, cu.name, sr.code as role_code FROM crm_users cu
+               JOIN system_roles sr ON cu.system_role_id = sr.id
+               WHERE cu.id = $1 AND cu.tenant_id = $2`,
+              [(req as any).session?.crmUserId, tid]
+            );
+            const overrideUser = overrideUserRow.rows[0];
+            if (!overrideUser || !["MANAGER", "ADMIN", "SYS_ADMIN"].includes(overrideUser.role_code)) {
+              return res.status(403).json({ message: "Only managers or admins can grant pre-op override clearance." });
+            }
+            // Apply clearance inline before the main status update
+            await storage.updateEpisode(episodeId, tid, {
+              preopClearanceGiven: true,
+              preopClearanceOverrideBy: overrideUser.name,
+              preopClearanceOverrideAt: new Date(),
             });
+            inlineOverrideAuditData = { userName: overrideUser.name, reason: String(managerOverrideReason).trim(), roleCode: overrideUser.role_code };
           }
-          // Validate override reason
-          if (!managerOverrideReason || String(managerOverrideReason).trim().length < 10) {
-            return res.status(400).json({ message: "Override reason is required (minimum 10 characters) for audit purposes." });
-          }
-          // Validate role server-side
-          const overrideUserRow = await pool.query(
-            `SELECT cu.id, cu.name, sr.code as role_code FROM crm_users cu
-             JOIN system_roles sr ON cu.system_role_id = sr.id
-             WHERE cu.id = $1 AND cu.tenant_id = $2`,
-            [(req as any).session?.crmUserId, tid]
-          );
-          const overrideUser = overrideUserRow.rows[0];
-          if (!overrideUser || !["MANAGER", "ADMIN", "SYS_ADMIN"].includes(overrideUser.role_code)) {
-            return res.status(403).json({ message: "Only managers or admins can grant pre-op override clearance." });
-          }
-          // Apply clearance inline before the main status update
-          await storage.updateEpisode(episodeId, tid, {
-            preopClearanceGiven: true,
-            preopClearanceOverrideBy: overrideUser.name,
-            preopClearanceOverrideAt: new Date(),
-          });
-          inlineOverrideAuditData = { userName: overrideUser.name, reason: String(managerOverrideReason).trim(), roleCode: overrideUser.role_code };
-          } // end !assessmentIsReady && !clearanceAlreadyGiven
         }
       }
 
