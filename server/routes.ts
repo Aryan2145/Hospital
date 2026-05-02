@@ -16,7 +16,7 @@ import { desc, eq, and, or, sql, count, gte, lte, isNull, inArray } from "drizzl
 import { encryptValue, decryptValue, isEncrypted } from "./crypto";
 import { sendDiscountApprovalEmail } from "./email";
 import { sendDiscountApprovalSMS } from "./sms";
-import { triggerPreopEntryAutomation, getOrCreatePreopAssessment } from "./services/preopAssessment";
+import { triggerPreopEntryAutomation, getOrCreatePreopAssessment, resolvePreopNotifyList } from "./services/preopAssessment";
 
 const PHI_FIELDS_TO_MASK = [
   "phoneE164", "phone_e164", "mobileNormalized", "mobile_normalized",
@@ -7693,19 +7693,50 @@ export async function registerRoutes(
         }
       }
 
+      let inlineOverrideAuditData: { userName: string; reason: string; roleCode: string } | null = null;
       if (body.status === "Surgery Done") {
+        const managerOverrideFlag = body.managerOverride;
+        const managerOverrideReason = body.managerOverrideReason;
+        // Security: always strip client-supplied override fields
+        delete body.managerOverride;
+        delete body.managerOverrideReason;
+        delete body.preopClearanceOverrideBy;
+        delete body.preopClearanceOverrideAt;
+
         const isFromPreop = oldEpisode?.status === "Pre-op Assessment";
         const isFromSurgeryScheduled = oldEpisode?.status === "Surgery Scheduled";
         const preopEverEntered = !!(oldEpisode?.preopEnteredAt);
         if ((isFromPreop || (isFromSurgeryScheduled && preopEverEntered)) && !oldEpisode?.preopClearanceGiven) {
-          return res.status(422).json({
-            message: "Pre-op clearance has not been given. A manager must grant override clearance before marking Surgery Done.",
-            code: "PREOP_CLEARANCE_REQUIRED",
-            preopClearanceRequired: true,
+          if (!managerOverrideFlag) {
+            return res.status(422).json({
+              message: "Pre-op clearance has not been given. A manager must grant override clearance before marking Surgery Done.",
+              code: "PREOP_CLEARANCE_REQUIRED",
+              preopClearanceRequired: true,
+            });
+          }
+          // Validate override reason
+          if (!managerOverrideReason || String(managerOverrideReason).trim().length < 10) {
+            return res.status(400).json({ message: "Override reason is required (minimum 10 characters) for audit purposes." });
+          }
+          // Validate role server-side
+          const overrideUserRow = await pool.query(
+            `SELECT cu.id, cu.name, sr.code as role_code FROM crm_users cu
+             JOIN system_roles sr ON cu.system_role_id = sr.id
+             WHERE cu.id = $1 AND cu.tenant_id = $2`,
+            [(req as any).session?.crmUserId, tid]
+          );
+          const overrideUser = overrideUserRow.rows[0];
+          if (!overrideUser || !["MANAGER", "ADMIN", "SYS_ADMIN"].includes(overrideUser.role_code)) {
+            return res.status(403).json({ message: "Only managers or admins can grant pre-op override clearance." });
+          }
+          // Apply clearance inline before the main status update
+          await storage.updateEpisode(episodeId, tid, {
+            preopClearanceGiven: true,
+            preopClearanceOverrideBy: overrideUser.name,
+            preopClearanceOverrideAt: new Date(),
           });
+          inlineOverrideAuditData = { userName: overrideUser.name, reason: String(managerOverrideReason).trim(), roleCode: overrideUser.role_code };
         }
-        delete body.preopClearanceOverrideBy;
-        delete body.preopClearanceOverrideAt;
       }
 
       if (body.status === "Pre-op Assessment" && oldEpisode?.status === "Surgery Scheduled") {
@@ -7758,6 +7789,34 @@ export async function registerRoutes(
             } catch {}
           }
         }
+      }
+
+      if (inlineOverrideAuditData) {
+        try {
+          await pool.query(
+            `INSERT INTO audit_logs (tenant_id, entity_type, entity_id, action, new_values, performed_by, created_at)
+             VALUES ($1, 'episode', $2, 'preop_override_granted', $3::jsonb, $4, NOW())`,
+            [
+              tid, episodeId,
+              JSON.stringify({ overrideBy: inlineOverrideAuditData.userName, overrideReason: inlineOverrideAuditData.reason, roleCode: inlineOverrideAuditData.roleCode }),
+              inlineOverrideAuditData.userName,
+            ]
+          );
+          await pool.query(
+            `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
+             SELECT $1, cu.id, 'preop_override', $3, $4, 'episode', $2, $5, FALSE, NOW()
+             FROM crm_users cu WHERE cu.tenant_id = $1 AND cu.is_active = TRUE
+               AND cu.id IN (
+                 SELECT UNNEST(ARRAY[preop_assigned_user_id, assigned_crm_user_id]::int[]) FROM episodes WHERE id = $2
+               ) AND cu.id IS NOT NULL`,
+            [
+              tid, episodeId,
+              `Pre-op Override Granted — Episode #${episodeId}`,
+              `${inlineOverrideAuditData.userName} granted manager override. Reason: ${inlineOverrideAuditData.reason}. Episode proceeds to Surgery Done.`,
+              `/episodes/${episodeId}`,
+            ]
+          );
+        } catch {}
       }
 
       if (oldEpisode && body.status === "Pre-op Assessment" && body.status !== oldEpisode.status) {
@@ -7885,12 +7944,18 @@ export async function registerRoutes(
         bloodWorkDone, imagingDone, anesthesiaConsultDone, consentFormSigned,
         npoConfirmed, allergiesReviewed, medicationsReviewed, vitalsStable,
         notes, overallReadiness, grantClearance, preopAssignedUserId,
+        // New structured readiness fields
+        medicalConditions, mentalReadiness, readinessStatus, notReadyReason,
+        advisedRevisitDays, revisitDueDate,
       } = req.body;
 
-      const crmUser = (req as any).session?.crmUserId;
+      const crmUserId = (req as any).session?.crmUserId;
       const userName = (req as any).user?.firstName
         ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
         : (req as any).user?.email || "system";
+
+      const revisitDueDateVal = revisitDueDate ? new Date(revisitDueDate) : null;
+      const medCondArray = Array.isArray(medicalConditions) ? medicalConditions : (medicalConditions ? [medicalConditions] : null);
 
       const existing = await getOrCreatePreopAssessment(episodeId, tid);
       if (existing) {
@@ -7898,32 +7963,115 @@ export async function registerRoutes(
           `UPDATE episode_preop_assessments SET
              blood_work_done=$1, imaging_done=$2, anesthesia_consult_done=$3, consent_form_signed=$4,
              npo_confirmed=$5, allergies_reviewed=$6, medications_reviewed=$7, vitals_stable=$8,
-             notes=$9, overall_readiness=$10, submitted_by=$11, submitted_by_crm_user_id=$12, modified_at=NOW()
-           WHERE episode_id=$13 AND tenant_id=$14`,
-          [bloodWorkDone, imagingDone, anesthesiaConsultDone, consentFormSigned,
-           npoConfirmed, allergiesReviewed, medicationsReviewed, vitalsStable,
-           notes, overallReadiness, userName, crmUser, episodeId, tid]
+             notes=$9, overall_readiness=$10,
+             medical_conditions=$11, mental_readiness=$12, readiness_status=$13,
+             not_ready_reason=$14, advised_revisit_days=$15, revisit_due_date=$16,
+             assessed_by=$17, assessed_by_crm_user_id=$18, assessed_at=NOW(),
+             submitted_by=$17, submitted_by_crm_user_id=$18, modified_at=NOW()
+           WHERE episode_id=$19 AND tenant_id=$20`,
+          [
+            bloodWorkDone, imagingDone, anesthesiaConsultDone, consentFormSigned,
+            npoConfirmed, allergiesReviewed, medicationsReviewed, vitalsStable,
+            notes, overallReadiness,
+            medCondArray, mentalReadiness, readinessStatus,
+            notReadyReason, advisedRevisitDays ?? null, revisitDueDateVal,
+            userName, crmUserId,
+            episodeId, tid,
+          ]
         );
       } else {
         await pool.query(
           `INSERT INTO episode_preop_assessments
-             (tenant_id, episode_id, blood_work_done, imaging_done, anesthesia_consult_done, consent_form_signed,
-              npo_confirmed, allergies_reviewed, medications_reviewed, vitals_stable, notes, overall_readiness, submitted_by, submitted_by_crm_user_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-          [tid, episodeId, bloodWorkDone, imagingDone, anesthesiaConsultDone, consentFormSigned,
-           npoConfirmed, allergiesReviewed, medicationsReviewed, vitalsStable,
-           notes, overallReadiness, userName, crmUser]
+             (tenant_id, episode_id,
+              blood_work_done, imaging_done, anesthesia_consult_done, consent_form_signed,
+              npo_confirmed, allergies_reviewed, medications_reviewed, vitals_stable,
+              notes, overall_readiness,
+              medical_conditions, mental_readiness, readiness_status,
+              not_ready_reason, advised_revisit_days, revisit_due_date,
+              assessed_by, assessed_by_crm_user_id, assessed_at,
+              submitted_by, submitted_by_crm_user_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,NOW(),$19,$20)`,
+          [
+            tid, episodeId,
+            bloodWorkDone, imagingDone, anesthesiaConsultDone, consentFormSigned,
+            npoConfirmed, allergiesReviewed, medicationsReviewed, vitalsStable,
+            notes, overallReadiness,
+            medCondArray, mentalReadiness, readinessStatus,
+            notReadyReason, advisedRevisitDays ?? null, revisitDueDateVal,
+            userName, crmUserId,
+          ]
         );
       }
 
-      const episodeUpdates: Record<string, any> = { preopReadinessStatus: overallReadiness };
+      const episodeUpdates: Record<string, any> = {};
+      if (readinessStatus !== undefined) episodeUpdates.preopReadinessStatus = readinessStatus;
+      else if (overallReadiness !== undefined) episodeUpdates.preopReadinessStatus = overallReadiness;
       if (preopAssignedUserId !== undefined) episodeUpdates.preopAssignedUserId = preopAssignedUserId || null;
       if (grantClearance === true) {
         episodeUpdates.preopClearanceGiven = true;
       }
-      await storage.updateEpisode(episodeId, tid, episodeUpdates);
+      if (Object.keys(episodeUpdates).length > 0) {
+        await storage.updateEpisode(episodeId, tid, episodeUpdates);
+      }
 
       res.json({ success: true, clearanceGranted: grantClearance === true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/episodes/:id/preop-assessment/notify", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+      const episode = await storage.getEpisode(episodeId, tid);
+      if (!episode) return res.status(404).json({ message: "Episode not found" });
+
+      // 24h dedup — don't re-notify if already sent in last 24h
+      const recentNotify = await pool.query(
+        `SELECT 1 FROM preop_reminder_log
+         WHERE tenant_id = $1 AND episode_id = $2 AND reminder_type = 'manual_notify'
+           AND sent_at > NOW() - INTERVAL '24 hours'
+         LIMIT 1`,
+        [tid, episodeId]
+      );
+      if (recentNotify.rows.length > 0) {
+        return res.status(429).json({ message: "Notifications already sent in the last 24 hours. Please wait before re-notifying." });
+      }
+
+      const userName = (req as any).user?.firstName
+        ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+        : "system";
+      const crmUserId = (req as any).session?.crmUserId || null;
+
+      // Resolve notify list and send notifications
+      const notifyUsers = await resolvePreopNotifyList(episode, tid);
+      const patientName = episode.leadId
+        ? (await pool.query(`SELECT name FROM leads WHERE id = $1`, [episode.leadId])).rows[0]?.name || `Episode #${episodeId}`
+        : `Episode #${episodeId}`;
+      const surgeryDateStr = episode.surgeryDate
+        ? new Date(episode.surgeryDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+        : "TBD";
+
+      for (const user of notifyUsers) {
+        await pool.query(
+          `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
+           VALUES ($1, $2, 'preop_reminder', $3, $4, 'episode', $5, $6, FALSE, NOW())`,
+          [
+            tid, user.crmUserId,
+            `Pre-op Assessment Reminder — ${patientName}`,
+            `Reminder: pre-op assessment for ${patientName} is pending. Surgery: ${surgeryDateStr}. Please complete the checklist. Sent by ${userName}.`,
+            episodeId, `/episodes/${episodeId}`,
+          ]
+        );
+        await pool.query(
+          `INSERT INTO preop_reminder_log (tenant_id, episode_id, reminder_type, sent_to, recipient_role, channel, trigger_source, sent_at, details)
+           VALUES ($1, $2, 'manual_notify', $3, $4, 'in_app', 'manual', NOW(), $5)`,
+          [tid, episodeId, String(user.crmUserId), user.roleInCase, JSON.stringify({ sentBy: userName, sentByCrmUserId: crmUserId })]
+        );
+      }
+
+      res.json({ success: true, notifiedCount: notifyUsers.length });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -7993,6 +8141,16 @@ export async function registerRoutes(
   app.get("/api/dashboard/preop-cases", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId(req);
+      const crmUserRow = await pool.query(
+        `SELECT sr.code as role_code FROM crm_users cu
+         JOIN system_roles sr ON cu.system_role_id = sr.id
+         WHERE cu.id = $1 AND cu.tenant_id = $2`,
+        [(req as any).session?.crmUserId, tid]
+      );
+      const roleCode = crmUserRow.rows[0]?.role_code || "";
+      if (!["SYS_ADMIN", "ADMIN", "MANAGER", "MIS_VIEWER"].includes(roleCode)) {
+        return res.status(403).json({ message: "Access restricted to management roles" });
+      }
       const result = await pool.query(
         `SELECT e.id, e.episode_name, e.preop_entered_at, e.surgery_date, e.preop_clearance_given,
                 e.preop_readiness_status, e.preop_clearance_override_by,

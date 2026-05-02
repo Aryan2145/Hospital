@@ -1311,6 +1311,7 @@ export const episodePreopAssessments = pgTable("episode_preop_assessments", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
   episodeId: integer("episode_id").notNull().references(() => episodes.id),
+  // Clinical checklist (8 items)
   bloodWorkDone: boolean("blood_work_done").default(false),
   imagingDone: boolean("imaging_done").default(false),
   anesthesiaConsultDone: boolean("anesthesia_consult_done").default(false),
@@ -1319,8 +1320,19 @@ export const episodePreopAssessments = pgTable("episode_preop_assessments", {
   allergiesReviewed: boolean("allergies_reviewed").default(false),
   medicationsReviewed: boolean("medications_reviewed").default(false),
   vitalsStable: boolean("vitals_stable").default(false),
+  // Structured readiness fields
+  medicalConditions: text("medical_conditions").array(),
+  mentalReadiness: text("mental_readiness"),
+  readinessStatus: text("readiness_status").default("Pending"),
+  notReadyReason: text("not_ready_reason"),
+  advisedRevisitDays: integer("advised_revisit_days"),
+  revisitDueDate: timestamp("revisit_due_date"),
+  // Assessment metadata
   notes: text("notes"),
   overallReadiness: text("overall_readiness").default("Not Started"),
+  assessedBy: varchar("assessed_by"),
+  assessedByCrmUserId: integer("assessed_by_crm_user_id").references(() => crmUsers.id),
+  assessedAt: timestamp("assessed_at"),
   submittedBy: varchar("submitted_by"),
   submittedByCrmUserId: integer("submitted_by_crm_user_id").references(() => crmUsers.id),
   createdAt: timestamp("created_at").defaultNow(),
@@ -1338,6 +1350,9 @@ export const preopReminderLog = pgTable("preop_reminder_log", {
   episodeId: integer("episode_id").notNull().references(() => episodes.id),
   reminderType: text("reminder_type").notNull(),
   sentTo: text("sent_to").notNull(),
+  recipientRole: text("recipient_role"),
+  channel: text("channel").default("in_app"),
+  triggerSource: text("trigger_source").default("scheduler"),
   sentAt: timestamp("sent_at").defaultNow(),
   details: text("details"),
 });

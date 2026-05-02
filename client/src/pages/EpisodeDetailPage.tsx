@@ -383,29 +383,29 @@ export default function EpisodeDetailPage() {
 
   const handleSurgeryDoneOverride = async () => {
     if (!surgeryDoneBlockedPayload) return;
+    if (surgeryDoneOverrideReason.trim().length < 10) {
+      toast({ title: "Reason too short", description: "Override reason must be at least 10 characters.", variant: "destructive" });
+      return;
+    }
     setIsRequestingOverride(true);
     try {
-      const overrideRes = await apiRequest("POST", `/api/episodes/${episodeId}/preop-clearance-override`, {
-        overrideReason: surgeryDoneOverrideReason,
-      });
-      if (!overrideRes.ok) {
-        const errData = await overrideRes.json().catch(() => ({}));
-        toast({ title: "Override failed", description: errData.message || "You do not have permission", variant: "destructive" });
-        setIsRequestingOverride(false);
-        return;
-      }
+      // Single PATCH with inline manager override — server validates role + reason atomically
       updateEpisode.mutate(
-        { ...surgeryDoneBlockedPayload, preopClearanceOverrideBy: "manager_override" },
+        {
+          ...surgeryDoneBlockedPayload,
+          managerOverride: true,
+          managerOverrideReason: surgeryDoneOverrideReason.trim(),
+        },
         {
           onSuccess: () => {
-            toast({ title: "Surgery Done — Override applied", description: "Pre-op override granted and status updated." });
+            toast({ title: "Surgery Done — Override applied", description: "Manager override granted and surgery marked as done." });
             queryClient.invalidateQueries({ queryKey: ["/api/episodes", episodeId] });
             setShowSurgeryDoneBlock(false);
             setSurgeryDoneOverrideReason("");
             setSurgeryDoneBlockedPayload(null);
           },
           onError: (err: any) => {
-            toast({ title: "Error", description: err.message, variant: "destructive" });
+            toast({ title: "Override failed", description: err.message || "You may not have permission to override.", variant: "destructive" });
           },
         }
       );
@@ -586,7 +586,8 @@ export default function EpisodeDetailPage() {
                 Family Status
               </TabsTrigger>
             )}
-            {(episode.status === "Pre-op Assessment" || episode.status === "Surgery Scheduled") && (
+            {(!!episode.preopEnteredAt || episode.status === "Pre-op Assessment" || episode.status === "Surgery Scheduled" ||
+              ["Surgery Done", "In Treatment", "Post Care", "Follow Up", "Completed", "Discontinued"].includes(episode.status)) && (
               <TabsTrigger value="preop" data-testid="tab-preop">
                 <HeartPulse className="w-3.5 h-3.5 mr-1.5" />
                 Pre-op
@@ -788,13 +789,14 @@ export default function EpisodeDetailPage() {
             <FamilyTab episode={episode} onUpdate={handleFieldUpdate} isPending={updateEpisode.isPending} />
           </TabsContent>
 
-          {(episode.status === "Pre-op Assessment" || episode.status === "Surgery Scheduled") && (
+          {(!!episode.preopEnteredAt || episode.status === "Pre-op Assessment" || episode.status === "Surgery Scheduled" ||
+            ["Surgery Done", "In Treatment", "Post Care", "Follow Up", "Completed", "Discontinued"].includes(episode.status)) && (
             <TabsContent value="preop" className="mt-4" data-testid="tab-content-preop">
               <PreopAssessmentTab
                 episode={episode}
                 episodeId={episodeId}
                 crmUsers={crmUsers}
-                roleCode={roleCode}
+                roleCode={roleCode || ""}
                 onRefresh={() => queryClient.invalidateQueries({ queryKey: ["/api/episodes", episodeId] })}
               />
             </TabsContent>
@@ -982,7 +984,7 @@ export default function EpisodeDetailPage() {
             <Button
               variant="destructive"
               onClick={handleSurgeryDoneOverride}
-              disabled={isRequestingOverride || surgeryDoneOverrideReason.trim().length < 5}
+              disabled={isRequestingOverride || surgeryDoneOverrideReason.trim().length < 10}
               data-testid="button-confirm-override"
             >
               {isRequestingOverride ? "Applying Override..." : "Grant Override & Proceed"}
@@ -3079,8 +3081,8 @@ function PreopAssessmentTab({
   }
 
   const assessment = preopData?.assessment || {};
-  const readinessStatus = episode.preopReadinessStatus || "Pending";
   const clearanceGiven = !!episode.preopClearanceGiven;
+  const assessmentReadinessStatus = assessment.readiness_status || assessment.readinessStatus || "Pending";
 
   const checkedCount = CHECKLIST_ITEMS.filter(item => assessment[item.key]).length;
   const totalCount = CHECKLIST_ITEMS.length;
@@ -3097,15 +3099,15 @@ function PreopAssessmentTab({
               "text-xs",
               clearanceGiven
                 ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                : readinessStatus === "Cleared"
+                : assessmentReadinessStatus === "Ready"
                 ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                : readinessStatus === "Not Ready"
+                : assessmentReadinessStatus === "Not Ready"
                 ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
                 : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
             )}
             data-testid="badge-preop-status"
           >
-            {clearanceGiven ? "Cleared ✓" : readinessStatus}
+            {clearanceGiven ? "Cleared ✓" : assessmentReadinessStatus}
           </Badge>
         </div>
         <div className="text-xs text-muted-foreground">
@@ -3164,23 +3166,114 @@ function PreopAssessmentTab({
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs font-medium">Overall Readiness</Label>
+          <Label className="text-xs font-medium">Readiness Status</Label>
           <Select
-            value={assessment.overallReadiness || "Not Started"}
-            onValueChange={(val) => handleSave({ overallReadiness: val })}
-            disabled={saving}
+            value={assessmentReadinessStatus}
+            onValueChange={(val) => handleSave({ readinessStatus: val })}
+            disabled={saving || clearanceGiven}
           >
             <SelectTrigger className="h-8 text-xs" data-testid="select-preop-readiness">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Not Started">Not Started</SelectItem>
+              <SelectItem value="Pending">Pending</SelectItem>
               <SelectItem value="In Progress">In Progress</SelectItem>
-              <SelectItem value="Cleared">Cleared</SelectItem>
+              <SelectItem value="Ready">Ready</SelectItem>
               <SelectItem value="Not Ready">Not Ready</SelectItem>
               <SelectItem value="Deferred">Deferred</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+      </div>
+
+      {assessmentReadinessStatus === "Not Ready" && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Reason Not Ready</Label>
+            <Textarea
+              key={`preop-not-ready-${assessment.not_ready_reason}`}
+              defaultValue={assessment.not_ready_reason || ""}
+              onBlur={(e) => {
+                if (e.target.value !== (assessment.not_ready_reason || "")) {
+                  handleSave({ notReadyReason: e.target.value });
+                }
+              }}
+              placeholder="Explain why the patient is not ready..."
+              className="text-xs min-h-[60px] resize-none"
+              data-testid="textarea-not-ready-reason"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Advise Revisit (days)</Label>
+            <input
+              type="number"
+              min={1}
+              max={90}
+              className="h-8 w-full rounded-md border border-input bg-background px-2.5 py-1 text-xs"
+              defaultValue={assessment.advised_revisit_days || ""}
+              onBlur={(e) => {
+                const val = e.target.value ? Number(e.target.value) : null;
+                if (val !== (assessment.advised_revisit_days || null)) {
+                  handleSave({ advisedRevisitDays: val });
+                }
+              }}
+              placeholder="e.g. 7"
+              data-testid="input-advised-revisit-days"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        <Label className="text-xs font-medium">Mental / Psychological Readiness</Label>
+        <Select
+          value={assessment.mental_readiness || assessment.mentalReadiness || "Not Assessed"}
+          onValueChange={(val) => handleSave({ mentalReadiness: val })}
+          disabled={saving}
+        >
+          <SelectTrigger className="h-8 text-xs" data-testid="select-mental-readiness">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Not Assessed">Not Assessed</SelectItem>
+            <SelectItem value="Calm and Ready">Calm & Ready</SelectItem>
+            <SelectItem value="Anxious but Consented">Anxious but Consented</SelectItem>
+            <SelectItem value="Requires Counselling">Requires Counselling</SelectItem>
+            <SelectItem value="Declined Surgery">Declined Surgery</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs font-medium">Relevant Medical Conditions</Label>
+        <div className="flex flex-wrap gap-1.5" data-testid="preop-medical-conditions">
+          {[
+            "Hypertension", "Diabetes", "Cardiac Issues", "Respiratory Issues",
+            "Anticoagulants", "Renal Issues", "Liver Issues", "Anaemia",
+            "Obesity", "Previous Surgeries", "Allergies",
+          ].map(cond => {
+            const selected = (assessment.medical_conditions || []).includes(cond);
+            return (
+              <button
+                key={cond}
+                type="button"
+                className={cn(
+                  "text-[10px] px-2 py-0.5 rounded-full border transition-colors",
+                  selected
+                    ? "bg-primary text-white border-primary"
+                    : "bg-background text-muted-foreground border-border hover:border-primary"
+                )}
+                onClick={() => {
+                  const current: string[] = assessment.medical_conditions || [];
+                  const next = selected ? current.filter((c: string) => c !== cond) : [...current, cond];
+                  handleSave({ medicalConditions: next });
+                }}
+                data-testid={`preop-condition-${cond.replace(/\s+/g,"-").toLowerCase()}`}
+              >
+                {cond}
+              </button>
+            );
+          })}
         </div>
       </div>
 
