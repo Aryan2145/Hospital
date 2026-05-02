@@ -353,6 +353,15 @@ export default function WhatsAppSettingsPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* Warning: template configured but hospital contact missing */}
+                  {(watiForm.wati_template_appointment || watiForm.wati_template_reminder) && !watiForm.hospital_contact_phone && (
+                    <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-3 py-2.5" data-testid="alert-missing-hospital-contact">
+                      <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <div className="text-xs text-amber-800 dark:text-amber-300">
+                        <strong>Hospital Contact Number is required.</strong> WATI will reject template messages if any parameter is blank. Fill in the field below and save before templates will work.
+                      </div>
+                    </div>
+                  )}
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="wati_template_appointment" className="flex items-center gap-1.5">

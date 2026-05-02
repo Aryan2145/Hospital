@@ -6565,20 +6565,32 @@ export async function registerRoutes(
               const watiPhone = formatPhoneForWati(lead.phoneE164);
               let watiResult;
               const templateName = watiConfig.templateAppointment;
-              if (templateName) {
+              // Only use template if name is set AND hospital_contact is filled (WATI rejects blank params)
+              const canUseTemplate = !!templateName && !!hospitalContact;
+              if (!templateName) {
+                console.log(`[WATI] No appointment template configured — sending session message for appt #${appt.id}`);
+              } else if (!hospitalContact) {
+                console.warn(`[WATI] hospital_contact is empty — falling back to session message for appt #${appt.id}. Set Hospital Contact Number in WhatsApp Settings.`);
+              }
+              if (canUseTemplate) {
                 watiResult = await sendWatiTemplate(watiConfig, {
                   to: watiPhone,
                   templateName,
                   broadcastName: "VIROC Appointment Confirmation",
                   parameters: [
-                    { name: "patient_name",    value: lead.name || "Patient" },
-                    { name: "doctor_name",     value: `Dr. ${doctorName}` },
+                    { name: "patient_name",     value: lead.name || "Patient" },
+                    { name: "doctor_name",      value: `Dr. ${doctorName}` },
                     { name: "appointment_date", value: apptDateFmt },
                     { name: "appointment_time", value: apptTimeFmt || "As scheduled" },
-                    { name: "hospital_name",   value: hospitalName },
+                    { name: "hospital_name",    value: hospitalName },
                     { name: "hospital_contact", value: hospitalContact },
                   ],
                 });
+                // If template send fails, auto-fall back to session message
+                if (!watiResult.success) {
+                  console.warn(`[WATI] Template failed (${watiResult.error}) — falling back to session message for appt #${appt.id}`);
+                  watiResult = await sendWatiSession(watiConfig, watiPhone, confirmMsg);
+                }
               } else {
                 watiResult = await sendWatiSession(watiConfig, watiPhone, confirmMsg);
               }
@@ -11415,11 +11427,14 @@ export async function registerRoutes(
           await storage.setTenantSetting(tid, key, body[key] ?? null);
         }
       }
-      // Save hospital contact phone to tenants table if provided
+      // Save hospital contact phone to tenants table if provided (raw SQL for reliability)
       if ("hospital_contact_phone" in body) {
-        await db.update(tenants)
-          .set({ contactPhone: body["hospital_contact_phone"] || null })
-          .where(eq(tenants.id, tid));
+        const phoneVal = body["hospital_contact_phone"] || null;
+        await pool.query(
+          `UPDATE tenants SET contact_phone = $1 WHERE id = $2`,
+          [phoneVal, tid]
+        );
+        console.log(`[wati-settings] Updated hospital contact_phone for tenant ${tid}:`, phoneVal ?? "(cleared)");
       }
       res.json({ success: true, message: "WATI settings saved" });
     } catch (err: any) {

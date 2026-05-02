@@ -91,6 +91,17 @@ export async function sendWatiTemplate(
     parameters: params.parameters,
   };
 
+  // Guard: reject before hitting WATI if any parameter value is blank
+  const blankParam = params.parameters.find(p => !p.value || !p.value.trim());
+  if (blankParam) {
+    const errMsg = `Parameter "${blankParam.name}" has an empty value — WATI will reject blank parameters. Fill in the Hospital Contact Number in WhatsApp Settings and save again.`;
+    console.error("[WATI] Aborting template send:", errMsg);
+    return { success: false, error: errMsg };
+  }
+
+  console.log(`[WATI] Sending template "${params.templateName}" to ${params.to} with params:`,
+    params.parameters.map(p => `${p.name}="${p.value}"`).join(", "));
+
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -105,7 +116,7 @@ export async function sendWatiTemplate(
 
     if (!response.ok) {
       const rawDetail = data?.message || data?.errors?.[0]?.message || data?._rawText || "";
-      console.error("[WATI] Template send failed:", response.status, rawDetail);
+      console.error(`[WATI] Template send failed: HTTP ${response.status}`, rawDetail || "(no body)");
       const errorMsg = humanizeWatiError(data, response.status);
       return { success: false, error: rawDetail ? `HTTP ${response.status} — ${rawDetail}` : errorMsg };
     }

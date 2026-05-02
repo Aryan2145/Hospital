@@ -355,24 +355,31 @@ async function _sendWatiReminder(
 
     if (useWati) {
       const watiPhone = formatPhoneForWati(appt.phone_e164);
-      const result = await sendWatiTemplate(watiConfig, {
-        to: watiPhone,
-        templateName: watiConfig.templateReminder,
-        broadcastName: "VIROC Appointment Reminder",
-        parameters: [
-          { name: "patient_name",     value: leadName },
-          { name: "doctor_name",      value: `Dr. ${doctorName}` },
-          { name: "appointment_date", value: apptDate },
-          { name: "appointment_time", value: apptTime || "As scheduled" },
-          { name: "hospital_name",    value: hospitalName },
-          { name: "hospital_contact", value: hospitalContact },
-        ],
-      });
-      sent          = result.success;
-      watiLocalMsgId = result.messageId;
-      watiRawResponse = sent ? JSON.stringify({ messageId: result.messageId }) : undefined;
-      errorMsg = sent ? undefined : result.error;
-      if (!sent) console.error(`[scheduler] WATI ${messageType} failed for appt #${appt.id}:`, result.error);
+      if (!hospitalContact) {
+        // WATI rejects blank parameters — skip template send and log a clear warning
+        sent = false;
+        errorMsg = "hospital_contact parameter is empty. Set Hospital Contact Number in WhatsApp Settings → WATI tab.";
+        console.warn(`[scheduler] Skipping WATI ${messageType} for appt #${appt.id}: ${errorMsg}`);
+      } else {
+        const result = await sendWatiTemplate(watiConfig, {
+          to: watiPhone,
+          templateName: watiConfig.templateReminder,
+          broadcastName: "VIROC Appointment Reminder",
+          parameters: [
+            { name: "patient_name",     value: leadName },
+            { name: "doctor_name",      value: `Dr. ${doctorName}` },
+            { name: "appointment_date", value: apptDate },
+            { name: "appointment_time", value: apptTime || "As scheduled" },
+            { name: "hospital_name",    value: hospitalName },
+            { name: "hospital_contact", value: hospitalContact },
+          ],
+        });
+        sent           = result.success;
+        watiLocalMsgId = result.messageId;
+        watiRawResponse = sent ? JSON.stringify({ messageId: result.messageId }) : undefined;
+        errorMsg = sent ? undefined : result.error;
+        if (!sent) console.error(`[scheduler] WATI ${messageType} failed for appt #${appt.id}:`, result.error);
+      }
     } else if (useMeta) {
       const result = await sendWhatsAppText(metaConfig, formatPhoneForWhatsApp(appt.phone_e164), reminderMsg);
       sent     = result.success;
