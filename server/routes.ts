@@ -6580,7 +6580,7 @@ export async function registerRoutes(
                   // WATI templates use {{1}} {{2}} etc — names must be positional numbers
                   parameters: [
                     { name: "1", value: lead.name || "Patient" },
-                    { name: "2", value: `Dr. ${doctorName}` },
+                    { name: "2", value: doctorName },
                     { name: "3", value: apptDateFmt },
                     { name: "4", value: apptTimeFmt || "As scheduled" },
                     { name: "5", value: hospitalName },

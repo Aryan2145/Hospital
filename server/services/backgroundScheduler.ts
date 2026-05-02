@@ -330,7 +330,7 @@ async function _sendWatiReminder(
 ): Promise<number> {
   try {
     const leadName   = appt.lead_name || "Patient";
-    const doctorName = appt.doctor_name;
+    const doctorName = (appt.doctor_name || "").replace(/^Dr\.?\s*/i, "");
 
     const apptDate = new Date(appt.appointment_date).toLocaleDateString("en-IN", {
       day: "numeric", month: "long", year: "numeric",
@@ -368,7 +368,7 @@ async function _sendWatiReminder(
           // WATI templates use {{1}} {{2}} etc — names must be positional numbers
           parameters: [
             { name: "1", value: leadName },
-            { name: "2", value: `Dr. ${doctorName}` },
+            { name: "2", value: doctorName },
             { name: "3", value: apptDate },
             { name: "4", value: apptTime || "As scheduled" },
             { name: "5", value: hospitalName },
