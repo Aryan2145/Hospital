@@ -236,21 +236,19 @@ async function sendAppointmentReminders(tenantId: number): Promise<number> {
 
     if (!useWati && !useMeta) return 0;
 
-    const tenantRow = await pool.query(`SELECT name FROM tenants WHERE id = $1`, [tenantId]);
-    const hospitalName = tenantRow.rows[0]?.name || "Hospital";
+    const tenantRow = await pool.query(
+      `SELECT name, contact_phone FROM tenants WHERE id = $1`, [tenantId]
+    );
+    const hospitalName   = tenantRow.rows[0]?.name         || "Hospital";
+    const hospitalContact = tenantRow.rows[0]?.contact_phone || "";
 
-    // Find appointments that are:
-    // - Scheduled or Confirmed status
-    // - appointment_date is today (within next 24h window) or tomorrow
-    // - reminder_sent_at IS NULL (not yet reminded)
     const now = new Date();
-    const windowStart = new Date(now.getTime() + 2 * 60 * 60 * 1000);   // 2 hours from now
-    const windowEnd = new Date(now.getTime() + 26 * 60 * 60 * 1000);    // 26 hours from now
 
-    const windowStartDate = windowStart.toISOString().split("T")[0];
-    const windowEndDate = windowEnd.toISOString().split("T")[0];
+    // ── 24-hour reminder: appointment is 2–26 hours from now ──────────────
+    const h24Start = new Date(now.getTime() + 2  * 60 * 60 * 1000);
+    const h24End   = new Date(now.getTime() + 26 * 60 * 60 * 1000);
 
-    const appts = await pool.query(
+    const appts24 = await pool.query(
       `SELECT a.id, a.lead_id, a.appointment_date, a.start_time, a.token_number,
               l.name AS lead_name, l.phone_e164,
               COALESCE(d.name, 'your doctor') AS doctor_name
@@ -260,86 +258,171 @@ async function sendAppointmentReminders(tenantId: number): Promise<number> {
        WHERE a.tenant_id = $1
          AND a.status IN ('Scheduled', 'Confirmed')
          AND a.checked_in_at IS NULL
-         AND a.reminder_sent_at IS NULL
+         AND a.reminder_24hr_sent_at IS NULL
          AND l.phone_e164 IS NOT NULL
-         AND a.appointment_date::date BETWEEN $2::date AND $3::date`,
-      [tenantId, windowStartDate, windowEndDate]
+         AND a.appointment_date >= $2
+         AND a.appointment_date <= $3`,
+      [tenantId, h24Start.toISOString(), h24End.toISOString()]
     );
 
-    for (const appt of appts.rows) {
-      try {
-        const leadName = appt.lead_name || "Patient";
-        const doctorName = appt.doctor_name;
-        const apptDate = new Date(appt.appointment_date).toLocaleDateString("en-GB");
-        const apptTime = appt.start_time || "";
-        const token = appt.token_number ? `#${appt.token_number}` : "";
-
-        const reminderMsg =
-          `Hello ${leadName},\n\nThis is a reminder for your appointment tomorrow at ${hospitalName}.\n\nDoctor: Dr. ${doctorName}\nDate: ${apptDate}${apptTime ? `\nTime: ${apptTime}` : ""}${token ? `\nToken: ${token}` : ""}\n\nPlease arrive 15 minutes early. Reply STOP to opt out.\n\nThank you,\n${hospitalName}`;
-
-        let sent = false;
-
-        if (useWati) {
-          const phone = formatPhoneForWati(appt.phone_e164);
-          let result;
-          if (watiConfig.templateReminder) {
-            result = await sendWatiTemplate(watiConfig, {
-              to: phone,
-              templateName: watiConfig.templateReminder,
-              broadcastName: `appt_reminder_${appt.id}`,
-              // WATI uses positional variables {{1}}, {{2}} etc.
-              // Parameter names MUST be "1", "2", "3" (not descriptive names).
-              parameters: [
-                { name: "1", value: leadName },
-                { name: "2", value: `Dr. ${doctorName}` },
-                { name: "3", value: apptDate },
-                { name: "4", value: apptTime || "As scheduled" },
-                { name: "5", value: hospitalName },
-              ],
-            });
-          } else {
-            result = await sendWatiSession(watiConfig, phone, reminderMsg);
-          }
-          sent = result.success;
-          if (!result.success) {
-            console.error(`[scheduler] WATI reminder failed for appt #${appt.id}:`, result.error);
-          }
-        } else if (useMeta) {
-          const phone = formatPhoneForWhatsApp(appt.phone_e164);
-          const result = await sendWhatsAppText(metaConfig, phone, reminderMsg);
-          sent = result.success;
-          if (!result.success) {
-            console.error(`[scheduler] Meta WA reminder failed for appt #${appt.id}:`, result.error);
-          }
-        }
-
-        // Always mark reminder_sent_at to prevent infinite retry spam on repeated failures.
-        // Activity log is only written on actual success.
-        await pool.query(
-          `UPDATE appointments SET reminder_sent_at = NOW() WHERE id = $1 AND tenant_id = $2`,
-          [appt.id, tenantId]
-        );
-
-        if (sent) {
-          await pool.query(
-            `INSERT INTO activities (lead_id, tenant_id, created_by, type, description, created_at, modified_at)
-             VALUES ($1, $2, 'system', 'whatsapp', $3, NOW(), NOW())`,
-            [
-              appt.lead_id,
-              tenantId,
-              `Appointment reminder sent via WhatsApp to ${appt.phone_e164} (${apptDate}${apptTime ? " " + apptTime : ""})`,
-            ]
-          );
-          sentCount++;
-        }
-      } catch (apptErr: any) {
-        console.error(`[scheduler] Error sending reminder for appt #${appt.id}:`, apptErr.message);
-      }
+    for (const appt of appts24.rows) {
+      sentCount += await _sendWatiReminder(
+        appt, tenantId, "APPOINTMENT_REMINDER_24HR", "reminder_24hr_sent_at",
+        useWati, useMeta, watiConfig, metaConfig, hospitalName, hospitalContact
+      );
     }
+
+    // ── 2-hour reminder: appointment is 30 min – 2.5 hours from now ───────
+    const h2Start = new Date(now.getTime() + 30  * 60 * 1000);
+    const h2End   = new Date(now.getTime() + 2.5 * 60 * 60 * 1000);
+
+    const appts2 = await pool.query(
+      `SELECT a.id, a.lead_id, a.appointment_date, a.start_time, a.token_number,
+              l.name AS lead_name, l.phone_e164,
+              COALESCE(d.name, 'your doctor') AS doctor_name
+       FROM appointments a
+       JOIN leads l ON a.lead_id = l.id
+       LEFT JOIN doctors d ON a.doctor_id = d.id
+       WHERE a.tenant_id = $1
+         AND a.status IN ('Scheduled', 'Confirmed')
+         AND a.checked_in_at IS NULL
+         AND a.reminder_2hr_sent_at IS NULL
+         AND l.phone_e164 IS NOT NULL
+         AND a.appointment_date >= $2
+         AND a.appointment_date <= $3`,
+      [tenantId, h2Start.toISOString(), h2End.toISOString()]
+    );
+
+    for (const appt of appts2.rows) {
+      sentCount += await _sendWatiReminder(
+        appt, tenantId, "APPOINTMENT_REMINDER_2HR", "reminder_2hr_sent_at",
+        useWati, useMeta, watiConfig, metaConfig, hospitalName, hospitalContact
+      );
+    }
+
+    // Keep legacy reminder_sent_at in sync for backward compatibility
+    await pool.query(
+      `UPDATE appointments
+         SET reminder_sent_at = NOW()
+       WHERE tenant_id = $1
+         AND reminder_sent_at IS NULL
+         AND reminder_24hr_sent_at IS NOT NULL`,
+      [tenantId]
+    );
+
   } catch (err: any) {
     console.error(`[scheduler] Error in sendAppointmentReminders for tenant ${tenantId}:`, err.message);
   }
   return sentCount;
+}
+
+async function _sendWatiReminder(
+  appt: any,
+  tenantId: number,
+  messageType: "APPOINTMENT_REMINDER_24HR" | "APPOINTMENT_REMINDER_2HR",
+  sentAtField: "reminder_24hr_sent_at" | "reminder_2hr_sent_at",
+  useWati: boolean,
+  useMeta: boolean,
+  watiConfig: any,
+  metaConfig: any,
+  hospitalName: string,
+  hospitalContact: string
+): Promise<number> {
+  try {
+    const leadName   = appt.lead_name || "Patient";
+    const doctorName = appt.doctor_name;
+
+    const apptDate = new Date(appt.appointment_date).toLocaleDateString("en-IN", {
+      day: "numeric", month: "long", year: "numeric",
+    });
+    const apptTime = appt.start_time
+      ? (() => {
+          try {
+            const [h, m] = appt.start_time.split(":").map(Number);
+            const d = new Date(); d.setHours(h, m, 0);
+            return d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+          } catch { return appt.start_time; }
+        })()
+      : "";
+
+    const reminderMsg =
+      `Hello ${leadName},\n\nReminder: Your appointment at ${hospitalName}.\n\nDoctor: Dr. ${doctorName}\nDate: ${apptDate}${apptTime ? `\nTime: ${apptTime}` : ""}\n\nPlease arrive 15 minutes early.\n\nThank you,\n${hospitalName}`;
+
+    let sent = false;
+    let watiLocalMsgId: string | undefined;
+    let watiRawResponse: string | undefined;
+    let errorMsg: string | undefined;
+
+    if (useWati) {
+      const watiPhone = formatPhoneForWati(appt.phone_e164);
+      const result = await sendWatiTemplate(watiConfig, {
+        to: watiPhone,
+        templateName: watiConfig.templateReminder,
+        broadcastName: "VIROC Appointment Reminder",
+        parameters: [
+          { name: "patient_name",     value: leadName },
+          { name: "doctor_name",      value: `Dr. ${doctorName}` },
+          { name: "appointment_date", value: apptDate },
+          { name: "appointment_time", value: apptTime || "As scheduled" },
+          { name: "hospital_name",    value: hospitalName },
+          { name: "hospital_contact", value: hospitalContact },
+        ],
+      });
+      sent          = result.success;
+      watiLocalMsgId = result.messageId;
+      watiRawResponse = sent ? JSON.stringify({ messageId: result.messageId }) : undefined;
+      errorMsg = sent ? undefined : result.error;
+      if (!sent) console.error(`[scheduler] WATI ${messageType} failed for appt #${appt.id}:`, result.error);
+    } else if (useMeta) {
+      const result = await sendWhatsAppText(metaConfig, formatPhoneForWhatsApp(appt.phone_e164), reminderMsg);
+      sent     = result.success;
+      errorMsg = sent ? undefined : result.error;
+      if (!sent) console.error(`[scheduler] Meta WA ${messageType} failed for appt #${appt.id}:`, result.error);
+    }
+
+    // Log the attempt to whatsapp_message_logs
+    await pool.query(
+      `INSERT INTO whatsapp_message_logs
+         (tenant_id, appointment_id, mobile_number, template_name, message_type, status,
+          wati_response, wati_local_message_id, error_message, sent_at, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW(),NOW())`,
+      [
+        tenantId,
+        appt.id,
+        useWati ? formatPhoneForWati(appt.phone_e164) : appt.phone_e164,
+        watiConfig.templateReminder || null,
+        messageType,
+        sent ? "SENT" : "FAILED",
+        watiRawResponse || null,
+        watiLocalMsgId  || null,
+        errorMsg        || null,
+      ]
+    );
+
+    // Always mark sent_at field — prevents infinite retry on failures
+    await pool.query(
+      `UPDATE appointments SET ${sentAtField} = NOW() WHERE id = $1 AND tenant_id = $2`,
+      [appt.id, tenantId]
+    );
+
+    if (sent) {
+      await pool.query(
+        `INSERT INTO activities (lead_id, tenant_id, created_by, type, description, created_at, modified_at)
+         VALUES ($1, $2, 'system', 'whatsapp', $3, NOW(), NOW())`,
+        [
+          appt.lead_id,
+          tenantId,
+          `Appointment ${messageType === "APPOINTMENT_REMINDER_24HR" ? "24-hour" : "2-hour"} reminder sent via WhatsApp to ${appt.phone_e164} (${apptDate}${apptTime ? " " + apptTime : ""})`,
+        ]
+      );
+      console.log(`[scheduler] ${messageType} sent for appt #${appt.id} to ${appt.phone_e164}`);
+      return 1;
+    }
+    return 0;
+  } catch (apptErr: any) {
+    console.error(`[scheduler] Error sending ${messageType} for appt #${appt.id}:`, apptErr.message);
+    return 0;
+  }
 }
 
 let lastMetaLogPurgeDate: string | null = null;

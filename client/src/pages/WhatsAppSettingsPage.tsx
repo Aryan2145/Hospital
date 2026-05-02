@@ -33,6 +33,7 @@ interface WatiSettings {
   wati_template_appointment: string | null;
   wati_template_reminder: string | null;
   wati_test_phone: string | null;
+  hospital_contact_phone: string | null;
 }
 
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -81,6 +82,7 @@ export default function WhatsAppSettingsPage() {
     wati_template_appointment: "",
     wati_template_reminder: "",
     wati_test_phone: "",
+    hospital_contact_phone: "",
   });
   const [showWatiToken, setShowWatiToken] = useState(false);
   const [watiTestPhone, setWatiTestPhone] = useState("");

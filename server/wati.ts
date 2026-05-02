@@ -83,7 +83,7 @@ export async function sendWatiTemplate(
     return { success: false, error: "WATI not configured or disabled" };
   }
 
-  const url = `${config.apiUrl}/api/v1/sendTemplateMessage?whatsappNumber=${params.to}`;
+  const url = `${config.apiUrl}/api/v2/sendTemplateMessage?whatsappNumber=${params.to}`;
 
   const body = {
     template_name: params.templateName,

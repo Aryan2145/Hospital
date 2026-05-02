@@ -1,0 +1,197 @@
+We need to connect the CRM appointment booking event with WATI WhatsApp template API.
+
+Objective:
+Whenever a new appointment is successfully booked in the CRM, automatically send an approved WATI WhatsApp template message to the patient.
+
+Use Case:
+Appointment booking confirmation through WhatsApp.
+
+Important:
+The appointment must be saved first. WhatsApp sending should happen only after the appointment is successfully created. If WATI message sending fails, the appointment should still remain booked. Only the WhatsApp message status should be marked as failed.
+
+Approved WATI Template:
+Template name: appointment_confirmation
+
+Template variable mapping:
+{{1}} = Patient name
+{{2}} = Doctor name
+{{3}} = Appointment date
+{{4}} = Appointment time
+{{5}} = Hospital name
+{{6}} = Hospital contact number
+
+WhatsApp receiver:
+Patient mobile number with country code, example: 919876543210
+
+Required CRM data fields:
+- patient_name
+- patient_mobile
+- doctor_name
+- appointment_date
+- appointment_time
+- hospital_name
+- hospital_contact_number
+
+Implementation Requirements:
+
+1. Add WATI environment variables
+Add these environment variables:
+WATI_API_ENDPOINT=
+WATI_API_TOKEN=
+
+Example:
+WATI_API_ENDPOINT=https://live-mt-server.wati.io/{tenant_id}
+WATI_API_TOKEN=your_wati_bearer_token
+
+Do not hardcode WATI token in the code.
+
+2. Create WATI service
+Create a reusable WATI service/function that sends template messages.
+
+Function name suggestion:
+sendWatiTemplateMessage()
+
+It should accept:
+- whatsappNumber
+- templateName
+- broadcastName
+- parameters
+
+It should call:
+
+POST {WATI_API_ENDPOINT}/api/v2/sendTemplateMessage?whatsappNumber={whatsappNumber}
+
+Headers:
+Authorization: Bearer {WATI_API_TOKEN}
+Content-Type: application/json
+
+Body format:
+{
+  "template_name": "appointment_confirmation",
+  "broadcast_name": "Appointment Confirmation",
+  "parameters": [
+    {
+      "name": "patient_name",
+      "value": "Patient Name"
+    },
+    {
+      "name": "doctor_name",
+      "value": "Doctor Name"
+    },
+    {
+      "name": "appointment_date",
+      "value": "Appointment Date"
+    },
+    {
+      "name": "appointment_time",
+      "value": "Appointment Time"
+    },
+    {
+      "name": "hospital_name",
+      "value": "Hospital Name"
+    },
+    {
+      "name": "hospital_contact",
+      "value": "Hospital Contact Number"
+    }
+  ]
+}
+
+3. Trigger after appointment creation
+Find the backend function/API where a new appointment is created.
+
+After the appointment is successfully saved in the database, call the WATI service.
+
+Pseudo-flow:
+- Create appointment in database
+- Fetch/prepare patient, doctor, hospital, date, and time data
+- Format patient mobile number with country code
+- Send WATI template message
+- Save WhatsApp message log
+- Return appointment booking success response
+
+4. Prevent duplicate WhatsApp confirmation
+Add a field to the appointment record if it does not exist:
+confirmation_sent_at
+
+Before sending WATI confirmation, check:
+If confirmation_sent_at is already filled, do not send again.
+
+5. Create WhatsApp message log table/model
+Create a table/model named:
+whatsapp_message_logs
+
+Minimum fields:
+- id
+- tenant_id
+- appointment_id
+- patient_id
+- mobile_number
+- template_name
+- message_type
+- status
+- wati_response
+- wati_local_message_id
+- error_message
+- sent_at
+- created_at
+- updated_at
+
+Message type for this event:
+APPOINTMENT_CONFIRMATION
+
+Possible status values:
+PENDING
+SENT
+FAILED
+DELIVERED
+READ
+REPLIED
+
+6. Save WATI response
+If WATI API succeeds:
+- Create whatsapp_message_logs record with status SENT
+- Save full WATI response as JSON
+- Save localMessageId if available in the WATI response
+- Update appointment.confirmation_sent_at with current datetime
+
+If WATI API fails:
+- Create whatsapp_message_logs record with status FAILED
+- Save error message
+- Do not roll back the appointment booking
+
+7. Mobile number formatting
+Before calling WATI:
+- Remove spaces, +, -, brackets
+- If mobile number is 10 digits, prefix 91
+- If mobile number already starts with 91, use as-is
+- Final format example: 919876543210
+
+8. Date and time formatting
+Send patient-friendly date and time format:
+appointment_date example: 10 May 2026
+appointment_time example: 11:30 AM
+
+9. Add safe error handling
+WATI failure should not break appointment booking.
+
+Example:
+try {
+  send WATI message
+} catch (error) {
+  save failed WhatsApp log
+}
+
+10. Add basic test case
+Test by booking one appointment and confirm:
+- Appointment is created
+- WATI API is called
+- Patient receives WhatsApp confirmation
+- WhatsApp log is created
+- confirmation_sent_at is updated
+- If WATI token is wrong, appointment still gets booked and WhatsApp log shows FAILED
+
+Expected Final Result:
+When an appointment is booked in CRM, the patient automatically receives the approved WATI appointment_confirmation WhatsApp template with correct patient name, doctor name, appointment date, appointment time, hospital name, and hospital contact number.
+
+Do not change the existing appointment booking flow except adding this post-booking WATI trigger and WhatsApp logging.

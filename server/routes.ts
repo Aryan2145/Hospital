@@ -1347,6 +1347,22 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/tenants/contact-phone", isAuthenticated, async (req, res) => {
+    try {
+      const sessionTenantId = (req.session as any)?.tenantId;
+      if (!sessionTenantId) return res.status(401).json({ message: "Unauthorized" });
+      if (!(await requireAdminRole(req, res, sessionTenantId))) return;
+      const { contactPhone } = req.body;
+      const [updated] = await db.update(tenants)
+        .set({ contactPhone: contactPhone || null })
+        .where(eq(tenants.id, sessionTenantId))
+        .returning();
+      res.json({ contactPhone: updated.contactPhone });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.patch("/api/tenants/branding", isAuthenticated, async (req, res) => {
     try {
       const sessionTenantId = (req.session as any)?.tenantId;
@@ -6509,14 +6525,37 @@ export async function registerRoutes(
         // Send WhatsApp confirmation (non-blocking) — routes to WATI or Meta based on settings
         (async () => {
           try {
+            // Guard: skip if confirmation already sent for this appointment
+            const existingAppt = await pool.query(
+              `SELECT confirmation_sent_at FROM appointments WHERE id = $1`,
+              [appt.id]
+            );
+            if (existingAppt.rows[0]?.confirmation_sent_at) return;
+
             const allSettings = await storage.getTenantSettings(tid);
             const lead = await storage.getLead(parsed.leadId!);
             if (!lead?.phoneE164) return;
 
-            const tenantRow = await pool.query(`SELECT name FROM tenants WHERE id = $1`, [tid]);
+            const tenantRow = await pool.query(
+              `SELECT name, contact_phone FROM tenants WHERE id = $1`, [tid]
+            );
             const hospitalName = tenantRow.rows[0]?.name || "Hospital";
+            const hospitalContact = tenantRow.rows[0]?.contact_phone || "";
 
-            const confirmMsg = `Hello ${lead.name || ""},\n\nYour appointment has been confirmed.\n\nDoctor: Dr. ${doctorName}\nDate: ${dateStr2}\nTime: ${timeStr}\nToken: #${tokenNumber}\n\nPlease arrive 15 minutes before your scheduled time.\n\nThank you,\n${hospitalName}`;
+            const apptDateFmt = parsed.appointmentDate
+              ? new Date(parsed.appointmentDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+              : dateStr2;
+            const apptTimeFmt = timeStr
+              ? (() => {
+                  try {
+                    const [h, m] = timeStr.split(":").map(Number);
+                    const d = new Date(); d.setHours(h, m, 0);
+                    return d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+                  } catch { return timeStr; }
+                })()
+              : "";
+
+            const confirmMsg = `Hello ${lead.name || ""},\n\nYour appointment has been confirmed.\n\nDoctor: Dr. ${doctorName}\nDate: ${apptDateFmt}\nTime: ${apptTimeFmt}\nToken: #${tokenNumber}\n\nPlease arrive 15 minutes before your scheduled time.\n\nThank you,\n${hospitalName}`;
 
             // Check WATI first, then fall back to Meta
             const { getWatiConfigFromSettings, sendWatiTemplate, sendWatiSession, formatPhoneForWati } = await import("./wati");
@@ -6525,30 +6564,55 @@ export async function registerRoutes(
             if (watiConfig.enabled) {
               const watiPhone = formatPhoneForWati(lead.phoneE164);
               let watiResult;
-              if (watiConfig.templateAppointment) {
+              const templateName = watiConfig.templateAppointment;
+              if (templateName) {
                 watiResult = await sendWatiTemplate(watiConfig, {
                   to: watiPhone,
-                  templateName: watiConfig.templateAppointment,
-                  broadcastName: `appt_confirm_${parsed.leadId}`,
-                  // WATI uses positional variables {{1}}, {{2}} etc.
-                  // Parameter names MUST be "1", "2", "3" (not descriptive names).
+                  templateName,
+                  broadcastName: "VIROC Appointment Confirmation",
                   parameters: [
-                    { name: "1", value: lead.name || "Patient" },
-                    { name: "2", value: `Dr. ${doctorName}` },
-                    { name: "3", value: dateStr2 },
-                    { name: "4", value: timeStr },
-                    { name: "5", value: String(tokenNumber) },
+                    { name: "patient_name",    value: lead.name || "Patient" },
+                    { name: "doctor_name",     value: `Dr. ${doctorName}` },
+                    { name: "appointment_date", value: apptDateFmt },
+                    { name: "appointment_time", value: apptTimeFmt || "As scheduled" },
+                    { name: "hospital_name",   value: hospitalName },
+                    { name: "hospital_contact", value: hospitalContact },
                   ],
                 });
               } else {
                 watiResult = await sendWatiSession(watiConfig, watiPhone, confirmMsg);
               }
+
+              // Log the attempt
+              await pool.query(
+                `INSERT INTO whatsapp_message_logs
+                   (tenant_id, appointment_id, mobile_number, template_name, message_type, status, wati_response, wati_local_message_id, error_message, sent_at, created_at, updated_at)
+                 VALUES ($1,$2,$3,$4,'APPOINTMENT_CONFIRMATION',$5,$6,$7,$8,NOW(),NOW(),NOW())`,
+                [
+                  tid,
+                  appt.id,
+                  watiPhone,
+                  templateName || null,
+                  watiResult.success ? "SENT" : "FAILED",
+                  watiResult.success ? JSON.stringify({ messageId: watiResult.messageId }) : null,
+                  watiResult.success ? (watiResult.messageId || null) : null,
+                  watiResult.success ? null : (watiResult.error || null),
+                ]
+              );
+
+              // Mark confirmation_sent_at regardless (prevents retry spam)
+              await pool.query(
+                `UPDATE appointments SET confirmation_sent_at = NOW() WHERE id = $1 AND tenant_id = $2`,
+                [appt.id, tid]
+              );
+
               if (watiResult.success) {
                 await storage.createActivity({
                   leadId: parsed.leadId!, tenantId: tid, createdBy: "system",
                   type: "whatsapp",
                   description: `WhatsApp (WATI) appointment confirmation sent to ${lead.phoneE164}`,
                 });
+                console.log(`[WATI] Confirmation sent for appt #${appt.id} to ${watiPhone}`);
               } else {
                 console.error("[WATI] Appointment confirmation failed:", watiResult.error);
               }
@@ -6570,8 +6634,8 @@ export async function registerRoutes(
                   parameters: [
                     { type: "text", text: lead.name || "Patient" },
                     { type: "text", text: `Dr. ${doctorName}` },
-                    { type: "text", text: dateStr2 },
-                    { type: "text", text: timeStr },
+                    { type: "text", text: apptDateFmt },
+                    { type: "text", text: apptTimeFmt },
                     { type: "text", text: String(tokenNumber) },
                   ],
                 }],

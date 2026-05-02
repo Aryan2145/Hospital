@@ -1196,6 +1196,9 @@ export const appointments = pgTable("appointments", {
   consultationDoneBy: varchar("consultation_done_by"),
   reminderSent: boolean("reminder_sent").default(false),
   reminderSentAt: timestamp("reminder_sent_at"),
+  confirmationSentAt: timestamp("confirmation_sent_at"),
+  reminder24hrSentAt: timestamp("reminder_24hr_sent_at"),
+  reminder2hrSentAt: timestamp("reminder_2hr_sent_at"),
   bookedBy: varchar("booked_by"),
   bookedByCrmUserId: integer("booked_by_crm_user_id").references(() => crmUsers.id),
   notes: text("notes"),
@@ -2398,3 +2401,25 @@ export const insertGoogleSheetsSyncConfigSchema = createInsertSchema(googleSheet
   lastSyncedRow: true, lastSyncedAt: true, lastSyncStatus: true,
   lastSyncLeadsCreated: true, lastSyncLeadsSkipped: true, lastSyncMessage: true,
 });
+
+// =============================================
+// WHATSAPP MESSAGE LOGS
+// =============================================
+export const whatsappMessageLogs = pgTable("whatsapp_message_logs", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  appointmentId: integer("appointment_id").references(() => appointments.id),
+  patientId: integer("patient_id"),
+  mobileNumber: text("mobile_number"),
+  templateName: text("template_name"),
+  messageType: text("message_type").notNull(),
+  status: text("status").notNull().default("PENDING"),
+  watiResponse: text("wati_response"),
+  watiLocalMessageId: text("wati_local_message_id"),
+  errorMessage: text("error_message"),
+  sentAt: timestamp("sent_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type WhatsappMessageLog = typeof whatsappMessageLogs.$inferSelect;
