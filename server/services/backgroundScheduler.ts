@@ -226,8 +226,14 @@ async function sendAppointmentReminders(tenantId: number): Promise<number> {
     const watiConfig = getWatiConfigFromSettings(settings);
     const metaConfig = getWhatsAppConfigFromSettings(settings);
 
-    const useWati = watiConfig.enabled;
-    const useMeta = !useWati && metaConfig.enabled;
+    // WATI reminders only fire when a reminder template is configured.
+    // Session messages require an active 24h chat window which most patients won't have,
+    // so we never use session messages for automated reminders.
+    const useWati = watiConfig.enabled && !!watiConfig.templateReminder;
+
+    // Meta fallback: only if WATI not in use. Meta uses plain text (works if Meta token valid).
+    const useMeta = !watiConfig.enabled && metaConfig.enabled;
+
     if (!useWati && !useMeta) return 0;
 
     const tenantRow = await pool.query(`SELECT name FROM tenants WHERE id = $1`, [tenantId]);
@@ -305,12 +311,14 @@ async function sendAppointmentReminders(tenantId: number): Promise<number> {
           }
         }
 
-        if (sent) {
-          await pool.query(
-            `UPDATE appointments SET reminder_sent_at = NOW() WHERE id = $1 AND tenant_id = $2`,
-            [appt.id, tenantId]
-          );
+        // Always mark reminder_sent_at to prevent infinite retry spam on repeated failures.
+        // Activity log is only written on actual success.
+        await pool.query(
+          `UPDATE appointments SET reminder_sent_at = NOW() WHERE id = $1 AND tenant_id = $2`,
+          [appt.id, tenantId]
+        );
 
+        if (sent) {
           await pool.query(
             `INSERT INTO activities (lead_id, tenant_id, created_by, type, description, created_at, modified_at)
              VALUES ($1, $2, 'system', 'whatsapp', $3, NOW(), NOW())`,
