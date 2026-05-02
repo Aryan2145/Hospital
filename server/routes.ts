@@ -8008,11 +8008,20 @@ export async function registerRoutes(
         ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
         : (req as any).user?.email || "system";
 
-      const revisitDueDateVal = revisitDueDate ? new Date(revisitDueDate) : null;
+      // Derive revisit_due_date from advisedRevisitDays when Not Ready and no explicit date given
+      const revisitDueDateVal = revisitDueDate
+        ? new Date(revisitDueDate)
+        : (readinessStatus === "Not Ready" && advisedRevisitDays
+          ? new Date(Date.now() + Number(advisedRevisitDays) * 24 * 60 * 60 * 1000)
+          : null);
       const medCondArray = Array.isArray(medicalConditions) ? medicalConditions : (medicalConditions ? [medicalConditions] : null);
 
       // True partial update: only set columns explicitly provided in the request body
-      const bodyKeys = Object.keys(req.body);
+      // If revisit_due_date was derived (not explicitly sent), include it in the update set
+      const bodyKeys = [...Object.keys(req.body)];
+      if (!bodyKeys.includes("revisitDueDate") && revisitDueDateVal) {
+        bodyKeys.push("revisitDueDate");
+      }
       const colMap: Record<string, string> = {
         bloodWorkDone: "blood_work_done",
         imagingDone: "imaging_done",
@@ -8144,6 +8153,23 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const episodeId = Number(req.params.id);
+
+      // Authorization: only ADMIN, MANAGER, SYS_ADMIN, or PATIENT_COORDINATOR may trigger notifications
+      const notifyCrmUserId = req.session?.crmUserId;
+      if (notifyCrmUserId) {
+        const callerRow = await pool.query(
+          `SELECT sr.code as role_code FROM crm_users cu
+           JOIN system_roles sr ON cu.system_role_id = sr.id
+           WHERE cu.id = $1 AND cu.tenant_id = $2`,
+          [notifyCrmUserId, tid]
+        );
+        const callerRole = callerRow.rows[0]?.role_code;
+        const allowedToNotify = ["ADMIN", "MANAGER", "SYS_ADMIN", "PATIENT_COORDINATOR"];
+        if (!callerRole || !allowedToNotify.includes(callerRole)) {
+          return res.status(403).json({ message: "Insufficient permissions to trigger pre-op notifications." });
+        }
+      }
+
       const episode = await storage.getEpisode(episodeId, tid);
       if (!episode) return res.status(404).json({ message: "Episode not found" });
 

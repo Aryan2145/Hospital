@@ -339,18 +339,20 @@ export async function escalateOverduePreopCases(tenantId: number): Promise<numbe
       `SELECT e.id, e.lead_id, e.preop_entered_at, e.surgery_date, e.preop_clearance_given,
               e.preop_assigned_user_id,
               COALESCE(l.name, CONCAT(p.first_name, ' ', p.last_name)) as patient_name,
-              EXTRACT(EPOCH FROM (NOW() - COALESCE(epa.modified_at, e.preop_entered_at)))/3600 as hours_without_update
+              EXTRACT(EPOCH FROM (NOW() - COALESCE(epa.modified_at, e.preop_entered_at)))/3600 as hours_without_update,
+              COALESCE(epa.readiness_status, 'Pending') as readiness_status
        FROM episodes e
        LEFT JOIN leads l ON e.lead_id = l.id
        LEFT JOIN patients p ON e.patient_id = p.id
        LEFT JOIN LATERAL (
-         SELECT modified_at FROM episode_preop_assessments
+         SELECT modified_at, readiness_status FROM episode_preop_assessments
          WHERE episode_id = e.id AND tenant_id = e.tenant_id
          ORDER BY id DESC LIMIT 1
        ) epa ON TRUE
        WHERE e.tenant_id = $1
          AND e.status = 'Pre-op Assessment'
          AND e.preop_clearance_given = FALSE
+         AND COALESCE(epa.readiness_status, 'Pending') != 'Ready'
          AND COALESCE(epa.modified_at, e.preop_entered_at) < NOW() - INTERVAL '48 hours'`,
       [tenantId]
     );
