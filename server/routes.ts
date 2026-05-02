@@ -7814,6 +7814,18 @@ export async function registerRoutes(
               inlineOverrideAuditData.userName,
             ]
           );
+          // Activity entry (episode timeline) for the override — requirement: activity log with reason + overriding user
+          const overrideLeadId = oldEpisode?.leadId || null;
+          if (overrideLeadId) {
+            await db.insert(activities).values({
+              tenantId: tid,
+              leadId: overrideLeadId,
+              type: "preop_override",
+              description: `Pre-op clearance override granted by ${inlineOverrideAuditData.userName} (${inlineOverrideAuditData.roleCode}). Reason: ${inlineOverrideAuditData.reason}. Episode proceeding to Surgery Done.`,
+              createdBy: inlineOverrideAuditData.userName,
+              metadata: { overrideBy: inlineOverrideAuditData.userName, overrideReason: inlineOverrideAuditData.reason, roleCode: inlineOverrideAuditData.roleCode, episodeId },
+            } as any);
+          }
           await pool.query(
             `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
              SELECT $1, cu.id, 'preop_override', $3, $4, 'episode', $2, $5, FALSE, NOW()
@@ -8054,6 +8066,26 @@ export async function registerRoutes(
         await storage.updateEpisode(episodeId, tid, episodeUpdates);
       }
 
+      // Auto-create revisit task when Not Ready + advisedRevisitDays set
+      if (readinessStatus === "Not Ready" && advisedRevisitDays && episode.leadId) {
+        try {
+          const revisitDue = revisitDueDateVal
+            || new Date(Date.now() + Number(advisedRevisitDays) * 24 * 60 * 60 * 1000);
+          await pool.query(
+            `INSERT INTO tasks (tenant_id, lead_id, title, description, priority, due_date, assigned_crm_user_id, status, created_by)
+             VALUES ($1, $2, $3, $4, 'High', $5, $6, 'Pending', 'system')
+             ON CONFLICT DO NOTHING`,
+            [
+              tid, episode.leadId,
+              `Re-evaluate Pre-op Readiness — ${episode.episodeName || `Episode #${episodeId}`}`,
+              `Patient marked 'Not Ready' for pre-op. Advised revisit in ${advisedRevisitDays} day(s). Reason: ${notReadyReason || "See pre-op assessment."}`,
+              revisitDue,
+              episode.preopAssignedUserId || episode.assignedCrmUserId || null,
+            ]
+          );
+        } catch {}
+      }
+
       res.json({ success: true, clearanceGranted: grantClearance === true });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
@@ -8212,7 +8244,6 @@ export async function registerRoutes(
          ) epa ON TRUE
          WHERE e.tenant_id = $1
            AND e.preop_entered_at IS NOT NULL
-           AND e.preop_clearance_given = FALSE
            AND e.status NOT IN ('Surgery Done', 'In Treatment', 'Post Care', 'Follow Up', 'Completed', 'Discontinued')
          ORDER BY e.surgery_date ASC NULLS LAST, e.preop_entered_at DESC
          LIMIT 50`,

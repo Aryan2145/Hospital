@@ -1433,6 +1433,10 @@ function PreopCasesWidget({ navigate, readOnly }: { navigate: (path: string) => 
                       <p className="text-xs font-medium text-foreground truncate">{c.patient_name || c.episode_name || `Episode #${c.id}`}</p>
                       <p className="text-[10px] text-muted-foreground">
                         {surgeryLabel || (enteredAt ? `${Math.round(hoursOverdue)}h since entry` : "")}
+                        {c.last_contact_at && (() => {
+                          const days = Math.round((Date.now() - new Date(c.last_contact_at).getTime()) / (1000 * 60 * 60 * 24));
+                          return ` · ${days}d since contact`;
+                        })()}
                         {c.assigned_user_name ? ` · ${c.assigned_user_name}` : ""}
                       </p>
                     </div>

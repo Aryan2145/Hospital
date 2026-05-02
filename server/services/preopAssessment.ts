@@ -1,23 +1,39 @@
 import { db, pool } from "../db";
 import { tasks, activities, episodePreopAssessments, preopReminderLog } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
+import nodemailer from "nodemailer";
+
+function getGlobalTransporter() {
+  const host = process.env.SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT || "587");
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  if (!host || !user || !pass) return null;
+  return {
+    transporter: nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } }),
+    fromEmail: process.env.SMTP_FROM_EMAIL || user,
+  };
+}
 
 export async function resolvePreopNotifyList(
   episode: any,
   tenantId: number,
 ): Promise<Array<{ crmUserId: number; name: string; email: string | null; phone: string | null; roleInCase: string }>> {
-  const userIds = new Set<number>();
-  const users: Array<{ crmUserId: number; name: string; email: string | null; phone: string | null; roleInCase: string }> = [];
+  // Accumulate roles per user to consolidate multi-role users into one entry
+  const rolesByUserId = new Map<number, { name: string; email: string | null; phone: string | null; roles: string[] }>();
 
   const addUser = async (userId: number | null, roleInCase: string) => {
-    if (!userId || userIds.has(userId)) return;
+    if (!userId) return;
+    if (rolesByUserId.has(userId)) {
+      rolesByUserId.get(userId)!.roles.push(roleInCase);
+      return;
+    }
     const row = await pool.query(
       `SELECT cu.id, cu.name, cu.email, cu.phone FROM crm_users cu WHERE cu.id = $1 AND cu.tenant_id = $2 AND cu.is_active = TRUE`,
       [userId, tenantId]
     );
     if (row.rows[0]) {
-      userIds.add(userId);
-      users.push({ crmUserId: userId, name: row.rows[0].name, email: row.rows[0].email, phone: row.rows[0].phone, roleInCase });
+      rolesByUserId.set(userId, { name: row.rows[0].name, email: row.rows[0].email, phone: row.rows[0].phone, roles: [roleInCase] });
     }
   };
 
@@ -50,11 +66,12 @@ export async function resolvePreopNotifyList(
       if (doc.crm_user_id) {
         await addUser(doc.crm_user_id, "doctor");
       }
-      // If no CRM account, caller (triggerPreopEntryAutomation) persists not-deliverable to preop_reminder_log
+      // If no CRM account, caller persists not-deliverable to preop_reminder_log + sends email
     }
   }
 
-  if (users.length === 0) {
+  // Fallback chain: if no one was resolved, pick ADMIN then MANAGER
+  if (rolesByUserId.size === 0) {
     const adminRow = await pool.query(
       `SELECT cu.id, cu.name, cu.email, cu.phone FROM crm_users cu
        JOIN system_roles sr ON cu.system_role_id = sr.id
@@ -63,11 +80,19 @@ export async function resolvePreopNotifyList(
       [tenantId]
     );
     if (adminRow.rows[0]) {
-      users.push({ crmUserId: adminRow.rows[0].id, name: adminRow.rows[0].name, email: adminRow.rows[0].email, phone: adminRow.rows[0].phone, roleInCase: "admin" });
+      rolesByUserId.set(adminRow.rows[0].id, {
+        name: adminRow.rows[0].name, email: adminRow.rows[0].email, phone: adminRow.rows[0].phone, roles: ["admin"],
+      });
     }
   }
 
-  return users;
+  return Array.from(rolesByUserId.entries()).map(([crmUserId, u]) => ({
+    crmUserId,
+    name: u.name,
+    email: u.email,
+    phone: u.phone,
+    roleInCase: u.roles.join("+"),
+  }));
 }
 
 export async function triggerPreopEntryAutomation(
@@ -179,14 +204,33 @@ export async function triggerPreopEntryAutomation(
             [tenantId, episodeId, String(doc.crm_user_id), JSON.stringify({ patientName, surgeryDateStr })]
           );
         } else if (!doc.crm_user_id) {
-          // No CRM account — log as not-deliverable in preop_reminder_log
+          // No CRM account — send fallback email to doctor.email if available
+          let emailSent = false;
+          if (doc.doctor_email) {
+            try {
+              const gt = getGlobalTransporter();
+              if (gt) {
+                await gt.transporter.sendMail({
+                  from: `"RGB Hospital CRM" <${gt.fromEmail}>`,
+                  to: doc.doctor_email,
+                  subject: `Pre-op Assessment Required — ${patientName}`,
+                  text: `Your patient ${patientName} has entered the Pre-op Assessment stage. Surgery: ${surgeryDateStr}. Please review the pre-op checklist in the CRM.`,
+                });
+                emailSent = true;
+              }
+            } catch (emailErr: any) {
+              console.error(`[preop-notify] Doctor email fallback failed for ${doc.doctor_name}:`, emailErr.message);
+            }
+          }
+          // Log as not-deliverable (or email-sent) in preop_reminder_log
           await pool.query(
             `INSERT INTO preop_reminder_log (tenant_id, episode_id, reminder_type, sent_to, recipient_role, channel, trigger_source, sent_at, details)
-             VALUES ($1, $2, 'preop_entry', $3, 'doctor', 'not_deliverable', 'stage_entry', NOW(), $4)`,
+             VALUES ($1, $2, 'preop_entry', $3, 'doctor', $4, 'stage_entry', NOW(), $5)`,
             [
               tenantId, episodeId,
               doc.doctor_name || `doctor_id:${doctorId}`,
-              JSON.stringify({ reason: "no_crm_account", doctorEmail: doc.doctor_email || null, patientName }),
+              emailSent ? "email" : "not_deliverable",
+              JSON.stringify({ reason: emailSent ? "email_fallback_sent" : "no_crm_account_no_email", doctorEmail: doc.doctor_email || null, patientName }),
             ]
           );
         }
@@ -220,25 +264,71 @@ export async function escalateOverduePreopCases(tenantId: number): Promise<numbe
   try {
     const now = new Date();
 
-    // --- 1. Main overdue escalation ladder ---
+    // --- 0. Re-create missing tasks for Pending assessments ---
+    try {
+      const pendingNoTask = await pool.query(
+        `SELECT e.id, e.lead_id, e.preop_assigned_user_id, e.assigned_crm_user_id, e.surgery_date,
+                COALESCE(l.name, CONCAT(p.first_name, ' ', p.last_name)) as patient_name
+         FROM episodes e
+         LEFT JOIN leads l ON e.lead_id = l.id
+         LEFT JOIN patients p ON e.patient_id = p.id
+         WHERE e.tenant_id = $1
+           AND e.status = 'Pre-op Assessment'
+           AND e.preop_clearance_given = FALSE
+           AND NOT EXISTS (
+             SELECT 1 FROM tasks t
+             WHERE t.tenant_id = $1
+               AND t.lead_id = e.lead_id
+               AND t.status IN ('Pending', 'In Progress')
+               AND t.title LIKE '%Pre-op%'
+               AND t.created_at > NOW() - INTERVAL '3 days'
+           )`,
+        [tenantId]
+      );
+      for (const ep of pendingNoTask.rows) {
+        const recipientId = ep.preop_assigned_user_id || ep.assigned_crm_user_id;
+        if (!ep.lead_id || !recipientId) continue;
+        const surgeryStr = ep.surgery_date
+          ? new Date(ep.surgery_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+          : "TBD";
+        await pool.query(
+          `INSERT INTO tasks (tenant_id, lead_id, title, description, priority, due_date, assigned_crm_user_id, status, created_by)
+           VALUES ($1, $2, $3, $4, 'High', $5, $6, 'Pending', 'system-scheduler')`,
+          [
+            tenantId, ep.lead_id,
+            `Pre-op Readiness Check — ${ep.patient_name}`,
+            `Pre-op assessment still pending for ${ep.patient_name}. Surgery: ${surgeryStr}. Please complete the readiness checklist.`,
+            ep.surgery_date ? new Date(new Date(ep.surgery_date).getTime() - 24 * 60 * 60 * 1000) : new Date(Date.now() + 24 * 60 * 60 * 1000),
+            recipientId,
+          ]
+        );
+      }
+    } catch {}
+
+    // --- 1. Main overdue escalation ladder (based on last-update time of assessment) ---
     const overdue = await pool.query(
       `SELECT e.id, e.lead_id, e.preop_entered_at, e.surgery_date, e.preop_clearance_given,
               e.preop_assigned_user_id,
               COALESCE(l.name, CONCAT(p.first_name, ' ', p.last_name)) as patient_name,
-              EXTRACT(EPOCH FROM (NOW() - e.preop_entered_at))/3600 as hours_since_entry
+              EXTRACT(EPOCH FROM (NOW() - COALESCE(epa.modified_at, e.preop_entered_at)))/3600 as hours_without_update
        FROM episodes e
        LEFT JOIN leads l ON e.lead_id = l.id
        LEFT JOIN patients p ON e.patient_id = p.id
+       LEFT JOIN LATERAL (
+         SELECT modified_at FROM episode_preop_assessments
+         WHERE episode_id = e.id AND tenant_id = e.tenant_id
+         ORDER BY id DESC LIMIT 1
+       ) epa ON TRUE
        WHERE e.tenant_id = $1
          AND e.status = 'Pre-op Assessment'
          AND e.preop_clearance_given = FALSE
-         AND e.preop_entered_at < NOW() - INTERVAL '48 hours'`,
+         AND COALESCE(epa.modified_at, e.preop_entered_at) < NOW() - INTERVAL '48 hours'`,
       [tenantId]
     );
 
     for (const ep of overdue.rows) {
       try {
-        const hoursSinceEntry = Number(ep.hours_since_entry) || 0;
+        const hoursSinceEntry = Number(ep.hours_without_update) || 0;
         const daysUntilSurgery = ep.surgery_date
           ? (new Date(ep.surgery_date).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
           : null;

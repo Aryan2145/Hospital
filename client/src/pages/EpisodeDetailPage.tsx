@@ -221,6 +221,9 @@ export default function EpisodeDetailPage() {
   const [surgeryDoneOverrideReason, setSurgeryDoneOverrideReason] = useState("");
   const [surgeryDoneBlockedPayload, setSurgeryDoneBlockedPayload] = useState<any>(null);
   const [isRequestingOverride, setIsRequestingOverride] = useState(false);
+  const [preopBannerDismissed, setPreopBannerDismissed] = useState(false);
+  const defaultTab = canViewEpisodeTab("clinical") ? "clinical" : canViewEpisodeTab("financial") ? "financial" : "insurance";
+  const [activeTab, setActiveTab] = useState(defaultTab);
 
   const clinicalNotesMutation = useMutation({
     mutationFn: async (data: { diagnosis: string; treatmentPlan: string; notes: string; editReason: string }) => {
@@ -472,7 +475,7 @@ export default function EpisodeDetailPage() {
           </div>
         </div>
 
-        {episode.status === "Pre-op Assessment" && (
+        {episode.status === "Pre-op Assessment" && !preopBannerDismissed && (
           <div className="mb-2 flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-3 py-2 text-sm text-amber-800 dark:text-amber-300" data-testid="banner-preop-assessment">
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span className="flex-1">
@@ -485,6 +488,21 @@ export default function EpisodeDetailPage() {
                 Since {fmtDate(episode.preopEnteredAt)}
               </span>
             )}
+            <button
+              className="text-xs underline text-amber-700 dark:text-amber-400 shrink-0 hover:text-amber-900"
+              onClick={() => setActiveTab("preop")}
+              data-testid="button-banner-goto-preop"
+            >
+              View Pre-op
+            </button>
+            <button
+              className="ml-1 text-amber-600 hover:text-amber-900 dark:text-amber-400"
+              onClick={() => setPreopBannerDismissed(true)}
+              aria-label="Dismiss"
+              data-testid="button-banner-dismiss-preop"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
         <div className="flex items-center gap-2 flex-wrap">
@@ -558,7 +576,8 @@ export default function EpisodeDetailPage() {
         <LogAndNextActionCard episode={episode} />
 
         <Tabs
-          defaultValue={canViewEpisodeTab("clinical") ? "clinical" : canViewEpisodeTab("financial") ? "financial" : "insurance"}
+          value={activeTab}
+          onValueChange={setActiveTab}
           className="w-full"
           data-testid="episode-tabs"
         >
