@@ -53,10 +53,14 @@ The platform is built with a modern web stack:
     - **Communication Preferences:** Per-lead/patient opt-in/opt-out for communication channels (WhatsApp, SMS, Email, Phone Call).
     - **Consent Capture:** Captures and tracks patient consent.
 
+- **WATI WhatsApp Connector:** Dedicated WhatsApp Business inbox integration. Settings stored in `tenant_settings` table via keys: `wati_api_url`, `wati_access_token`, `wati_enabled`, `wati_template_appointment`, `wati_template_reminder`. Service layer in `server/wati.ts`. WATI takes priority over Meta Cloud API when enabled. Supports: (1) appointment confirmation sent immediately on booking, (2) 24h-prior reminders via background scheduler, (3) two-way messaging via webhook at `/api/webhook/wati` that logs patient replies as lead activities. Config UI at `/whatsapp-settings` (WATI tab). Card shown in Connectors page.
+- **WhatsApp Settings UI:** Tabbed settings page at `/whatsapp-settings` with two tabs — WATI (primary) and Meta Cloud API (fallback). Provider selection is implicit: WATI takes priority when enabled.
+
 ## External Dependencies
 - **Replit Auth:** For user authentication.
 - **Google Sheets API:** For bulk lead import.
-- **WhatsApp Business API:** For automated communication.
+- **WhatsApp Business API (Meta Cloud):** For automated communication — fallback when WATI is not configured.
+- **WATI WhatsApp:** Primary WhatsApp provider for appointment confirmations, reminders, and two-way messaging.
 - **Meta Graph API v21.0:** For Facebook & Instagram ad campaign insights.
 - **Telephony (Callyzer):** Webhook-based integration for call log capture and auto-lead creation.
 - **SMTP Services:** For transactional emails and notifications.

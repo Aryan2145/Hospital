@@ -274,6 +274,66 @@ const METRIC_LABELS: Record<string, { label: string; icon: any; format: (v: numb
   totalEmployees: { label: "Employees", icon: Target, format: (v) => Math.round(v).toLocaleString() },
 };
 
+function WatiConnectorCard({ navigate }: { navigate: (path: string) => void }) {
+  const { data: watiSettings } = useQuery<{ wati_enabled: string | null; wati_api_url: string | null }>({
+    queryKey: ["/api/wati-settings"],
+  });
+
+  const isEnabled = watiSettings?.wati_enabled === "true";
+  const hasUrl = !!watiSettings?.wati_api_url;
+
+  return (
+    <Card
+      className={isEnabled && hasUrl ? "border-green-200 dark:border-green-900" : ""}
+      data-testid="card-connector-wati"
+    >
+      <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-md bg-green-50 dark:bg-green-950/30">
+            <MessageSquare className="h-5 w-5 text-green-600" />
+          </div>
+          <div>
+            <CardTitle className="text-base">WATI (WhatsApp)</CardTitle>
+            <div className="flex items-center gap-2 mt-1">
+              {isEnabled && hasUrl ? (
+                <Badge variant="default" className="gap-1 bg-green-100 text-green-700 border-green-200">
+                  <CheckCircle2 className="h-3 w-3" /> Configured
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="gap-1">
+                  <WifiOff className="h-3 w-3" /> Not configured
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          WATI provides a dedicated WhatsApp Business inbox with template messaging, automated appointment confirmations, 24h-prior reminders, and two-way patient communication via webhook.
+        </p>
+        {isEnabled && hasUrl && (
+          <div className="text-[11px] text-green-700 dark:text-green-400 flex items-center gap-1.5">
+            <CheckCircle2 className="h-3 w-3" />
+            Active — appointment confirmations & reminders enabled
+          </div>
+        )}
+        <div className="flex items-center gap-2 pt-1">
+          <Button
+            size="sm"
+            variant={isEnabled && hasUrl ? "outline" : "default"}
+            onClick={() => navigate("/whatsapp-settings")}
+            data-testid="button-configure-wati"
+          >
+            <Settings className="h-3.5 w-3.5 mr-1.5" />
+            {isEnabled && hasUrl ? "Configure" : "Set Up WATI"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function CallyzerWebhookPanel({ connector }: { connector: PlatformConnector }) {
   const { toast } = useToast();
   const [generatingSecret, setGeneratingSecret] = useState(false);
@@ -972,21 +1032,23 @@ export default function ConnectorsPage() {
                     </CardContent>
                   </Card>
 
-                  <Card data-testid="card-connector-whatsapp">
+                  <WatiConnectorCard navigate={navigate} />
+
+                  <Card data-testid="card-connector-whatsapp-meta">
                     <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
                       <div className="flex items-center gap-3">
-                        <div className="p-2.5 rounded-md bg-green-50 dark:bg-green-950/30">
-                          <MessageSquare className="h-5 w-5 text-green-600" />
+                        <div className="p-2.5 rounded-md bg-blue-50 dark:bg-blue-950/30">
+                          <MessageSquare className="h-5 w-5 text-blue-600" />
                         </div>
                         <div>
-                          <CardTitle className="text-base">WhatsApp Business</CardTitle>
-                          <p className="text-xs text-muted-foreground mt-1">Patient communication</p>
+                          <CardTitle className="text-base">WhatsApp (Meta Cloud API)</CardTitle>
+                          <p className="text-xs text-muted-foreground mt-1">Fallback provider</p>
                         </div>
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <p className="text-xs text-muted-foreground leading-relaxed">
-                        Connect WhatsApp Business API for automated appointment confirmations, patient reminders, and two-way messaging.
+                        Direct Meta WhatsApp Cloud API integration. Used as fallback when WATI is not enabled. Configure appointment confirmation templates in Meta Business Manager.
                       </p>
                       <div className="flex items-center gap-2 pt-1">
                         <Button

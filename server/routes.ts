@@ -6506,20 +6506,59 @@ export async function registerRoutes(
           newStatus: "Appointment Booked",
         });
 
-        // Send WhatsApp confirmation (non-blocking)
+        // Send WhatsApp confirmation (non-blocking) — routes to WATI or Meta based on settings
         (async () => {
           try {
             const allSettings = await storage.getTenantSettings(tid);
+            const lead = await storage.getLead(parsed.leadId!);
+            if (!lead?.phoneE164) return;
+
+            const tenantRow = await pool.query(`SELECT name FROM tenants WHERE id = $1`, [tid]);
+            const hospitalName = tenantRow.rows[0]?.name || "Hospital";
+
+            const confirmMsg = `Hello ${lead.name || ""},\n\nYour appointment has been confirmed.\n\nDoctor: Dr. ${doctorName}\nDate: ${dateStr2}\nTime: ${timeStr}\nToken: #${tokenNumber}\n\nPlease arrive 15 minutes before your scheduled time.\n\nThank you,\n${hospitalName}`;
+
+            // Check WATI first, then fall back to Meta
+            const { getWatiConfigFromSettings, sendWatiTemplate, sendWatiSession, formatPhoneForWati } = await import("./wati");
+            const watiConfig = getWatiConfigFromSettings(allSettings);
+
+            if (watiConfig.enabled) {
+              const watiPhone = formatPhoneForWati(lead.phoneE164);
+              let watiResult;
+              if (watiConfig.templateAppointment) {
+                watiResult = await sendWatiTemplate(watiConfig, {
+                  to: watiPhone,
+                  templateName: watiConfig.templateAppointment,
+                  broadcastName: `appt_confirm_${parsed.leadId}`,
+                  parameters: [
+                    { name: "patient_name", value: lead.name || "Patient" },
+                    { name: "doctor_name", value: `Dr. ${doctorName}` },
+                    { name: "appointment_date", value: dateStr2 },
+                    { name: "appointment_time", value: timeStr },
+                    { name: "token_number", value: String(tokenNumber) },
+                  ],
+                });
+              } else {
+                watiResult = await sendWatiSession(watiConfig, watiPhone, confirmMsg);
+              }
+              if (watiResult.success) {
+                await storage.createActivity({
+                  leadId: parsed.leadId!, tenantId: tid, createdBy: "system",
+                  type: "whatsapp",
+                  description: `WhatsApp (WATI) appointment confirmation sent to ${lead.phoneE164}`,
+                });
+              } else {
+                console.error("[WATI] Appointment confirmation failed:", watiResult.error);
+              }
+              return;
+            }
+
+            // Fall back to Meta Cloud API
             const { getWhatsAppConfigFromSettings, sendWhatsAppTemplate, sendWhatsAppText, formatPhoneForWhatsApp } = await import("./whatsapp");
             const waConfig = getWhatsAppConfigFromSettings(allSettings);
             if (!waConfig.enabled) return;
 
-            const lead = await storage.getLead(parsed.leadId!);
-            if (!lead?.phoneE164) return;
-
             const waPhone = formatPhoneForWhatsApp(lead.phoneE164);
-            const confirmMsg = `Hello ${lead.name || ""},\n\nYour appointment has been confirmed at VIROC Hospital.\n\nDoctor: Dr. ${doctorName}\nDate: ${dateStr2}\nTime: ${timeStr}\nToken: #${tokenNumber}\n\nPlease arrive 15 minutes before your scheduled time.\n\nThank you,\nVIROC Hospital`;
-
             if (waConfig.templateName && waConfig.templateName !== "none") {
               await sendWhatsAppTemplate(waConfig, {
                 to: waPhone,
@@ -11264,7 +11303,139 @@ export async function registerRoutes(
   // =============================================
   // WHATSAPP SETTINGS ROUTES (ADMIN+ access — each tenant admin manages their own)
   // =============================================
-  const WA_SETTING_KEYS = ["wa_phone_number_id", "wa_access_token", "wa_business_account_id", "wa_enabled", "wa_template_appointment", "wa_test_phone"];
+  const WA_SETTING_KEYS = ["wa_phone_number_id", "wa_access_token", "wa_business_account_id", "wa_enabled", "wa_template_appointment", "wa_test_phone", "wa_provider"];
+
+  // =============================================
+  // WATI SETTINGS ROUTES (ADMIN+ access)
+  // =============================================
+  const WATI_SETTING_KEYS = ["wati_api_url", "wati_access_token", "wati_enabled", "wati_template_appointment", "wati_template_reminder", "wati_test_phone"];
+
+  app.get("/api/wati-settings", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+    try {
+      const tid = await getDefaultTenantId(req);
+      const allSettings = await storage.getTenantSettings(tid);
+      const watiSettings: Record<string, string | null> = {};
+      for (const key of WATI_SETTING_KEYS) {
+        const found = allSettings.find(s => s.settingKey === key);
+        if (key === "wati_access_token" && found?.settingValue) {
+          watiSettings[key] = "••••••••";
+        } else {
+          watiSettings[key] = found?.settingValue ?? null;
+        }
+      }
+      res.json(watiSettings);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.put("/api/wati-settings", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+    try {
+      const tid = await getDefaultTenantId(req);
+      const body = req.body as Record<string, string | null>;
+      if (body.wati_enabled === "true") {
+        if (!body.wati_api_url && !body.wati_access_token) {
+          return res.status(400).json({ message: "WATI API URL and Access Token are required when enabling WATI" });
+        }
+      }
+      for (const key of WATI_SETTING_KEYS) {
+        if (key in body) {
+          if (key === "wati_access_token" && body[key] === "••••••••") continue;
+          await storage.setTenantSetting(tid, key, body[key] ?? null);
+        }
+      }
+      res.json({ success: true, message: "WATI settings saved" });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/wati-settings/test", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+    try {
+      const tid = await getDefaultTenantId(req);
+      const allSettings = await storage.getTenantSettings(tid);
+      const { testWatiConnection, getWatiConfigFromSettings } = await import("./wati");
+      const config = getWatiConfigFromSettings(allSettings);
+      const result = await testWatiConnection(config);
+      if (result.success) {
+        res.json({ success: true, message: result.message });
+      } else {
+        res.status(400).json({ message: result.message });
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/wati-settings/send-test", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+    try {
+      const tid = await getDefaultTenantId(req);
+      const { phone } = req.body;
+      if (!phone) return res.status(400).json({ message: "Phone number is required" });
+      const allSettings = await storage.getTenantSettings(tid);
+      const { getWatiConfigFromSettings, sendWatiSession, formatPhoneForWati } = await import("./wati");
+      const config = getWatiConfigFromSettings(allSettings);
+      if (!config.enabled) return res.status(400).json({ message: "WATI is not enabled" });
+      const result = await sendWatiSession(config, formatPhoneForWati(phone), "Hello from RGB Hospital CRM! This is a test message to confirm your WATI WhatsApp integration is working correctly.");
+      if (result.success) {
+        res.json({ success: true, message: `Test message sent successfully! Message ID: ${result.messageId ?? "N/A"}` });
+      } else {
+        res.status(400).json({ message: `Failed to send: ${result.error}` });
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // WATI WEBHOOK — incoming messages (2-way communication)
+  // =============================================
+  app.post("/api/webhook/wati", async (req: any, res: any) => {
+    try {
+      // WATI sends incoming messages here. We log them as lead activities.
+      const payload = req.body;
+      const senderPhone: string = (payload?.waId || payload?.from || "").replace(/\D/g, "");
+      const messageText: string = payload?.text?.body || payload?.message || "";
+      const contactName: string = payload?.senderName || payload?.contact?.name || "";
+
+      console.log(`[WATI-webhook] Incoming message from ${senderPhone}: ${messageText.substring(0, 100)}`);
+
+      // Try to match sender phone to a lead across all tenants
+      if (senderPhone && messageText) {
+        // Find lead by phone — try both stored formats
+        const leadResult = await pool.query(
+          `SELECT l.id, l.tenant_id, l.name FROM leads l
+           WHERE (l.phone_e164 LIKE $1 OR l.phone_e164 LIKE $2)
+             AND l.tenant_id IN (SELECT id FROM tenants WHERE subscription_status = 'Active')
+           LIMIT 1`,
+          [`%${senderPhone.slice(-10)}`, `%${senderPhone}`]
+        );
+
+        if (leadResult.rows.length > 0) {
+          const lead = leadResult.rows[0];
+          await pool.query(
+            `INSERT INTO activities (lead_id, tenant_id, created_by, type, description, created_at, modified_at)
+             VALUES ($1, $2, 'system', 'whatsapp', $3, NOW(), NOW())`,
+            [
+              lead.id,
+              lead.tenant_id,
+              `Incoming WhatsApp from ${contactName || senderPhone}: ${messageText.substring(0, 500)}`,
+            ]
+          );
+          console.log(`[WATI-webhook] Logged incoming message on Lead #${lead.id} (${lead.name})`);
+        }
+      }
+
+      res.status(200).json({ status: "ok" });
+    } catch (err: any) {
+      console.error("[WATI-webhook] Error:", err.message);
+      res.status(200).json({ status: "ok" }); // Always 200 to WATI so it doesn't retry
+    }
+  });
 
   app.get("/api/whatsapp-settings", isAuthenticated, async (req: any, res: any) => {
     if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
