@@ -16,7 +16,7 @@ import { desc, eq, and, or, sql, count, gte, lte, isNull, inArray } from "drizzl
 import { encryptValue, decryptValue, isEncrypted } from "./crypto";
 import { sendDiscountApprovalEmail } from "./email";
 import { sendDiscountApprovalSMS } from "./sms";
-import { triggerPreopEntryAutomation, getOrCreatePreopAssessment, resolvePreopNotifyList } from "./services/preopAssessment";
+import { triggerPreopEntryAutomation, getOrCreatePreopAssessment, resolvePreopNotifyList, getGlobalTransporter as getPreopSmtpTransporter } from "./services/preopAssessment";
 
 const PHI_FIELDS_TO_MASK = [
   "phoneE164", "phone_e164", "mobileNormalized", "mobile_normalized",
@@ -7862,7 +7862,9 @@ export async function registerRoutes(
               `/episodes/${episodeId}`,
             ]
           );
-        } catch {}
+        } catch (overrideAuditErr: any) {
+          console.error(`[preop] Error writing override audit log/notification for episode ${episodeId}:`, overrideAuditErr.message);
+        }
       }
 
       if (oldEpisode && body.status === "Pre-op Assessment" && body.status !== oldEpisode.status) {
@@ -7914,18 +7916,24 @@ export async function registerRoutes(
           await processAutoHandover("Lead", oldEpisode.leadId, "Insurance Applicable", tid, userId, {
             branchId: oldEpisode.branchId,
           });
-        } catch {}
+        } catch (insErr: any) {
+          console.error(`[episode] Insurance temperature/handover error for lead ${oldEpisode.leadId}:`, insErr.message);
+        }
       }
 
       if (body.advanceReceivedAmount && body.advanceReceivedAmount > 0 && oldEpisode?.leadId) {
         try {
           await computeAndUpdateTemperature(oldEpisode.leadId, tid, "Advance Received", userId, episodeId, "Episode");
-        } catch {}
+        } catch (advErr: any) {
+          console.error(`[episode] Advance temperature error for lead ${oldEpisode.leadId}:`, advErr.message);
+        }
       }
 
       try {
         await computeRevenueProbability(episodeId, tid);
-      } catch {}
+      } catch (revErr: any) {
+        console.error(`[episode] Revenue probability error for episode ${episodeId}:`, revErr.message);
+      }
 
       if (oldEpisode && body.status && body.status !== oldEpisode.status) {
         const postCareTriggerStatuses = ["Post Care", "Completed"];
@@ -8149,7 +8157,9 @@ export async function registerRoutes(
               episode.preopAssignedUserId || episode.assignedCrmUserId || null,
             ]
           );
-        } catch {}
+        } catch (revisitTaskErr: any) {
+          console.error(`[preop] Error creating revisit task for episode ${episodeId}:`, revisitTaskErr.message);
+        }
       }
 
       res.json({ success: true, clearanceGranted: grantClearance === true });
@@ -8199,8 +8209,8 @@ export async function registerRoutes(
         : "system";
       const crmUserId = (req as any).session?.crmUserId || null;
 
-      // Resolve notify list and send notifications
-      const notifyUsers = await resolvePreopNotifyList(episode, tid);
+      // Resolve notify list (including doctor email fallbacks) and send notifications
+      const { crmRecipients, emailFallbacks } = await resolvePreopNotifyList(episode, tid, true);
       const patientName = episode.leadId
         ? (await pool.query(`SELECT name FROM leads WHERE id = $1`, [episode.leadId])).rows[0]?.name || `Episode #${episodeId}`
         : `Episode #${episodeId}`;
@@ -8208,25 +8218,51 @@ export async function registerRoutes(
         ? new Date(episode.surgeryDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
         : "TBD";
 
-      for (const user of notifyUsers) {
-        await pool.query(
-          `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
-           VALUES ($1, $2, 'preop_reminder', $3, $4, 'episode', $5, $6, FALSE, NOW())`,
-          [
-            tid, user.crmUserId,
-            `Pre-op Assessment Reminder — ${patientName}`,
-            `Reminder: pre-op assessment for ${patientName} is pending. Surgery: ${surgeryDateStr}. Please complete the checklist. Sent by ${userName}.`,
-            episodeId, `/episodes/${episodeId}`,
-          ]
-        );
-        await pool.query(
-          `INSERT INTO preop_reminder_log (tenant_id, episode_id, reminder_type, sent_to, recipient_role, channel, trigger_source, sent_at, details)
-           VALUES ($1, $2, 'manual_notify', $3, $4, 'in_app', 'manual', NOW(), $5)`,
-          [tid, episodeId, String(user.crmUserId), user.roleInCase, JSON.stringify({ sentBy: userName, sentByCrmUserId: crmUserId })]
-        );
+      for (const user of crmRecipients) {
+        try {
+          await pool.query(
+            `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
+             VALUES ($1, $2, 'preop_reminder', $3, $4, 'episode', $5, $6, FALSE, NOW())`,
+            [
+              tid, user.crmUserId,
+              `Pre-op Assessment Reminder — ${patientName}`,
+              `Reminder: pre-op assessment for ${patientName} is pending. Surgery: ${surgeryDateStr}. Please complete the checklist. Sent by ${userName}.`,
+              episodeId, `/episodes/${episodeId}`,
+            ]
+          );
+          await pool.query(
+            `INSERT INTO preop_reminder_log (tenant_id, episode_id, reminder_type, sent_to, recipient_role, channel, trigger_source, sent_at, details)
+             VALUES ($1, $2, 'manual_notify', $3, $4, 'in_app', 'manual', NOW(), $5)`,
+            [tid, episodeId, String(user.crmUserId), user.roleInCase, JSON.stringify({ sentBy: userName, sentByCrmUserId: crmUserId })]
+          );
+        } catch (notifErr: any) {
+          console.error(`[preop] Manual notify error for crm_user ${user.crmUserId}:`, notifErr.message);
+        }
       }
 
-      res.json({ success: true, notifiedCount: notifyUsers.length });
+      // Send email to doctors without CRM accounts
+      for (const fallback of emailFallbacks) {
+        try {
+          const smtp = getPreopSmtpTransporter();
+          if (smtp) {
+            await smtp.transporter.sendMail({
+              from: smtp.fromEmail,
+              to: fallback.doctorEmail,
+              subject: `Pre-op Assessment Reminder — ${patientName}`,
+              text: `Dear Dr. ${fallback.doctorName},\n\nThis is a reminder that the pre-operative assessment for ${patientName} is pending. Surgery is scheduled for ${surgeryDateStr}.\n\nPlease ensure the readiness checklist is completed before the surgery date.\n\nSent by ${userName} via RGB Hospital CRM.`,
+            });
+            await pool.query(
+              `INSERT INTO preop_reminder_log (tenant_id, episode_id, reminder_type, sent_to, recipient_role, channel, trigger_source, sent_at, details)
+               VALUES ($1, $2, 'manual_notify', $3, 'doctor', 'email', 'manual', NOW(), $4)`,
+              [tid, episodeId, fallback.doctorEmail, JSON.stringify({ sentBy: userName, doctorName: fallback.doctorName })]
+            );
+          }
+        } catch (emailErr: any) {
+          console.error(`[preop] Email fallback error for doctor ${fallback.doctorEmail}:`, emailErr.message);
+        }
+      }
+
+      res.json({ success: true, notifiedCount: crmRecipients.length + emailFallbacks.length });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

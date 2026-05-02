@@ -3,7 +3,7 @@ import { tasks, activities, episodePreopAssessments, preopReminderLog } from "@s
 import { eq, and } from "drizzle-orm";
 import nodemailer from "nodemailer";
 
-function getGlobalTransporter() {
+export function getGlobalTransporter() {
   const host = process.env.SMTP_HOST;
   const port = parseInt(process.env.SMTP_PORT || "587");
   const user = process.env.SMTP_USER;
@@ -15,10 +15,24 @@ function getGlobalTransporter() {
   };
 }
 
+export type PreopCrmRecipient = { crmUserId: number; name: string; email: string | null; phone: string | null; roleInCase: string };
+export type PreopEmailFallback = { doctorName: string; doctorEmail: string; roleInCase: "doctor" };
+export type PreopNotifyResult = { crmRecipients: PreopCrmRecipient[]; emailFallbacks: PreopEmailFallback[] };
+
 export async function resolvePreopNotifyList(
   episode: any,
   tenantId: number,
-): Promise<Array<{ crmUserId: number; name: string; email: string | null; phone: string | null; roleInCase: string }>> {
+): Promise<PreopCrmRecipient[]>;
+export async function resolvePreopNotifyList(
+  episode: any,
+  tenantId: number,
+  includeEmailFallbacks: true,
+): Promise<PreopNotifyResult>;
+export async function resolvePreopNotifyList(
+  episode: any,
+  tenantId: number,
+  includeEmailFallbacks?: boolean,
+): Promise<PreopCrmRecipient[] | PreopNotifyResult> {
   // Helpers
   const fetchUser = async (userId: number): Promise<{ id: number; name: string; email: string | null; phone: string | null } | null> => {
     const row = await pool.query(
@@ -89,32 +103,41 @@ export async function resolvePreopNotifyList(
     }
   }
 
-  // --- 2. Always add doctors with CRM accounts (in addition to coordinator) ---
-  // Doctor email-fallback for no-CRM doctors is handled by triggerPreopEntryAutomation
+  // --- 2. Always add doctors with CRM accounts; collect email-only fallbacks for those without ---
   const doctorIdsToCheck = new Set<number>();
   if (episode.doctorId) doctorIdsToCheck.add(episode.doctorId);
   if (episode.surgeryDoctorId) doctorIdsToCheck.add(episode.surgeryDoctorId);
 
+  const emailFallbacks: PreopEmailFallback[] = [];
+
   for (const doctorId of doctorIdsToCheck) {
     const docRow = await pool.query(
-      `SELECT d.name as doctor_name, cu.id as crm_user_id, cu.name, cu.email, cu.phone
+      `SELECT d.name as doctor_name, d.email as doctor_email, cu.id as crm_user_id, cu.name, cu.email, cu.phone
        FROM doctors d
        LEFT JOIN crm_users cu ON cu.id = d.crm_user_id AND cu.tenant_id = d.tenant_id
        WHERE d.id = $1 AND d.tenant_id = $2`,
       [doctorId, tenantId]
     );
-    if (docRow.rows[0]?.crm_user_id && !notifyUserIds.has(docRow.rows[0].crm_user_id)) {
+    const row = docRow.rows[0];
+    if (!row) continue;
+    if (row.crm_user_id && !notifyUserIds.has(row.crm_user_id)) {
       notifyList.push({
-        crmUserId: docRow.rows[0].crm_user_id,
-        name: docRow.rows[0].name,
-        email: docRow.rows[0].email,
-        phone: docRow.rows[0].phone,
+        crmUserId: row.crm_user_id,
+        name: row.name,
+        email: row.email,
+        phone: row.phone,
         roleInCase: "doctor",
       });
-      notifyUserIds.add(docRow.rows[0].crm_user_id);
+      notifyUserIds.add(row.crm_user_id);
+    } else if (!row.crm_user_id && row.doctor_email) {
+      // Doctor has no CRM account — collect as email-only fallback
+      emailFallbacks.push({ doctorName: row.doctor_name, doctorEmail: row.doctor_email, roleInCase: "doctor" });
     }
   }
 
+  if (includeEmailFallbacks) {
+    return { crmRecipients: notifyList, emailFallbacks };
+  }
   return notifyList;
 }
 

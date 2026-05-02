@@ -607,7 +607,7 @@ export default function EpisodeDetailPage() {
                 Family Status
               </TabsTrigger>
             )}
-            {(!!episode.preopEnteredAt || episode.status === "Pre-op Assessment" || episode.status === "Surgery Scheduled" ||
+            {(!!episode.preopEnteredAt || episode.status === "Pre-op Assessment" ||
               ["Surgery Done", "In Treatment", "Post Care", "Follow Up", "Completed", "Discontinued"].includes(episode.status)) && (
               <TabsTrigger value="preop" data-testid="tab-preop">
                 <HeartPulse className="w-3.5 h-3.5 mr-1.5" />
