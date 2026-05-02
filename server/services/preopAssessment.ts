@@ -31,8 +31,9 @@ export async function resolvePreopNotifyList(
   // --- 1. Multi-role consolidation with fallback-chain coordinator selection ---
   // Step A: Collect all coordinator slot candidates into a Map<userId, roles[]>
   // so a user occupying multiple slots gets ONE consolidated entry with all roles merged.
+  type CrmUserRow = { id: number; name: string; email: string | null; phone: string | null };
   type UserEntry = { crmUserId: number; name: string; email: string | null; phone: string | null; roleInCase: string };
-  const coordinatorRoles = new Map<number, { user: Awaited<ReturnType<typeof fetchUser>> & {}; roles: string[]; priority: number }>();
+  const coordinatorRoles = new Map<number, { user: CrmUserRow; roles: string[]; priority: number }>();
 
   const addCoordCandidate = async (userId: number | null, role: string, priority: number) => {
     if (!userId) return;
@@ -41,9 +42,9 @@ export async function resolvePreopNotifyList(
     if (coordinatorRoles.has(u.id)) {
       const existing = coordinatorRoles.get(u.id)!;
       existing.roles.push(role);
-      if (priority < existing.priority) existing.priority = priority; // keep highest priority
+      if (priority < existing.priority) existing.priority = priority;
     } else {
-      coordinatorRoles.set(u.id, { user: u as any, roles: [role], priority });
+      coordinatorRoles.set(u.id, { user: u, roles: [role], priority });
     }
   };
 
@@ -66,13 +67,13 @@ export async function resolvePreopNotifyList(
   if (coordinatorRoles.size > 0) {
     const winner = Array.from(coordinatorRoles.values()).sort((a, b) => a.priority - b.priority)[0];
     notifyList.push({
-      crmUserId: (winner.user as any).id,
-      name: (winner.user as any).name,
-      email: (winner.user as any).email,
-      phone: (winner.user as any).phone,
-      roleInCase: winner.roles.join("+"), // consolidated multi-role label
+      crmUserId: winner.user.id,
+      name: winner.user.name,
+      email: winner.user.email,
+      phone: winner.user.phone,
+      roleInCase: winner.roles.join("+"),
     });
-    notifyUserIds.add((winner.user as any).id);
+    notifyUserIds.add(winner.user.id);
   } else {
     // Absolute fallback: ADMIN → MANAGER
     const adminRow = await pool.query(
@@ -154,17 +155,17 @@ export async function triggerPreopEntryAutomation(
 
   for (const user of notifyUsers) {
     try {
-      await db.insert(tasks).values({
-        tenantId,
-        leadId: episode.leadId,
-        title: `Pre-op Readiness Check — ${patientName}`,
-        description: `Complete the pre-operative assessment checklist for ${patientName} before surgery on ${surgeryDateStr}. Mark all items and set overall readiness status.`,
-        priority: "High",
-        dueDate: episode.surgeryDate ? new Date(new Date(episode.surgeryDate).getTime() - 24 * 60 * 60 * 1000) : new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
-        assignedCrmUserId: user.crmUserId,
-        status: "Pending",
-        createdBy: "system",
-      } as any);
+      await pool.query(
+        `INSERT INTO tasks (tenant_id, lead_id, title, description, priority, due_date, assigned_crm_user_id, status, created_by)
+         VALUES ($1, $2, $3, $4, 'High', $5, $6, 'Pending', 'system')`,
+        [
+          tenantId, episode.leadId,
+          `Pre-op Readiness Check — ${patientName}`,
+          `Complete the pre-operative assessment checklist for ${patientName} before surgery on ${surgeryDateStr}. Mark all items and set overall readiness status.`,
+          episode.surgeryDate ? new Date(new Date(episode.surgeryDate).getTime() - 24 * 60 * 60 * 1000) : new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+          user.crmUserId,
+        ]
+      );
     } catch (err: any) {
       console.error(`[preop] Error creating task for user ${user.crmUserId}:`, err.message);
     }
@@ -180,7 +181,9 @@ export async function triggerPreopEntryAutomation(
           episodeId, `/episodes/${episodeId}`,
         ]
       );
-    } catch {}
+    } catch (notifErr: any) {
+      console.error(`[preop] Error inserting in-app notification for user ${user.crmUserId}:`, notifErr.message);
+    }
 
     // Write reminder_log per notified user
     try {
@@ -189,7 +192,9 @@ export async function triggerPreopEntryAutomation(
          VALUES ($1, $2, 'preop_entry', $3, $4, 'in_app', 'stage_entry', NOW(), $5)`,
         [tenantId, episodeId, String(user.crmUserId), user.roleInCase, JSON.stringify({ patientName, surgeryDateStr })]
       );
-    } catch {}
+    } catch (logErr: any) {
+      console.error(`[preop] Error writing reminder log for user ${user.crmUserId}:`, logErr.message);
+    }
   }
 
   // Doctor notification — check both doctorId and surgeryDoctorId
@@ -325,7 +330,9 @@ export async function escalateOverduePreopCases(tenantId: number): Promise<numbe
           ]
         );
       }
-    } catch {}
+    } catch (missingTaskErr: any) {
+      console.error(`[preop-scheduler] Error re-creating missing tasks for tenant ${tenantId}:`, missingTaskErr.message);
+    }
 
     // --- 1. Main overdue escalation ladder (based on last-update time of assessment) ---
     const overdue = await pool.query(
@@ -503,9 +510,13 @@ export async function escalateOverduePreopCases(tenantId: number): Promise<numbe
              VALUES ($1, $2, 'revisit_due', $3, 'preop_staff', 'in_app', 'scheduler', NOW(), $4)`,
             [tenantId, ep.id, recipientId ? String(recipientId) : "none", JSON.stringify({ revisitDueDate: ep.revisit_due_date })]
           );
-        } catch {}
+        } catch (revisitErr: any) {
+          console.error(`[preop-scheduler] Error handling revisit-due case ${ep.id}:`, revisitErr.message);
+        }
       }
-    } catch {}
+    } catch (revisitLoopErr: any) {
+      console.error(`[preop-scheduler] Error in revisit-due loop for tenant ${tenantId}:`, revisitLoopErr.message);
+    }
 
   } catch (err: any) {
     console.error(`[preop-escalation] Error for tenant ${tenantId}:`, err.message);

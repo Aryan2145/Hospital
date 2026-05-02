@@ -475,13 +475,14 @@ export default function EpisodeDetailPage() {
           </div>
         </div>
 
-        {episode.status === "Pre-op Assessment" && !preopBannerDismissed && (
+        {episode.status === "Pre-op Assessment" && !episode.preopClearanceGiven && !preopBannerDismissed && (
           <div className="mb-2 flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-3 py-2 text-sm text-amber-800 dark:text-amber-300" data-testid="banner-preop-assessment">
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span className="flex-1">
               <strong>Pre-op Assessment in Progress</strong>
-              {!episode.preopClearanceGiven && " — Clearance not yet given. Complete the checklist before marking Surgery Done."}
-              {episode.preopClearanceGiven && " — Clearance granted. Episode can proceed to Surgery Done."}
+              {episode.preopReadinessStatus === "Not Ready"
+                ? " — Patient marked Not Ready. Review and update the checklist."
+                : " — Clearance not yet given. Complete the checklist before marking Surgery Done."}
             </span>
             {episode.preopEnteredAt && (
               <span className="text-xs text-amber-600 dark:text-amber-400 shrink-0">
@@ -3295,6 +3296,38 @@ function PreopAssessmentTab({
       </div>
 
       <div className="space-y-1.5">
+        <Label className="text-xs font-medium">Medical Condition Notes</Label>
+        <Textarea
+          key={`preop-med-notes-${assessment.medical_condition_notes}`}
+          defaultValue={assessment.medical_condition_notes || ""}
+          onBlur={(e) => {
+            if (e.target.value !== (assessment.medical_condition_notes || "")) {
+              handleSave({ medicalConditionNotes: e.target.value });
+            }
+          }}
+          placeholder="Detail any relevant medical conditions, current medications, or contraindications..."
+          className="text-xs min-h-[60px] resize-none"
+          data-testid="textarea-medical-condition-notes"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs font-medium">Mental Readiness Notes</Label>
+        <Textarea
+          key={`preop-mental-notes-${assessment.mental_readiness_notes}`}
+          defaultValue={assessment.mental_readiness_notes || ""}
+          onBlur={(e) => {
+            if (e.target.value !== (assessment.mental_readiness_notes || "")) {
+              handleSave({ mentalReadinessNotes: e.target.value });
+            }
+          }}
+          placeholder="Note any psychological concerns, counselling required, or patient's emotional state..."
+          className="text-xs min-h-[60px] resize-none"
+          data-testid="textarea-mental-readiness-notes"
+        />
+      </div>
+
+      <div className="space-y-1.5">
         <Label className="text-xs font-medium">Clinical Notes</Label>
         <Textarea
           key={`preop-notes-${assessment.notes}`}
@@ -3354,8 +3387,9 @@ function PreopAssessmentTab({
                   {entry.channel === "not_deliverable" ? "⚠ undeliverable" : entry.channel || "in_app"}
                 </span>
                 <span className="flex-1">
-                  {entry.recipient_role || entry.sent_to}{" "}
-                  <span className="opacity-60">· {entry.reminder_type} · {entry.trigger_source}</span>
+                  <span className="font-medium text-foreground">{entry.recipient_name || entry.sent_to}</span>
+                  {entry.recipient_role && <span className="opacity-60"> ({entry.recipient_role})</span>}
+                  <span className="opacity-60"> · {entry.reminder_type} · {entry.trigger_source}</span>
                 </span>
                 <span className="shrink-0 opacity-50">
                   {entry.sent_at ? new Date(entry.sent_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : ""}
