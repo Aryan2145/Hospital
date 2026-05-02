@@ -16,7 +16,7 @@ import {
   AlertTriangle, Phone, Clock, CheckCircle2, Flame, Snowflake, ChevronRight,
   Brain, Thermometer, TrendingDown, Ban, ShieldCheck, ClipboardList,
   PhoneCall, ListChecks, Eye, FileText, User2, Building2,
-  ArrowRightLeft, Check, X
+  ArrowRightLeft, Check, X, HeartPulse
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
@@ -475,6 +475,8 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
         </div>
       )}
 
+      <PreopCasesWidget navigate={navigate} readOnly={readOnly} />
+
       {intelligenceStats && !readOnly && <IntelligenceOverview stats={intelligenceStats} navigate={navigate} />}
 
       {!readOnly && <QuickActionsCard navigate={navigate} totalLeads={totalLeads} role="management" />}
@@ -598,6 +600,8 @@ function ManagerDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, userNam
       {dashStats.teamStats && dashStats.teamStats.length > 0 && (
         <TeamPerformanceCard teamStats={dashStats.teamStats} navigate={navigate} />
       )}
+
+      <PreopCasesWidget navigate={navigate} />
 
       <QuickActionsCard navigate={navigate} totalLeads={totalLeads} role="manager" />
     </>
@@ -1349,6 +1353,88 @@ function QuickActionsCard({ navigate, totalLeads, role }: { navigate: (path: str
             </Button>
           )}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PreopCasesWidget({ navigate, readOnly }: { navigate: (path: string) => void; readOnly?: boolean }) {
+  const { data, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/dashboard/preop-cases"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/preop-cases", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const cases = data || [];
+  if (isLoading || cases.length === 0) return null;
+
+  const pendingClearance = cases.filter((c: any) => !c.preopClearanceGiven);
+  const cleared = cases.filter((c: any) => c.preopClearanceGiven);
+
+  return (
+    <Card data-testid="card-preop-cases-widget">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+          <HeartPulse className="h-4 w-4 text-amber-500" />
+          Pre-op Assessment Cases
+          <Badge className="text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 ml-auto">
+            {cases.length} active
+          </Badge>
+          {pendingClearance.length > 0 && (
+            <Badge variant="destructive" className="text-xs">
+              {pendingClearance.length} awaiting clearance
+            </Badge>
+          )}
+        </CardTitle>
+        <CardDescription className="text-xs">
+          Episodes currently in Pre-op Assessment stage
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-1.5 max-h-64 overflow-y-auto">
+          {cases.slice(0, 15).map((c: any, i: number) => (
+            <div
+              key={`preop-case-${c.id}`}
+              className={`flex items-center gap-2 p-2 rounded-md cursor-pointer transition-colors ${
+                c.preopClearanceGiven
+                  ? "bg-green-50 dark:bg-green-950/20 hover:bg-green-100 dark:hover:bg-green-950/30"
+                  : "bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-950/30"
+              }`}
+              onClick={() => !readOnly && navigate(`/episodes/${c.id}`)}
+              data-testid={`preop-case-row-${c.id}`}
+            >
+              <div className={`w-2 h-2 rounded-full shrink-0 ${c.preopClearanceGiven ? "bg-green-500" : "bg-amber-500"}`} />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-foreground truncate">{c.patientName || c.episodeName || `Episode #${c.id}`}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {c.treatmentDepartment || "General"}
+                  {c.assignedCrmUserName ? ` · ${c.assignedCrmUserName}` : ""}
+                  {c.preopEnteredAt
+                    ? ` · Since ${new Date(c.preopEnteredAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}`
+                    : ""}
+                </p>
+              </div>
+              <Badge
+                className={`text-[10px] h-4 shrink-0 ${
+                  c.preopClearanceGiven
+                    ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                    : c.preopReadinessStatus === "Not Ready"
+                    ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                    : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                }`}
+              >
+                {c.preopClearanceGiven ? "Cleared" : c.preopReadinessStatus || "Pending"}
+              </Badge>
+            </div>
+          ))}
+        </div>
+        {cases.length > 15 && (
+          <p className="text-xs text-muted-foreground mt-2 text-center">{cases.length - 15} more cases not shown</p>
+        )}
       </CardContent>
     </Card>
   );

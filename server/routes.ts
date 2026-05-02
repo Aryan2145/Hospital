@@ -16,6 +16,7 @@ import { desc, eq, and, or, sql, count, gte, lte, isNull, inArray } from "drizzl
 import { encryptValue, decryptValue, isEncrypted } from "./crypto";
 import { sendDiscountApprovalEmail } from "./email";
 import { sendDiscountApprovalSMS } from "./sms";
+import { triggerPreopEntryAutomation, getOrCreatePreopAssessment } from "./services/preopAssessment";
 
 const PHI_FIELDS_TO_MASK = [
   "phoneE164", "phone_e164", "mobileNormalized", "mobile_normalized",
@@ -7692,6 +7693,28 @@ export async function registerRoutes(
         }
       }
 
+      if (body.status === "Surgery Done" && oldEpisode?.status === "Pre-op Assessment") {
+        const clearanceGiven = oldEpisode?.preopClearanceGiven;
+        const managerOverride = body.preopClearanceOverrideBy;
+        if (!clearanceGiven && !managerOverride) {
+          return res.status(422).json({
+            message: "Pre-op clearance has not been given. A manager override is required to proceed to Surgery Done.",
+            code: "PREOP_CLEARANCE_REQUIRED",
+            preopClearanceRequired: true,
+          });
+        }
+        if (managerOverride) {
+          body.preopClearanceOverrideBy = managerOverride;
+          body.preopClearanceOverrideAt = new Date();
+        }
+      }
+
+      if (body.status === "Pre-op Assessment" && oldEpisode?.status === "Surgery Scheduled") {
+        body.preopEnteredAt = new Date();
+        body.preopReadinessStatus = "Not Started";
+        body.preopClearanceGiven = false;
+      }
+
       const stageRemarksVal = body.stageRemarks;
       delete body.stageRemarks;
 
@@ -7735,6 +7758,27 @@ export async function registerRoutes(
               });
             } catch {}
           }
+        }
+      }
+
+      if (oldEpisode && body.status === "Pre-op Assessment" && body.status !== oldEpisode.status) {
+        try {
+          const leadRow = oldEpisode.leadId
+            ? await pool.query(`SELECT name FROM leads WHERE id = $1 AND tenant_id = $2`, [oldEpisode.leadId, tid])
+            : null;
+          const episodeForPreop = {
+            ...oldEpisode,
+            status: "Pre-op Assessment",
+            preopAssignedUserId: body.preopAssignedUserId || oldEpisode.preopAssignedUserId,
+            leadName: leadRow?.rows[0]?.name,
+          };
+          const crmUserId = (req as any).session?.crmUserId || null;
+          const userName = (req as any).user?.firstName
+            ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+            : "system";
+          await triggerPreopEntryAutomation(episodeId, tid, episodeForPreop, userName, crmUserId);
+        } catch (preopErr: any) {
+          console.error("[preop] Error triggering automation:", preopErr.message);
         }
       }
 
@@ -7798,6 +7842,164 @@ export async function registerRoutes(
       res.json(ep);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  // =============================================
+  // PRE-OP ASSESSMENT
+  // =============================================
+
+  app.get("/api/episodes/:id/preop-assessment", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+      const episode = await storage.getEpisode(episodeId, tid);
+      if (!episode) return res.status(404).json({ message: "Episode not found" });
+      const assessment = await getOrCreatePreopAssessment(episodeId, tid);
+      res.json({
+        assessment: assessment || null,
+        episode: {
+          preopAssignedUserId: episode.preopAssignedUserId,
+          preopReadinessStatus: episode.preopReadinessStatus,
+          preopClearanceGiven: episode.preopClearanceGiven,
+          preopClearanceOverrideBy: episode.preopClearanceOverrideBy,
+          preopClearanceOverrideAt: episode.preopClearanceOverrideAt,
+          preopEnteredAt: episode.preopEnteredAt,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.put("/api/episodes/:id/preop-assessment", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!(await hasPermission(req, "episodes", "canEdit"))) {
+        return res.status(403).json({ message: "No permission" });
+      }
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+      const episode = await storage.getEpisode(episodeId, tid);
+      if (!episode) return res.status(404).json({ message: "Episode not found" });
+
+      const {
+        bloodWorkDone, imagingDone, anesthesiaConsultDone, consentFormSigned,
+        npoConfirmed, allergiesReviewed, medicationsReviewed, vitalsStable,
+        notes, overallReadiness, grantClearance, preopAssignedUserId,
+      } = req.body;
+
+      const crmUser = (req as any).session?.crmUserId;
+      const userName = (req as any).user?.firstName
+        ? `${(req as any).user.firstName} ${(req as any).user.lastName || ""}`.trim()
+        : (req as any).user?.email || "system";
+
+      const existing = await getOrCreatePreopAssessment(episodeId, tid);
+      if (existing) {
+        await pool.query(
+          `UPDATE episode_preop_assessments SET
+             blood_work_done=$1, imaging_done=$2, anesthesia_consult_done=$3, consent_form_signed=$4,
+             npo_confirmed=$5, allergies_reviewed=$6, medications_reviewed=$7, vitals_stable=$8,
+             notes=$9, overall_readiness=$10, submitted_by=$11, submitted_by_crm_user_id=$12, modified_at=NOW()
+           WHERE episode_id=$13 AND tenant_id=$14`,
+          [bloodWorkDone, imagingDone, anesthesiaConsultDone, consentFormSigned,
+           npoConfirmed, allergiesReviewed, medicationsReviewed, vitalsStable,
+           notes, overallReadiness, userName, crmUser, episodeId, tid]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO episode_preop_assessments
+             (tenant_id, episode_id, blood_work_done, imaging_done, anesthesia_consult_done, consent_form_signed,
+              npo_confirmed, allergies_reviewed, medications_reviewed, vitals_stable, notes, overall_readiness, submitted_by, submitted_by_crm_user_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+          [tid, episodeId, bloodWorkDone, imagingDone, anesthesiaConsultDone, consentFormSigned,
+           npoConfirmed, allergiesReviewed, medicationsReviewed, vitalsStable,
+           notes, overallReadiness, userName, crmUser]
+        );
+      }
+
+      const episodeUpdates: Record<string, any> = { preopReadinessStatus: overallReadiness };
+      if (preopAssignedUserId !== undefined) episodeUpdates.preopAssignedUserId = preopAssignedUserId || null;
+      if (grantClearance === true) {
+        episodeUpdates.preopClearanceGiven = true;
+      }
+      await storage.updateEpisode(episodeId, tid, episodeUpdates);
+
+      res.json({ success: true, clearanceGranted: grantClearance === true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/episodes/:id/preop-clearance-override", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const episodeId = Number(req.params.id);
+      const episode = await storage.getEpisode(episodeId, tid);
+      if (!episode) return res.status(404).json({ message: "Episode not found" });
+
+      const crmUser = await pool.query(
+        `SELECT cu.id, cu.name, sr.code as role_code FROM crm_users cu
+         JOIN system_roles sr ON cu.system_role_id = sr.id
+         WHERE cu.id = $1 AND cu.tenant_id = $2`,
+        [(req as any).session?.crmUserId, tid]
+      );
+      const user = crmUser.rows[0];
+      if (!user || !["MANAGER", "ADMIN", "SYS_ADMIN"].includes(user.role_code)) {
+        return res.status(403).json({ message: "Only managers or admins can grant pre-op override clearance" });
+      }
+
+      const { overrideReason } = req.body;
+      await storage.updateEpisode(episodeId, tid, {
+        preopClearanceGiven: true,
+        preopClearanceOverrideBy: user.name,
+        preopClearanceOverrideAt: new Date(),
+      });
+
+      await pool.query(
+        `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
+         SELECT $1, cu.id, 'preop_override', $3, $4, 'episode', $2, $5, FALSE, NOW()
+         FROM crm_users cu WHERE cu.tenant_id = $1 AND cu.is_active = TRUE
+           AND (cu.id = (SELECT preop_assigned_user_id FROM episodes WHERE id = $2)
+                OR cu.id = (SELECT assigned_crm_user_id FROM episodes WHERE id = $2))
+           AND cu.id IS NOT NULL`,
+        [
+          tid,
+          episodeId,
+          `Pre-op Override Granted — Episode #${episodeId}`,
+          `${user.name} has granted a manager override for surgery clearance. Reason: ${overrideReason || "Not provided"}. Episode can now proceed to Surgery Done.`,
+          `/episodes/${episodeId}`,
+        ]
+      );
+
+      res.json({ success: true, overrideBy: user.name });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/dashboard/preop-cases", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const result = await pool.query(
+        `SELECT e.id, e.episode_name, e.preop_entered_at, e.surgery_date, e.preop_clearance_given,
+                e.preop_readiness_status, e.preop_clearance_override_by,
+                COALESCE(l.name, CONCAT(p.first_name, ' ', p.last_name)) as patient_name,
+                d.name as doctor_name,
+                cu.name as assigned_user_name
+         FROM episodes e
+         LEFT JOIN leads l ON e.lead_id = l.id
+         LEFT JOIN patients p ON e.patient_id = p.id
+         LEFT JOIN doctors d ON e.doctor_id = d.id
+         LEFT JOIN crm_users cu ON e.preop_assigned_user_id = cu.id
+         WHERE e.tenant_id = $1
+           AND e.status = 'Pre-op Assessment'
+         ORDER BY e.surgery_date ASC NULLS LAST, e.preop_entered_at DESC
+         LIMIT 50`,
+        [tid]
+      );
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 

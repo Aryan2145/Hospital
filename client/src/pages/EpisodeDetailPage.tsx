@@ -216,6 +216,10 @@ export default function EpisodeDetailPage() {
   const [surgeryDate, setSurgeryDate] = useState("");
   const [surgeryTime, setSurgeryTime] = useState("");
   const [surgeryAlertUserId, setSurgeryAlertUserId] = useState<string>("");
+  const [showSurgeryDoneBlock, setShowSurgeryDoneBlock] = useState(false);
+  const [surgeryDoneOverrideReason, setSurgeryDoneOverrideReason] = useState("");
+  const [surgeryDoneBlockedPayload, setSurgeryDoneBlockedPayload] = useState<any>(null);
+  const [isRequestingOverride, setIsRequestingOverride] = useState(false);
 
   const clinicalNotesMutation = useMutation({
     mutationFn: async (data: { diagnosis: string; treatmentPlan: string; notes: string; editReason: string }) => {
@@ -364,9 +368,52 @@ export default function EpisodeDetailPage() {
           setSurgeryTime("");
           setSurgeryAlertUserId("");
         },
-        onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+        onError: (err: any) => {
+          if (err?.preopClearanceRequired || (err?.message || "").includes("PREOP_CLEARANCE_REQUIRED")) {
+            setSurgeryDoneBlockedPayload(payload);
+            setStageChangeOpen(false);
+            setShowSurgeryDoneBlock(true);
+          } else {
+            toast({ title: "Error", description: err.message, variant: "destructive" });
+          }
+        },
       }
     );
+  };
+
+  const handleSurgeryDoneOverride = async () => {
+    if (!surgeryDoneBlockedPayload) return;
+    setIsRequestingOverride(true);
+    try {
+      const overrideRes = await apiRequest("POST", `/api/episodes/${episodeId}/preop-clearance-override`, {
+        overrideReason: surgeryDoneOverrideReason,
+      });
+      if (!overrideRes.ok) {
+        const errData = await overrideRes.json().catch(() => ({}));
+        toast({ title: "Override failed", description: errData.message || "You do not have permission", variant: "destructive" });
+        setIsRequestingOverride(false);
+        return;
+      }
+      updateEpisode.mutate(
+        { ...surgeryDoneBlockedPayload, preopClearanceOverrideBy: "manager_override" },
+        {
+          onSuccess: () => {
+            toast({ title: "Surgery Done — Override applied", description: "Pre-op override granted and status updated." });
+            queryClient.invalidateQueries({ queryKey: ["/api/episodes", episodeId] });
+            setShowSurgeryDoneBlock(false);
+            setSurgeryDoneOverrideReason("");
+            setSurgeryDoneBlockedPayload(null);
+          },
+          onError: (err: any) => {
+            toast({ title: "Error", description: err.message, variant: "destructive" });
+          },
+        }
+      );
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsRequestingOverride(false);
+    }
   };
 
   const handleFieldUpdate = (fields: Record<string, any>) => {
@@ -386,6 +433,7 @@ export default function EpisodeDetailPage() {
     "Consultation Done",
     "Treatment Planning",
     "Surgery Scheduled",
+    "Pre-op Assessment",
     "Surgery Done",
     "In Treatment",
     "Post Care",
@@ -423,6 +471,21 @@ export default function EpisodeDetailPage() {
           </div>
         </div>
 
+        {episode.status === "Pre-op Assessment" && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-3 py-2 text-sm text-amber-800 dark:text-amber-300" data-testid="banner-preop-assessment">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span className="flex-1">
+              <strong>Pre-op Assessment in Progress</strong>
+              {!episode.preopClearanceGiven && " — Clearance not yet given. Complete the checklist before marking Surgery Done."}
+              {episode.preopClearanceGiven && " — Clearance granted. Episode can proceed to Surgery Done."}
+            </span>
+            {episode.preopEnteredAt && (
+              <span className="text-xs text-amber-600 dark:text-amber-400 shrink-0">
+                Since {fmtDate(episode.preopEnteredAt)}
+              </span>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-2 flex-wrap">
           <Badge className={cn("text-xs", getStatusColor(episode.status))} data-testid="badge-episode-status">
             {episode.status}
@@ -521,6 +584,18 @@ export default function EpisodeDetailPage() {
               <TabsTrigger value="family" data-testid="tab-family">
                 <Users className="w-3.5 h-3.5 mr-1.5" />
                 Family Status
+              </TabsTrigger>
+            )}
+            {(episode.status === "Pre-op Assessment" || episode.status === "Surgery Scheduled") && (
+              <TabsTrigger value="preop" data-testid="tab-preop">
+                <HeartPulse className="w-3.5 h-3.5 mr-1.5" />
+                Pre-op
+                {episode.status === "Pre-op Assessment" && !episode.preopClearanceGiven && (
+                  <span className="ml-1.5 w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                )}
+                {episode.preopClearanceGiven && (
+                  <span className="ml-1.5 w-2 h-2 rounded-full bg-green-500 inline-block" />
+                )}
               </TabsTrigger>
             )}
           </TabsList>
@@ -712,6 +787,18 @@ export default function EpisodeDetailPage() {
           <TabsContent value="family" className="mt-4" data-testid="tab-content-family">
             <FamilyTab episode={episode} onUpdate={handleFieldUpdate} isPending={updateEpisode.isPending} />
           </TabsContent>
+
+          {(episode.status === "Pre-op Assessment" || episode.status === "Surgery Scheduled") && (
+            <TabsContent value="preop" className="mt-4" data-testid="tab-content-preop">
+              <PreopAssessmentTab
+                episode={episode}
+                episodeId={episodeId}
+                crmUsers={crmUsers}
+                roleCode={roleCode}
+                onRefresh={() => queryClient.invalidateQueries({ queryKey: ["/api/episodes", episodeId] })}
+              />
+            </TabsContent>
+          )}
         </Tabs>
 
         <PostCareTimeline episodeId={episode.id} episodeStatus={episode.status} />
@@ -851,6 +938,54 @@ export default function EpisodeDetailPage() {
               data-testid="button-confirm-save"
             >
               {clinicalNotesMutation.isPending ? "Saving..." : "Confirm Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSurgeryDoneBlock} onOpenChange={(open) => { if (!open) { setShowSurgeryDoneBlock(false); setSurgeryDoneOverrideReason(""); setSurgeryDoneBlockedPayload(null); } }}>
+        <DialogContent data-testid="dialog-surgery-done-block">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <AlertTriangle className="w-5 h-5" />
+              Pre-op Clearance Required
+            </DialogTitle>
+            <DialogDescription>
+              Pre-op assessment clearance has not been granted for this episode. To proceed to <strong>Surgery Done</strong>, a manager or admin must grant an override.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-300">
+              <p className="font-medium mb-1">Why is this blocked?</p>
+              <p className="text-xs">The pre-op checklist must be completed and clearance given before surgery can be marked as done. This protects patient safety.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Override Reason (Manager/Admin only)</Label>
+              <Textarea
+                value={surgeryDoneOverrideReason}
+                onChange={(e) => setSurgeryDoneOverrideReason(e.target.value)}
+                placeholder="Provide reason for bypassing pre-op clearance requirement..."
+                className="text-xs min-h-[70px] resize-none"
+                data-testid="textarea-override-reason"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => { setShowSurgeryDoneBlock(false); setSurgeryDoneOverrideReason(""); setSurgeryDoneBlockedPayload(null); }}
+              disabled={isRequestingOverride}
+              data-testid="button-cancel-override"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleSurgeryDoneOverride}
+              disabled={isRequestingOverride || surgeryDoneOverrideReason.trim().length < 5}
+              data-testid="button-confirm-override"
+            >
+              {isRequestingOverride ? "Applying Override..." : "Grant Override & Proceed"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2846,6 +2981,7 @@ function getStatusChangeTitle(toStatus: string): string {
   switch (toStatus) {
     case "Treatment Planning": return "Moved to Treatment Planning";
     case "Surgery Scheduled": return "Surgery Scheduled";
+    case "Pre-op Assessment": return "Pre-op Assessment Started";
     case "Surgery Done": return "Surgery Completed";
     case "In Treatment": return "Treatment Started";
     case "Post Care": return "Moved to Post Care";
@@ -2863,6 +2999,7 @@ function getStatusChangeDescription(from: string, to: string): string {
     case "Consultation In Progress": return "Patient is currently in consultation with the doctor";
     case "Treatment Planning": return "Patient's treatment plan is being prepared by the clinical team";
     case "Surgery Scheduled": return "Surgery date and logistics have been confirmed";
+    case "Pre-op Assessment": return "Pre-operative assessment and readiness checks initiated";
     case "Surgery Done": return "Surgical procedure has been completed successfully";
     case "In Treatment": return "Patient is actively undergoing treatment";
     case "Post Care": return "Patient is in post-treatment care and recovery phase";
@@ -2872,6 +3009,226 @@ function getStatusChangeDescription(from: string, to: string): string {
     case "Consultation Done": return "Episode has been restarted from consultation stage";
     default: return `Status changed from ${from} to ${to}`;
   }
+}
+
+function PreopAssessmentTab({
+  episode,
+  episodeId,
+  crmUsers,
+  roleCode,
+  onRefresh,
+}: {
+  episode: any;
+  episodeId: number;
+  crmUsers: any[];
+  roleCode: string;
+  onRefresh: () => void;
+}) {
+  const { toast } = useToast();
+  const isManagerOrAbove = ["SYS_ADMIN", "ADMIN", "MANAGER"].includes(roleCode);
+
+  const { data: preopData, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/episodes", episodeId, "preop-assessment"],
+    queryFn: async () => {
+      const res = await fetch(`/api/episodes/${episodeId}/preop-assessment`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  const [saving, setSaving] = useState(false);
+  const [localFields, setLocalFields] = useState<Record<string, any>>({});
+  const fields = { ...(preopData?.assessment || {}), ...localFields };
+
+  const handleSave = async (patch: Record<string, any>) => {
+    setSaving(true);
+    try {
+      const res = await apiRequest("PUT", `/api/episodes/${episodeId}/preop-assessment`, patch);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast({ title: "Save failed", description: err.message || "Unknown error", variant: "destructive" });
+        return;
+      }
+      refetch();
+      onRefresh();
+      toast({ title: "Pre-op record saved" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const CHECKLIST_ITEMS = [
+    { key: "bloodworkDone", label: "Bloodwork / Lab Reports Complete" },
+    { key: "ecgDone", label: "ECG / Cardiac Clearance" },
+    { key: "anesthesiaConsultDone", label: "Anaesthesia Consultation Done" },
+    { key: "consentSigned", label: "Patient Consent Signed" },
+    { key: "fastingConfirmed", label: "Pre-surgical Fasting Confirmed" },
+    { key: "allergyScreeningDone", label: "Allergy Screening Done" },
+    { key: "imagingComplete", label: "Pre-op Imaging Complete" },
+    { key: "medicationsReviewed", label: "Medications Reviewed & Adjusted" },
+  ];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  const assessment = preopData?.assessment || {};
+  const readinessStatus = episode.preopReadinessStatus || "Pending";
+  const clearanceGiven = !!episode.preopClearanceGiven;
+
+  const checkedCount = CHECKLIST_ITEMS.filter(item => assessment[item.key]).length;
+  const totalCount = CHECKLIST_ITEMS.length;
+  const progressPct = Math.round((checkedCount / totalCount) * 100);
+
+  return (
+    <div className="space-y-4" data-testid="tab-content-preop-inner">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <HeartPulse className="w-4 h-4 text-amber-600" />
+          <h3 className="text-sm font-semibold text-foreground">Pre-operative Assessment</h3>
+          <Badge
+            className={cn(
+              "text-xs",
+              clearanceGiven
+                ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                : readinessStatus === "Cleared"
+                ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                : readinessStatus === "Not Ready"
+                ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+            )}
+            data-testid="badge-preop-status"
+          >
+            {clearanceGiven ? "Cleared ✓" : readinessStatus}
+          </Badge>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {checkedCount}/{totalCount} items completed
+        </div>
+      </div>
+
+      <div className="h-2 bg-muted rounded-full overflow-hidden">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all",
+            progressPct === 100 ? "bg-green-500" : progressPct >= 50 ? "bg-amber-500" : "bg-red-400"
+          )}
+          style={{ width: `${progressPct}%` }}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {CHECKLIST_ITEMS.map(item => (
+          <div
+            key={item.key}
+            className={cn(
+              "flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
+              assessment[item.key]
+                ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800"
+                : "bg-muted/30 border-border hover:bg-muted/50"
+            )}
+            onClick={() => {
+              const updated = { ...assessment, [item.key]: !assessment[item.key] };
+              setLocalFields(prev => ({ ...prev, [item.key]: !assessment[item.key] }));
+              handleSave({ [item.key]: !assessment[item.key] });
+            }}
+            data-testid={`preop-check-${item.key}`}
+          >
+            <div className={cn(
+              "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0",
+              assessment[item.key] ? "bg-green-500 border-green-500" : "border-muted-foreground"
+            )}>
+              {assessment[item.key] && <CheckCircle2 className="w-3 h-3 text-white" />}
+            </div>
+            <span className="text-xs text-foreground">{item.label}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium">Assigned Pre-op Staff</Label>
+          <SearchableSelect
+            value={episode.preopAssignedUserId ? String(episode.preopAssignedUserId) : ""}
+            onValueChange={(val) => handleSave({ preopAssignedUserId: val ? Number(val) : null })}
+            placeholder="Select staff member"
+            options={(crmUsers || []).map((u: any) => ({ value: String(u.id), label: u.name }))}
+            disabled={saving}
+            data-testid="select-preop-assigned-user"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium">Readiness Status</Label>
+          <Select
+            value={readinessStatus}
+            onValueChange={(val) => handleSave({ preopReadinessStatus: val })}
+            disabled={saving}
+          >
+            <SelectTrigger className="h-8 text-xs" data-testid="select-preop-readiness">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Pending">Pending</SelectItem>
+              <SelectItem value="In Progress">In Progress</SelectItem>
+              <SelectItem value="Cleared">Cleared</SelectItem>
+              <SelectItem value="Not Ready">Not Ready</SelectItem>
+              <SelectItem value="Deferred">Deferred</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs font-medium">Remarks / Notes</Label>
+        <Textarea
+          key={`preop-remarks-${assessment.remarks}`}
+          defaultValue={assessment.remarks || ""}
+          onBlur={(e) => {
+            if (e.target.value !== (assessment.remarks || "")) {
+              handleSave({ remarks: e.target.value });
+            }
+          }}
+          placeholder="Add any clinical notes or observations for this pre-op assessment..."
+          className="text-xs min-h-[80px] resize-none"
+          data-testid="textarea-preop-remarks"
+        />
+      </div>
+
+      {isManagerOrAbove && !clearanceGiven && (
+        <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-3 space-y-2">
+          <p className="text-xs font-medium text-green-800 dark:text-green-300">Manager Clearance</p>
+          <p className="text-xs text-green-700 dark:text-green-400">
+            Grant pre-op clearance to allow this episode to proceed to Surgery Done without triggering the block.
+          </p>
+          <Button
+            size="sm"
+            className="bg-green-600 hover:bg-green-700 text-white text-xs"
+            onClick={() => handleSave({ preopClearanceGiven: true })}
+            disabled={saving}
+            data-testid="button-grant-preop-clearance"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+            Grant Pre-op Clearance
+          </Button>
+        </div>
+      )}
+
+      {clearanceGiven && (
+        <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-3 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+          <span className="text-xs text-green-800 dark:text-green-300 font-medium">
+            Pre-op clearance granted — episode can proceed to Surgery Done.
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function InfoRow({ label, value, link }: { label: string; value: any; link?: string }) {

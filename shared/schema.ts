@@ -353,6 +353,7 @@ export const doctors = pgTable("doctors", {
   consultationTypeId: integer("consultation_type_id").references(() => consultationTypes.id),
   phone: text("phone"),
   email: text("email"),
+  crmUserId: integer("crm_user_id").references(() => crmUsers.id),
   status: text("status").notNull().default("Active"),
   approvalStatus: text("approval_status").default("Approved"),
   displayOrder: integer("display_order").default(0),
@@ -1277,6 +1278,12 @@ export const episodes = pgTable("episodes", {
   surgeryDoctorId: integer("surgery_doctor_id").references(() => doctors.id),
   surgeryDate: timestamp("surgery_date"),
   surgeryAlertUserId: integer("surgery_alert_user_id").references(() => crmUsers.id),
+  preopAssignedUserId: integer("preop_assigned_user_id").references(() => crmUsers.id),
+  preopReadinessStatus: text("preop_readiness_status").default("Not Started"),
+  preopClearanceGiven: boolean("preop_clearance_given").default(false),
+  preopClearanceOverrideBy: varchar("preop_clearance_override_by"),
+  preopClearanceOverrideAt: timestamp("preop_clearance_override_at"),
+  preopEnteredAt: timestamp("preop_entered_at"),
   postCareOwnerId: integer("post_care_owner_id").references(() => doctors.id),
   postCareProtocolId: integer("post_care_protocol_id"),
   referralReady: boolean("referral_ready").default(false),
@@ -1298,6 +1305,44 @@ export const episodes = pgTable("episodes", {
   modifiedAt: timestamp("modified_at").defaultNow(),
   modifiedBy: varchar("modified_by"),
 });
+
+// --- Pre-op Assessment ---
+export const episodePreopAssessments = pgTable("episode_preop_assessments", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  episodeId: integer("episode_id").notNull().references(() => episodes.id),
+  bloodWorkDone: boolean("blood_work_done").default(false),
+  imagingDone: boolean("imaging_done").default(false),
+  anesthesiaConsultDone: boolean("anesthesia_consult_done").default(false),
+  consentFormSigned: boolean("consent_form_signed").default(false),
+  npoConfirmed: boolean("npo_confirmed").default(false),
+  allergiesReviewed: boolean("allergies_reviewed").default(false),
+  medicationsReviewed: boolean("medications_reviewed").default(false),
+  vitalsStable: boolean("vitals_stable").default(false),
+  notes: text("notes"),
+  overallReadiness: text("overall_readiness").default("Not Started"),
+  submittedBy: varchar("submitted_by"),
+  submittedByCrmUserId: integer("submitted_by_crm_user_id").references(() => crmUsers.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  modifiedAt: timestamp("modified_at").defaultNow(),
+});
+
+export const insertEpisodePreopAssessmentSchema = createInsertSchema(episodePreopAssessments).omit({ id: true, createdAt: true, modifiedAt: true });
+export type InsertEpisodePreopAssessment = z.infer<typeof insertEpisodePreopAssessmentSchema>;
+export type EpisodePreopAssessment = typeof episodePreopAssessments.$inferSelect;
+
+// --- Pre-op Reminder Log ---
+export const preopReminderLog = pgTable("preop_reminder_log", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  episodeId: integer("episode_id").notNull().references(() => episodes.id),
+  reminderType: text("reminder_type").notNull(),
+  sentTo: text("sent_to").notNull(),
+  sentAt: timestamp("sent_at").defaultNow(),
+  details: text("details"),
+});
+
+export type PreopReminderLog = typeof preopReminderLog.$inferSelect;
 
 export const consultationOutcomes = pgTable("consultation_outcomes", {
   id: serial("id").primaryKey(),

@@ -4,6 +4,7 @@ import { checkDormantLeads } from "./temperatureEngine";
 import { sendDiscountApprovalEmail } from "../email";
 import { sendDiscountApprovalSMS } from "../sms";
 import { syncAllActiveGoogleSheetConfigs } from "./googleSheetsSync";
+import { escalateOverduePreopCases } from "./preopAssessment";
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 
@@ -252,6 +253,11 @@ async function runScheduledTasks(): Promise<void> {
         }
 
         await escalateOverdueDiscounts(tenant.id, tenant.name);
+
+        const preopEscalated = await escalateOverduePreopCases(tenant.id);
+        if (preopEscalated > 0) {
+          console.log(`[scheduler] Tenant ${tenant.name}: ${preopEscalated} pre-op assessment(s) escalated`);
+        }
       } catch (err: any) {
         console.error(`[scheduler] Error processing tenant ${tenant.id}:`, err.message);
       }
