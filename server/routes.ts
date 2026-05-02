@@ -7706,12 +7706,23 @@ export async function registerRoutes(
         const isFromPreop = oldEpisode?.status === "Pre-op Assessment";
         const isFromSurgeryScheduled = oldEpisode?.status === "Surgery Scheduled";
         const preopEverEntered = !!(oldEpisode?.preopEnteredAt);
-        if ((isFromPreop || (isFromSurgeryScheduled && preopEverEntered)) && !oldEpisode?.preopClearanceGiven) {
+        if (isFromPreop || (isFromSurgeryScheduled && preopEverEntered)) {
+          // Gate: check structured assessment readiness_status === 'Ready' OR preopClearanceGiven
+          const assessmentRow = await pool.query(
+            `SELECT readiness_status FROM episode_preop_assessments WHERE episode_id = $1 AND tenant_id = $2 ORDER BY id DESC LIMIT 1`,
+            [episodeId, tid]
+          );
+          const assessmentIsReady = assessmentRow.rows[0]?.readiness_status === "Ready";
+          const clearanceAlreadyGiven = !!(oldEpisode?.preopClearanceGiven);
+          if (!assessmentIsReady && !clearanceAlreadyGiven) {
           if (!managerOverrideFlag) {
             return res.status(422).json({
-              message: "Pre-op clearance has not been given. A manager must grant override clearance before marking Surgery Done.",
+              message: assessmentRow.rows[0]
+                ? `Pre-op assessment status is '${assessmentRow.rows[0].readiness_status}' — must be 'Ready' before marking Surgery Done. A manager can grant an override.`
+                : "Pre-op assessment is incomplete. Readiness status must be 'Ready' before marking Surgery Done. A manager can grant an override.",
               code: "PREOP_CLEARANCE_REQUIRED",
               preopClearanceRequired: true,
+              assessmentReadinessStatus: assessmentRow.rows[0]?.readiness_status || null,
             });
           }
           // Validate override reason
@@ -7736,6 +7747,7 @@ export async function registerRoutes(
             preopClearanceOverrideAt: new Date(),
           });
           inlineOverrideAuditData = { userName: overrideUser.name, reason: String(managerOverrideReason).trim(), roleCode: overrideUser.role_code };
+          } // end !assessmentIsReady && !clearanceAlreadyGiven
         }
       }
 
@@ -7914,8 +7926,17 @@ export async function registerRoutes(
       const episode = await storage.getEpisode(episodeId, tid);
       if (!episode) return res.status(404).json({ message: "Episode not found" });
       const assessment = await getOrCreatePreopAssessment(episodeId, tid);
+      const reminderLogResult = await pool.query(
+        `SELECT id, reminder_type, sent_to, recipient_role, channel, trigger_source, sent_at, details
+         FROM preop_reminder_log
+         WHERE episode_id = $1 AND tenant_id = $2
+         ORDER BY sent_at DESC
+         LIMIT 50`,
+        [episodeId, tid]
+      );
       res.json({
         assessment: assessment || null,
+        reminderLog: reminderLogResult.rows,
         episode: {
           preopAssignedUserId: episode.preopAssignedUserId,
           preopReadinessStatus: episode.preopReadinessStatus,
@@ -7930,7 +7951,13 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/episodes/:id/preop-assessment", isAuthenticated, async (req: any, res) => {
+    return preopAssessmentHandler(req, res);
+  });
   app.put("/api/episodes/:id/preop-assessment", isAuthenticated, async (req: any, res) => {
+    return preopAssessmentHandler(req, res);
+  });
+  async function preopAssessmentHandler(req: any, res: any) {
     try {
       if (!(await hasPermission(req, "episodes", "canEdit"))) {
         return res.status(403).json({ message: "No permission" });
@@ -8007,9 +8034,22 @@ export async function registerRoutes(
       if (readinessStatus !== undefined) episodeUpdates.preopReadinessStatus = readinessStatus;
       else if (overallReadiness !== undefined) episodeUpdates.preopReadinessStatus = overallReadiness;
       if (preopAssignedUserId !== undefined) episodeUpdates.preopAssignedUserId = preopAssignedUserId || null;
+
+      // Security: grantClearance is a privileged action — only MANAGER, ADMIN, SYS_ADMIN
       if (grantClearance === true) {
+        const clearanceUserRow = await pool.query(
+          `SELECT cu.id, cu.name, sr.code as role_code FROM crm_users cu
+           JOIN system_roles sr ON cu.system_role_id = sr.id
+           WHERE cu.id = $1 AND cu.tenant_id = $2`,
+          [crmUserId, tid]
+        );
+        const clearanceUser = clearanceUserRow.rows[0];
+        if (!clearanceUser || !["MANAGER", "ADMIN", "SYS_ADMIN"].includes(clearanceUser.role_code)) {
+          return res.status(403).json({ message: "Only managers or admins can grant pre-op clearance." });
+        }
         episodeUpdates.preopClearanceGiven = true;
       }
+
       if (Object.keys(episodeUpdates).length > 0) {
         await storage.updateEpisode(episodeId, tid, episodeUpdates);
       }
@@ -8018,7 +8058,7 @@ export async function registerRoutes(
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
-  });
+  }
 
   app.post("/api/episodes/:id/preop-assessment/notify", isAuthenticated, async (req: any, res) => {
     try {
@@ -8152,18 +8192,28 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Access restricted to management roles" });
       }
       const result = await pool.query(
-        `SELECT e.id, e.episode_name, e.preop_entered_at, e.surgery_date, e.preop_clearance_given,
+        `SELECT e.id, e.lead_id, e.episode_name, e.status,
+                e.preop_entered_at, e.surgery_date, e.preop_clearance_given,
                 e.preop_readiness_status, e.preop_clearance_override_by,
                 COALESCE(l.name, CONCAT(p.first_name, ' ', p.last_name)) as patient_name,
                 d.name as doctor_name,
-                cu.name as assigned_user_name
+                cu.name as assigned_user_name,
+                l.last_contact_at,
+                epa.readiness_status as assessment_readiness_status
          FROM episodes e
          LEFT JOIN leads l ON e.lead_id = l.id
          LEFT JOIN patients p ON e.patient_id = p.id
          LEFT JOIN doctors d ON e.doctor_id = d.id
          LEFT JOIN crm_users cu ON e.preop_assigned_user_id = cu.id
+         LEFT JOIN LATERAL (
+           SELECT readiness_status FROM episode_preop_assessments
+           WHERE episode_id = e.id AND tenant_id = e.tenant_id
+           ORDER BY id DESC LIMIT 1
+         ) epa ON TRUE
          WHERE e.tenant_id = $1
-           AND e.status = 'Pre-op Assessment'
+           AND e.preop_entered_at IS NOT NULL
+           AND e.preop_clearance_given = FALSE
+           AND e.status NOT IN ('Surgery Done', 'In Treatment', 'Post Care', 'Follow Up', 'Completed', 'Discontinued')
          ORDER BY e.surgery_date ASC NULLS LAST, e.preop_entered_at DESC
          LIMIT 50`,
         [tid]

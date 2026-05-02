@@ -1372,8 +1372,8 @@ function PreopCasesWidget({ navigate, readOnly }: { navigate: (path: string) => 
   const cases = data || [];
   if (isLoading || cases.length === 0) return null;
 
-  const pendingClearance = cases.filter((c: any) => !c.preopClearanceGiven);
-  const cleared = cases.filter((c: any) => c.preopClearanceGiven);
+  const pendingClearance = cases.filter((c: any) => !c.preop_clearance_given);
+  const cleared = cases.filter((c: any) => c.preop_clearance_given);
 
   return (
     <Card data-testid="card-preop-cases-widget">
@@ -1400,7 +1400,7 @@ function PreopCasesWidget({ navigate, readOnly }: { navigate: (path: string) => 
             <div
               key={`preop-case-${c.id}`}
               className={`flex items-center gap-2 p-2 rounded-md cursor-pointer transition-colors ${
-                c.preopClearanceGiven
+                c.preop_clearance_given
                   ? "bg-green-50 dark:bg-green-950/20 hover:bg-green-100 dark:hover:bg-green-950/30"
                   : "bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-950/30"
               }`}

@@ -64,6 +64,7 @@ import {
   Trash2,
   BedDouble,
   Receipt,
+  Bell,
 } from "lucide-react";
 
 interface AuditLogEntry {
@@ -3045,7 +3046,7 @@ function PreopAssessmentTab({
   const handleSave = async (patch: Record<string, any>) => {
     setSaving(true);
     try {
-      const res = await apiRequest("PUT", `/api/episodes/${episodeId}/preop-assessment`, patch);
+      const res = await apiRequest("PATCH", `/api/episodes/${episodeId}/preop-assessment`, patch);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         toast({ title: "Save failed", description: err.message || "Unknown error", variant: "destructive" });
@@ -3318,6 +3319,34 @@ function PreopAssessmentTab({
           <span className="text-xs text-green-800 dark:text-green-300 font-medium">
             Pre-op clearance granted — episode can proceed to Surgery Done.
           </span>
+        </div>
+      )}
+
+      {preopData?.reminderLog && preopData.reminderLog.length > 0 && (
+        <div className="space-y-1.5" data-testid="preop-reminder-log">
+          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+            <Bell className="w-3 h-3" /> Notification Log ({preopData.reminderLog.length})
+          </p>
+          <div className="max-h-40 overflow-y-auto space-y-1 rounded-md border border-border p-2">
+            {preopData.reminderLog.map((entry: any) => (
+              <div key={entry.id} className="flex items-start gap-2 text-[10px] text-muted-foreground">
+                <span className={`shrink-0 px-1 rounded ${
+                  entry.channel === "not_deliverable"
+                    ? "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+                    : "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                }`}>
+                  {entry.channel === "not_deliverable" ? "⚠ undeliverable" : entry.channel || "in_app"}
+                </span>
+                <span className="flex-1">
+                  {entry.recipient_role || entry.sent_to}{" "}
+                  <span className="opacity-60">· {entry.reminder_type} · {entry.trigger_source}</span>
+                </span>
+                <span className="shrink-0 opacity-50">
+                  {entry.sent_at ? new Date(entry.sent_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : ""}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

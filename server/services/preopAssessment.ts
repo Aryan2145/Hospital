@@ -32,23 +32,25 @@ export async function resolvePreopNotifyList(
     if (leadRow.rows[0]?.assigned_crm_user_id) await addUser(leadRow.rows[0].assigned_crm_user_id, "lead_coordinator");
   }
 
-  // Doctor CRM user — with email fallback logging
-  if (episode.doctorId) {
+  // Doctor CRM user — check both doctorId and surgeryDoctorId
+  const doctorIdsToCheck = new Set<number>();
+  if (episode.doctorId) doctorIdsToCheck.add(episode.doctorId);
+  if (episode.surgeryDoctorId) doctorIdsToCheck.add(episode.surgeryDoctorId);
+
+  for (const doctorId of doctorIdsToCheck) {
     const docRow = await pool.query(
       `SELECT d.name as doctor_name, d.email as doctor_email, cu.id as crm_user_id, cu.name, cu.email, cu.phone
        FROM doctors d
        LEFT JOIN crm_users cu ON cu.id = d.crm_user_id AND cu.tenant_id = d.tenant_id
        WHERE d.id = $1 AND d.tenant_id = $2`,
-      [episode.doctorId, tenantId]
+      [doctorId, tenantId]
     );
     if (docRow.rows[0]) {
       const doc = docRow.rows[0];
       if (doc.crm_user_id) {
         await addUser(doc.crm_user_id, "doctor");
-      } else {
-        // Doctor has no CRM account — log as not deliverable
-        console.warn(`[preop-notify] Doctor "${doc.doctor_name}" has no CRM user account. In-app notification not deliverable. Doctor email on file: ${doc.doctor_email || "none"}.`);
       }
+      // If no CRM account, caller (triggerPreopEntryAutomation) persists not-deliverable to preop_reminder_log
     }
   }
 
@@ -80,6 +82,27 @@ export async function triggerPreopEntryAutomation(
     ? new Date(episode.surgeryDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
     : "TBD";
 
+  // Auto-create the structured assessment record on stage entry if it doesn't exist
+  try {
+    const existingAssessment = await pool.query(
+      `SELECT id FROM episode_preop_assessments WHERE episode_id = $1 AND tenant_id = $2 LIMIT 1`,
+      [episodeId, tenantId]
+    );
+    if (existingAssessment.rows.length === 0) {
+      await pool.query(
+        `INSERT INTO episode_preop_assessments
+           (tenant_id, episode_id, readiness_status,
+            blood_work_done, imaging_done, anesthesia_consult_done, consent_form_signed,
+            npo_confirmed, allergies_reviewed, medications_reviewed, vitals_stable,
+            submitted_by, submitted_by_crm_user_id)
+         VALUES ($1, $2, 'Pending', FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, $3, $4)`,
+        [tenantId, episodeId, triggeredBy, triggeredByCrmUserId]
+      );
+    }
+  } catch (err: any) {
+    console.error("[preop] Error auto-creating assessment row:", err.message);
+  }
+
   const notifyUsers = await resolvePreopNotifyList(episode, tenantId);
 
   for (const user of notifyUsers) {
@@ -104,50 +127,15 @@ export async function triggerPreopEntryAutomation(
         `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
          VALUES ($1, $2, 'preop_entry', $3, $4, 'episode', $5, $6, FALSE, NOW())`,
         [
-          tenantId,
-          user.crmUserId,
+          tenantId, user.crmUserId,
           `Pre-op Assessment Required — ${patientName}`,
           `Patient ${patientName} has entered the Pre-op Assessment stage. Surgery: ${surgeryDateStr}. Complete the readiness checklist.`,
-          episodeId,
-          `/episodes/${episodeId}`,
+          episodeId, `/episodes/${episodeId}`,
         ]
       );
     } catch {}
-  }
 
-  const doctorNotifyUsers: Array<{ name: string; email: string }> = [];
-  if (episode.doctorId) {
-    const docRow = await pool.query(
-      `SELECT d.name, d.email, cu.id as crm_user_id, cu.name as crm_name, cu.email as crm_email
-       FROM doctors d
-       LEFT JOIN crm_users cu ON cu.id = d.crm_user_id AND cu.tenant_id = d.tenant_id
-       WHERE d.id = $1 AND d.tenant_id = $2`,
-      [episode.doctorId, tenantId]
-    );
-    if (docRow.rows[0]) {
-      const doc = docRow.rows[0];
-      if (doc.crm_user_id) {
-        try {
-          await pool.query(
-            `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
-             VALUES ($1, $2, 'preop_entry', $3, $4, 'episode', $5, $6, FALSE, NOW())
-             ON CONFLICT DO NOTHING`,
-            [
-              tenantId,
-              doc.crm_user_id,
-              `Pre-op Assessment — ${patientName}`,
-              `Your patient ${patientName} is in Pre-op Assessment. Surgery: ${surgeryDateStr}.`,
-              episodeId,
-              `/episodes/${episodeId}`,
-            ]
-          );
-        } catch {}
-      }
-    }
-  }
-
-  // Write reminder_log entries for each notified user
-  for (const user of notifyUsers) {
+    // Write reminder_log per notified user
     try {
       await pool.query(
         `INSERT INTO preop_reminder_log (tenant_id, episode_id, reminder_type, sent_to, recipient_role, channel, trigger_source, sent_at, details)
@@ -155,6 +143,57 @@ export async function triggerPreopEntryAutomation(
         [tenantId, episodeId, String(user.crmUserId), user.roleInCase, JSON.stringify({ patientName, surgeryDateStr })]
       );
     } catch {}
+  }
+
+  // Doctor notification — check both doctorId and surgeryDoctorId
+  const doctorIds = new Set<number>();
+  if (episode.doctorId) doctorIds.add(episode.doctorId);
+  if (episode.surgeryDoctorId) doctorIds.add(episode.surgeryDoctorId);
+
+  for (const doctorId of doctorIds) {
+    try {
+      const docRow = await pool.query(
+        `SELECT d.id, d.name as doctor_name, d.email as doctor_email, cu.id as crm_user_id
+         FROM doctors d
+         LEFT JOIN crm_users cu ON cu.id = d.crm_user_id AND cu.tenant_id = d.tenant_id
+         WHERE d.id = $1 AND d.tenant_id = $2`,
+        [doctorId, tenantId]
+      );
+      if (docRow.rows[0]) {
+        const doc = docRow.rows[0];
+        if (doc.crm_user_id && !notifyUsers.find((u) => u.crmUserId === doc.crm_user_id)) {
+          await pool.query(
+            `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
+             VALUES ($1, $2, 'preop_entry', $3, $4, 'episode', $5, $6, FALSE, NOW())
+             ON CONFLICT DO NOTHING`,
+            [
+              tenantId, doc.crm_user_id,
+              `Pre-op Assessment — ${patientName}`,
+              `Your patient ${patientName} is in Pre-op Assessment. Surgery: ${surgeryDateStr}.`,
+              episodeId, `/episodes/${episodeId}`,
+            ]
+          );
+          await pool.query(
+            `INSERT INTO preop_reminder_log (tenant_id, episode_id, reminder_type, sent_to, recipient_role, channel, trigger_source, sent_at, details)
+             VALUES ($1, $2, 'preop_entry', $3, 'doctor', 'in_app', 'stage_entry', NOW(), $4)`,
+            [tenantId, episodeId, String(doc.crm_user_id), JSON.stringify({ patientName, surgeryDateStr })]
+          );
+        } else if (!doc.crm_user_id) {
+          // No CRM account — log as not-deliverable in preop_reminder_log
+          await pool.query(
+            `INSERT INTO preop_reminder_log (tenant_id, episode_id, reminder_type, sent_to, recipient_role, channel, trigger_source, sent_at, details)
+             VALUES ($1, $2, 'preop_entry', $3, 'doctor', 'not_deliverable', 'stage_entry', NOW(), $4)`,
+            [
+              tenantId, episodeId,
+              doc.doctor_name || `doctor_id:${doctorId}`,
+              JSON.stringify({ reason: "no_crm_account", doctorEmail: doc.doctor_email || null, patientName }),
+            ]
+          );
+        }
+      }
+    } catch (err: any) {
+      console.error(`[preop] Error notifying doctor ${doctorId}:`, err.message);
+    }
   }
 
   await db.insert(activities).values({
