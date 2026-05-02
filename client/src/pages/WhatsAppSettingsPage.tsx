@@ -157,6 +157,10 @@ export default function WhatsAppSettingsPage() {
     },
   });
 
+  // ── WATI template checker state ───────────────────────────────────────────
+  const [watiTemplates, setWatiTemplates] = useState<any[] | null>(null);
+  const [watiTemplatesError, setWatiTemplatesError] = useState<string | null>(null);
+
   // ── WATI mutations ────────────────────────────────────────────────────────
   const watiSaveMutation = useMutation({
     mutationFn: async (data: WatiSettings) => {
@@ -169,6 +173,23 @@ export default function WhatsAppSettingsPage() {
     },
     onError: (err: Error) => {
       toast({ title: "Failed to save", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const watiCheckTemplatesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/wati-settings/templates", { credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to load templates");
+      return data;
+    },
+    onSuccess: (data: any) => {
+      setWatiTemplates(data.templates || []);
+      setWatiTemplatesError(null);
+    },
+    onError: (err: Error) => {
+      setWatiTemplatesError(err.message);
+      setWatiTemplates(null);
     },
   });
 
@@ -541,7 +562,64 @@ export default function WhatsAppSettingsPage() {
                 </CardContent>
               </Card>
 
-              <div className="flex gap-3 justify-end">
+              {/* Template checker results */}
+              {watiTemplatesError && (
+                <div className="rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 px-3 py-2.5 text-xs text-red-800 dark:text-red-300" data-testid="alert-template-error">
+                  <strong>Could not load templates:</strong> {watiTemplatesError}
+                </div>
+              )}
+              {watiTemplates !== null && (
+                <div className="rounded-md border overflow-hidden" data-testid="card-wati-templates-list">
+                  <div className="bg-muted/60 px-3 py-2 flex items-center justify-between">
+                    <p className="text-xs font-medium">{watiTemplates.length} template{watiTemplates.length !== 1 ? "s" : ""} in your WATI account</p>
+                    <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setWatiTemplates(null)}>✕ close</button>
+                  </div>
+                  {watiTemplates.length === 0 ? (
+                    <div className="px-3 py-4 text-xs text-muted-foreground text-center">No templates found. Create templates in your WATI dashboard first.</div>
+                  ) : (
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/30">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Template Name</th>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Status</th>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Category</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {watiTemplates.map((t: any, i: number) => {
+                          const name = t.elementName || t.name || t.templateName || "—";
+                          const status = t.status || "—";
+                          const category = t.category || "—";
+                          const configuredNames = [watiForm.wati_template_appointment, watiForm.wati_template_reminder].filter(Boolean);
+                          const isConfigured = configuredNames.includes(name);
+                          return (
+                            <tr key={i} className={isConfigured ? "bg-green-50 dark:bg-green-950/20" : "hover:bg-muted/30"}>
+                              <td className="px-3 py-1.5 font-mono">{name}{isConfigured && <span className="ml-2 text-green-600 dark:text-green-400 font-sans font-medium">← configured</span>}</td>
+                              <td className="px-3 py-1.5">
+                                <span className={status === "APPROVED" ? "text-green-600 dark:text-green-400 font-medium" : "text-amber-600 dark:text-amber-400"}>
+                                  {status}
+                                </span>
+                              </td>
+                              <td className="px-3 py-1.5 text-muted-foreground">{category}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-3 justify-end flex-wrap">
+                <Button
+                  variant="outline"
+                  onClick={() => watiCheckTemplatesMutation.mutate()}
+                  disabled={watiCheckTemplatesMutation.isPending}
+                  data-testid="button-wati-check-templates"
+                >
+                  {watiCheckTemplatesMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+                  Check Templates
+                </Button>
                 <Button
                   variant="outline"
                   onClick={() => watiTestConnMutation.mutate()}

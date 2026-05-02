@@ -6577,13 +6577,14 @@ export async function registerRoutes(
                   to: watiPhone,
                   templateName,
                   broadcastName: "VIROC Appointment Confirmation",
+                  // WATI templates use {{1}} {{2}} etc — names must be positional numbers
                   parameters: [
-                    { name: "patient_name",     value: lead.name || "Patient" },
-                    { name: "doctor_name",      value: `Dr. ${doctorName}` },
-                    { name: "appointment_date", value: apptDateFmt },
-                    { name: "appointment_time", value: apptTimeFmt || "As scheduled" },
-                    { name: "hospital_name",    value: hospitalName },
-                    { name: "hospital_contact", value: hospitalContact },
+                    { name: "1", value: lead.name || "Patient" },
+                    { name: "2", value: `Dr. ${doctorName}` },
+                    { name: "3", value: apptDateFmt },
+                    { name: "4", value: apptTimeFmt || "As scheduled" },
+                    { name: "5", value: hospitalName },
+                    { name: "6", value: hospitalContact },
                   ],
                 });
                 // If template send fails, auto-fall back to session message
@@ -11455,6 +11456,26 @@ export async function registerRoutes(
       } else {
         res.status(400).json({ message: result.message });
       }
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/wati-settings/templates", isAuthenticated, async (req: any, res: any) => {
+    if (!(await requireAdminRole(req, res, await getDefaultTenantId(req)))) return;
+    try {
+      const tid = await getDefaultTenantId(req);
+      const allSettings = await storage.getTenantSettings(tid);
+      const { getWatiConfigFromSettings, listWatiTemplates } = await import("./wati");
+      const config = getWatiConfigFromSettings(allSettings);
+      if (!config.apiUrl || !config.accessToken) {
+        return res.status(400).json({ message: "WATI not configured. Save your API URL and Access Token first." });
+      }
+      const result = await listWatiTemplates(config);
+      if (!result.success) {
+        return res.status(400).json({ message: result.error });
+      }
+      res.json({ templates: result.templates || [] });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

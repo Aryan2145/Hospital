@@ -115,7 +115,8 @@ export async function sendWatiTemplate(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
-      const rawDetail = data?.message || data?.errors?.[0]?.message || data?._rawText || "";
+      // WATI can put the error in message, error, or errors[0].message — check all
+      const rawDetail = data?.message || data?.error || data?.errors?.[0]?.message || data?._rawText || "";
       console.error(`[WATI] Template send failed: HTTP ${response.status}`, rawDetail || "(no body)");
       const errorMsg = humanizeWatiError(data, response.status);
       return { success: false, error: rawDetail ? `HTTP ${response.status} — ${rawDetail}` : errorMsg };
@@ -139,35 +140,71 @@ export async function sendWatiSession(
     return { success: false, error: "WATI not configured or disabled" };
   }
 
-  const url = `${config.apiUrl}/api/v1/sendSessionMessage?whatsappNumber=${to}`;
+  // Try both v1 and v2 session message endpoints — WATI servers differ on which is active
+  const endpoints = [
+    `${config.apiUrl}/api/v1/sendSessionMessage?whatsappNumber=${to}`,
+    `${config.apiUrl}/api/v2/sendSessionMessage?whatsappNumber=${to}`,
+  ];
 
   const body = { messageText: text };
 
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${config.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+  for (const url of endpoints) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${config.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
 
-    // WATI often returns an empty body (200/201) for session messages — treat any 2xx as success
-    const data = await safeParseJson(response);
+      if (response.status === 404) {
+        console.log(`[WATI] Session endpoint not found at ${url}, trying next...`);
+        continue; // try next endpoint
+      }
 
-    if (!response.ok) {
-      const errorMsg = humanizeWatiError(data, response.status);
-      console.error("[WATI] Session message failed:", response.status, data?.message || data?._rawText || "");
-      return { success: false, error: errorMsg };
+      // WATI often returns an empty body (200/201) for session messages — treat any 2xx as success
+      const data = await safeParseJson(response);
+
+      if (!response.ok) {
+        const rawDetail = data?.message || data?.error || data?._rawText || "";
+        console.error("[WATI] Session message failed:", response.status, rawDetail || "(no body)");
+        return { success: false, error: humanizeWatiError(data, response.status) };
+      }
+
+      const messageId = data?.id || data?.messageId || data?.result || undefined;
+      console.log("[WATI] Session message sent via", url, "—", messageId ?? "(no id returned)");
+      return { success: true, messageId };
+    } catch (err: any) {
+      console.error("[WATI] Session fetch error:", err.message);
+      return { success: false, error: `Network error: ${err.message}` };
     }
+  }
 
-    const messageId = data?.id || data?.messageId || data?.result || undefined;
-    console.log("[WATI] Session message sent:", messageId ?? "(no id returned)");
-    return { success: true, messageId };
+  return { success: false, error: "WATI session message endpoint not found (tried v1 and v2). This WATI account may not support session messages — use templates instead." };
+}
+
+export async function listWatiTemplates(
+  config: WatiConfig
+): Promise<{ success: boolean; templates?: any[]; error?: string }> {
+  if (!config.apiUrl || !config.accessToken) {
+    return { success: false, error: "WATI not configured" };
+  }
+  try {
+    const url = `${config.apiUrl}/api/v1/templates?pageSize=100`;
+    const response = await fetch(url, {
+      headers: { "Authorization": `Bearer ${config.accessToken}` },
+    });
+    const data = await safeParseJson(response);
+    if (!response.ok) {
+      const rawDetail = data?.message || data?.error || data?._rawText || `HTTP ${response.status}`;
+      return { success: false, error: rawDetail };
+    }
+    const templates = data?.messageTemplates || data?.templates || data?.result || [];
+    return { success: true, templates };
   } catch (err: any) {
-    console.error("[WATI] Session fetch error:", err.message);
-    return { success: false, error: `Network error: ${err.message}` };
+    return { success: false, error: err.message };
   }
 }
 

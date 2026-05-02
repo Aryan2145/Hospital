@@ -365,13 +365,14 @@ async function _sendWatiReminder(
           to: watiPhone,
           templateName: watiConfig.templateReminder,
           broadcastName: "VIROC Appointment Reminder",
+          // WATI templates use {{1}} {{2}} etc — names must be positional numbers
           parameters: [
-            { name: "patient_name",     value: leadName },
-            { name: "doctor_name",      value: `Dr. ${doctorName}` },
-            { name: "appointment_date", value: apptDate },
-            { name: "appointment_time", value: apptTime || "As scheduled" },
-            { name: "hospital_name",    value: hospitalName },
-            { name: "hospital_contact", value: hospitalContact },
+            { name: "1", value: leadName },
+            { name: "2", value: `Dr. ${doctorName}` },
+            { name: "3", value: apptDate },
+            { name: "4", value: apptTime || "As scheduled" },
+            { name: "5", value: hospitalName },
+            { name: "6", value: hospitalContact },
           ],
         });
         sent           = result.success;
