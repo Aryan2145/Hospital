@@ -1,7 +1,6 @@
 import { db } from "../db";
 import { googleSheetsSyncConfigs, leadImportLogs } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
-import { decryptValue } from "../crypto";
 import { storage, toProperCase } from "../storage";
 
 function normalizePhone(phone: string): string {
@@ -9,6 +8,44 @@ function normalizePhone(phone: string): string {
   if (p.length === 10) p = "91" + p;
   if (!p.startsWith("+")) p = "+" + p;
   return p;
+}
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  const lines = text.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const fields: string[] = [];
+    let inQuote = false, current = "";
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"' && !inQuote) { inQuote = true; }
+      else if (ch === '"' && inQuote) {
+        if (line[i + 1] === '"') { current += '"'; i++; }
+        else inQuote = false;
+      } else if (ch === "," && !inQuote) { fields.push(current); current = ""; }
+      else { current += ch; }
+    }
+    fields.push(current);
+    rows.push(fields);
+  }
+  return rows;
+}
+
+async function fetchSheetCsv(spreadsheetId: string, gid?: string | null): Promise<string[][]> {
+  let url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
+  if (gid) url += `&gid=${gid}`;
+  const resp = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (resp.status === 401 || resp.status === 403) {
+    throw new Error("Access denied — sheet must be shared as \"Anyone with the link can view\"");
+  }
+  if (resp.status === 404) throw new Error("Sheet not found — check the URL");
+  if (!resp.ok) throw new Error(`Failed to read sheet (HTTP ${resp.status})`);
+  const text = await resp.text();
+  if (text.includes("<!DOCTYPE html>") || text.includes("<HTML>")) {
+    throw new Error("Sheet is not publicly accessible — change sharing to \"Anyone with the link can view\"");
+  }
+  return parseCsv(text);
 }
 
 export async function runGoogleSheetsSync(
@@ -21,37 +58,26 @@ export async function runGoogleSheetsSync(
   const config = configRows[0];
   if (!config) throw new Error("Sync config not found");
 
-  const apiKey = decryptValue(config.apiKeyEncrypted);
-  const startRow = (config.lastSyncedRow ?? 1) + 1;
-  const range = `'${config.sheetName}'!A${startRow}:Z`;
-  const headerRange = `'${config.sheetName}'!1:1`;
-  const apiBase = `https://sheets.googleapis.com/v4/spreadsheets/${config.spreadsheetId}/values`;
-
-  const [headerResp, dataResp] = await Promise.all([
-    fetch(`${apiBase}/${encodeURIComponent(headerRange)}?key=${apiKey}`),
-    fetch(`${apiBase}/${encodeURIComponent(range)}?key=${apiKey}`),
-  ]);
-
-  if (!headerResp.ok) throw new Error("Failed to read sheet headers — check API key and sheet permissions");
-  const headerJson = await headerResp.json();
-  const headers: string[] = headerJson.values?.[0] || [];
-  if (headers.length === 0) throw new Error("No headers found in row 1 of the sheet");
-
-  if (!dataResp.ok) {
-    const errBody = await dataResp.json().catch(() => ({}));
-    throw new Error(errBody?.error?.message || "Failed to fetch sheet data");
+  const allRows = await fetchSheetCsv(config.spreadsheetId, config.sheetGid);
+  if (allRows.length < 2) {
+    await db.update(googleSheetsSyncConfigs).set({
+      lastSyncedAt: new Date(), lastSyncStatus: "success",
+      lastSyncLeadsCreated: 0, lastSyncLeadsSkipped: 0,
+      lastSyncMessage: "No new rows since last sync", modifiedAt: new Date(),
+    }).where(eq(googleSheetsSyncConfigs.id, configId));
+    return { leadsCreated: 0, leadsSkipped: 0, leadsUpdated: 0, newLastRow: config.lastSyncedRow ?? 1, message: "No new rows" };
   }
-  const rawData = await dataResp.json();
-  const dataRows: string[][] = rawData.values || [];
+
+  const headers: string[] = allRows[0];
+  const startRow = (config.lastSyncedRow ?? 1); // rows are 0-indexed in allRows; row 0 = header, row 1 = first data row
+  // lastSyncedRow tracks how many data rows (not including header) we've processed
+  const dataRows = allRows.slice(1 + startRow);
 
   if (dataRows.length === 0) {
     await db.update(googleSheetsSyncConfigs).set({
-      lastSyncedAt: new Date(),
-      lastSyncStatus: "success",
-      lastSyncLeadsCreated: 0,
-      lastSyncLeadsSkipped: 0,
-      lastSyncMessage: "No new rows since last sync",
-      modifiedAt: new Date(),
+      lastSyncedAt: new Date(), lastSyncStatus: "success",
+      lastSyncLeadsCreated: 0, lastSyncLeadsSkipped: 0,
+      lastSyncMessage: "No new rows since last sync", modifiedAt: new Date(),
     }).where(eq(googleSheetsSyncConfigs.id, configId));
     return { leadsCreated: 0, leadsSkipped: 0, leadsUpdated: 0, newLastRow: config.lastSyncedRow ?? 1, message: "No new rows" };
   }

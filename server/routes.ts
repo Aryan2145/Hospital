@@ -3556,87 +3556,91 @@ export async function registerRoutes(
     }
   });
 
+  // --- Google Sheets CSV helpers ---
+  function parseCsv(text: string): string[][] {
+    const rows: string[][] = [];
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const fields: string[] = [];
+      let inQuote = false, current = "";
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"' && !inQuote) { inQuote = true; }
+        else if (ch === '"' && inQuote) {
+          if (line[i + 1] === '"') { current += '"'; i++; }
+          else inQuote = false;
+        } else if (ch === "," && !inQuote) { fields.push(current); current = ""; }
+        else { current += ch; }
+      }
+      fields.push(current);
+      rows.push(fields);
+    }
+    return rows;
+  }
+
+  function buildCsvExportUrl(spreadsheetId: string, gid?: string | null): string {
+    let url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
+    if (gid) url += `&gid=${gid}`;
+    return url;
+  }
+
+  async function fetchSheetCsv(spreadsheetId: string, gid?: string | null): Promise<string[][]> {
+    const url = buildCsvExportUrl(spreadsheetId, gid);
+    const resp = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error("Access denied. Make sure the sheet is shared as \"Anyone with the link can view\".");
+    }
+    if (resp.status === 404) throw new Error("Sheet not found. Please check the URL.");
+    if (!resp.ok) throw new Error(`Failed to read sheet (HTTP ${resp.status}). Check that the sheet is publicly shared.`);
+    const text = await resp.text();
+    if (text.includes("<!DOCTYPE html>") || text.includes("<HTML>")) {
+      throw new Error("The sheet is not publicly accessible. Change sharing to \"Anyone with the link can view\".");
+    }
+    return parseCsv(text);
+  }
+
   // --- Google Sheets Lead Extraction ---
   app.post("/api/google-sheets/headers", isAuthenticated, async (req, res) => {
     try {
-      const { sheetUrl, apiKey } = req.body;
+      const { sheetUrl } = req.body;
       if (!sheetUrl) return res.status(400).json({ message: "Sheet URL is required" });
-      if (!apiKey) return res.status(400).json({ message: "Google API Key is required" });
 
       const spreadsheetId = extractSpreadsheetId(sheetUrl);
-      if (!spreadsheetId) return res.status(400).json({ message: "Invalid Google Sheets URL. Please provide a valid URL like: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit" });
-
-      const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?key=${apiKey}&fields=properties.title,sheets.properties`;
-      const metaResp = await fetch(metaUrl);
-      if (!metaResp.ok) {
-        const errData = await metaResp.json().catch(() => ({}));
-        if (metaResp.status === 403) {
-          return res.status(400).json({ message: "Access denied. Make sure the sheet is shared as 'Anyone with the link can view' and the API key is valid." });
-        }
-        if (metaResp.status === 404) {
-          return res.status(400).json({ message: "Sheet not found. Please check the URL." });
-        }
-        return res.status(400).json({ message: errData?.error?.message || "Failed to access the sheet" });
-      }
-      const metaData = await metaResp.json();
-      const sheetTitle = metaData?.properties?.title || "Unknown Sheet";
-      const sheetsList = (metaData?.sheets || []).map((s: any) => ({
-        title: s.properties?.title || "Sheet1",
-        sheetId: s.properties?.sheetId,
-      }));
-      const sheets = sheetsList.map((s: any) => s.title);
+      if (!spreadsheetId) return res.status(400).json({ message: "Invalid Google Sheets URL. Copy the full URL from your browser while the sheet is open." });
 
       const gidMatch = sheetUrl.match(/[#&]gid=(\d+)/);
-      let targetSheet = sheets[0] || "Sheet1";
-      if (gidMatch) {
-        const gid = Number(gidMatch[1]);
-        const matched = sheetsList.find((s: any) => s.sheetId === gid);
-        if (matched) targetSheet = matched.title;
-      }
+      const gid = gidMatch ? gidMatch[1] : null;
 
-      const range = `'${targetSheet}'!1:1`;
-      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`;
-      const response = await fetch(apiUrl);
+      const allRows = await fetchSheetCsv(spreadsheetId, gid);
+      if (allRows.length === 0) return res.status(400).json({ message: "The sheet appears to be empty." });
 
-      if (!response.ok) {
-        return res.status(400).json({ message: "Failed to read headers from the sheet." });
-      }
+      const headers = allRows[0].map(h => h.trim()).filter(Boolean);
+      if (headers.length === 0) return res.status(400).json({ message: "No column headers found in the first row." });
 
-      const data = await response.json();
-      const headers = data.values?.[0] || [];
-      if (headers.length === 0) {
-        return res.status(400).json({ message: "No headers found in the first row of the sheet." });
-      }
-
-      res.json({ headers, sheetTitle, sheets, spreadsheetId, selectedSheet: targetSheet });
+      res.json({ headers, sheetTitle: "Google Sheet", sheets: [], spreadsheetId, gid, selectedSheet: "Sheet1" });
     } catch (err: any) {
-      res.status(500).json({ message: humanizeError(err) });
+      res.status(400).json({ message: err.message || humanizeError(err) });
     }
   });
 
   app.post("/api/google-sheets/preview", isAuthenticated, async (req, res) => {
     try {
-      const { spreadsheetId, apiKey, sheetName } = req.body;
-      if (!spreadsheetId || !apiKey) return res.status(400).json({ message: "Missing required parameters" });
+      const { spreadsheetId, gid } = req.body;
+      if (!spreadsheetId) return res.status(400).json({ message: "Missing spreadsheetId" });
 
-      const range = sheetName ? `'${sheetName}'!A1:Z10` : "Sheet1!A1:Z10";
-      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`;
-      const response = await fetch(apiUrl);
-
-      if (!response.ok) return res.status(400).json({ message: "Failed to preview sheet data" });
-
-      const data = await response.json();
-      const rows = data.values || [];
+      const allRows = await fetchSheetCsv(spreadsheetId, gid);
+      const rows = allRows.slice(0, 11); // header + 10 preview rows
       res.json({ rows, totalPreview: rows.length });
     } catch (err: any) {
-      res.status(500).json({ message: humanizeError(err) });
+      res.status(400).json({ message: err.message || humanizeError(err) });
     }
   });
 
   app.post("/api/google-sheets/import", isAuthenticated, async (req, res) => {
     try {
-      const { spreadsheetId, apiKey, sheetName, columnMapping, duplicateStrategy, defaultLeadStatus, defaultTags } = req.body;
-      if (!spreadsheetId || !apiKey) return res.status(400).json({ message: "Missing required parameters" });
+      const { spreadsheetId, gid, columnMapping, duplicateStrategy, defaultLeadStatus, defaultTags } = req.body;
+      if (!spreadsheetId) return res.status(400).json({ message: "Missing spreadsheetId" });
       if (!columnMapping || Object.keys(columnMapping).length === 0) return res.status(400).json({ message: "Column mapping is required" });
 
       const tid = await getDefaultTenantId(req);
@@ -3644,14 +3648,7 @@ export async function registerRoutes(
       const dedupStrategy = duplicateStrategy || "skip";
       const leadStatus = defaultLeadStatus || "Raw Lead Captured";
 
-      const range = sheetName ? `'${sheetName}'` : "Sheet1";
-      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`;
-      const response = await fetch(apiUrl);
-
-      if (!response.ok) return res.status(400).json({ message: "Failed to fetch sheet data" });
-
-      const data = await response.json();
-      const allRows = data.values || [];
+      const allRows = await fetchSheetCsv(spreadsheetId, gid);
       if (allRows.length < 2) return res.status(400).json({ message: "Sheet has no data rows (only headers or empty)" });
 
       const headers = allRows[0] as string[];
@@ -3765,7 +3762,7 @@ export async function registerRoutes(
 
       const [importLog] = await db.insert(leadImportLogs).values({
         tenantId: tid,
-        fileName: `Google Sheet: ${sheetName || "Sheet1"}`,
+        fileName: `Google Sheet: ${spreadsheetId}${gid ? `#${gid}` : ""}`,
         source: "google_sheets",
         totalRows: dataRows.length,
         successCount,
@@ -3806,8 +3803,7 @@ export async function registerRoutes(
       const configs = await db.select().from(googleSheetsSyncConfigs)
         .where(eq(googleSheetsSyncConfigs.tenantId, tid))
         .orderBy(desc(googleSheetsSyncConfigs.createdAt));
-      // Strip encrypted API key from response, return masked version
-      const safe = configs.map(c => ({ ...c, apiKeyEncrypted: undefined, apiKeyMasked: "••••••••" + c.apiKeyEncrypted.slice(-4) }));
+      const safe = configs.map(c => ({ ...c, apiKeyEncrypted: undefined }));
       res.json(safe);
     } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
   });
@@ -3816,20 +3812,21 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const userId = String(req.session?.crmUserId || "system");
-      const { name, spreadsheetId, apiKey, sheetName, columnMapping, duplicateStrategy, defaultLeadStatus, defaultTags } = req.body;
-      if (!name || !spreadsheetId || !apiKey || !columnMapping) return res.status(400).json({ message: "name, spreadsheetId, apiKey, and columnMapping are required" });
+      const { name, spreadsheetId, gid, columnMapping, duplicateStrategy, defaultLeadStatus, defaultTags } = req.body;
+      if (!name || !spreadsheetId || !columnMapping) return res.status(400).json({ message: "name, spreadsheetId, and columnMapping are required" });
 
       const [created] = await db.insert(googleSheetsSyncConfigs).values({
         tenantId: tid, name, spreadsheetId,
-        apiKeyEncrypted: encryptValue(apiKey),
-        sheetName: sheetName || "Sheet1",
+        apiKeyEncrypted: null,
+        sheetGid: gid || null,
+        sheetName: "Sheet1",
         columnMapping, duplicateStrategy: duplicateStrategy || "skip",
         defaultLeadStatus: defaultLeadStatus || "Raw Lead Captured",
         defaultTags: defaultTags || null,
         isActive: true, lastSyncedRow: 1,
         createdBy: userId,
       }).returning();
-      res.json({ ...created, apiKeyEncrypted: undefined, apiKeyMasked: "••••••••" });
+      res.json({ ...created, apiKeyEncrypted: undefined });
     } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
   });
 
@@ -3837,21 +3834,19 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const id = Number(req.params.id);
-      const { name, sheetName, columnMapping, duplicateStrategy, defaultLeadStatus, defaultTags, isActive, apiKey } = req.body;
+      const { name, columnMapping, duplicateStrategy, defaultLeadStatus, defaultTags, isActive } = req.body;
       const updates: Record<string, any> = { modifiedAt: new Date() };
       if (name !== undefined) updates.name = name;
-      if (sheetName !== undefined) updates.sheetName = sheetName;
       if (columnMapping !== undefined) updates.columnMapping = columnMapping;
       if (duplicateStrategy !== undefined) updates.duplicateStrategy = duplicateStrategy;
       if (defaultLeadStatus !== undefined) updates.defaultLeadStatus = defaultLeadStatus;
       if (defaultTags !== undefined) updates.defaultTags = defaultTags;
       if (isActive !== undefined) updates.isActive = isActive;
-      if (apiKey) updates.apiKeyEncrypted = encryptValue(apiKey);
       const [updated] = await db.update(googleSheetsSyncConfigs).set(updates)
         .where(and(eq(googleSheetsSyncConfigs.id, id), eq(googleSheetsSyncConfigs.tenantId, tid)))
         .returning();
       if (!updated) return res.status(404).json({ message: "Config not found" });
-      res.json({ ...updated, apiKeyEncrypted: undefined, apiKeyMasked: "••••••••" });
+      res.json({ ...updated, apiKeyEncrypted: undefined });
     } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
   });
 
