@@ -19,59 +19,46 @@ export async function resolvePreopNotifyList(
   episode: any,
   tenantId: number,
 ): Promise<Array<{ crmUserId: number; name: string; email: string | null; phone: string | null; roleInCase: string }>> {
-  // Accumulate roles per user to consolidate multi-role users into one entry
-  const rolesByUserId = new Map<number, { name: string; email: string | null; phone: string | null; roles: string[] }>();
-
-  const addUser = async (userId: number | null, roleInCase: string) => {
-    if (!userId) return;
-    if (rolesByUserId.has(userId)) {
-      rolesByUserId.get(userId)!.roles.push(roleInCase);
-      return;
-    }
+  // Helpers
+  const fetchUser = async (userId: number): Promise<{ id: number; name: string; email: string | null; phone: string | null } | null> => {
     const row = await pool.query(
-      `SELECT cu.id, cu.name, cu.email, cu.phone FROM crm_users cu WHERE cu.id = $1 AND cu.tenant_id = $2 AND cu.is_active = TRUE`,
+      `SELECT id, name, email, phone FROM crm_users WHERE id = $1 AND tenant_id = $2 AND is_active = TRUE`,
       [userId, tenantId]
     );
-    if (row.rows[0]) {
-      rolesByUserId.set(userId, { name: row.rows[0].name, email: row.rows[0].email, phone: row.rows[0].phone, roles: [roleInCase] });
-    }
+    return row.rows[0] || null;
   };
 
-  if (episode.preopAssignedUserId) await addUser(episode.preopAssignedUserId, "preop_staff");
-  if (episode.assignedCrmUserId) await addUser(episode.assignedCrmUserId, "case_coordinator");
+  // --- 1. Resolve exactly ONE coordinator via strict fallback chain ---
+  // preopAssigned → episode.assignedCrmUserId → lead.assignedCrmUserId → ADMIN/MANAGER
+  type UserEntry = { crmUserId: number; name: string; email: string | null; phone: string | null; roleInCase: string };
+  const notifyList: UserEntry[] = [];
+  const notifyUserIds = new Set<number>();
 
-  if (episode.leadId) {
+  let coordinator: UserEntry | null = null;
+
+  if (episode.preopAssignedUserId) {
+    const u = await fetchUser(episode.preopAssignedUserId);
+    if (u) coordinator = { crmUserId: u.id, name: u.name, email: u.email, phone: u.phone, roleInCase: "preop_staff" };
+  }
+
+  if (!coordinator && episode.assignedCrmUserId) {
+    const u = await fetchUser(episode.assignedCrmUserId);
+    if (u) coordinator = { crmUserId: u.id, name: u.name, email: u.email, phone: u.phone, roleInCase: "case_coordinator" };
+  }
+
+  if (!coordinator && episode.leadId) {
     const leadRow = await pool.query(
       `SELECT assigned_crm_user_id FROM leads WHERE id = $1 AND tenant_id = $2`,
       [episode.leadId, tenantId]
     );
-    if (leadRow.rows[0]?.assigned_crm_user_id) await addUser(leadRow.rows[0].assigned_crm_user_id, "lead_coordinator");
-  }
-
-  // Doctor CRM user — check both doctorId and surgeryDoctorId
-  const doctorIdsToCheck = new Set<number>();
-  if (episode.doctorId) doctorIdsToCheck.add(episode.doctorId);
-  if (episode.surgeryDoctorId) doctorIdsToCheck.add(episode.surgeryDoctorId);
-
-  for (const doctorId of doctorIdsToCheck) {
-    const docRow = await pool.query(
-      `SELECT d.name as doctor_name, d.email as doctor_email, cu.id as crm_user_id, cu.name, cu.email, cu.phone
-       FROM doctors d
-       LEFT JOIN crm_users cu ON cu.id = d.crm_user_id AND cu.tenant_id = d.tenant_id
-       WHERE d.id = $1 AND d.tenant_id = $2`,
-      [doctorId, tenantId]
-    );
-    if (docRow.rows[0]) {
-      const doc = docRow.rows[0];
-      if (doc.crm_user_id) {
-        await addUser(doc.crm_user_id, "doctor");
-      }
-      // If no CRM account, caller persists not-deliverable to preop_reminder_log + sends email
+    const leadAssignee = leadRow.rows[0]?.assigned_crm_user_id;
+    if (leadAssignee) {
+      const u = await fetchUser(leadAssignee);
+      if (u) coordinator = { crmUserId: u.id, name: u.name, email: u.email, phone: u.phone, roleInCase: "lead_coordinator" };
     }
   }
 
-  // Fallback chain: if no one was resolved, pick ADMIN then MANAGER
-  if (rolesByUserId.size === 0) {
+  if (!coordinator) {
     const adminRow = await pool.query(
       `SELECT cu.id, cu.name, cu.email, cu.phone FROM crm_users cu
        JOIN system_roles sr ON cu.system_role_id = sr.id
@@ -80,19 +67,42 @@ export async function resolvePreopNotifyList(
       [tenantId]
     );
     if (adminRow.rows[0]) {
-      rolesByUserId.set(adminRow.rows[0].id, {
-        name: adminRow.rows[0].name, email: adminRow.rows[0].email, phone: adminRow.rows[0].phone, roles: ["admin"],
-      });
+      coordinator = { crmUserId: adminRow.rows[0].id, name: adminRow.rows[0].name, email: adminRow.rows[0].email, phone: adminRow.rows[0].phone, roleInCase: "admin" };
     }
   }
 
-  return Array.from(rolesByUserId.entries()).map(([crmUserId, u]) => ({
-    crmUserId,
-    name: u.name,
-    email: u.email,
-    phone: u.phone,
-    roleInCase: u.roles.join("+"),
-  }));
+  if (coordinator) {
+    notifyList.push(coordinator);
+    notifyUserIds.add(coordinator.crmUserId);
+  }
+
+  // --- 2. Always add doctors with CRM accounts (in addition to coordinator) ---
+  // Doctor email-fallback for no-CRM doctors is handled by triggerPreopEntryAutomation
+  const doctorIdsToCheck = new Set<number>();
+  if (episode.doctorId) doctorIdsToCheck.add(episode.doctorId);
+  if (episode.surgeryDoctorId) doctorIdsToCheck.add(episode.surgeryDoctorId);
+
+  for (const doctorId of doctorIdsToCheck) {
+    const docRow = await pool.query(
+      `SELECT d.name as doctor_name, cu.id as crm_user_id, cu.name, cu.email, cu.phone
+       FROM doctors d
+       LEFT JOIN crm_users cu ON cu.id = d.crm_user_id AND cu.tenant_id = d.tenant_id
+       WHERE d.id = $1 AND d.tenant_id = $2`,
+      [doctorId, tenantId]
+    );
+    if (docRow.rows[0]?.crm_user_id && !notifyUserIds.has(docRow.rows[0].crm_user_id)) {
+      notifyList.push({
+        crmUserId: docRow.rows[0].crm_user_id,
+        name: docRow.rows[0].name,
+        email: docRow.rows[0].email,
+        phone: docRow.rows[0].phone,
+        roleInCase: "doctor",
+      });
+      notifyUserIds.add(docRow.rows[0].crm_user_id);
+    }
+  }
+
+  return notifyList;
 }
 
 export async function triggerPreopEntryAutomation(

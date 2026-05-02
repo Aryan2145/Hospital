@@ -7751,17 +7751,30 @@ export async function registerRoutes(
         }
       }
 
+      // serverEpisodeUpdates holds values computed server-side (not client-supplied).
+      // These are applied alongside the sanitized client body.
+      const serverEpisodeUpdates: Record<string, any> = {};
+
       if (body.status === "Pre-op Assessment" && oldEpisode?.status === "Surgery Scheduled") {
-        body.preopEnteredAt = new Date();
-        body.preopReadinessStatus = "Not Started";
-        body.preopClearanceGiven = false;
+        serverEpisodeUpdates.preopEnteredAt = new Date();
+        serverEpisodeUpdates.preopReadinessStatus = "Not Started";
+        serverEpisodeUpdates.preopClearanceGiven = false;
       }
 
       const stageRemarksVal = body.stageRemarks;
       delete body.stageRemarks;
 
+      // Security: always strip pre-op clearance fields from client-supplied body.
+      // These can only be set by: (a) server-side Pre-op entry logic above, or
+      // (b) preopAssessmentHandler (role-checked), or (c) Surgery Done inline override.
+      // This prevents any user with episode-edit rights from bypassing the manager gate.
+      delete body.preopClearanceGiven;
+      delete body.preopClearanceOverrideBy;
+      delete body.preopClearanceOverrideAt;
+      delete body.preopEnteredAt;
+
       const parsed = insertEpisodeSchema.partial().parse(body);
-      const ep = await storage.updateEpisode(episodeId, tid, parsed);
+      const ep = await storage.updateEpisode(episodeId, tid, { ...parsed, ...serverEpisodeUpdates });
 
       const userId = String((req as any).session?.crmUserId || "system");
 
@@ -7996,28 +8009,56 @@ export async function registerRoutes(
       const revisitDueDateVal = revisitDueDate ? new Date(revisitDueDate) : null;
       const medCondArray = Array.isArray(medicalConditions) ? medicalConditions : (medicalConditions ? [medicalConditions] : null);
 
+      // True partial update: only set columns explicitly provided in the request body
+      const bodyKeys = Object.keys(req.body);
+      const colMap: Record<string, string> = {
+        bloodWorkDone: "blood_work_done",
+        imagingDone: "imaging_done",
+        anesthesiaConsultDone: "anesthesia_consult_done",
+        consentFormSigned: "consent_form_signed",
+        npoConfirmed: "npo_confirmed",
+        allergiesReviewed: "allergies_reviewed",
+        medicationsReviewed: "medications_reviewed",
+        vitalsStable: "vitals_stable",
+        notes: "notes",
+        overallReadiness: "overall_readiness",
+        medicalConditions: "medical_conditions",
+        mentalReadiness: "mental_readiness",
+        readinessStatus: "readiness_status",
+        notReadyReason: "not_ready_reason",
+        advisedRevisitDays: "advised_revisit_days",
+        revisitDueDate: "revisit_due_date",
+      };
+      const valueMap: Record<string, any> = {
+        bloodWorkDone, imagingDone, anesthesiaConsultDone, consentFormSigned,
+        npoConfirmed, allergiesReviewed, medicationsReviewed, vitalsStable,
+        notes, overallReadiness, medicalConditions: medCondArray, mentalReadiness, readinessStatus,
+        notReadyReason, advisedRevisitDays: advisedRevisitDays ?? null, revisitDueDate: revisitDueDateVal,
+      };
+
       const existing = await getOrCreatePreopAssessment(episodeId, tid);
       if (existing) {
-        await pool.query(
-          `UPDATE episode_preop_assessments SET
-             blood_work_done=$1, imaging_done=$2, anesthesia_consult_done=$3, consent_form_signed=$4,
-             npo_confirmed=$5, allergies_reviewed=$6, medications_reviewed=$7, vitals_stable=$8,
-             notes=$9, overall_readiness=$10,
-             medical_conditions=$11, mental_readiness=$12, readiness_status=$13,
-             not_ready_reason=$14, advised_revisit_days=$15, revisit_due_date=$16,
-             assessed_by=$17, assessed_by_crm_user_id=$18, assessed_at=NOW(),
-             submitted_by=$17, submitted_by_crm_user_id=$18, modified_at=NOW()
-           WHERE episode_id=$19 AND tenant_id=$20`,
-          [
-            bloodWorkDone, imagingDone, anesthesiaConsultDone, consentFormSigned,
-            npoConfirmed, allergiesReviewed, medicationsReviewed, vitalsStable,
-            notes, overallReadiness,
-            medCondArray, mentalReadiness, readinessStatus,
-            notReadyReason, advisedRevisitDays ?? null, revisitDueDateVal,
-            userName, crmUserId,
-            episodeId, tid,
-          ]
-        );
+        // Build dynamic SET clause: only include fields present in req.body
+        const setClauses: string[] = [];
+        const setValues: any[] = [];
+        for (const camelKey of Object.keys(colMap)) {
+          if (bodyKeys.includes(camelKey)) {
+            setValues.push(valueMap[camelKey]);
+            setClauses.push(`${colMap[camelKey]}=$${setValues.length}`);
+          }
+        }
+        // Always update audit trail fields
+        setValues.push(userName); const assessedByIdx = setValues.length;
+        setValues.push(crmUserId); const assessedByCrmIdx = setValues.length;
+        setValues.push(episodeId); const epIdx = setValues.length;
+        setValues.push(tid); const tenantIdx = setValues.length;
+        setClauses.push(`assessed_by=$${assessedByIdx}`, `assessed_by_crm_user_id=$${assessedByCrmIdx}`, `assessed_at=NOW()`, `submitted_by=$${assessedByIdx}`, `submitted_by_crm_user_id=$${assessedByCrmIdx}`, `modified_at=NOW()`);
+        if (setClauses.length > 0) {
+          await pool.query(
+            `UPDATE episode_preop_assessments SET ${setClauses.join(", ")} WHERE episode_id=$${epIdx} AND tenant_id=$${tenantIdx}`,
+            setValues
+          );
+        }
       } else {
         await pool.query(
           `INSERT INTO episode_preop_assessments
