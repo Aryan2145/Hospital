@@ -1322,7 +1322,9 @@ export const episodePreopAssessments = pgTable("episode_preop_assessments", {
   vitalsStable: boolean("vitals_stable").default(false),
   // Structured readiness fields
   medicalConditions: text("medical_conditions").array(),
+  medicalConditionNotes: text("medical_condition_notes"),
   mentalReadiness: text("mental_readiness"),
+  mentalReadinessNotes: text("mental_readiness_notes"),
   readinessStatus: text("readiness_status").default("Pending"),
   notReadyReason: text("not_ready_reason"),
   advisedRevisitDays: integer("advised_revisit_days"),

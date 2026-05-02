@@ -28,37 +28,53 @@ export async function resolvePreopNotifyList(
     return row.rows[0] || null;
   };
 
-  // --- 1. Resolve exactly ONE coordinator via strict fallback chain ---
-  // preopAssigned → episode.assignedCrmUserId → lead.assignedCrmUserId → ADMIN/MANAGER
+  // --- 1. Multi-role consolidation with fallback-chain coordinator selection ---
+  // Step A: Collect all coordinator slot candidates into a Map<userId, roles[]>
+  // so a user occupying multiple slots gets ONE consolidated entry with all roles merged.
   type UserEntry = { crmUserId: number; name: string; email: string | null; phone: string | null; roleInCase: string };
-  const notifyList: UserEntry[] = [];
-  const notifyUserIds = new Set<number>();
+  const coordinatorRoles = new Map<number, { user: Awaited<ReturnType<typeof fetchUser>> & {}; roles: string[]; priority: number }>();
 
-  let coordinator: UserEntry | null = null;
+  const addCoordCandidate = async (userId: number | null, role: string, priority: number) => {
+    if (!userId) return;
+    const u = await fetchUser(userId);
+    if (!u) return;
+    if (coordinatorRoles.has(u.id)) {
+      const existing = coordinatorRoles.get(u.id)!;
+      existing.roles.push(role);
+      if (priority < existing.priority) existing.priority = priority; // keep highest priority
+    } else {
+      coordinatorRoles.set(u.id, { user: u as any, roles: [role], priority });
+    }
+  };
 
-  if (episode.preopAssignedUserId) {
-    const u = await fetchUser(episode.preopAssignedUserId);
-    if (u) coordinator = { crmUserId: u.id, name: u.name, email: u.email, phone: u.phone, roleInCase: "preop_staff" };
-  }
+  await addCoordCandidate(episode.preopAssignedUserId, "preop_staff", 1);
+  await addCoordCandidate(episode.assignedCrmUserId, "case_coordinator", 2);
 
-  if (!coordinator && episode.assignedCrmUserId) {
-    const u = await fetchUser(episode.assignedCrmUserId);
-    if (u) coordinator = { crmUserId: u.id, name: u.name, email: u.email, phone: u.phone, roleInCase: "case_coordinator" };
-  }
-
-  if (!coordinator && episode.leadId) {
+  if (episode.leadId) {
     const leadRow = await pool.query(
       `SELECT assigned_crm_user_id FROM leads WHERE id = $1 AND tenant_id = $2`,
       [episode.leadId, tenantId]
     );
-    const leadAssignee = leadRow.rows[0]?.assigned_crm_user_id;
-    if (leadAssignee) {
-      const u = await fetchUser(leadAssignee);
-      if (u) coordinator = { crmUserId: u.id, name: u.name, email: u.email, phone: u.phone, roleInCase: "lead_coordinator" };
-    }
+    await addCoordCandidate(leadRow.rows[0]?.assigned_crm_user_id, "lead_coordinator", 3);
   }
 
-  if (!coordinator) {
+  // Step B: Apply fallback chain — pick the entry with the lowest priority (highest precedence).
+  // If multiple users resolve, pick only the one with the best priority to avoid multi-user spam.
+  const notifyList: UserEntry[] = [];
+  const notifyUserIds = new Set<number>();
+
+  if (coordinatorRoles.size > 0) {
+    const winner = Array.from(coordinatorRoles.values()).sort((a, b) => a.priority - b.priority)[0];
+    notifyList.push({
+      crmUserId: (winner.user as any).id,
+      name: (winner.user as any).name,
+      email: (winner.user as any).email,
+      phone: (winner.user as any).phone,
+      roleInCase: winner.roles.join("+"), // consolidated multi-role label
+    });
+    notifyUserIds.add((winner.user as any).id);
+  } else {
+    // Absolute fallback: ADMIN → MANAGER
     const adminRow = await pool.query(
       `SELECT cu.id, cu.name, cu.email, cu.phone FROM crm_users cu
        JOIN system_roles sr ON cu.system_role_id = sr.id
@@ -67,13 +83,9 @@ export async function resolvePreopNotifyList(
       [tenantId]
     );
     if (adminRow.rows[0]) {
-      coordinator = { crmUserId: adminRow.rows[0].id, name: adminRow.rows[0].name, email: adminRow.rows[0].email, phone: adminRow.rows[0].phone, roleInCase: "admin" };
+      notifyList.push({ crmUserId: adminRow.rows[0].id, name: adminRow.rows[0].name, email: adminRow.rows[0].email, phone: adminRow.rows[0].phone, roleInCase: "admin" });
+      notifyUserIds.add(adminRow.rows[0].id);
     }
-  }
-
-  if (coordinator) {
-    notifyList.push(coordinator);
-    notifyUserIds.add(coordinator.crmUserId);
   }
 
   // --- 2. Always add doctors with CRM accounts (in addition to coordinator) ---

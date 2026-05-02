@@ -1412,11 +1412,20 @@ function PreopCasesWidget({ navigate, readOnly }: { navigate: (path: string) => 
                 const hoursUntilSurgery = surgeryDate ? (surgeryDate.getTime() - Date.now()) / (1000 * 60 * 60) : null;
                 const enteredAt = c.preop_entered_at ? new Date(c.preop_entered_at) : null;
                 const hoursOverdue = enteredAt ? (Date.now() - enteredAt.getTime()) / (1000 * 60 * 60) : 0;
-                const isUrgent = !c.preop_clearance_given && (
-                  (hoursUntilSurgery !== null && hoursUntilSurgery < 24) || hoursOverdue > 96
+                // Color rules per spec:
+                // Green:  Ready OR clearance given
+                // Red:    surgery ≤ 3 days OR no update ≥ 96h (overdue/imminent)
+                // Yellow: Not Ready (revisit pending)
+                // Amber:  Pending / other
+                const isReady = c.assessment_readiness_status === "Ready" || c.preop_clearance_given;
+                const isNotReady = c.assessment_readiness_status === "Not Ready";
+                const isOverdueOrImminent = !c.preop_clearance_given && (
+                  (hoursUntilSurgery !== null && hoursUntilSurgery <= 72) || hoursOverdue >= 96
                 );
-                const isWarning = !c.preop_clearance_given && hoursOverdue >= 48;
-                const dotColor = c.preop_clearance_given ? "bg-green-500" : isUrgent ? "bg-red-500 animate-pulse" : isWarning ? "bg-orange-500" : "bg-amber-500";
+                const dotColor = isReady ? "bg-green-500"
+                  : isOverdueOrImminent ? "bg-red-500 animate-pulse"
+                  : isNotReady ? "bg-yellow-500"
+                  : "bg-amber-500";
                 const surgeryLabel = surgeryDate
                   ? hoursUntilSurgery !== null && hoursUntilSurgery < 0
                     ? "Surgery past"
@@ -1442,16 +1451,16 @@ function PreopCasesWidget({ navigate, readOnly }: { navigate: (path: string) => 
                     </div>
                     <Badge
                       className={`text-[10px] h-4 shrink-0 ${
-                        c.preop_clearance_given
+                        isReady
                           ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                          : isUrgent
+                          : isOverdueOrImminent
                           ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-                          : isWarning
-                          ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
+                          : isNotReady
+                          ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
                           : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
                       }`}
                     >
-                      {c.preop_clearance_given ? "Cleared" : isUrgent ? "🚨 Urgent" : isWarning ? "⚠ Overdue" : c.preop_readiness_status || "Pending"}
+                      {isReady ? "Cleared" : isOverdueOrImminent ? "Urgent" : isNotReady ? "Not Ready" : c.assessment_readiness_status || "Pending"}
                     </Badge>
                   </>
                 );

@@ -7703,10 +7703,10 @@ export async function registerRoutes(
         delete body.preopClearanceOverrideBy;
         delete body.preopClearanceOverrideAt;
 
-        const isFromPreop = oldEpisode?.status === "Pre-op Assessment";
-        const isFromSurgeryScheduled = oldEpisode?.status === "Surgery Scheduled";
         const preopEverEntered = !!(oldEpisode?.preopEnteredAt);
-        if (isFromPreop || (isFromSurgeryScheduled && preopEverEntered)) {
+        // Gate fires for ANY transition to Surgery Done when pre-op was ever entered,
+        // regardless of current status. This prevents bypass via direct API calls.
+        if (preopEverEntered) {
           // Gate: check structured assessment readiness_status === 'Ready' OR preopClearanceGiven
           const assessmentRow = await pool.query(
             `SELECT readiness_status FROM episode_preop_assessments WHERE episode_id = $1 AND tenant_id = $2 ORDER BY id DESC LIMIT 1`,
@@ -7996,9 +7996,9 @@ export async function registerRoutes(
         bloodWorkDone, imagingDone, anesthesiaConsultDone, consentFormSigned,
         npoConfirmed, allergiesReviewed, medicationsReviewed, vitalsStable,
         notes, overallReadiness, grantClearance, preopAssignedUserId,
-        // New structured readiness fields
-        medicalConditions, mentalReadiness, readinessStatus, notReadyReason,
-        advisedRevisitDays, revisitDueDate,
+        // Structured readiness fields
+        medicalConditions, medicalConditionNotes, mentalReadiness, mentalReadinessNotes,
+        readinessStatus, notReadyReason, advisedRevisitDays, revisitDueDate,
       } = req.body;
 
       const crmUserId = (req as any).session?.crmUserId;
@@ -8023,7 +8023,9 @@ export async function registerRoutes(
         notes: "notes",
         overallReadiness: "overall_readiness",
         medicalConditions: "medical_conditions",
+        medicalConditionNotes: "medical_condition_notes",
         mentalReadiness: "mental_readiness",
+        mentalReadinessNotes: "mental_readiness_notes",
         readinessStatus: "readiness_status",
         notReadyReason: "not_ready_reason",
         advisedRevisitDays: "advised_revisit_days",
@@ -8032,8 +8034,11 @@ export async function registerRoutes(
       const valueMap: Record<string, any> = {
         bloodWorkDone, imagingDone, anesthesiaConsultDone, consentFormSigned,
         npoConfirmed, allergiesReviewed, medicationsReviewed, vitalsStable,
-        notes, overallReadiness, medicalConditions: medCondArray, mentalReadiness, readinessStatus,
-        notReadyReason, advisedRevisitDays: advisedRevisitDays ?? null, revisitDueDate: revisitDueDateVal,
+        notes, overallReadiness,
+        medicalConditions: medCondArray, medicalConditionNotes: medicalConditionNotes ?? null,
+        mentalReadiness, mentalReadinessNotes: mentalReadinessNotes ?? null,
+        readinessStatus, notReadyReason,
+        advisedRevisitDays: advisedRevisitDays ?? null, revisitDueDate: revisitDueDateVal,
       };
 
       const existing = await getOrCreatePreopAssessment(episodeId, tid);
