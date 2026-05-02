@@ -287,12 +287,14 @@ async function sendAppointmentReminders(tenantId: number): Promise<number> {
               to: phone,
               templateName: watiConfig.templateReminder,
               broadcastName: `appt_reminder_${appt.id}`,
+              // WATI uses positional variables {{1}}, {{2}} etc.
+              // Parameter names MUST be "1", "2", "3" (not descriptive names).
               parameters: [
-                { name: "patient_name", value: leadName },
-                { name: "doctor_name", value: `Dr. ${doctorName}` },
-                { name: "appointment_date", value: apptDate },
-                { name: "appointment_time", value: apptTime || "As scheduled" },
-                { name: "hospital_name", value: hospitalName },
+                { name: "1", value: leadName },
+                { name: "2", value: `Dr. ${doctorName}` },
+                { name: "3", value: apptDate },
+                { name: "4", value: apptTime || "As scheduled" },
+                { name: "5", value: hospitalName },
               ],
             });
           } else {

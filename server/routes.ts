@@ -6530,12 +6530,14 @@ export async function registerRoutes(
                   to: watiPhone,
                   templateName: watiConfig.templateAppointment,
                   broadcastName: `appt_confirm_${parsed.leadId}`,
+                  // WATI uses positional variables {{1}}, {{2}} etc.
+                  // Parameter names MUST be "1", "2", "3" (not descriptive names).
                   parameters: [
-                    { name: "patient_name", value: lead.name || "Patient" },
-                    { name: "doctor_name", value: `Dr. ${doctorName}` },
-                    { name: "appointment_date", value: dateStr2 },
-                    { name: "appointment_time", value: timeStr },
-                    { name: "token_number", value: String(tokenNumber) },
+                    { name: "1", value: lead.name || "Patient" },
+                    { name: "2", value: `Dr. ${doctorName}` },
+                    { name: "3", value: dateStr2 },
+                    { name: "4", value: timeStr },
+                    { name: "5", value: String(tokenNumber) },
                   ],
                 });
               } else {
@@ -11392,12 +11394,14 @@ export async function registerRoutes(
           to: formattedPhone,
           templateName: config.templateAppointment,
           broadcastName: `crm_test_${Date.now()}`,
+          // WATI uses positional variables {{1}}, {{2}} etc.
+          // Parameter names MUST be "1", "2", "3" (not descriptive names).
           parameters: [
-            { name: "patient_name", value: "Test Patient" },
-            { name: "doctor_name", value: "Dr. Test" },
-            { name: "appointment_date", value: new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) },
-            { name: "appointment_time", value: "10:00 AM" },
-            { name: "hospital_name", value: hospitalName },
+            { name: "1", value: "Test Patient" },
+            { name: "2", value: "Dr. Test" },
+            { name: "3", value: new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) },
+            { name: "4", value: "10:00 AM" },
+            { name: "5", value: hospitalName },
           ],
         });
         if (result.success) {

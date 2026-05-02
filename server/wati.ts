@@ -104,9 +104,10 @@ export async function sendWatiTemplate(
     const data = await safeParseJson(response);
 
     if (!response.ok) {
+      const rawDetail = data?.message || data?.errors?.[0]?.message || data?._rawText || "";
+      console.error("[WATI] Template send failed:", response.status, rawDetail);
       const errorMsg = humanizeWatiError(data, response.status);
-      console.error("[WATI] Template send failed:", response.status, data?.message || data?._rawText || "");
-      return { success: false, error: errorMsg };
+      return { success: false, error: rawDetail ? `HTTP ${response.status} — ${rawDetail}` : errorMsg };
     }
 
     const messageId = data?.id || data?.messageId || data?.result || undefined;
