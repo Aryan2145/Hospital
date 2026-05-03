@@ -138,6 +138,7 @@ export default function GoogleSheetsImportPage() {
   const [defaultLeadStatus, setDefaultLeadStatus] = useState("Raw Lead Captured");
   const [defaultTags, setDefaultTags] = useState("");
   const [previewRows, setPreviewRows] = useState<string[][]>([]);
+  const [previewSkippedIndices, setPreviewSkippedIndices] = useState<number[]>([]);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
   // --- Auto-Sync State ---
@@ -180,10 +181,14 @@ export default function GoogleSheetsImportPage() {
 
   const previewMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/google-sheets/preview", { spreadsheetId, gid: sheetGid });
+      const res = await apiRequest("POST", "/api/google-sheets/preview", { spreadsheetId, gid: sheetGid, columnMapping });
       return res.json();
     },
-    onSuccess: (data: any) => { setPreviewRows(data.rows || []); setStep("preview"); },
+    onSuccess: (data: any) => {
+      setPreviewRows(data.rows || []);
+      setPreviewSkippedIndices(data.skippedIndices || []);
+      setStep("preview");
+    },
     onError: (err: any) => toast({ title: "Preview failed", description: err.message, variant: "destructive" }),
   });
 
@@ -294,7 +299,7 @@ export default function GoogleSheetsImportPage() {
 
   function resetAll() {
     setStep("connect"); setSheetUrl(""); setSpreadsheetId(""); setSheetGid(null);
-    setHeaders([]); setColumnMapping({}); setPreviewRows([]); setImportResult(null);
+    setHeaders([]); setColumnMapping({}); setPreviewRows([]); setPreviewSkippedIndices([]); setImportResult(null);
     setDuplicateStrategy("skip"); setDefaultLeadStatus("Raw Lead Captured"); setDefaultTags("");
   }
 
@@ -586,8 +591,25 @@ export default function GoogleSheetsImportPage() {
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
-                        <Eye className="w-5 h-5" />Preview ({previewRows.length > 1 ? previewRows.length - 1 : 0} rows shown)
+                        <Eye className="w-5 h-5" />
+                        Preview ({previewRows.length > 1 ? previewRows.length - 1 - previewSkippedIndices.length : 0} will be imported
+                        {previewSkippedIndices.length > 0 && (
+                          <span className="text-amber-600 dark:text-amber-400 font-normal text-sm">
+                            , {previewSkippedIndices.length} test {previewSkippedIndices.length === 1 ? "row" : "rows"} will be skipped
+                          </span>
+                        )}
+                        )
                       </CardTitle>
+                      {previewSkippedIndices.length > 0 && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Rows highlighted in amber are test leads and will be skipped during import. Phone numbers shown have prefixes (p:, z:, etc.) already removed.
+                        </p>
+                      )}
+                      {previewSkippedIndices.length === 0 && previewRows.length > 1 && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Phone numbers shown have prefixes (p:, z:, etc.) already removed.
+                        </p>
+                      )}
                     </CardHeader>
                     <CardContent>
                       {previewRows.length > 0 && (
@@ -596,6 +618,7 @@ export default function GoogleSheetsImportPage() {
                             <TableHeader>
                               <TableRow>
                                 <TableHead className="w-10">#</TableHead>
+                                <TableHead className="w-24">Status</TableHead>
                                 {previewRows[0].map((h, i) => (
                                   <TableHead key={i} className="whitespace-nowrap">
                                     {h}
@@ -609,14 +632,30 @@ export default function GoogleSheetsImportPage() {
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {previewRows.slice(1).map((row, ri) => (
-                                <TableRow key={ri}>
-                                  <TableCell className="text-muted-foreground text-xs">{ri + 1}</TableCell>
-                                  {previewRows[0].map((_, ci) => (
-                                    <TableCell key={ci} className="text-sm whitespace-nowrap">{row[ci] || ""}</TableCell>
-                                  ))}
-                                </TableRow>
-                              ))}
+                              {previewRows.slice(1).map((row, ri) => {
+                                const isSkipped = previewSkippedIndices.includes(ri);
+                                return (
+                                  <TableRow key={ri} className={isSkipped ? "bg-amber-50 dark:bg-amber-950/30" : ""} data-testid={`preview-row-${ri}`}>
+                                    <TableCell className="text-muted-foreground text-xs">{ri + 1}</TableCell>
+                                    <TableCell>
+                                      {isSkipped ? (
+                                        <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-400 bg-amber-50 dark:bg-amber-950/50 dark:text-amber-400" data-testid={`badge-test-lead-${ri}`}>
+                                          Test Lead
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-[10px] text-green-700 border-green-400 bg-green-50 dark:bg-green-950/50 dark:text-green-400" data-testid={`badge-will-import-${ri}`}>
+                                          Will Import
+                                        </Badge>
+                                      )}
+                                    </TableCell>
+                                    {previewRows[0].map((_, ci) => (
+                                      <TableCell key={ci} className={`text-sm whitespace-nowrap${isSkipped ? " text-muted-foreground line-through" : ""}`}>
+                                        {row[ci] || ""}
+                                      </TableCell>
+                                    ))}
+                                  </TableRow>
+                                );
+                              })}
                             </TableBody>
                           </Table>
                         </div>

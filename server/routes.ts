@@ -3727,12 +3727,40 @@ export async function registerRoutes(
 
   app.post("/api/google-sheets/preview", isAuthenticated, async (req, res) => {
     try {
-      const { spreadsheetId, gid } = req.body;
+      const { spreadsheetId, gid, columnMapping } = req.body;
       if (!spreadsheetId) return res.status(400).json({ message: "Missing spreadsheetId" });
 
       const allRows = await fetchSheetCsv(spreadsheetId, gid);
-      const rows = allRows.slice(0, 11); // header + 10 preview rows
-      res.json({ rows, totalPreview: rows.length });
+      if (allRows.length === 0) return res.json({ rows: [], skippedIndices: [], totalPreview: 0 });
+
+      const headers = allRows[0] as string[];
+      const dataRows = allRows.slice(1, 11); // up to 10 data rows
+
+      // Identify phone columns from columnMapping so we can strip prefixes.
+      // Only use mapped fields — same fields the import path cleans — to avoid false positives.
+      const phoneFields = new Set(["phoneE164", "phone", "phoneNumber", "mobile"]);
+      const phoneColIndices = new Set<number>();
+      if (columnMapping && typeof columnMapping === "object") {
+        for (const [field, sheetCol] of Object.entries(columnMapping)) {
+          if (phoneFields.has(field) && typeof sheetCol === "string") {
+            const idx = headers.indexOf(sheetCol);
+            if (idx >= 0) phoneColIndices.add(idx);
+          }
+        }
+      }
+
+      const skippedIndices: number[] = [];
+      const cleanedDataRows = dataRows.map((row, ri) => {
+        const isTest = isTestLeadSheetRow(headers, row as string[]);
+        if (isTest) skippedIndices.push(ri);
+        return (row as string[]).map((cell, ci) => {
+          if (phoneColIndices.has(ci)) return stripMetaExportPrefix(cell || "");
+          return cell;
+        });
+      });
+
+      const rows = [headers, ...cleanedDataRows];
+      res.json({ rows, skippedIndices, totalPreview: rows.length });
     } catch (err: any) {
       res.status(400).json({ message: err.message || humanizeError(err) });
     }
