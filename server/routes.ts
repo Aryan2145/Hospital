@@ -7834,14 +7834,32 @@ export async function registerRoutes(
         );
 
         if (requiresPreopGate) {
-          // Gate: check structured assessment readiness_status === 'Ready' OR preopClearanceGiven
-          const assessmentRow = await pool.query(
-            `SELECT readiness_status FROM episode_preop_assessments WHERE episode_id = $1 AND tenant_id = $2 ORDER BY id DESC LIMIT 1`,
-            [episodeId, tid]
-          );
+          // Gate: the episode_preop_assessments table is the SINGLE SOURCE OF TRUTH.
+          // Regression scenario: episodes.preop_readiness_status = 'Ready' but no
+          // episode_preop_assessments row with readiness_status = 'Ready' → must BLOCK.
+          // Fail-closed: if the assessment query throws or returns no rows, BLOCK.
+          let assessmentRow: any = { rows: [] };
+          try {
+            assessmentRow = await pool.query(
+              `SELECT readiness_status FROM episode_preop_assessments WHERE episode_id = $1 AND tenant_id = $2 ORDER BY id DESC LIMIT 1`,
+              [episodeId, tid]
+            );
+          } catch (assessmentQueryErr: any) {
+            console.error("[preop-gate] Assessment query failed — blocking Surgery Done transition:", assessmentQueryErr.message);
+            return res.status(422).json({
+              message: "Pre-op clearance check failed. Cannot move to Surgery Done at this time. Please try again or contact support.",
+              code: "PREOP_GATE_ERROR",
+              preopClearanceRequired: true,
+            });
+          }
           const assessmentIsReady = assessmentRow.rows[0]?.readiness_status === "Ready";
-          const clearanceAlreadyGiven = !!(oldEpisode?.preopClearanceGiven);
-          if (!assessmentIsReady && !clearanceAlreadyGiven) {
+          // A prior manager-override (applied in a previous Surgery Done attempt that was
+          // rolled back, or a documented administrative clearance) is accepted ONLY when
+          // preopClearanceOverrideBy is set — confirming the clearance was explicitly
+          // recorded with a responsible party.  A bare preopClearanceGiven=true without
+          // an override record does NOT satisfy the gate (that is how EP-38 was bypassed).
+          const clearanceViaDocumentedOverride = !!(oldEpisode?.preopClearanceGiven && oldEpisode?.preopClearanceOverrideBy);
+          if (!assessmentIsReady && !clearanceViaDocumentedOverride) {
             if (!managerOverrideFlag) {
               return res.status(422).json({
                 message: assessmentRow.rows[0]
@@ -7895,10 +7913,15 @@ export async function registerRoutes(
       // These can only be set by: (a) server-side Pre-op entry logic above, or
       // (b) preopAssessmentHandler (role-checked), or (c) Surgery Done inline override.
       // This prevents any user with episode-edit rights from bypassing the manager gate.
+      // preopReadinessStatus is also stripped: it must only be written by the pre-op
+      // assessment handler (derived from episode_preop_assessments), never directly
+      // editable on the episode record.  Setting it directly on the episode bypasses
+      // the checklist and was the root cause of the EP-38 clearance bypass.
       delete body.preopClearanceGiven;
       delete body.preopClearanceOverrideBy;
       delete body.preopClearanceOverrideAt;
       delete body.preopEnteredAt;
+      delete body.preopReadinessStatus;
 
       const parsed = insertEpisodeSchema.partial().parse(body);
       const ep = await storage.updateEpisode(episodeId, tid, { ...parsed, ...serverEpisodeUpdates });
