@@ -10,6 +10,69 @@ function normalizePhone(phone: string): string {
   return p;
 }
 
+function stripMetaExportPrefix(val: string): string {
+  return val.replace(/^(p:|z:|l:|as:|ag:|c:|f:)/i, "").trim();
+}
+
+function isTestLeadSheetRow(headers: string[], row: string[]): boolean {
+  const organicIdx = headers.findIndex(h =>
+    ["is_organic", "is organic", "isorganic"].includes(h.toLowerCase().replace(/\s+/g, " ").trim())
+  );
+  if (organicIdx >= 0 && (row[organicIdx] || "").trim().toLowerCase() === "true") return true;
+  const phoneIdx = headers.findIndex(h => /phone|mobile|contact/i.test(h));
+  if (phoneIdx >= 0) {
+    const phoneVal = (row[phoneIdx] || "").trim().toLowerCase();
+    if (phoneVal.startsWith("p:<test") || phoneVal.startsWith("p:test")) return true;
+  }
+  for (const val of row) {
+    if (/\btest\s*lead\b|\bdummy\s*data\b/i.test(val || "")) return true;
+  }
+  return false;
+}
+
+function buildMetaAutoNotes(headers: string[], row: string[], explicitNotes?: string): string | undefined {
+  if (explicitNotes) return explicitNotes;
+  const find = (names: string[]) => {
+    const idx = headers.findIndex(h => names.includes(h.toLowerCase().replace(/[\s_]/g, "")));
+    return idx >= 0 && row[idx] ? stripMetaExportPrefix(row[idx].trim()) : "";
+  };
+  const platform = find(["platform"]);
+  const adName = find(["adname"]);
+  const formName = find(["formname"]);
+  const adsetName = find(["adsetname"]);
+  const postCode = find(["postcode", "pincode", "pin"]);
+  const parts: string[] = [];
+  if (platform) parts.push(`Platform: ${platform}`);
+  if (adName) parts.push(`Ad: ${adName}`);
+  if (formName) parts.push(`Form: ${formName}`);
+  if (adsetName) parts.push(`Adset: ${adsetName}`);
+  if (postCode) parts.push(`PIN: ${postCode}`);
+  return parts.length > 0 ? parts.join(" | ") : undefined;
+}
+
+function resolveLeadName(headers: string[], row: string[], mappedName: string): string {
+  const fullNameIdx = headers.findIndex(h => h.toLowerCase().replace(/[\s_]/g, "") === "fullname");
+  if (fullNameIdx >= 0 && row[fullNameIdx]) return row[fullNameIdx].trim();
+  return mappedName;
+}
+
+function buildMetaAutoTags(headers: string[], row: string[], explicitTags?: string, defaultTags?: string): string | undefined {
+  const tagSet: string[] = [];
+  if (explicitTags) {
+    tagSet.push(...explicitTags.split(",").map(t => t.trim()).filter(Boolean));
+  } else if (defaultTags) {
+    tagSet.push(...defaultTags.split(",").map(t => t.trim()).filter(Boolean));
+  }
+  for (const colKey of ["campaignname", "adsetname"]) {
+    const idx = headers.findIndex(h => h.toLowerCase().replace(/[\s_]/g, "") === colKey);
+    if (idx >= 0 && row[idx]) {
+      const val = stripMetaExportPrefix(row[idx].trim());
+      if (val && !tagSet.includes(val)) tagSet.push(val);
+    }
+  }
+  return tagSet.length > 0 ? tagSet.join(",") : undefined;
+}
+
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
   const lines = text.split(/\r?\n/);
@@ -88,6 +151,8 @@ export async function runGoogleSheetsSync(
   let leadsCreated = 0, leadsSkipped = 0, leadsUpdated = 0;
 
   for (const row of dataRows) {
+    if (isTestLeadSheetRow(headers, row)) { leadsSkipped++; continue; }
+
     const mapped: Record<string, string> = {};
     for (const [crmField, sheetCol] of Object.entries(columnMapping)) {
       if (sheetCol) {
@@ -96,14 +161,18 @@ export async function runGoogleSheetsSync(
       }
     }
 
-    const name = toProperCase((mapped.name || "").trim());
+    const name = toProperCase(resolveLeadName(headers, row, (mapped.name || "").trim()));
     let phone = (mapped.phoneE164 || mapped.phone || mapped.mobile || "").trim();
+    phone = stripMetaExportPrefix(phone);
     const email = (mapped.email || "").trim();
     if (!phone) { leadsSkipped++; continue; }
 
     try {
       phone = normalizePhone(phone);
     } catch { leadsSkipped++; continue; }
+
+    const autoNotes = buildMetaAutoNotes(headers, row, mapped.notes || undefined);
+    const autoTags = buildMetaAutoTags(headers, row, mapped.tags || undefined, config.defaultTags || undefined);
 
     try {
       const existingLead = await storage.findLeadByPhone(tenantId, phone);
@@ -116,7 +185,8 @@ export async function runGoogleSheetsSync(
           if (!existingLead.utmSource && mapped.utmSource) updates.utmSource = mapped.utmSource;
           if (!existingLead.utmMedium && mapped.utmMedium) updates.utmMedium = mapped.utmMedium;
           if (!existingLead.utmCampaign && mapped.utmCampaign) updates.utmCampaign = mapped.utmCampaign;
-          if (!existingLead.notes && mapped.notes) updates.notes = mapped.notes;
+          if (!existingLead.notes && autoNotes) updates.notes = autoNotes;
+          if (!existingLead.tags && autoTags) updates.tags = autoTags;
           if (Object.keys(updates).length > 0) { await storage.updateLead(existingLead.id, updates); leadsUpdated++; }
           else leadsSkipped++;
           continue;
@@ -128,7 +198,8 @@ export async function runGoogleSheetsSync(
           if (mapped.utmSource) updates.utmSource = mapped.utmSource;
           if (mapped.utmMedium) updates.utmMedium = mapped.utmMedium;
           if (mapped.utmCampaign) updates.utmCampaign = mapped.utmCampaign;
-          if (mapped.notes) updates.notes = mapped.notes;
+          if (autoNotes) updates.notes = autoNotes;
+          if (autoTags) updates.tags = autoTags;
           if (Object.keys(updates).length > 0) { await storage.updateLead(existingLead.id, updates); leadsUpdated++; }
           else leadsSkipped++;
           continue;
@@ -142,13 +213,13 @@ export async function runGoogleSheetsSync(
         phoneE164: phone,
         email: email || undefined,
         status: leadStatus,
-        tags: mapped.tags || config.defaultTags || undefined,
+        tags: autoTags || undefined,
         utmSource: mapped.utmSource || "Google Sheets",
         utmMedium: mapped.utmMedium || undefined,
         utmCampaign: mapped.utmCampaign || undefined,
         utmTerm: mapped.utmTerm || undefined,
         utmContent: mapped.utmContent || undefined,
-        notes: mapped.notes || undefined,
+        notes: autoNotes || undefined,
         priority: mapped.priority || "Normal",
         assignedCrmUserId: assignedUser?.id,
         assignedTo: assignedUser?.name,

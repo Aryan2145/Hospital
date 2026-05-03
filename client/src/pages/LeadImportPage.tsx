@@ -66,6 +66,7 @@ interface ImportResult {
   duplicateCount: number;
   updatedCount: number;
   failureCount: number;
+  skippedCount?: number;
   errors?: { row: number; message: string }[];
 }
 
@@ -562,6 +563,17 @@ export default function LeadImportPage() {
                     <p className="text-xs text-muted-foreground">Updated</p>
                   </div>
                 </div>
+                {(importResult.skippedCount ?? 0) > 0 && (
+                  <div className="p-3 rounded-md bg-purple-50 dark:bg-purple-950/20 flex items-center gap-3">
+                    <AlertTriangle className="w-4 h-4 text-purple-600 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-purple-700 dark:text-purple-400" data-testid="text-result-skipped">
+                        {importResult.skippedCount} row{(importResult.skippedCount ?? 0) > 1 ? "s" : ""} skipped
+                      </p>
+                      <p className="text-xs text-muted-foreground">Test leads or dummy data excluded automatically</p>
+                    </div>
+                  </div>
+                )}
                 {importResult.failureCount > 0 && (
                   <div className="p-3 rounded-md bg-red-50 dark:bg-red-950/20">
                     <div className="flex items-center gap-2 mb-2">

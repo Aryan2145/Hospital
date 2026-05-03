@@ -439,6 +439,82 @@ function getPhoneVariants(normalized: string): string[] {
   return variants;
 }
 
+function stripMetaExportPrefix(val: string): string {
+  return val.replace(/^(p:|z:|l:|as:|ag:|c:|f:)/i, "").trim();
+}
+
+function isTestLeadCsvRow(row: Record<string, string>): boolean {
+  for (const [key, val] of Object.entries(row)) {
+    const normKey = key.toLowerCase().replace(/[\s_-]/g, "");
+    if (normKey === "isorganic" && (val || "").trim().toLowerCase() === "true") return true;
+    if (/\btest\s*lead\b|\bdummy\s*data\b/i.test(val || "")) return true;
+    if (/phone|mobile|contact/i.test(key)) {
+      const v = (val || "").trim().toLowerCase();
+      if (v.startsWith("p:<test") || v.startsWith("p:test")) return true;
+    }
+  }
+  return false;
+}
+
+function isTestLeadSheetRow(headers: string[], row: string[]): boolean {
+  const organicIdx = headers.findIndex(h =>
+    ["is_organic", "is organic", "isorganic"].includes(h.toLowerCase().replace(/\s+/g, " ").trim())
+  );
+  if (organicIdx >= 0 && (row[organicIdx] || "").trim().toLowerCase() === "true") return true;
+  const phoneIdx = headers.findIndex(h => /phone|mobile|contact/i.test(h));
+  if (phoneIdx >= 0) {
+    const phoneVal = (row[phoneIdx] || "").trim().toLowerCase();
+    if (phoneVal.startsWith("p:<test") || phoneVal.startsWith("p:test")) return true;
+  }
+  for (const val of row) {
+    if (/\btest\s*lead\b|\bdummy\s*data\b/i.test(val || "")) return true;
+  }
+  return false;
+}
+
+function buildMetaAutoNotes(headers: string[], row: string[], explicitNotes?: string): string | undefined {
+  if (explicitNotes) return explicitNotes;
+  const find = (names: string[]) => {
+    const idx = headers.findIndex(h => names.includes(h.toLowerCase().replace(/[\s_]/g, "")));
+    return idx >= 0 && row[idx] ? stripMetaExportPrefix(row[idx].trim()) : "";
+  };
+  const platform = find(["platform"]);
+  const adName = find(["adname"]);
+  const formName = find(["formname"]);
+  const adsetName = find(["adsetname"]);
+  const postCode = find(["postcode", "pincode", "pin"]);
+  const parts: string[] = [];
+  if (platform) parts.push(`Platform: ${platform}`);
+  if (adName) parts.push(`Ad: ${adName}`);
+  if (formName) parts.push(`Form: ${formName}`);
+  if (adsetName) parts.push(`Adset: ${adsetName}`);
+  if (postCode) parts.push(`PIN: ${postCode}`);
+  return parts.length > 0 ? parts.join(" | ") : undefined;
+}
+
+function resolveLeadName(headers: string[], row: string[], mappedName: string): string {
+  const fullNameIdx = headers.findIndex(h => h.toLowerCase().replace(/[\s_]/g, "") === "fullname");
+  if (fullNameIdx >= 0 && row[fullNameIdx]) return row[fullNameIdx].trim();
+  return mappedName;
+}
+
+function buildMetaAutoTags(headers: string[], row: string[], explicitTags?: string, defaultTags?: string): string | undefined {
+  const tagSet: string[] = [];
+  if (explicitTags) {
+    tagSet.push(...explicitTags.split(",").map(t => t.trim()).filter(Boolean));
+  } else if (defaultTags) {
+    tagSet.push(...defaultTags.split(",").map(t => t.trim()).filter(Boolean));
+  }
+  for (const colKey of ["campaignname", "adsetname"]) {
+    const idx = headers.findIndex(h => h.toLowerCase().replace(/[\s_]/g, "") === colKey);
+    if (idx >= 0 && row[idx]) {
+      const val = stripMetaExportPrefix(row[idx].trim());
+      if (val && !tagSet.includes(val)) tagSet.push(val);
+    }
+  }
+  return tagSet.length > 0 ? tagSet.join(",") : undefined;
+}
+
 function format_date(d: any): string {
   try {
     const date = new Date(d);
@@ -3433,6 +3509,7 @@ export async function registerRoutes(
       let failureCount = 0;
       let duplicateCount = 0;
       let updatedCount = 0;
+      let skippedCount = 0;
       const errors: { row: number; message: string }[] = [];
 
       for (let i = 0; i < rows.length; i++) {
@@ -3448,6 +3525,12 @@ export async function registerRoutes(
         } else {
           Object.assign(mapped, row);
         }
+
+        for (const k of Object.keys(mapped)) {
+          if (typeof mapped[k] === "string") mapped[k] = stripMetaExportPrefix(mapped[k]);
+        }
+
+        if (isTestLeadCsvRow(row)) { skippedCount++; continue; }
 
         const name = toProperCase((mapped.name || "").trim());
         let phone = (mapped.phoneE164 || mapped.phone || mapped.phoneNumber || mapped.mobile || "").trim();
@@ -3566,6 +3649,7 @@ export async function registerRoutes(
         duplicateCount,
         updatedCount,
         failureCount,
+        skippedCount,
         errors: errors.slice(0, 50),
       });
     } catch (err: any) {
@@ -3675,6 +3759,7 @@ export async function registerRoutes(
       let failureCount = 0;
       let duplicateCount = 0;
       let updatedCount = 0;
+      let skippedCount = 0;
       const errors: { row: number; message: string }[] = [];
 
       for (let i = 0; i < dataRows.length; i++) {
@@ -3690,8 +3775,11 @@ export async function registerRoutes(
           }
         }
 
-        const name = toProperCase((mapped.name || "").trim());
+        if (isTestLeadSheetRow(headers, row)) { skippedCount++; continue; }
+
+        const name = toProperCase(resolveLeadName(headers, row, (mapped.name || "").trim()));
         let phone = (mapped.phoneE164 || mapped.phone || mapped.phoneNumber || mapped.mobile || "").trim();
+        phone = stripMetaExportPrefix(phone);
         const email = (mapped.email || "").trim();
 
         if (!name && !phone) {
@@ -3708,6 +3796,9 @@ export async function registerRoutes(
 
         phone = normalizePhone(phone);
 
+        const autoNotes = buildMetaAutoNotes(headers, row, mapped.notes || mapped.callSummary || undefined);
+        const autoTags = buildMetaAutoTags(headers, row, mapped.tags || undefined, defaultTags);
+
         const existingLead = await storage.findLeadByPhone(tid, phone);
 
         if (existingLead) {
@@ -3721,8 +3812,8 @@ export async function registerRoutes(
             if (!existingLead.utmSource && mapped.utmSource) updates.utmSource = mapped.utmSource;
             if (!existingLead.utmMedium && mapped.utmMedium) updates.utmMedium = mapped.utmMedium;
             if (!existingLead.utmCampaign && mapped.utmCampaign) updates.utmCampaign = mapped.utmCampaign;
-            if (!existingLead.notes && mapped.notes) updates.notes = mapped.notes;
-            if (!existingLead.tags && (mapped.tags || defaultTags)) updates.tags = mapped.tags || defaultTags;
+            if (!existingLead.notes && autoNotes) updates.notes = autoNotes;
+            if (!existingLead.tags && autoTags) updates.tags = autoTags;
             if (Object.keys(updates).length > 0) {
               await storage.updateLead(existingLead.id, updates);
               updatedCount++;
@@ -3737,8 +3828,8 @@ export async function registerRoutes(
             if (mapped.utmSource) updates.utmSource = mapped.utmSource;
             if (mapped.utmMedium) updates.utmMedium = mapped.utmMedium;
             if (mapped.utmCampaign) updates.utmCampaign = mapped.utmCampaign;
-            if (mapped.notes) updates.notes = mapped.notes;
-            if (mapped.tags || defaultTags) updates.tags = mapped.tags || defaultTags;
+            if (autoNotes) updates.notes = autoNotes;
+            if (autoTags) updates.tags = autoTags;
             if (mapped.priority) updates.priority = mapped.priority;
             if (Object.keys(updates).length > 0) {
               await storage.updateLead(existingLead.id, updates);
@@ -3758,13 +3849,13 @@ export async function registerRoutes(
             phoneE164: phone,
             email: email || undefined,
             status: leadStatus,
-            tags: mapped.tags || defaultTags || undefined,
+            tags: autoTags || undefined,
             utmSource: mapped.utmSource || "Google Sheets",
             utmMedium: mapped.utmMedium || undefined,
             utmCampaign: mapped.utmCampaign || undefined,
             utmTerm: mapped.utmTerm || undefined,
             utmContent: mapped.utmContent || undefined,
-            notes: mapped.notes || mapped.callSummary || undefined,
+            notes: autoNotes || undefined,
             priority: mapped.priority || "Normal",
             assignedCrmUserId: assignedUser?.id,
             assignedTo: assignedUser?.name,
@@ -3801,6 +3892,7 @@ export async function registerRoutes(
         duplicateCount,
         updatedCount,
         failureCount,
+        skippedCount,
         errors: errors.slice(0, 50),
       });
     } catch (err: any) {
@@ -13949,8 +14041,24 @@ async function backfillLeadOwnershipAndSource() {
   }
 }
 
+async function deleteOnceMetaBadLeads() {
+  const BAD_IDS = [5378, 5379, 5380, 5381, 5382, 5383, 5384, 5385, 5386];
+  const existing = await db.select({ id: leads.id }).from(leads).where(inArray(leads.id, BAD_IDS));
+  if (existing.length === 0) return;
+  const presentIds = existing.map(r => r.id);
+  const [actRow] = await db.select({ cnt: count() }).from(activities).where(inArray(activities.leadId, presentIds));
+  const [epRow] = await db.select({ cnt: count() }).from(episodes).where(inArray(episodes.leadId, presentIds));
+  if (Number(actRow?.cnt ?? 0) > 0 || Number(epRow?.cnt ?? 0) > 0) {
+    console.warn("[deferred-startup] Skipped bad Meta lead cleanup — downstream references exist");
+    return;
+  }
+  const deleted = await db.delete(leads).where(inArray(leads.id, presentIds)).returning({ id: leads.id });
+  console.log(`[deferred-startup] Deleted ${deleted.length} bad Meta import leads (IDs: ${deleted.map(r => r.id).join(", ")})`);
+}
+
 export async function runDeferredStartupTasks() {
   try {
+    await deleteOnceMetaBadLeads();
     await autoBulkMergeDuplicates();
     await backfillMobileNormalized();
     await backfillLeadOwnershipAndSource();

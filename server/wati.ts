@@ -1,3 +1,5 @@
+const WATI_KILL_SWITCH = true;
+
 export interface WatiConfig {
   apiUrl: string;
   accessToken: string;
@@ -79,6 +81,10 @@ export async function sendWatiTemplate(
     parameters: { name: string; value: string }[];
   }
 ): Promise<WatiSendResult> {
+  if (WATI_KILL_SWITCH) {
+    console.warn("[WATI] Kill-switch active — template message blocked (not sent).");
+    return { success: false, error: "WATI messaging is currently disabled by administrator." };
+  }
   if (!config.enabled || !config.apiUrl || !config.accessToken) {
     return { success: false, error: "WATI not configured or disabled" };
   }
@@ -136,6 +142,10 @@ export async function sendWatiSession(
   to: string,
   text: string
 ): Promise<WatiSendResult> {
+  if (WATI_KILL_SWITCH) {
+    console.warn("[WATI] Kill-switch active — session message blocked (not sent).");
+    return { success: false, error: "WATI messaging is currently disabled by administrator." };
+  }
   if (!config.enabled || !config.apiUrl || !config.accessToken) {
     return { success: false, error: "WATI not configured or disabled" };
   }

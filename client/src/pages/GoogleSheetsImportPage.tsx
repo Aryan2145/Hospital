@@ -32,7 +32,7 @@ import {
 
 interface ImportResult {
   totalRows: number; successCount: number; duplicateCount: number;
-  updatedCount: number; failureCount: number; errors?: { row: number; message: string }[];
+  updatedCount: number; failureCount: number; skippedCount?: number; errors?: { row: number; message: string }[];
 }
 interface SyncConfig {
   id: number; name: string; spreadsheetId: string; sheetGid?: string; sheetName: string;
@@ -67,20 +67,29 @@ const DEDUP_OPTIONS = [
   { value: "overwrite", label: "Overwrite All Fields" },
 ];
 
+const META_NON_NAME_COLS = /\b(ad|form|campaign|adset|brand|product|company)[\s_]?name\b/i;
+
 function autoMapHeaders(headers: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
   for (const field of CRM_FIELDS) {
-    const match = headers.find(h =>
-      h.toLowerCase().replace(/[\s_-]/g, "") === field.key.toLowerCase().replace(/[\s_-]/g, "") ||
-      h.toLowerCase().includes(field.label.toLowerCase()) ||
-      field.label.toLowerCase().includes(h.toLowerCase())
-    );
+    const match = headers.find(h => {
+      if (field.key === "name" && META_NON_NAME_COLS.test(h)) return false;
+      return (
+        h.toLowerCase().replace(/[\s_-]/g, "") === field.key.toLowerCase().replace(/[\s_-]/g, "") ||
+        h.toLowerCase().includes(field.label.toLowerCase()) ||
+        field.label.toLowerCase().includes(h.toLowerCase())
+      );
+    });
     if (match) mapping[field.key] = match;
   }
   const phoneH = headers.find(h => /phone|mobile|contact|number/i.test(h));
   if (phoneH && !mapping.phoneE164) mapping.phoneE164 = phoneH;
-  const nameH = headers.find(h => /name|patient|full/i.test(h));
-  if (nameH && !mapping.name) mapping.name = nameH;
+  const fullNameH = headers.find(h => h.toLowerCase().replace(/[\s_]/g, "") === "fullname");
+  if (fullNameH) mapping.name = fullNameH;
+  else if (!mapping.name) {
+    const nameH = headers.find(h => /\bname\b|\bpatient\b/i.test(h) && !META_NON_NAME_COLS.test(h));
+    if (nameH) mapping.name = nameH;
+  }
   const emailH = headers.find(h => /email|mail/i.test(h));
   if (emailH && !mapping.email) mapping.email = emailH;
   return mapping;
@@ -641,7 +650,7 @@ export default function GoogleSheetsImportPage() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                         {[
                           { label: "Total Rows", val: importResult.totalRows, cls: "bg-muted", valCls: "" },
                           { label: "Imported", val: importResult.successCount, cls: "bg-green-50", valCls: "text-green-700" },
@@ -655,6 +664,15 @@ export default function GoogleSheetsImportPage() {
                           </div>
                         ))}
                       </div>
+                      {(importResult.skippedCount ?? 0) > 0 && (
+                        <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-100 mb-4" data-testid="text-skipped-notice">
+                          <AlertTriangle className="w-4 h-4 text-purple-600 flex-shrink-0" />
+                          <p className="text-sm text-purple-800">
+                            <span className="font-semibold">{importResult.skippedCount} row{(importResult.skippedCount ?? 0) > 1 ? "s" : ""} skipped</span>
+                            {" — "}test leads or dummy data excluded automatically.
+                          </p>
+                        </div>
+                      )}
                       {importResult.errors && importResult.errors.length > 0 && (
                         <div className="border rounded-lg overflow-hidden mb-4">
                           <Table>
