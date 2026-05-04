@@ -3,18 +3,18 @@ import { googleSheetsSyncConfigs, leadImportLogs } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { storage, toProperCase } from "../storage";
 
-function normalizePhone(phone: string): string {
+export function normalizePhone(phone: string): string {
   let p = phone.replace(/\D/g, "");
   if (p.length === 10) p = "91" + p;
   if (!p.startsWith("+")) p = "+" + p;
   return p;
 }
 
-function stripMetaExportPrefix(val: string): string {
+export function stripMetaExportPrefix(val: string): string {
   return val.replace(/^(p:|z:|l:|as:|ag:|c:|f:)/i, "").trim();
 }
 
-function isTestLeadSheetRow(headers: string[], row: string[]): boolean {
+export function isTestLeadSheetRow(headers: string[], row: string[]): boolean {
   const organicIdx = headers.findIndex(h =>
     ["is_organic", "is organic", "isorganic"].includes(h.toLowerCase().replace(/\s+/g, " ").trim())
   );
@@ -30,7 +30,7 @@ function isTestLeadSheetRow(headers: string[], row: string[]): boolean {
   return false;
 }
 
-function buildMetaAutoNotes(headers: string[], row: string[], explicitNotes?: string): string | undefined {
+export function buildMetaAutoNotes(headers: string[], row: string[], explicitNotes?: string): string | undefined {
   if (explicitNotes) return explicitNotes;
   const find = (names: string[]) => {
     const idx = headers.findIndex(h => names.includes(h.toLowerCase().replace(/[\s_]/g, "")));
@@ -50,13 +50,13 @@ function buildMetaAutoNotes(headers: string[], row: string[], explicitNotes?: st
   return parts.length > 0 ? parts.join(" | ") : undefined;
 }
 
-function resolveLeadName(headers: string[], row: string[], mappedName: string): string {
+export function resolveLeadName(headers: string[], row: string[], mappedName: string): string {
   const fullNameIdx = headers.findIndex(h => h.toLowerCase().replace(/[\s_]/g, "") === "fullname");
   if (fullNameIdx >= 0 && row[fullNameIdx]) return row[fullNameIdx].trim();
   return mappedName;
 }
 
-function buildMetaAutoTags(headers: string[], row: string[], explicitTags?: string, defaultTags?: string): string | undefined {
+export function buildMetaAutoTags(headers: string[], row: string[], explicitTags?: string, defaultTags?: string): string | undefined {
   const tagSet: string[] = [];
   if (explicitTags) {
     tagSet.push(...explicitTags.split(",").map(t => t.trim()).filter(Boolean));
@@ -111,43 +111,40 @@ async function fetchSheetCsv(spreadsheetId: string, gid?: string | null): Promis
   return parseCsv(text);
 }
 
-export async function runGoogleSheetsSync(
-  configId: number,
-  tenantId: number,
-  triggeredBy: string = "scheduler"
-): Promise<{ leadsCreated: number; leadsSkipped: number; leadsUpdated: number; newLastRow: number; message: string }> {
-  const configRows = await db.select().from(googleSheetsSyncConfigs)
-    .where(and(eq(googleSheetsSyncConfigs.id, configId), eq(googleSheetsSyncConfigs.tenantId, tenantId)));
-  const config = configRows[0];
-  if (!config) throw new Error("Sync config not found");
+// ─── Exported processing engine ──────────────────────────────────────────────
 
-  const allRows = await fetchSheetCsv(config.spreadsheetId, config.sheetGid);
-  if (allRows.length < 2) {
-    await db.update(googleSheetsSyncConfigs).set({
-      lastSyncedAt: new Date(), lastSyncStatus: "success",
-      lastSyncLeadsCreated: 0, lastSyncLeadsSkipped: 0,
-      lastSyncMessage: "No new rows since last sync", modifiedAt: new Date(),
-    }).where(eq(googleSheetsSyncConfigs.id, configId));
-    return { leadsCreated: 0, leadsSkipped: 0, leadsUpdated: 0, newLastRow: config.lastSyncedRow ?? 1, message: "No new rows" };
-  }
+export interface ProcessSheetRowsOptions {
+  columnMapping: Record<string, string>;
+  dedupStrategy?: "skip" | "update_blank" | "overwrite";
+  leadStatus?: string;
+  defaultTags?: string;
+  tenantId: number;
+}
 
-  const headers: string[] = allRows[0];
-  const startRow = (config.lastSyncedRow ?? 1); // rows are 0-indexed in allRows; row 0 = header, row 1 = first data row
-  // lastSyncedRow tracks how many data rows (not including header) we've processed
-  const dataRows = allRows.slice(1 + startRow);
+export interface ProcessSheetRowsResult {
+  leadsCreated: number;
+  leadsSkipped: number;
+  leadsUpdated: number;
+}
 
-  if (dataRows.length === 0) {
-    await db.update(googleSheetsSyncConfigs).set({
-      lastSyncedAt: new Date(), lastSyncStatus: "success",
-      lastSyncLeadsCreated: 0, lastSyncLeadsSkipped: 0,
-      lastSyncMessage: "No new rows since last sync", modifiedAt: new Date(),
-    }).where(eq(googleSheetsSyncConfigs.id, configId));
-    return { leadsCreated: 0, leadsSkipped: 0, leadsUpdated: 0, newLastRow: config.lastSyncedRow ?? 1, message: "No new rows" };
-  }
+/**
+ * Core import engine — processes a list of sheet rows against the DB.
+ * Exported so it can be exercised directly in integration tests and scripts
+ * without needing a live Google Sheets URL.
+ */
+export async function processSheetRows(
+  headers: string[],
+  dataRows: string[][],
+  opts: ProcessSheetRowsOptions,
+): Promise<ProcessSheetRowsResult> {
+  const {
+    columnMapping,
+    dedupStrategy = "skip",
+    leadStatus = "Raw Lead Captured",
+    defaultTags,
+    tenantId,
+  } = opts;
 
-  const columnMapping = config.columnMapping as Record<string, string>;
-  const dedupStrategy = config.duplicateStrategy || "skip";
-  const leadStatus = config.defaultLeadStatus || "Raw Lead Captured";
   let leadsCreated = 0, leadsSkipped = 0, leadsUpdated = 0;
 
   for (const row of dataRows) {
@@ -172,7 +169,7 @@ export async function runGoogleSheetsSync(
     } catch { leadsSkipped++; continue; }
 
     const autoNotes = buildMetaAutoNotes(headers, row, mapped.notes || undefined);
-    const autoTags = buildMetaAutoTags(headers, row, mapped.tags || undefined, config.defaultTags || undefined);
+    const autoTags = buildMetaAutoTags(headers, row, mapped.tags || undefined, defaultTags);
 
     try {
       const existingLead = await storage.findLeadByPhone(tenantId, phone);
@@ -228,6 +225,55 @@ export async function runGoogleSheetsSync(
     } catch { leadsSkipped++; }
   }
 
+  return { leadsCreated, leadsSkipped, leadsUpdated };
+}
+
+export async function runGoogleSheetsSync(
+  configId: number,
+  tenantId: number,
+  triggeredBy: string = "scheduler"
+): Promise<{ leadsCreated: number; leadsSkipped: number; leadsUpdated: number; newLastRow: number; message: string }> {
+  const configRows = await db.select().from(googleSheetsSyncConfigs)
+    .where(and(eq(googleSheetsSyncConfigs.id, configId), eq(googleSheetsSyncConfigs.tenantId, tenantId)));
+  const config = configRows[0];
+  if (!config) throw new Error("Sync config not found");
+
+  const allRows = await fetchSheetCsv(config.spreadsheetId, config.sheetGid);
+  if (allRows.length < 2) {
+    await db.update(googleSheetsSyncConfigs).set({
+      lastSyncedAt: new Date(), lastSyncStatus: "success",
+      lastSyncLeadsCreated: 0, lastSyncLeadsSkipped: 0,
+      lastSyncMessage: "No new rows since last sync", modifiedAt: new Date(),
+    }).where(eq(googleSheetsSyncConfigs.id, configId));
+    return { leadsCreated: 0, leadsSkipped: 0, leadsUpdated: 0, newLastRow: config.lastSyncedRow ?? 1, message: "No new rows" };
+  }
+
+  const headers: string[] = allRows[0];
+  const startRow = (config.lastSyncedRow ?? 1);
+  const dataRows = allRows.slice(1 + startRow);
+
+  if (dataRows.length === 0) {
+    await db.update(googleSheetsSyncConfigs).set({
+      lastSyncedAt: new Date(), lastSyncStatus: "success",
+      lastSyncLeadsCreated: 0, lastSyncLeadsSkipped: 0,
+      lastSyncMessage: "No new rows since last sync", modifiedAt: new Date(),
+    }).where(eq(googleSheetsSyncConfigs.id, configId));
+    return { leadsCreated: 0, leadsSkipped: 0, leadsUpdated: 0, newLastRow: config.lastSyncedRow ?? 1, message: "No new rows" };
+  }
+
+  const validDedupStrategies = ["skip", "update_blank", "overwrite"] as const;
+  type DedupStrategy = typeof validDedupStrategies[number];
+  const resolvedDedup: DedupStrategy =
+    validDedupStrategies.find(s => s === config.duplicateStrategy) ?? "skip";
+
+  const { leadsCreated, leadsSkipped, leadsUpdated } = await processSheetRows(headers, dataRows, {
+    columnMapping: config.columnMapping as Record<string, string>,
+    dedupStrategy: resolvedDedup,
+    leadStatus: config.defaultLeadStatus || "Raw Lead Captured",
+    defaultTags: config.defaultTags || undefined,
+    tenantId,
+  });
+
   const newLastRow = (config.lastSyncedRow ?? 1) + dataRows.length;
   const message = `Pulled ${dataRows.length} rows: ${leadsCreated} new, ${leadsUpdated} updated, ${leadsSkipped} skipped`;
 
@@ -250,9 +296,9 @@ export async function runGoogleSheetsSync(
     duplicateCount: leadsSkipped,
     updatedCount: leadsUpdated,
     failureCount: 0,
-    duplicateStrategy: dedupStrategy,
+    duplicateStrategy: config.duplicateStrategy || "skip",
     status: "Completed",
-    columnMapping: columnMapping,
+    columnMapping: config.columnMapping,
     importedBy: triggeredBy,
     completedAt: new Date(),
   });

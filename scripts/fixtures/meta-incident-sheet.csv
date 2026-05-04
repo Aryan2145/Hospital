@@ -1,0 +1,10 @@
+id,created_time,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id,form_name,is_organic,platform,full_name,phone_number,email,post_code
+1001,2024-01-10,ad1,Summer Campaign Ad,as1,Mumbai Leads,c1,Summer Campaign,f1,Lead Form A,false,fb,Rajesh Kumar,p:+919876543210,rajesh@example.com,400001
+1002,2024-01-10,ad1,Summer Campaign Ad,as1,Mumbai Leads,c1,Summer Campaign,f1,Lead Form A,false,fb,Priya Sharma,p:+919988776655,priya@example.com,400002
+1003,2024-01-10,ad1,Summer Campaign Ad,as1,Mumbai Leads,c1,Summer Campaign,f1,Lead Form A,false,fb,Amit Patel,p:+919876012345,amit@example.com,400003
+1004,2024-01-10,ad1,Summer Campaign Ad,as1,Mumbai Leads,c1,Summer Campaign,f1,Lead Form A,false,fb,Sunita Verma,p:+919123456789,sunita@example.com,400004
+1005,2024-01-10,ad2,Winter Campaign Ad,as2,Delhi Leads,c2,Winter Campaign,f2,Lead Form B,false,ig,Mohan Das,9871234567,mohan@example.com,110001
+1006,2024-01-10,ad2,Winter Campaign Ad,as2,Delhi Leads,c2,Winter Campaign,f2,Lead Form B,false,ig,Kavitha Nair,9812345678,kavitha@example.com,110002
+1007,2024-01-10,ad2,Winter Campaign Ad,as2,Delhi Leads,c2,Winter Campaign,f2,Lead Form B,false,ig,Arjun Singh,9823456789,arjun@example.com,110003
+1008,2024-01-10,ad2,Winter Campaign Ad,as2,Delhi Leads,c2,Winter Campaign,f2,Lead Form B,false,ig,Deepa Menon,9834567890,deepa@example.com,110004
+1009,2024-01-10,ad1,Summer Campaign Ad,as1,Mumbai Leads,c1,Summer Campaign,f1,Lead Form A,true,fb,Test Lead User,p:<test_phone>,test@example.com,000000
