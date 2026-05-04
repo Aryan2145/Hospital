@@ -1,0 +1,331 @@
+Update the **Add New Lead Form** and the **Event Registration Form** using the philosophy:
+
+**Lead Form = Capture Contact + Intent**
+**Consultation Stage = Capture Medical Depth**
+
+Do not overload the lead form with clinical details. Capture only the basic information required to identify, contact, classify, assign, and follow up with the patient.
+
+## 1. Final Fields for Add New Lead Form
+
+### A. Basic Patient Information
+
+1. **Patient Name**
+
+   * Mandatory
+   * Text field
+   * Placeholder: `e.g. Ramesh Modi`
+
+2. **Primary Phone Number**
+
+   * Mandatory
+   * 10-digit mobile validation
+   * Placeholder: `e.g. 9876543210`
+
+3. **Phone Belongs To**
+
+   * Mandatory
+   * Dropdown
+   * Options:
+
+     * Self
+     * Family Member
+     * Caregiver
+     * Friend
+     * Staff / Coordinator
+     * Other
+
+4. **Email**
+
+   * Optional
+   * Email validation
+   * Placeholder: `e.g. patient@email.com`
+
+5. **City / Location**
+
+   * Optional
+   * Text field or dropdown if city master exists
+   * Placeholder: `e.g. Ahmedabad`
+
+6. **Age**
+
+   * Optional
+   * Number field
+   * Do not ask DOB at lead stage
+
+7. **Gender**
+
+   * Optional
+   * Dropdown
+   * Options:
+
+     * Male
+     * Female
+     * Other
+     * Prefer not to say
+
+---
+
+### B. Lead Intent & Classification
+
+8. **Branch**
+
+   * Mandatory
+   * Dropdown from branch master
+
+9. **Treatment Department**
+
+   * Optional but recommended
+   * Dropdown from department master
+   * Example: Orthopedic, Dental, Gynecology, Cardiology, etc.
+
+10. **Treatment Sub-Department**
+
+* Optional
+* Conditional field
+* Show only after Treatment Department is selected
+* Dropdown from sub-department master
+
+11. **Doctor**
+
+* Optional
+* Conditional field
+* Show only after Treatment Department is selected
+* Dropdown should filter doctors by selected branch and department
+
+12. **Priority**
+
+* Optional
+* Default value: Normal
+* Options:
+
+  * Low
+  * Normal
+  * High
+  * Urgent
+
+---
+
+### C. Source & Tracking
+
+13. **Lead Source Category**
+
+* Mandatory
+* Dropdown from source category master
+* Example: Digital, Referral, Walk-in, Call, Camp, Corporate, Doctor Reference, Other
+
+14. **Lead Source**
+
+* Mandatory
+* Dropdown filtered by selected Lead Source Category
+
+15. **Campaign**
+
+* Optional
+* Dropdown from campaign master
+* Should auto-fill if lead is coming from Meta, Google, WhatsApp, landing page, or UTM integration
+
+16. **Referrer**
+
+* Optional
+* Conditional field
+* Show only if Lead Source Category or Lead Source is Referral / Doctor Reference / Patient Reference
+* Searchable dropdown from referrer / patient / doctor database
+
+---
+
+### D. Assignment & Internal Handling
+
+17. **Assign To**
+
+* Mandatory
+* Dropdown from counsellor / telecaller / coordinator users
+* If auto-assignment logic exists, auto-fill based on branch, department, or lead source
+* User should still be able to override if they have permission
+
+18. **Lead Status**
+
+* Auto-set
+* Default value: Raw Lead Captured
+* Can be shown as read-only or hidden
+* User should not manually select this while creating a new lead
+
+19. **Created Date & Time**
+
+* Auto-set
+* Hidden or read-only
+* Required for SLA, reporting, and response-time tracking
+
+---
+
+### E. Contact Persons
+
+20. **Contact Persons**
+
+* Optional section
+* Button: Add Contact Person
+* Use when the main phone number does not belong to the patient or when a family member / caregiver / billing person will coordinate.
+
+Each contact person should have:
+
+* Contact Person Name
+* Relationship with Patient
+* Phone Number
+* Email – optional
+* Is Primary Contact? – yes/no
+
+Validation:
+
+* At least one reachable phone number is mandatory.
+* Either Patient Primary Phone Number OR one Contact Person phone number must be present.
+* If no reachable number exists, show message:
+  `No reachable phone number. Add a phone number above or add a contact person with a phone.`
+
+---
+
+### F. Notes & Consent
+
+21. **Notes**
+
+* Optional
+* Text area
+* Placeholder: `Any additional notes about this lead...`
+
+22. **Consent Checkbox**
+
+* Mandatory
+* Text:
+  `I confirm that the patient has been informed about data collection and processing, and has given consent for the hospital to store and use their personal information for treatment coordination, communication, and follow-up purposes.`
+
+---
+
+## 2. Event Registration Form Fields
+
+The Event Registration Form should follow the same philosophy: capture contact + intent only.
+
+### Mandatory Fields
+
+1. **Patient / Visitor Name**
+2. **Primary Phone Number**
+3. **Phone Belongs To**
+4. **Event**
+5. **Branch**
+6. **Lead Source Category**
+7. **Lead Source**
+8. **Consent Checkbox**
+
+### Optional Fields
+
+9. Email
+10. City / Location
+11. Age
+12. Gender
+13. Treatment Department / Area of Interest
+14. Doctor Preference
+15. Campaign
+16. Referrer
+17. Assign To
+18. Contact Persons
+19. Notes
+
+---
+
+## 3. Event Registration Behaviour
+
+When an event registration is submitted:
+
+1. Create or update the lead in CRM.
+2. If phone number already exists, show duplicate warning and allow linking to existing patient / lead.
+3. Tag the lead with the selected event.
+4. Capture the event name in the lead timeline.
+5. Set default lead status as:
+
+   * `Event Registered`
+     or
+   * `Raw Lead Captured` with event tag, depending on current CRM status design.
+6. Campaign should auto-fill if the event is linked to a campaign.
+7. Source should auto-fill if the registration form is opened from a specific event campaign link.
+
+---
+
+## 4. Fields Not Required at Lead Stage
+
+Do not add these fields in Add Lead or Event Registration form:
+
+* Diagnosis
+* Medical history
+* Past surgery details
+* Reports / attachments
+* Insurance details
+* Quotation
+* Surgery package
+* Fitness details
+* Pre-op details
+* Post-care details
+* Prescription
+* Diet plan
+* Clinical notes
+
+These should be captured later in the consultation / episode journey.
+
+---
+
+## 5. UX Rules
+
+1. Keep the form visually simple.
+2. Show only essential fields by default.
+3. Use conditional fields wherever possible.
+4. Do not show Sub-Department until Department is selected.
+5. Do not show Doctor until Department is selected.
+6. Do not show Referrer unless source is referral-related.
+7. Auto-fill Campaign, UTM fields, and Source wherever integration data is available.
+8. Add duplicate detection on phone number.
+9. Form should be fillable within 30 seconds.
+10. Keep mandatory fields limited and practical.
+
+---
+
+## 6. Recommended Field Order
+
+Use this order in the form:
+
+1. Patient Name
+2. Primary Phone Number
+3. Phone Belongs To
+4. Branch
+5. Lead Source Category
+6. Lead Source
+7. Treatment Department
+8. Doctor
+9. Priority
+10. Assign To
+11. City / Location
+12. Age
+13. Gender
+14. Email
+15. Campaign
+16. Referrer
+17. Contact Persons
+18. Notes
+19. Consent Checkbox
+
+For Event Registration Form, use this order:
+
+1. Patient / Visitor Name
+2. Primary Phone Number
+3. Phone Belongs To
+4. Event
+5. Branch
+6. Lead Source Category
+7. Lead Source
+8. Treatment Department / Area of Interest
+9. Doctor Preference
+10. City / Location
+11. Age
+12. Gender
+13. Email
+14. Campaign
+15. Referrer
+16. Assign To
+17. Contact Persons
+18. Notes
+19. Consent Checkbox
