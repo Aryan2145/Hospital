@@ -14094,8 +14094,56 @@ export async function runDeferredStartupTasks() {
     await seedConsultationOutcomes();
     await seedGovernanceMasterData();
     await seedDummyAppointments();
+    await seedNirmanAdminUser();
   } catch (err: any) {
     console.error("[deferred-startup] Error in deferred tasks:", err.message);
+  }
+}
+
+async function seedNirmanAdminUser() {
+  try {
+    const nirmanTenant = await pool.query(
+      `SELECT id FROM tenants WHERE subdomain = 'nirman' OR LOWER(name) LIKE '%nirman%' LIMIT 1`
+    );
+    if (nirmanTenant.rows.length === 0) return; // tenant not created yet — no-op in dev
+    const nirmanTenantId = nirmanTenant.rows[0].id;
+
+    const phone = "+917878038514";
+    const password = "RGBTech@123";
+
+    // Find ADMIN role for this tenant
+    const roleRow = await pool.query(
+      `SELECT id FROM system_roles WHERE tenant_id = $1 AND code = 'ADMIN' LIMIT 1`,
+      [nirmanTenantId]
+    );
+    const adminRoleId = roleRow.rows[0]?.id || null;
+
+    const hash = await hashPassword(password);
+
+    const existing = await pool.query(
+      `SELECT id FROM crm_users WHERE tenant_id = $1 AND phone = $2 LIMIT 1`,
+      [nirmanTenantId, phone]
+    );
+    if (existing.rows.length > 0) {
+      // Unlock + reset password
+      await pool.query(
+        `UPDATE crm_users SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL,
+         is_active = true, status = 'Active', system_role_id = COALESCE($2, system_role_id)
+         WHERE id = $3`,
+        [hash, adminRoleId, existing.rows[0].id]
+      );
+      console.log(`[seed] Nirman admin (${phone}) password enforced: ${password}`);
+    } else {
+      await pool.query(
+        `INSERT INTO crm_users (tenant_id, code, name, phone, system_role_id, is_active, status,
+         access_scope_type, phi_access_level, password_hash, display_order)
+         VALUES ($1, 'NIRMAN-ADMIN', 'Admin', $2, $3, true, 'Active', 'All', 'Full', $4, 0)`,
+        [nirmanTenantId, phone, adminRoleId, hash]
+      );
+      console.log(`[seed] Nirman admin created: ${phone} / ${password}`);
+    }
+  } catch (err: any) {
+    console.error("[seed] seedNirmanAdminUser error:", err.message);
   }
 }
 
