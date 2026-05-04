@@ -34,6 +34,7 @@ import {
   UserPlus,
   Edit2,
   Eye,
+  EyeOff,
   Filter,
 } from "lucide-react";
 
@@ -769,6 +770,7 @@ function UserDialog({ open, onOpenChange, onSubmit, isPending, title, defaults }
   title: string;
   defaults?: SupportUserType;
 }) {
+  const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
     name: defaults?.name || "",
     email: defaults?.email || "",
@@ -817,7 +819,24 @@ function UserDialog({ open, onOpenChange, onSubmit, isPending, title, defaults }
           </div>
           <div>
             <Label>{defaults ? "New Password (leave blank to keep current)" : "Password *"}</Label>
-            <Input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} data-testid="input-user-password" />
+            <div className="relative mt-1">
+              <Input
+                type={showPassword ? "text" : "password"}
+                value={form.password}
+                onChange={e => setForm({ ...form, password: e.target.value })}
+                data-testid="input-user-password"
+                className="pr-10"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPassword(v => !v)}
+                tabIndex={-1}
+                data-testid="button-toggle-user-password"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
           <div>
             <Label>Role</Label>

@@ -70,6 +70,7 @@ function ExportDialog({ tenant, onClose }: { tenant: any; onClose: () => void })
   const [includePhiData, setIncludePhiData] = useState(false);
   const [passphrase, setPassphrase] = useState("");
   const [showPass, setShowPass]     = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
   const [confirm, setConfirm]       = useState("");
   const [busy, setBusy]             = useState(false);
 
@@ -260,14 +261,24 @@ function ExportDialog({ tenant, onClose }: { tenant: any; onClose: () => void })
 
           <div>
             <Label className="text-sm font-medium">Confirm Passphrase *</Label>
-            <Input
-              type="password"
-              value={confirm}
-              onChange={e => setConfirm(e.target.value)}
-              placeholder="Re-enter passphrase"
-              className={`mt-1 ${mismatch ? "border-red-400" : ""}`}
-              data-testid="input-export-confirm"
-            />
+            <div className="relative mt-1">
+              <Input
+                type={showConfirmPass ? "text" : "password"}
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+                placeholder="Re-enter passphrase"
+                className={`pr-10 ${mismatch ? "border-red-400" : ""}`}
+                data-testid="input-export-confirm"
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                onClick={() => setShowConfirmPass(v => !v)}
+                tabIndex={-1}
+              >
+                {showConfirmPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
             {mismatch && <p className="text-xs text-red-500 mt-1">Passphrases do not match.</p>}
           </div>
 
