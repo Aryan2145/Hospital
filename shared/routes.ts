@@ -217,7 +217,6 @@ export const MASTER_CATEGORIES = [
       { key: "cities", label: "City" },
       { key: "areas", label: "Area & PIN Code" },
       { key: "pinCodes", label: "PIN Code" },
-      { key: "branchServiceability", label: "Branch Serviceability" },
     ]
   },
   {
@@ -225,9 +224,6 @@ export const MASTER_CATEGORIES = [
     tables: [
       { key: "organisations", label: "Organisation" },
       { key: "branches", label: "Branch" },
-      { key: "administrativeDepartments", label: "Department" },
-      { key: "designations", label: "Designation" },
-      { key: "employmentTypes", label: "Employment Type" },
       { key: "systemRoles", label: "System Role" },
       { key: "crmUsers", label: "CRM User" },
       { key: "callingLines", label: "Calling Line" },

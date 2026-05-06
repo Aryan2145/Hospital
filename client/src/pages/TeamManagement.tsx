@@ -16,7 +16,7 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import type { CrmUser, MasterRecord } from "@shared/schema";
 import {
   UserPlus, Search, ChevronDown, ChevronRight, Mail, Phone, Shield, Eye, EyeOff,
-  Users, UserCog, Network, List, Pencil, Trash2, KeyRound, Building2, Briefcase, RotateCcw, LockOpen, Lock
+  Users, UserCog, Network, List, Pencil, Trash2, KeyRound, Building2, RotateCcw, LockOpen, Lock
 } from "lucide-react";
 
 type ViewMode = "list" | "tree";
@@ -29,9 +29,6 @@ interface UserFormData {
   confirmPassword: string;
   systemRoleId: number | null;
   branchId: number | null;
-  departmentId: number | null;
-  designationId: number | null;
-  employmentTypeId: number | null;
   reportingTo: number | null;
   accessScopeType: string;
   phiAccessLevel: string;
@@ -43,8 +40,7 @@ interface UserFormData {
 const EMPTY_FORM: UserFormData = {
   name: "", email: "", phone: "",
   password: "", confirmPassword: "",
-  systemRoleId: null, branchId: null, departmentId: null,
-  designationId: null, employmentTypeId: null,
+  systemRoleId: null, branchId: null,
   reportingTo: null, accessScopeType: "Self", phiAccessLevel: "None",
   status: "Active", showPassword: false, showConfirmPassword: false,
 };
@@ -163,9 +159,6 @@ export default function TeamManagement() {
   });
   const { data: roles = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/systemRoles"], staleTime: 0 });
   const { data: branches = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/branches"] });
-  const { data: departments = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/administrativeDepartments"] });
-  const { data: designations = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/designations"] });
-  const { data: employmentTypes = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/employmentTypes"] });
 
   const createMutation = useMutation({
     mutationFn: (data: UserFormData) => apiRequest("POST", "/api/crm-users", data),
@@ -244,8 +237,7 @@ export default function TeamManagement() {
     setFormData({
       name: user.name, email: user.email || "", phone: user.phone || "",
       password: "", confirmPassword: "",
-      systemRoleId: user.systemRoleId, branchId: user.branchId, departmentId: user.departmentId,
-      designationId: user.designationId, employmentTypeId: (user as any).employmentTypeId || null,
+      systemRoleId: user.systemRoleId, branchId: user.branchId,
       reportingTo: user.reportingTo, accessScopeType: user.accessScopeType, phiAccessLevel: user.phiAccessLevel,
       status: user.status, showPassword: false, showConfirmPassword: false,
     });
@@ -637,21 +629,6 @@ export default function TeamManagement() {
                 />
               </div>
               <div>
-                <Label>Employment Type *</Label>
-                <SearchableSelect
-                  value={formData.employmentTypeId?.toString() || "none"}
-                  onValueChange={v => setFormData(p => ({ ...p, employmentTypeId: v === "none" ? null : Number(v) }))}
-                  options={[
-                    { value: "none", label: "-- Select Type --" },
-                    ...employmentTypes.filter((e: any) => e.status === "Active").map((e: any) => ({ value: e.id.toString(), label: e.name }))
-                  ]}
-                  placeholder="Select employment type"
-                  data-testid="select-employment-type"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
                 <Label>Branch</Label>
                 <SearchableSelect
                   value={formData.branchId?.toString() || "none"}
@@ -664,32 +641,6 @@ export default function TeamManagement() {
                   data-testid="select-branch"
                 />
               </div>
-              <div>
-                <Label>Team</Label>
-                <SearchableSelect
-                  value={formData.departmentId?.toString() || "none"}
-                  onValueChange={v => setFormData(p => ({ ...p, departmentId: v === "none" ? null : Number(v) }))}
-                  options={[
-                    { value: "none", label: "-- No Team --" },
-                    ...departments.filter((d: any) => d.status === "Active").map((d: any) => ({ value: d.id.toString(), label: d.name }))
-                  ]}
-                  placeholder="Select team"
-                  data-testid="select-department"
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Designation</Label>
-              <SearchableSelect
-                value={formData.designationId?.toString() || "none"}
-                onValueChange={v => setFormData(p => ({ ...p, designationId: v === "none" ? null : Number(v) }))}
-                options={[
-                  { value: "none", label: "-- No Designation --" },
-                  ...designations.filter((d: any) => d.status === "Active").map((d: any) => ({ value: d.id.toString(), label: d.name }))
-                ]}
-                placeholder="Select designation"
-                data-testid="select-designation"
-              />
             </div>
 
             <div className="border-t pt-3 mt-1">

@@ -9,8 +9,6 @@ export interface CrmUserProfile {
   email: string | null;
   phone: string | null;
   branchId: number | null;
-  departmentId: number | null;
-  designationId: number | null;
   systemRoleId: number | null;
   accessScopeType: string;
   phiAccessLevel: string;
