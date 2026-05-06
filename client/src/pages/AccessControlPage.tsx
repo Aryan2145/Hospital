@@ -91,7 +91,6 @@ interface DiscountApprover {
   crmUserId: number;
   name: string | null;
   email: string | null;
-  designation: string | null;
 }
 
 interface UserPermissionOverride {
@@ -752,8 +751,6 @@ export default function AccessControlPage() {
                         <div>
                           <p className="font-medium text-sm">{approver.name ?? "Unknown"}</p>
                           <p className="text-xs text-muted-foreground">
-                            {approver.designation ?? ""}
-                            {approver.designation && approver.email ? " · " : ""}
                             {approver.email ?? ""}
                           </p>
                         </div>

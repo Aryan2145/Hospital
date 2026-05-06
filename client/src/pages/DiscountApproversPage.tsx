@@ -258,7 +258,6 @@ export default function DiscountApproversPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-xs">Name</TableHead>
-                  <TableHead className="text-xs">Designation</TableHead>
                   <TableHead className="text-xs">Email</TableHead>
                   <TableHead className="text-xs">Added On</TableHead>
                   {isAdmin && <TableHead className="text-xs text-right">Actions</TableHead>}
@@ -269,9 +268,6 @@ export default function DiscountApproversPage() {
                   <TableRow key={approver.id} data-testid={`row-approver-${approver.crmUserId}`}>
                     <TableCell className="text-sm font-medium" data-testid={`text-approver-name-${approver.crmUserId}`}>
                       {approver.userName}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground" data-testid={`text-approver-designation-${approver.crmUserId}`}>
-                      {approver.designationName || "—"}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground" data-testid={`text-approver-email-${approver.crmUserId}`}>
                       {approver.userEmail || "—"}
