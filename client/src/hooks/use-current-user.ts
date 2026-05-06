@@ -129,7 +129,7 @@ export function useCurrentUser() {
 
       case "MARKETING":
         return [
-          "dashboard", "campaigns", "reports",
+          "dashboard", "campaigns", "events", "reports",
         ].includes(page);
 
       default:

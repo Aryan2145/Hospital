@@ -5165,8 +5165,11 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       let records = await storage.getMasterRecords(tableName, tid);
       if (tableName === "systemRoles") {
-        // SYS_ADMIN is developer-team only — never expose it in tenant-facing role lists
-        records = records.filter((r: any) => r.code !== "SYS_ADMIN");
+        // SYS_ADMIN is developer-team only — hide it from all non-SYS_ADMIN sessions
+        const crmUser = await getSessionCrmUserWithRole(req);
+        if (!crmUser || crmUser.roleCode !== "SYS_ADMIN") {
+          records = records.filter((r: any) => r.code !== "SYS_ADMIN");
+        }
       }
       res.json(records);
     } catch (err: any) {
