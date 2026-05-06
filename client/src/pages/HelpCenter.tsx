@@ -2149,7 +2149,7 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
             <div className="space-y-3">
               {[
                 { cat: "Location", tables: "Countries, States, Cities, Areas" },
-                { cat: "Organisation", tables: "Organisations, Branches, Departments, Designations, Employment Types, System Roles, CRM Users, Calling Lines, User-Line Assignments" },
+                { cat: "Organisation", tables: "Organisations, Branches, System Roles, CRM Users, Calling Lines, User-Line Assignments" },
                 { cat: "Doctors", tables: "Doctors, Treatment Departments, OPD Timings, Doctor Leave Exceptions" },
                 { cat: "Lead Generation", tables: "Lead Source Categories, Lead Sources, Referrers, Corporate Insurances" },
                 { cat: "Consultation", tables: "Conversion Stages, Consultation Outcome Remarks" },
