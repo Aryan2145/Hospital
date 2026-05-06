@@ -45,7 +45,6 @@ const EMPTY_FORM: UserFormData = {
   status: "Active", showPassword: false, showConfirmPassword: false,
 };
 
-const HIDDEN_ROLE_CODES = ["SYS_ADMIN"];
 
 const ACCESS_SCOPE_OPTIONS = [
   { value: "All", label: "All (Full Access)", description: "Can view all data across all branches" },
@@ -137,7 +136,7 @@ function TreeNode({ user, allUsers, level = 0, onEdit, onDelete }: {
 
 export default function TeamManagement() {
   const { toast } = useToast();
-  const { isAdmin } = useCurrentUser();
+  const { isAdmin, isSysAdmin } = useCurrentUser();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [searchQuery, setSearchQuery] = useState("");
   const [showInactive, setShowInactive] = useState(false);
@@ -622,7 +621,7 @@ export default function TeamManagement() {
                   onValueChange={v => setFormData(p => ({ ...p, systemRoleId: v === "none" ? null : Number(v) }))}
                   options={[
                     { value: "none", label: "-- Select Role --" },
-                    ...roles.filter((r: any) => r.status === "Active" && !HIDDEN_ROLE_CODES.includes(r.code)).map((r: any) => ({ value: r.id.toString(), label: r.name }))
+                    ...roles.filter((r: any) => r.status === "Active" && (isSysAdmin || r.code !== "SYS_ADMIN")).map((r: any) => ({ value: r.id.toString(), label: r.name }))
                   ]}
                   placeholder="Select role"
                   data-testid="select-system-role"
