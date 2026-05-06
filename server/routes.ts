@@ -253,6 +253,22 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Record<string, { canView: boolean
     insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
     reports: { canView: true, canCreate: false, canEdit: false, canDelete: false },
   },
+  MARKETING: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    episodes: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    appointments: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    campaigns: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    transactions: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    reports: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+  },
 };
 
 // Seed role_permissions for all roles for a given tenant
@@ -599,12 +615,13 @@ async function seedDatabase() {
     await db.insert(systemRoles).values({ tenantId: tid, code: "PATIENT_COORDINATOR", name: "Patient Coordinator", status: "Active", displayOrder: 3 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "COUNSELLOR", name: "Counsellor", status: "Active", displayOrder: 4 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "TELECALLER", name: "Telecaller", status: "Active", displayOrder: 5 });
-    await db.insert(systemRoles).values({ tenantId: tid, code: "RECEPTIONIST", name: "Receptionist", status: "Active", displayOrder: 6 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "RECEPTIONIST", name: "Front Office", status: "Active", displayOrder: 6 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "DOCTOR", name: "Doctor", status: "Active", displayOrder: 7 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "MEDICAL_ASSISTANT", name: "Medical Assistant", status: "Active", displayOrder: 8 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "BILLING", name: "Billing", status: "Active", displayOrder: 9 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "INSURANCE_DESK", name: "Insurance Desk", status: "Active", displayOrder: 10 });
     await db.insert(systemRoles).values({ tenantId: tid, code: "MIS_VIEWER", name: "MIS Viewer", status: "Active", displayOrder: 11 });
+    await db.insert(systemRoles).values({ tenantId: tid, code: "MARKETING", name: "Marketing", status: "Active", displayOrder: 12 });
     // Seed role permissions for all roles
     await seedRolePermissions(tid);
 
@@ -13378,14 +13395,15 @@ export async function registerRoutes(
   await consolidateDuplicateTeams();
   await migrateAgentToPatientCoordinator();
   await ensureAllCanonicalRolesSeeded();
+  await ensureMarketingRolePermissions();
   return httpServer;
 }
 
-// 11 tenant-assignable roles — SYS_ADMIN is deliberately excluded (developer-team only)
+// 12 tenant-assignable roles — SYS_ADMIN is deliberately excluded (developer-team only)
 const CANONICAL_ROLE_CODES = [
   "ADMIN", "MANAGER", "COUNSELLOR", "PATIENT_COORDINATOR", "TELECALLER",
   "RECEPTIONIST", "DOCTOR", "MEDICAL_ASSISTANT", "BILLING", "INSURANCE_DESK",
-  "MIS_VIEWER",
+  "MIS_VIEWER", "MARKETING",
 ];
 
 const CANONICAL_ROLE_DEFS: { code: string; name: string; displayOrder: number }[] = [
@@ -13394,13 +13412,34 @@ const CANONICAL_ROLE_DEFS: { code: string; name: string; displayOrder: number }[
   { code: "PATIENT_COORDINATOR", name: "Patient Coordinator", displayOrder: 3 },
   { code: "COUNSELLOR", name: "Counsellor", displayOrder: 4 },
   { code: "TELECALLER", name: "Telecaller", displayOrder: 5 },
-  { code: "RECEPTIONIST", name: "Receptionist", displayOrder: 6 },
+  { code: "RECEPTIONIST", name: "Front Office", displayOrder: 6 },
   { code: "BILLING", name: "Billing", displayOrder: 7 },
   { code: "INSURANCE_DESK", name: "Insurance Desk", displayOrder: 8 },
   { code: "DOCTOR", name: "Doctor", displayOrder: 9 },
   { code: "MEDICAL_ASSISTANT", name: "Medical Assistant", displayOrder: 10 },
   { code: "MIS_VIEWER", name: "MIS Viewer", displayOrder: 11 },
+  { code: "MARKETING", name: "Marketing", displayOrder: 12 },
 ];
+
+async function ensureMarketingRolePermissions() {
+  try {
+    const allTenants = await pool.query(`SELECT id FROM tenants ORDER BY id`);
+    for (const t of allTenants.rows) {
+      const tid = t.id as number;
+      const modules = ["dashboard", "leads", "episodes", "appointments", "campaigns", "transactions", "team", "masters", "connectors", "branding", "settings", "quotation", "insurance", "reports"];
+      const perms = DEFAULT_ROLE_PERMISSIONS["MARKETING"] || {};
+      for (const module of modules) {
+        const p = perms[module] || { canView: false, canCreate: false, canEdit: false, canDelete: false };
+        await db.insert(rolePermissions)
+          .values({ tenantId: tid, roleCode: "MARKETING", module, canView: p.canView, canCreate: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete })
+          .onConflictDoNothing();
+      }
+    }
+    console.log("[Roles] MARKETING role permissions ensured for all tenants");
+  } catch (err: any) {
+    console.error("[Roles] Error ensuring MARKETING permissions:", err.message);
+  }
+}
 
 async function ensureAllCanonicalRolesSeeded() {
   try {

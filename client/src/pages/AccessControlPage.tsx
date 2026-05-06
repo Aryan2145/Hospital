@@ -20,19 +20,20 @@ import { format } from "date-fns";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const ROLE_CODES = [
+const ALL_ROLE_CODES = [
   { code: "SYS_ADMIN", label: "System Admin" },
   { code: "ADMIN", label: "Admin" },
   { code: "MANAGER", label: "Manager" },
   { code: "COUNSELLOR", label: "Counsellor" },
   { code: "PATIENT_COORDINATOR", label: "Patient Coordinator" },
   { code: "TELECALLER", label: "Telecaller" },
-  { code: "RECEPTIONIST", label: "Receptionist" },
+  { code: "RECEPTIONIST", label: "Front Office" },
   { code: "BILLING", label: "Billing Executive" },
   { code: "INSURANCE_DESK", label: "Insurance Desk" },
   { code: "DOCTOR", label: "Doctor" },
   { code: "MEDICAL_ASSISTANT", label: "Medical Assistant" },
   { code: "MIS_VIEWER", label: "MIS Viewer" },
+  { code: "MARKETING", label: "Marketing" },
 ];
 
 const MODULES = [
@@ -124,7 +125,8 @@ interface OverridePayload {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function AccessControlPage() {
-  const { isAdmin } = useCurrentUser();
+  const { isAdmin, isSysAdmin } = useCurrentUser();
+  const ROLE_CODES = isSysAdmin ? ALL_ROLE_CODES : ALL_ROLE_CODES.filter(r => r.code !== "SYS_ADMIN");
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -397,6 +399,18 @@ export default function AccessControlPage() {
                 <div className="flex items-center gap-2 mt-2 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
                   <Info className="w-4 h-4 flex-shrink-0" />
                   System Admin always has full access to all modules. These permissions cannot be edited.
+                </div>
+              )}
+              {selectedRole === "TELECALLER" && (
+                <div className="flex items-center gap-2 mt-2 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+                  <Info className="w-4 h-4 flex-shrink-0" />
+                  Telecaller handles both inbound patient enquiries and outbound follow-up calls. No clinical or financial data access.
+                </div>
+              )}
+              {selectedRole === "MARKETING" && (
+                <div className="flex items-center gap-2 mt-2 p-3 bg-green-50 rounded-lg text-sm text-green-700">
+                  <Info className="w-4 h-4 flex-shrink-0" />
+                  Marketing manages campaigns, events, and lead source creatives. No access to patient records, clinical data, or financials.
                 </div>
               )}
             </CardHeader>

@@ -127,6 +127,11 @@ export function useCurrentUser() {
           "dashboard", "campaigns", "reports",
         ].includes(page);
 
+      case "MARKETING":
+        return [
+          "dashboard", "campaigns", "reports",
+        ].includes(page);
+
       default:
         return false;
     }
@@ -154,6 +159,7 @@ export function useCurrentUser() {
       case "INSURANCE_DESK":
         return "/transactions";
       case "MIS_VIEWER":
+      case "MARKETING":
         return "/dashboard";
       default:
         return "/";
@@ -185,6 +191,7 @@ export function useCurrentUser() {
         // Very limited — only the clinical overview
         return tab === "clinical";
       case "MIS_VIEWER":
+      case "MARKETING":
         return false;
       default:
         return false;

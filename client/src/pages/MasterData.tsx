@@ -931,17 +931,19 @@ export default function MasterData() {
                     data-testid="input-search-master"
                   />
                 </div>
-                <Button
-                  onClick={() => {
-                    resetForm();
-                    setIsDialogOpen(true);
-                  }}
-                  data-testid="button-add-record"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add {selectedTableLabel}
-                </Button>
-                {selectedTable !== "opdTimings" && (
+                {selectedTable !== "systemRoles" && (
+                  <Button
+                    onClick={() => {
+                      resetForm();
+                      setIsDialogOpen(true);
+                    }}
+                    data-testid="button-add-record"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add {selectedTableLabel}
+                  </Button>
+                )}
+                {selectedTable !== "opdTimings" && selectedTable !== "systemRoles" && (
                   <>
                     <input
                       type="file"
@@ -1106,54 +1108,60 @@ export default function MasterData() {
                             );
                           })}
                           <TableCell>
-                            <div className="flex items-center gap-1">
-                              {record.approvalStatus === "Pending" && selectedTable && (
-                                <>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    className="h-8 w-8"
-                                    onClick={() => approveMutation.mutate({ tableName: selectedTable, id: record.id })}
-                                    disabled={approveMutation.isPending}
-                                    title="Approve"
-                                    data-testid={`button-approve-${record.id}`}
-                                  >
-                                    <Check className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    className="h-8 w-8"
-                                    onClick={() => rejectMutation.mutate({ tableName: selectedTable, id: record.id })}
-                                    disabled={rejectMutation.isPending}
-                                    title="Reject"
-                                    data-testid={`button-reject-${record.id}`}
-                                  >
-                                    <X className="h-4 w-4" />
-                                  </Button>
-                                </>
-                              )}
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => handleEdit(record)}
-                                data-testid={`button-edit-${record.id}`}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => {
-                                  if (confirm("Are you sure you want to delete this record?")) {
-                                    deleteMutation.mutate(record.id);
-                                  }
-                                }}
-                                data-testid={`button-delete-${record.id}`}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
+                            {selectedTable === "systemRoles" ? (
+                              <span className="text-xs text-muted-foreground italic flex items-center gap-1">
+                                <ShieldCheck className="h-3 w-3" /> Read-only
+                              </span>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                {record.approvalStatus === "Pending" && selectedTable && (
+                                  <>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-8 w-8"
+                                      onClick={() => approveMutation.mutate({ tableName: selectedTable, id: record.id })}
+                                      disabled={approveMutation.isPending}
+                                      title="Approve"
+                                      data-testid={`button-approve-${record.id}`}
+                                    >
+                                      <Check className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-8 w-8"
+                                      onClick={() => rejectMutation.mutate({ tableName: selectedTable, id: record.id })}
+                                      disabled={rejectMutation.isPending}
+                                      title="Reject"
+                                      data-testid={`button-reject-${record.id}`}
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  </>
+                                )}
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => handleEdit(record)}
+                                  data-testid={`button-edit-${record.id}`}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    if (confirm("Are you sure you want to delete this record?")) {
+                                      deleteMutation.mutate(record.id);
+                                    }
+                                  }}
+                                  data-testid={`button-delete-${record.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))
