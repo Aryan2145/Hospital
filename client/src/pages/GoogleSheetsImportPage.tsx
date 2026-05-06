@@ -148,6 +148,7 @@ export default function GoogleSheetsImportPage() {
   const [addSpreadsheetId, setAddSpreadsheetId] = useState("");
   const [addSheetGid, setAddSheetGid] = useState<string | null>(null);
   const [addHeaders, setAddHeaders] = useState<string[]>([]);
+  const [addSampleRows, setAddSampleRows] = useState<string[][]>([]);
   const [addMapping, setAddMapping] = useState<Record<string, string>>({});
   const [addDedupStrategy, setAddDedupStrategy] = useState("skip");
   const [addDefaultStatus, setAddDefaultStatus] = useState("Raw Lead Captured");
@@ -215,6 +216,7 @@ export default function GoogleSheetsImportPage() {
     },
     onSuccess: (data: any) => {
       setAddHeaders(data.headers);
+      setAddSampleRows(data.sampleRows || []);
       setAddSpreadsheetId(data.spreadsheetId);
       setAddSheetGid(data.gid || null);
       setAddMapping(autoMapHeaders(data.headers));
@@ -305,7 +307,7 @@ export default function GoogleSheetsImportPage() {
 
   function resetAddDialog() {
     setShowAddDialog(false); setAddStep("connect"); setAddSheetUrl(""); setAddSpreadsheetId("");
-    setAddSheetGid(null); setAddHeaders([]); setAddMapping({}); setAddDedupStrategy("skip");
+    setAddSheetGid(null); setAddHeaders([]); setAddSampleRows([]); setAddMapping({}); setAddDedupStrategy("skip");
     setAddDefaultStatus("Raw Lead Captured"); setAddDefaultTags(""); setSyncConfigName("");
   }
 
@@ -818,6 +820,36 @@ export default function GoogleSheetsImportPage() {
                   </Table>
                 </div>
               </div>
+
+              {addSampleRows.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1.5">
+                    Sample data from your sheet — phone prefixes (p:, z:, etc.) are already removed.
+                  </p>
+                  <div className="border rounded-lg overflow-auto max-h-[140px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {addHeaders.map((h, i) => (
+                            <TableHead key={i} className="whitespace-nowrap text-xs px-2 py-1">{h}</TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {addSampleRows.map((row, ri) => (
+                          <TableRow key={ri} data-testid={`row-add-sample-${ri}`}>
+                            {addHeaders.map((_, ci) => (
+                              <TableCell key={ci} className="text-xs px-2 py-1 max-w-[120px] truncate">
+                                {row[ci] ?? ""}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1.5">

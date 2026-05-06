@@ -3719,7 +3719,17 @@ export async function registerRoutes(
       const headers = allRows[0].map(h => h.trim()).filter(Boolean);
       if (headers.length === 0) return res.status(400).json({ message: "No column headers found in the first row." });
 
-      res.json({ headers, sheetTitle: "Google Sheet", sheets: [], spreadsheetId, gid, selectedSheet: "Sheet1" });
+      // Identify phone-like columns by header name so we can strip prefixes from sample values.
+      const phoneColIndices = new Set<number>();
+      headers.forEach((h, i) => { if (/phone|mobile|contact/i.test(h)) phoneColIndices.add(i); });
+
+      const sampleRows = allRows.slice(1, 4).map(row =>
+        (row as string[]).map((cell, ci) =>
+          phoneColIndices.has(ci) ? stripMetaExportPrefix(cell || "") : (cell || "")
+        )
+      );
+
+      res.json({ headers, sampleRows, sheetTitle: "Google Sheet", sheets: [], spreadsheetId, gid, selectedSheet: "Sheet1" });
     } catch (err: any) {
       res.status(400).json({ message: err.message || humanizeError(err) });
     }
