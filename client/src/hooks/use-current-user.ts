@@ -159,8 +159,9 @@ export function useCurrentUser() {
       case "INSURANCE_DESK":
         return "/transactions";
       case "MIS_VIEWER":
-      case "MARKETING":
         return "/dashboard";
+      case "MARKETING":
+        return "/campaigns";
       default:
         return "/";
     }

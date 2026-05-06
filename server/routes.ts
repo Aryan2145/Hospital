@@ -13476,6 +13476,10 @@ async function ensureAllCanonicalRolesSeeded() {
   }
 }
 
+// NOTE: 'AGENT' references inside this function are intentional historical migration code.
+// The AGENT role code was deprecated and replaced by PATIENT_COORDINATOR. All 'AGENT' string
+// literals below are SQL queries that search for and clean up any surviving AGENT DB records
+// from before the rename. They are NOT live role-code references.
 async function migrateAgentToPatientCoordinator() {
   try {
     const allTenants = await pool.query(`SELECT id FROM tenants ORDER BY id`);
