@@ -5341,6 +5341,9 @@ export async function registerRoutes(
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
+    if (tableName === "systemRoles") {
+      return res.status(403).json({ message: "System Roles are managed by the platform and cannot be created or modified." });
+    }
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded" });
     }
@@ -5500,6 +5503,9 @@ export async function registerRoutes(
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
+    if (tableName === "systemRoles") {
+      return res.status(403).json({ message: "System Roles are managed by the platform and cannot be created or modified." });
+    }
     try {
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["leaveDate", "leaveEndDate", "holidayDate", "startDate", "endDate"]);
@@ -5534,6 +5540,9 @@ export async function registerRoutes(
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
+    if (tableName === "systemRoles") {
+      return res.status(403).json({ message: "System Roles are managed by the platform and cannot be created or modified." });
+    }
     try {
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["leaveDate", "leaveEndDate", "holidayDate", "startDate", "endDate"]);
@@ -5549,6 +5558,9 @@ export async function registerRoutes(
     const id = req.params.id as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
+    }
+    if (tableName === "systemRoles") {
+      return res.status(403).json({ message: "System Roles are managed by the platform and cannot be created or modified." });
     }
     try {
       const tid = await getDefaultTenantId(req);

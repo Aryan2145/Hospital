@@ -139,6 +139,7 @@ export default function TeamManagement() {
   const { isAdmin, isSysAdmin } = useCurrentUser();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
   const [showInactive, setShowInactive] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<CrmUser | null>(null);
@@ -307,11 +308,16 @@ export default function TeamManagement() {
     return branch ? branch.name : null;
   };
 
-  const filteredUsers = users.filter(u =>
-    u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (u.email && u.email.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredUsers = users.filter(u => {
+    const matchesSearch =
+      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (u.email && u.email.toLowerCase().includes(searchQuery.toLowerCase()));
+    if (!matchesSearch) return false;
+    if (roleFilter === "all") return true;
+    const role = roles.find((r: any) => r.id === u.systemRoleId);
+    return role ? role.code === roleFilter : roleFilter === "none";
+  });
 
   const rootUsers = filteredUsers.filter(u => !u.reportingTo || !users.find(p => p.id === u.reportingTo));
 
@@ -381,6 +387,20 @@ export default function TeamManagement() {
                 data-testid="input-search-users"
               />
             </div>
+            <SearchableSelect
+              value={roleFilter}
+              onValueChange={setRoleFilter}
+              options={[
+                { value: "all", label: "All Roles" },
+                { value: "none", label: "No Role Assigned" },
+                ...roles
+                  .filter((r: any) => r.status === "Active" && (isSysAdmin || r.code !== "SYS_ADMIN"))
+                  .sort((a: any, b: any) => (a.displayOrder ?? 99) - (b.displayOrder ?? 99))
+                  .map((r: any) => ({ value: r.code, label: r.name })),
+              ]}
+              className="w-44"
+              data-testid="select-role-filter-team"
+            />
             <div className="flex items-center gap-1 border rounded-lg p-0.5">
               <Button
                 size="sm"
