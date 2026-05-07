@@ -5324,8 +5324,8 @@ export async function registerRoutes(
     ],
     referrers: [
       { key: "type", csvHeader: "type", type: "select", options: ["Doctor", "Patient", "Hospital", "Agent", "Other"] },
-      { key: "phone", csvHeader: "phone", type: "phone" },
-      { key: "email", csvHeader: "email", type: "email" },
+      { key: "phone", csvHeader: "phone", type: "phone", unique: true, dbCol: "phone" },
+      { key: "email", csvHeader: "email", type: "email", unique: true, dbCol: "email" },
     ],
     corporateInsurances: [
       { key: "type", csvHeader: "type", type: "select", options: ["Corporate", "Insurance", "TPA"] },
@@ -5564,12 +5564,19 @@ export async function registerRoutes(
           rowErrors.push(`Invalid status "${status}" — must be Active or Inactive`);
         }
 
-        // Duplicate code check (insert only, also check within this file)
-        if (!isUpdate && code) {
-          if (existingByCode.has(code.toUpperCase())) {
+        // Duplicate code check — for inserts: no existing record with same code
+        // For updates: no OTHER record with same code (self-excluded by recordId)
+        if (code) {
+          const existingWithCode = existingByCode.get(code.toUpperCase());
+          if (existingWithCode && existingWithCode.id !== recordId) {
             rowErrors.push(`Duplicate code: ${code} (already exists in tenant)`);
-          } else if (importedCodes.has(code.toUpperCase())) {
+          } else if (!isUpdate && importedCodes.has(code.toUpperCase())) {
             rowErrors.push(`Duplicate code: ${code} (appears more than once in this file)`);
+          } else if (isUpdate) {
+            // For updates, also check within-file collisions (different rows trying to change to same code)
+            if (importedCodes.has(code.toUpperCase())) {
+              rowErrors.push(`Duplicate code: ${code} (appears more than once in this file)`);
+            }
           }
         }
 
