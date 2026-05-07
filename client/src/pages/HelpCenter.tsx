@@ -656,7 +656,7 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
                 <p className="text-xs text-muted-foreground mb-2 leading-relaxed">These three roles are optional — hospitals that do not staff them will have the relevant stages fall back to Patient Coordinator automatically. They are ideal for larger hospitals with dedicated teams for each care phase.</p>
                 <div className="space-y-2">
                   {[
-                    { role: "OT/IP Coordinator", code: "OT_IP_COORDINATOR", desc: "Coordinates operating theatre scheduling and inpatient management. Owns the Surgery Scheduled and Pre-op Assessment stages. Falls back to Patient Coordinator if unstaffed." },
+                    { role: "OT/IP Coordinator", code: "OT_IP_COORDINATOR", desc: "Coordinates operating theatre scheduling and inpatient management. Owns the Surgery Scheduled stage. Falls back to Patient Coordinator if unstaffed." },
                     { role: "Post-Care Coordinator", code: "POST_CARE_COORDINATOR", desc: "Manages post-operative follow-up and discharge planning. Owns the Post Care and Follow Up stages. Falls back to Patient Coordinator if unstaffed." },
                     { role: "Referral Coordinator", code: "REFERRAL_COORDINATOR", desc: "Handles referral follow-up and referrer relationship management. Owns the Referral Follow-Up stage. Falls back to Patient Coordinator if unstaffed." },
                   ].map((item, i) => (
@@ -1151,18 +1151,16 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
           <section>
             <h2 className="text-lg font-bold text-foreground mb-3">How the Engine Selects a User</h2>
             <p className="text-sm text-muted-foreground leading-relaxed mb-3">
-              Within each team, the engine applies a preference hierarchy to pick the best user:
+              The engine follows a strict fallback chain. It works through each tier in order, stopping as soon as a user is found:
             </p>
             <div className="space-y-2">
               {[
-                { label: "1. Prior-owner preference", desc: "If this lead/episode was previously owned by a user in the target team, they are preferred. This ensures continuity of care." },
-                { label: "2. Least-load selection", desc: "Among all eligible users, the one with the fewest active open leads/episodes is selected. This distributes workload evenly." },
-                { label: "3. Logged-in preference", desc: "If multiple users have similar load, those currently logged in (active in the last 15 minutes) are preferred." },
-                { label: "4. Patient Coordinator fallback", desc: "If no user is found in the primary role, a Patient Coordinator with the lowest open-lead count is selected automatically." },
-                { label: "5. Manager/Admin alert", desc: "If no user is found even after the fallback, the Manager and Admin are notified via in-app notification and email. The lead remains with its previous owner until manually reassigned." },
+                { label: "Tier 1 — Any active user in the primary role", desc: "The engine looks for active users assigned the correct role for this stage (e.g., Counsellor for Treatment Planning). Within that pool it prefers: (a) a user who previously owned this lead/episode in that team — continuity of care; (b) the logged-in user with the lowest open-lead count; (c) the any-active user with the lowest open-lead count (least-load)." },
+                { label: "Tier 2 — Patient Coordinator fallback", desc: "If no user is found in the primary role (e.g., the OT/IP Coordinator team is not staffed), the engine automatically selects the Patient Coordinator with the fewest active open leads. This fallback applies to all teams universally." },
+                { label: "Tier 3 — Manager / Admin notification (no assignment)", desc: "If even the Patient Coordinator pool is empty, the engine leaves ownership unchanged and sends an in-app notification and email to all Managers and Admins. No automatic assignment is made — a manager must manually reassign the lead." },
               ].map((item, i) => (
                 <div key={i} className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
-                  <div className="text-xs font-bold text-primary w-6 flex-shrink-0 mt-0.5">{i + 1}</div>
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary mt-0.5">{i + 1}</div>
                   <div>
                     <div className="text-sm font-semibold text-foreground">{item.label}</div>
                     <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
@@ -1178,7 +1176,7 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
             </p>
             <div className="space-y-2">
               {[
-                { role: "OT/IP Coordinator", code: "OT_IP_COORDINATOR", stages: "Surgery Scheduled, Pre-op Assessment", fallback: "Patient Coordinator" },
+                { role: "OT/IP Coordinator", code: "OT_IP_COORDINATOR", stages: "Surgery Scheduled", fallback: "Patient Coordinator" },
                 { role: "Post-Care Coordinator", code: "POST_CARE_COORDINATOR", stages: "Post Care, Follow Up", fallback: "Patient Coordinator" },
                 { role: "Referral Coordinator", code: "REFERRAL_COORDINATOR", stages: "Referral Follow-Up", fallback: "Patient Coordinator" },
               ].map((item, i) => (
