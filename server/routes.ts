@@ -2164,6 +2164,83 @@ export async function registerRoutes(
     res.json(lead);
   });
 
+  // ── Intake Ownership Helper ──────────────────────────────────────────────────
+  // Call AFTER lead creation to write the standardized audit trail for every
+  // intake assignment (handover_log + auto_handover activity + empty-pool alert).
+  // Callers must resolve the telecaller via getNextAssignableCrmUser BEFORE
+  // creating the lead so the round-robin cursor advances only once.
+  async function logIntakeOwnership(
+    tid: number,
+    leadId: number,
+    leadName: string,
+    telecallerId: number | null,
+    createdBy = "system",
+  ): Promise<void> {
+    const intakeFound = !!telecallerId;
+    const method = intakeFound ? "telecaller-round-robin" : "unassigned-no-telecaller";
+
+    // handover_log (fire-and-forget)
+    pool.query(
+      `INSERT INTO handover_logs (tenant_id, entity_type, entity_id, from_user_id, to_user_id, from_team, to_team, trigger_event, notes, created_at)
+       VALUES ($1, 'Lead', $2, NULL, $3, NULL, 'Telecalling', 'Lead Created', $4, NOW())`,
+      [tid, leadId, telecallerId, `Intake [${method}]`]
+    ).catch(() => {});
+
+    // auto_handover activity (fire-and-forget)
+    storage.createActivity({
+      tenantId: tid, leadId, type: "auto_handover",
+      description: `Intake [${method}]: → Telecalling${telecallerId ? ` (User #${telecallerId})` : " (no telecaller found)"}`,
+      createdBy,
+      metadata: { fromTeam: null, toTeam: "Telecalling", fromUserId: null, toUserId: telecallerId, triggerEvent: "Lead Created", assignmentMethod: method },
+    } as any).catch(() => {});
+
+    if (!intakeFound) {
+      // Notify MANAGER/ADMIN in-app + SMTP email when pool is empty
+      (async () => {
+        try {
+          const mgrs = await pool.query(
+            `SELECT cu.id, cu.email, cu.name FROM crm_users cu
+             JOIN system_roles sr ON cu.system_role_id = sr.id
+             WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
+               AND sr.code IN ('MANAGER','ADMIN')`,
+            [tid]
+          );
+          const title = `Unassigned Lead Alert — Intake`;
+          const body = `Lead "${leadName}" was created but no active Telecaller was available for intake. Manual assignment required.`;
+          for (const mgr of mgrs.rows) {
+            await pool.query(
+              `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
+               VALUES ($1, $2, 'unassigned_lead_alert', $3, $4, 'lead', $5, $6, FALSE, NOW())`,
+              [tid, mgr.id, title, body, leadId, `/leads/${leadId}`]
+            );
+          }
+          try {
+            const smtpRows = await pool.query(
+              `SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = $1
+               AND setting_key IN ('smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from_email')`,
+              [tid]
+            );
+            const cfg: Record<string, string> = {};
+            smtpRows.rows.forEach((r: any) => { cfg[r.setting_key] = r.setting_value || ""; });
+            const host = cfg.smtp_host || process.env.SMTP_HOST;
+            const port = Number(cfg.smtp_port || process.env.SMTP_PORT || 587);
+            const smtpUser = cfg.smtp_user || process.env.SMTP_USER;
+            const pass = cfg.smtp_pass || process.env.SMTP_PASS;
+            const from = cfg.smtp_from_email || process.env.SMTP_FROM_EMAIL;
+            if (host && smtpUser && pass && from) {
+              const nodemailer = await import("nodemailer");
+              const transporter = nodemailer.default.createTransport({ host, port, secure: port === 465, auth: { user: smtpUser, pass } });
+              for (const mgr of mgrs.rows) {
+                if (!mgr.email) continue;
+                await transporter.sendMail({ from, to: mgr.email, subject: title, text: body + `\n\nView lead: /leads/${leadId}` });
+              }
+            }
+          } catch {}
+        } catch {}
+      })();
+    }
+  }
+
   app.post(api.leads.create.path, isAuthenticated, async (req, res) => {
     try {
       if (!(await hasPermission(req, "leads", "canCreate"))) {
@@ -2303,74 +2380,9 @@ export async function registerRoutes(
         return newLead;
       });
 
-      // Log intake assignment and handle empty-pool notification (fire-and-forget)
-      const intakeUserId = (lead as any).primaryOwnerUserId || null;
+      // Unified intake audit trail via shared helper
       const intakeChangedBy = String((req.session as any)?.crmUserId || "system");
-      pool.query(
-        `INSERT INTO handover_logs (tenant_id, entity_type, entity_id, from_user_id, to_user_id, from_team, to_team, trigger_event, notes, created_at)
-         VALUES ($1, 'Lead', $2, NULL, $3, NULL, 'Telecalling', 'Lead Created', $4, NOW())`,
-        [tid, lead.id, intakeUserId, `Intake assignment [${intakeTelecallerFound ? "telecaller-round-robin" : "unassigned-no-telecaller"}]`]
-      ).catch(() => {});
-      db.insert(activities).values({
-        tenantId: tid,
-        leadId: lead.id,
-        type: "auto_handover",
-        description: `Intake assignment [${intakeTelecallerFound ? "telecaller-round-robin" : "unassigned-no-telecaller"}]: → Telecalling${intakeUserId ? ` (User #${intakeUserId})` : " (no user found)"}`,
-        createdBy: intakeChangedBy,
-        metadata: { fromTeam: null, toTeam: "Telecalling", fromUserId: null, toUserId: intakeUserId, triggerEvent: "Lead Created", assignmentMethod: intakeTelecallerFound ? "telecaller-round-robin" : "unassigned-no-telecaller" },
-      } as any).catch(() => {});
-      if (!intakeTelecallerFound) {
-        // Notify managers/admins (in-app + email) that no telecaller was available at intake
-        (async () => {
-          try {
-            const mgrs = await pool.query(
-              `SELECT cu.id, cu.email, cu.name FROM crm_users cu
-               JOIN system_roles sr ON cu.system_role_id = sr.id
-               WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
-                 AND sr.code IN ('MANAGER','ADMIN')`,
-              [tid]
-            );
-            const title = `Unassigned Lead Alert — Lead Created`;
-            const body = `New lead "${(lead as any).name}" was created but no active Telecaller was available for intake assignment. Manual assignment required.`;
-            // In-app notifications
-            for (const mgr of mgrs.rows) {
-              await pool.query(
-                `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
-                 VALUES ($1, $2, 'unassigned_lead_alert', $3, $4, 'lead', $5, $6, FALSE, NOW())`,
-                [tid, mgr.id, title, body, lead.id, `/leads/${lead.id}`]
-              );
-            }
-            // SMTP email to each manager/admin
-            try {
-              const smtpRows = await pool.query(
-                `SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = $1
-                 AND setting_key IN ('smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from_email')`,
-                [tid]
-              );
-              const cfg: Record<string, string> = {};
-              smtpRows.rows.forEach((r: any) => { cfg[r.setting_key] = r.setting_value || ""; });
-              const host = cfg.smtp_host || process.env.SMTP_HOST;
-              const port = Number(cfg.smtp_port || process.env.SMTP_PORT || 587);
-              const user = cfg.smtp_user || process.env.SMTP_USER;
-              const pass = cfg.smtp_pass || process.env.SMTP_PASS;
-              const from = cfg.smtp_from_email || process.env.SMTP_FROM_EMAIL;
-              if (host && user && pass && from) {
-                const nodemailer = await import("nodemailer");
-                const transporter = nodemailer.default.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
-                for (const mgr of mgrs.rows) {
-                  if (!mgr.email) continue;
-                  await transporter.sendMail({
-                    from,
-                    to: mgr.email,
-                    subject: title,
-                    text: body + `\n\nView lead: /leads/${lead.id}`,
-                  });
-                }
-              }
-            } catch {}
-          } catch {}
-        })();
-      }
+      logIntakeOwnership(tid, lead.id, (lead as any).name, (lead as any).primaryOwnerUserId ?? null, intakeChangedBy);
 
       res.status(201).json(lead);
     } catch (err: any) {
@@ -2902,66 +2914,8 @@ export async function registerRoutes(
         lastActivityAt: new Date(),
       } as any);
 
-      // Log intake assignment (fire-and-forget)
-      const intakeFound = !!assignedUser;
-      pool.query(
-        `INSERT INTO handover_logs (tenant_id, entity_type, entity_id, from_user_id, to_user_id, from_team, to_team, trigger_event, notes, created_at)
-         VALUES ($1, 'Lead', $2, NULL, $3, NULL, 'Telecalling', 'Lead Created', $4, NOW())`,
-        [tid, newLead.id, assignedUser?.id ?? null, `Intake [${intakeFound ? "telecaller-round-robin" : "unassigned-no-telecaller"}]`]
-      ).catch(() => {});
-      await storage.createActivity({
-        leadId: newLead.id, tenantId: tid, createdBy: userId,
-        type: "auto_handover",
-        description: `Intake assignment [${intakeFound ? "telecaller-round-robin" : "unassigned-no-telecaller"}]: → Telecalling${assignedUser ? ` (${assignedUser.name})` : " (no telecaller found)"}`,
-        metadata: { fromTeam: null, toTeam: "Telecalling", fromUserId: null, toUserId: assignedUser?.id ?? null, triggerEvent: "Lead Created", assignmentMethod: intakeFound ? "telecaller-round-robin" : "unassigned-no-telecaller" },
-      } as any);
-
-      if (!intakeFound) {
-        // Notify MANAGER/ADMIN (in-app + email) when no Telecaller available
-        (async () => {
-          try {
-            const mgrs = await pool.query(
-              `SELECT cu.id, cu.email, cu.name FROM crm_users cu
-               JOIN system_roles sr ON cu.system_role_id = sr.id
-               WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
-                 AND sr.code IN ('MANAGER','ADMIN')`,
-              [tid]
-            );
-            const title = `Unassigned Lead Alert — Intake`;
-            const body2 = `New lead "${body.name}" created via intake but no active Telecaller was available. Manual assignment required.`;
-            for (const mgr of mgrs.rows) {
-              await pool.query(
-                `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
-                 VALUES ($1, $2, 'unassigned_lead_alert', $3, $4, 'lead', $5, $6, FALSE, NOW())`,
-                [tid, mgr.id, title, body2, newLead.id, `/leads/${newLead.id}`]
-              );
-            }
-            // SMTP email
-            try {
-              const smtpRows = await pool.query(
-                `SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = $1
-                 AND setting_key IN ('smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from_email')`,
-                [tid]
-              );
-              const cfg: Record<string, string> = {};
-              smtpRows.rows.forEach((r: any) => { cfg[r.setting_key] = r.setting_value || ""; });
-              const host = cfg.smtp_host || process.env.SMTP_HOST;
-              const port = Number(cfg.smtp_port || process.env.SMTP_PORT || 587);
-              const smtpUser = cfg.smtp_user || process.env.SMTP_USER;
-              const pass = cfg.smtp_pass || process.env.SMTP_PASS;
-              const from = cfg.smtp_from_email || process.env.SMTP_FROM_EMAIL;
-              if (host && smtpUser && pass && from) {
-                const nodemailer = await import("nodemailer");
-                const transporter = nodemailer.default.createTransport({ host, port, secure: port === 465, auth: { user: smtpUser, pass } });
-                for (const mgr of mgrs.rows) {
-                  if (!mgr.email) continue;
-                  await transporter.sendMail({ from, to: mgr.email, subject: title, text: body2 + `\n\nView lead: /leads/${newLead.id}` });
-                }
-              }
-            } catch {}
-          } catch {}
-        })();
-      }
+      // Unified intake audit trail via shared helper
+      logIntakeOwnership(tid, newLead.id, newLead.name, assignedUser?.id ?? null, userId);
 
       return res.status(201).json({ lead: newLead, deduped: false, assignedTo: assignedUser?.name });
     } catch (err: any) {
@@ -3853,15 +3807,14 @@ export async function registerRoutes(
             utmContent: mapped.utmContent || undefined,
             notes: mapped.notes || mapped.callSummary || undefined,
             priority: mapped.priority || "Normal",
-            assignedCrmUserId: assignedUser?.id,
+            assignedCrmUserId: assignedUser?.id ?? null,
             assignedTo: assignedUser?.name,
-          });
+            primaryOwnerUserId: assignedUser?.id ?? null,
+            ownerTeam: "Telecalling",
+          } as any);
 
-          await storage.createActivity({
-            leadId: newLead.id, tenantId: tid, createdBy: userId,
-            type: "note",
-            description: `Lead imported via CSV${assignedUser ? ` and auto-assigned to ${assignedUser.name}` : ""}`,
-          });
+          // Unified intake audit trail
+          logIntakeOwnership(tid, newLead.id, newLead.name, assignedUser?.id ?? null, String(userId));
 
           successCount++;
         } catch (err: any) {
@@ -4126,7 +4079,7 @@ export async function registerRoutes(
 
         try {
           const assignedUser = await storage.getNextAssignableCrmUser(tid);
-          await storage.createLead({
+          const newLead = await storage.createLead({
             tenantId: tid,
             name: name || "Unknown",
             phoneE164: phone,
@@ -4140,9 +4093,14 @@ export async function registerRoutes(
             utmContent: mapped.utmContent || undefined,
             notes: autoNotes || undefined,
             priority: mapped.priority || "Normal",
-            assignedCrmUserId: assignedUser?.id,
+            assignedCrmUserId: assignedUser?.id ?? null,
             assignedTo: assignedUser?.name,
-          });
+            primaryOwnerUserId: assignedUser?.id ?? null,
+            ownerTeam: "Telecalling",
+          } as any);
+
+          // Unified intake audit trail
+          logIntakeOwnership(tid, newLead.id, newLead.name, assignedUser?.id ?? null, String(userId));
 
           successCount++;
         } catch (err: any) {
@@ -4580,18 +4538,8 @@ export async function registerRoutes(
                     }
                   }
 
-                  let assignedUser = null;
-                  const strategy = rule.assignmentStrategy || "round_robin";
-                  if (strategy === "round_robin") {
-                    assignedUser = await storage.getNextAssignableCrmUser(tid);
-                  } else if (strategy === "specific" && rule.assignToEmployeeIds) {
-                    const empIds = rule.assignToEmployeeIds as number[];
-                    if (empIds.length > 0) {
-                      const users = await storage.getCrmUsers(tid);
-                      const randomIdx = Math.floor(Math.random() * empIds.length);
-                      assignedUser = users.find(u => u.id === empIds[randomIdx]) || null;
-                    }
-                  }
+                  // Always use TELECALLER-only round-robin for intake (any "specific" strategy is overridden)
+                  const assignedUser = await storage.getNextAssignableCrmUser(tid);
 
                   const newLead = await storage.createLead({
                     tenantId: tid,
@@ -4605,15 +4553,14 @@ export async function registerRoutes(
                     utmCampaign: String(changeValue?.ad_id || leadData.ad_id || ""),
                     notes: city ? `City: ${city}` : undefined,
                     priority: "Normal",
-                    assignedCrmUserId: assignedUser?.id,
+                    assignedCrmUserId: assignedUser?.id ?? null,
                     assignedTo: assignedUser?.name,
-                  });
+                    primaryOwnerUserId: assignedUser?.id ?? null,
+                    ownerTeam: "Telecalling",
+                  } as any);
 
-                  await storage.createActivity({
-                    leadId: newLead.id, tenantId: tid, createdBy: "meta-webhook",
-                    type: "note",
-                    description: `Lead captured from Meta Lead Ads (Form ID: ${leadData.form_id || "N/A"})${assignedUser ? ` — auto-assigned to ${assignedUser.name}` : ""}`,
-                  });
+                  // Unified intake audit trail
+                  logIntakeOwnership(tid, newLead.id, newLead.name, assignedUser?.id ?? null, "meta-webhook");
 
                   await db.update(metaLeadCaptureLogs)
                     .set({ processingStatus: "created", leadId: newLead.id })
@@ -4678,18 +4625,8 @@ export async function registerRoutes(
         }
       }
 
-      let assignedUser = null;
-      const strategy = rule.assignmentStrategy || "round_robin";
-      if (strategy === "round_robin") {
-        assignedUser = await storage.getNextAssignableCrmUser(tid);
-      } else if (strategy === "specific" && rule.assignToEmployeeIds) {
-        const empIds = rule.assignToEmployeeIds as number[];
-        if (empIds.length > 0) {
-          const randomIdx = Math.floor(Math.random() * empIds.length);
-          const users = await storage.getCrmUsers(tid);
-          assignedUser = users.find(u => u.id === empIds[randomIdx]) || null;
-        }
-      }
+      // Always use TELECALLER-only round-robin for intake (any "specific" strategy is overridden)
+      const assignedUser = await storage.getNextAssignableCrmUser(tid);
 
       const newLead = await storage.createLead({
         tenantId: tid,
@@ -4703,15 +4640,14 @@ export async function registerRoutes(
         utmCampaign: mapped.utmCampaign || undefined,
         notes: mapped.notes || mapped.callSummary || undefined,
         priority: mapped.priority || "Normal",
-        assignedCrmUserId: assignedUser?.id,
+        assignedCrmUserId: assignedUser?.id ?? null,
         assignedTo: assignedUser?.name,
-      });
+        primaryOwnerUserId: assignedUser?.id ?? null,
+        ownerTeam: "Telecalling",
+      } as any);
 
-      await storage.createActivity({
-        leadId: newLead.id, tenantId: tid, createdBy: "webhook",
-        type: "note",
-        description: `Lead captured via ${rule.sourceType}${rule.name ? ` (${rule.name})` : ""}${assignedUser ? ` and auto-assigned to ${assignedUser.name}` : ""}`,
-      });
+      // Unified intake audit trail
+      logIntakeOwnership(tid, newLead.id, newLead.name, assignedUser?.id ?? null, "webhook");
 
       res.status(201).json({ status: "created", leadId: newLead.id });
     } catch (err: any) {
@@ -4998,18 +4934,24 @@ export async function registerRoutes(
             }
             callyzerLeadSourceId = callyzerSource.id;
 
+            // Always use TELECALLER-only round-robin for intake assignment
+            const callyzerTelecaller = await storage.getNextAssignableCrmUser(tid);
             const newLead = await storage.createLead({
               tenantId: tid,
               name: clientName,
               phoneE164: clientNumber,
               status: "Raw Lead Captured",
               leadSourceId: callyzerLeadSourceId,
-              assignedCrmUserId: matchedCrmUser?.id || null,
-              primaryOwnerUserId: matchedCrmUser?.id || null,
-              ownerTeam: matchedCrmUser ? "Telecalling" : null,
+              assignedCrmUserId: callyzerTelecaller?.id ?? null,
+              assignedTo: callyzerTelecaller?.name,
+              primaryOwnerUserId: callyzerTelecaller?.id ?? null,
+              ownerTeam: "Telecalling",
               tags: "Callyzer",
               notes: notes || null,
-            });
+            } as any);
+
+            // Unified intake audit trail
+            logIntakeOwnership(tid, newLead.id, newLead.name, callyzerTelecaller?.id ?? null, matchedCrmUser?.name || "callyzer-webhook");
 
             matchedLead = newLead;
             logEntry.matchedLeadId = newLead.id;
@@ -9762,19 +9704,27 @@ export async function registerRoutes(
       if (existingLeads.length > 0) {
         leadId = existingLeads[0].id;
       } else {
+        // Always use TELECALLER-only round-robin for intake
+        const eventTelecaller = await storage.getNextAssignableCrmUser(tid);
         const [newLead] = await db.insert(leads).values({
           tenantId: tid,
           name: reg.name,
           phoneE164,
           mobileNormalized: normalized,
           email: reg.email,
-          status: "Raw",
+          status: "Raw Lead Captured",
           source: `Event: ${event.name}`,
           campaignId: event.campaignId,
+          assignedCrmUserId: eventTelecaller?.id ?? null,
+          assignedTo: eventTelecaller?.name ?? null,
+          primaryOwnerUserId: eventTelecaller?.id ?? null,
+          ownerTeam: "Telecalling",
           createdBy: userId,
           modifiedBy: userId,
-        }).returning();
+        } as any).returning();
         leadId = newLead.id;
+        // Unified intake audit trail
+        logIntakeOwnership(tid, newLead.id, newLead.name, eventTelecaller?.id ?? null, String(userId));
       }
 
       await db.update(eventRegistrations).set({
@@ -10243,33 +10193,8 @@ export async function registerRoutes(
         .where(and(eq(leadSources.tenantId, tid), eq(leadSources.name, "Referral")));
     }
 
-    let assignedUserId: number | null = null;
-    const userIds = (config.assignToUserIds as number[]) || [];
-    if (config.assignmentStrategy === "specific_user" && userIds.length > 0) {
-      assignedUserId = userIds[0];
-    } else if (config.assignmentStrategy === "round_robin" && userIds.length > 0) {
-      const lastLeadResult = await pool.query(
-        `SELECT assigned_crm_user_id FROM leads WHERE tenant_id = $1
-         AND assigned_crm_user_id = ANY($2::int[])
-         ORDER BY created_at DESC LIMIT 1`,
-        [tid, userIds]
-      );
-      if (lastLeadResult.rows.length > 0) {
-        const lastIdx = userIds.indexOf(lastLeadResult.rows[0].assigned_crm_user_id);
-        assignedUserId = userIds[(lastIdx + 1) % userIds.length];
-      } else {
-        assignedUserId = userIds[0];
-      }
-    } else if (config.assignmentStrategy === "least_loaded" && userIds.length > 0) {
-      const loadResult = await pool.query(
-        `SELECT u.id, COUNT(l.id) as lead_count
-         FROM crm_users u LEFT JOIN leads l ON l.assigned_crm_user_id = u.id AND l.tenant_id = $1
-           AND l.status NOT IN ('Closed Won','Closed Lost','Closed - Converted','Closed - Junk','Closed - Dormant')
-         WHERE u.id = ANY($2::int[]) GROUP BY u.id ORDER BY lead_count ASC LIMIT 1`,
-        [tid, userIds]
-      );
-      assignedUserId = loadResult.rows.length > 0 ? loadResult.rows[0].id : userIds[0];
-    }
+    // Always use TELECALLER-only round-robin for intake (overrides any config strategy)
+    const referralTelecaller = await storage.getNextAssignableCrmUser(tid, config.assignToBranchId || null);
 
     const leadInput: any = {
       tenantId: tid,
@@ -10282,8 +10207,9 @@ export async function registerRoutes(
       referralId: referral.id,
       referralSourceFlag: true,
       leadSourceId: referralSource?.id || null,
-      assignedCrmUserId: assignedUserId || Number(userId) || null,
-      primaryOwnerUserId: assignedUserId || Number(userId) || null,
+      assignedCrmUserId: referralTelecaller?.id ?? null,
+      assignedTo: referralTelecaller?.name ?? null,
+      primaryOwnerUserId: referralTelecaller?.id ?? null,
       ownerTeam: "Telecalling",
       branchId: config.assignToBranchId || null,
       lastActivityAt: new Date(),
@@ -10294,6 +10220,8 @@ export async function registerRoutes(
       const lead = await storage.createLead(leadInput);
       await db.update(referrals).set({ resultingLeadId: lead.id, modifiedAt: new Date() })
         .where(eq(referrals.id, referral.id));
+      // Unified intake audit trail
+      logIntakeOwnership(tid, lead.id, lead.name, referralTelecaller?.id ?? null, String(userId));
       return lead.id;
     } catch (err: any) {
       console.error("[referral-auto-lead] Error creating lead:", err.message);

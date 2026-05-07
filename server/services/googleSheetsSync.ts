@@ -1,7 +1,24 @@
 import { db } from "../db";
-import { googleSheetsSyncConfigs, leadImportLogs } from "@shared/schema";
+import { googleSheetsSyncConfigs, leadImportLogs, handoverLogs, activities } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { storage, toProperCase } from "../storage";
+
+// Minimal intake audit trail for auto-sync paths (mirrors logIntakeOwnership in routes.ts)
+async function logSyncIntakeOwnership(tenantId: number, leadId: number, leadName: string, telecallerId: number | null): Promise<void> {
+  const method = telecallerId ? "telecaller-round-robin" : "unassigned-no-telecaller";
+  db.insert(handoverLogs).values({
+    tenantId, entityType: "Lead", entityId: leadId,
+    fromUserId: null, toUserId: telecallerId ?? null,
+    fromTeam: null, toTeam: "Telecalling",
+    triggerEvent: "Lead Created", notes: `Intake [${method}]`,
+  } as any).catch(() => {});
+  db.insert(activities).values({
+    tenantId, leadId, type: "auto_handover",
+    description: `Intake [${method}]: → Telecalling${telecallerId ? ` (User #${telecallerId})` : " (no telecaller found)"}`,
+    createdBy: "google-sheets-sync",
+    metadata: { fromTeam: null, toTeam: "Telecalling", fromUserId: null, toUserId: telecallerId, triggerEvent: "Lead Created", assignmentMethod: method },
+  } as any).catch(() => {});
+}
 
 export function normalizePhone(phone: string): string {
   let p = phone.replace(/\D/g, "");
@@ -204,7 +221,7 @@ export async function processSheetRows(
       }
 
       const assignedUser = await storage.getNextAssignableCrmUser(tenantId);
-      await storage.createLead({
+      const newLead = await storage.createLead({
         tenantId,
         name: name || "Unknown",
         phoneE164: phone,
@@ -218,9 +235,13 @@ export async function processSheetRows(
         utmContent: mapped.utmContent || undefined,
         notes: autoNotes || undefined,
         priority: mapped.priority || "Normal",
-        assignedCrmUserId: assignedUser?.id,
+        assignedCrmUserId: assignedUser?.id ?? null,
         assignedTo: assignedUser?.name,
-      });
+        primaryOwnerUserId: assignedUser?.id ?? null,
+        ownerTeam: "Telecalling",
+      } as any);
+      // Unified intake audit trail
+      logSyncIntakeOwnership(tenantId, newLead.id, newLead.name, assignedUser?.id ?? null);
       leadsCreated++;
     } catch { leadsSkipped++; }
   }
