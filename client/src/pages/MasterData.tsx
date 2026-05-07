@@ -1167,7 +1167,7 @@ export default function MasterData() {
                                       variant="ghost"
                                       className="h-8 w-8 text-muted-foreground"
                                       onClick={() => reorderMutation.mutate({ id: record.id, direction: "up" })}
-                                      disabled={reorderMutation.isPending || filteredRecords.indexOf(record) === 0}
+                                      disabled={reorderMutation.isPending || sortedRecords.indexOf(record) === 0}
                                       title="Move up"
                                       data-testid={`button-move-up-${record.id}`}
                                     >
@@ -1178,7 +1178,7 @@ export default function MasterData() {
                                       variant="ghost"
                                       className="h-8 w-8 text-muted-foreground"
                                       onClick={() => reorderMutation.mutate({ id: record.id, direction: "down" })}
-                                      disabled={reorderMutation.isPending || filteredRecords.indexOf(record) === filteredRecords.length - 1}
+                                      disabled={reorderMutation.isPending || sortedRecords.indexOf(record) === sortedRecords.length - 1}
                                       title="Move down"
                                       data-testid={`button-move-down-${record.id}`}
                                     >

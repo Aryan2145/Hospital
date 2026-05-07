@@ -5635,41 +5635,60 @@ export async function registerRoutes(
     }
     try {
       const tid = await getDefaultTenantId(req);
-      const pgTbl = MASTER_TABLE_REGISTRY[tableName];
 
-      const allRows = await pool.query(
-        `SELECT id, display_order FROM "${pgTbl}" WHERE tenant_id = $1 ORDER BY display_order ASC, id ASC`,
-        [tid]
-      );
-      const rows: { id: number; display_order: number }[] = allRows.rows;
-      const idx = rows.findIndex(r => r.id === id);
-      if (idx === -1) return res.status(404).json({ message: "Record not found" });
-
-      const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= rows.length) {
-        return res.status(400).json({ message: "Cannot move further in that direction" });
+      // Admin+ only
+      const sessionUser = await getSessionCrmUserWithRole(req);
+      const allowedRoles = ["SYS_ADMIN", "ADMIN", "MANAGER"];
+      if (!sessionUser || !allowedRoles.includes(sessionUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admin or Manager users can reorder master records." });
       }
 
-      const current = rows[idx];
-      const neighbour = rows[swapIdx];
+      const pgTbl = MASTER_TABLE_REGISTRY[tableName];
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
 
-      // If they share the same displayOrder, normalize first
-      if (current.display_order === neighbour.display_order) {
-        for (let i = 0; i < rows.length; i++) {
-          await pool.query(
-            `UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`,
-            [i + 1, rows[i].id, tid]
-          );
+        const allRows = await client.query(
+          `SELECT id, display_order FROM "${pgTbl}" WHERE tenant_id = $1 ORDER BY display_order ASC, id ASC FOR UPDATE`,
+          [tid]
+        );
+        const rows: { id: number; display_order: number }[] = allRows.rows;
+        const idx = rows.findIndex(r => r.id === id);
+        if (idx === -1) {
+          await client.query("ROLLBACK");
+          return res.status(404).json({ message: "Record not found" });
         }
-        // After normalization, pick the correct positions
-        const newCurrentOrder = idx + 1;
-        const newNeighbourOrder = swapIdx + 1;
-        await pool.query(`UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`, [newNeighbourOrder, current.id, tid]);
-        await pool.query(`UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`, [newCurrentOrder, neighbour.id, tid]);
-      } else {
-        // Simple swap
-        await pool.query(`UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`, [neighbour.display_order, current.id, tid]);
-        await pool.query(`UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`, [current.display_order, neighbour.id, tid]);
+
+        const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+        if (swapIdx < 0 || swapIdx >= rows.length) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ message: "Cannot move further in that direction" });
+        }
+
+        const current = rows[idx];
+        const neighbour = rows[swapIdx];
+
+        if (current.display_order === neighbour.display_order) {
+          // Normalize all first, then swap
+          for (let i = 0; i < rows.length; i++) {
+            await client.query(
+              `UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`,
+              [i + 1, rows[i].id, tid]
+            );
+          }
+          await client.query(`UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`, [swapIdx + 1, current.id, tid]);
+          await client.query(`UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`, [idx + 1, neighbour.id, tid]);
+        } else {
+          await client.query(`UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`, [neighbour.display_order, current.id, tid]);
+          await client.query(`UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`, [current.display_order, neighbour.id, tid]);
+        }
+
+        await client.query("COMMIT");
+      } catch (innerErr) {
+        await client.query("ROLLBACK");
+        throw innerErr;
+      } finally {
+        client.release();
       }
 
       const updated = await storage.getMasterRecords(tableName, tid);
