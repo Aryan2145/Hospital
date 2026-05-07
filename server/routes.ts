@@ -1721,6 +1721,25 @@ export async function registerRoutes(
     res.json(applyPhiMasking(enriched, phiLevel));
   });
 
+  app.get("/api/leads/search", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = req.session?.tenantId;
+      const q = ((req.query.q as string) || "").trim();
+      if (!q || q.length < 2) return res.json([]);
+      const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+      const term = `%${q}%`;
+      const result = await pool.query(
+        `SELECT id, name, phone_e164 AS "phoneE164", email FROM leads
+         WHERE tenant_id = $1 AND (name ILIKE $2 OR phone_e164 ILIKE $2 OR mobile_normalized ILIKE $2)
+         ORDER BY name ASC LIMIT $3`,
+        [tid, term, limit]
+      );
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/leads/last-calls", isAuthenticated, async (req: any, res) => {
     try {
       const reqTid = req.session?.tenantId || tid;

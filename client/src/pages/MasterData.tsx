@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { PatientSearchSelect, type PatientSearchResult } from "@/components/ui/patient-search-select";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
   Plus,
@@ -88,10 +89,11 @@ interface ImportLog {
 interface ExtraField {
   key: string;
   label: string;
-  type: "text" | "number" | "boolean" | "select" | "ref" | "time" | "multiselect" | "multiref" | "date";
+  type: "text" | "number" | "boolean" | "select" | "ref" | "time" | "multiselect" | "multiref" | "date" | "patient-picker";
   options?: string[];
   refTable?: string;
   autoGenCodeName?: boolean;
+  showWhen?: { field: string; value: string; negate?: boolean };
 }
 
 const EXTRA_FIELDS: Record<string, ExtraField[]> = {
@@ -169,8 +171,9 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
   ],
   referrers: [
     { key: "type", label: "Type", type: "select", options: ["Doctor", "Patient", "Hospital", "Agent", "Other"] },
-    { key: "phone", label: "Phone", type: "text" },
-    { key: "email", label: "Email", type: "text" },
+    { key: "linkedLeadId", label: "Linked Patient", type: "patient-picker", showWhen: { field: "type", value: "Patient" } },
+    { key: "phone", label: "Phone", type: "text", showWhen: { field: "type", value: "Patient", negate: true } },
+    { key: "email", label: "Email", type: "text", showWhen: { field: "type", value: "Patient", negate: true } },
   ],
   corporateInsurances: [
     { key: "type", label: "Type", type: "select", options: ["Corporate", "Insurance", "TPA"] },
@@ -264,8 +267,15 @@ export default function MasterData() {
     enabled: !!selectedTable && showImportLogs,
   });
 
-  const extraFields = selectedTable ? EXTRA_FIELDS[selectedTable] || [] : [];
-  const refTables = Array.from(new Set(extraFields.filter(f => (f.type === "ref" || f.type === "multiref") && f.refTable).map(f => f.refTable!)));
+  const allExtraFields = selectedTable ? EXTRA_FIELDS[selectedTable] || [] : [];
+  function isFieldVisible(field: ExtraField, data: Record<string, any>): boolean {
+    if (!field.showWhen) return true;
+    const actual = data[field.showWhen.field];
+    const match = actual === field.showWhen.value;
+    return field.showWhen.negate ? !match : match;
+  }
+  const extraFields = allExtraFields.filter(f => !f.showWhen || isFieldVisible(f, formData));
+  const refTables = Array.from(new Set(allExtraFields.filter(f => (f.type === "ref" || f.type === "multiref") && f.refTable).map(f => f.refTable!)));
 
   const { data: refDataMap = {} } = useQuery<Record<string, MasterRecord[]>>({
     queryKey: ["/api/masters/ref-data", ...refTables],
@@ -1061,7 +1071,7 @@ export default function MasterData() {
                       {!hideStatusDisplayOrder && <TableHead>Status</TableHead>}
                       <TableHead>Approval</TableHead>
                       {!isAutoCodeName && !hideStatusDisplayOrder && <TableHead>Order</TableHead>}
-                      {extraFields.map((f) => (
+                      {allExtraFields.filter(f => !f.showWhen && f.type !== "patient-picker").map((f) => (
                         <TableHead key={f.key}>{f.label}</TableHead>
                       ))}
                       <TableHead className="w-[140px]">Actions</TableHead>
@@ -1108,7 +1118,7 @@ export default function MasterData() {
                             )}
                           </TableCell>
                           {!isAutoCodeName && !hideStatusDisplayOrder && <TableCell>{record.displayOrder ?? 0}</TableCell>}
-                          {extraFields.map((f) => {
+                          {allExtraFields.filter(f => !f.showWhen && f.type !== "patient-picker").map((f) => {
                             let displayVal: any = record[f.key] ?? "-";
                             if (f.type === "boolean") {
                               displayVal = record[f.key] ? "Yes" : "No";
@@ -1465,6 +1475,32 @@ export default function MasterData() {
                             )}
                           </div>
                         )
+                      ) : field.type === "patient-picker" ? (
+                        <div className="mt-1">
+                          <PatientSearchSelect
+                            value={formData[field.key] ? Number(formData[field.key]) : null}
+                            onSelect={(p: PatientSearchResult | null) => {
+                              if (p) {
+                                setFormData({
+                                  ...formData,
+                                  [field.key]: p.id,
+                                  name: p.name,
+                                  phone: p.phoneE164 || formData.phone || "",
+                                  email: p.email || formData.email || "",
+                                });
+                              } else {
+                                setFormData({ ...formData, [field.key]: null });
+                              }
+                            }}
+                            placeholder="Search patient by name or phone..."
+                            data-testid={`input-${field.key}`}
+                          />
+                          {formData[field.key] && (
+                            <p className="text-[11px] text-muted-foreground mt-1">
+                              Patient selected — name, phone and email have been auto-filled above.
+                            </p>
+                          )}
+                        </div>
                       ) : field.type === "time" ? (
                         <Input
                           type="time"

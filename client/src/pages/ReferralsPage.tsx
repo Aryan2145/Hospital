@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { fmtDate } from "@/lib/date-utils";
+import { PatientSearchSelect, type PatientSearchResult } from "@/components/ui/patient-search-select";
 import {
   Plus,
   Users,
@@ -111,7 +112,7 @@ export default function ReferralsPage() {
   });
 
   const [addReferrerOpen, setAddReferrerOpen] = useState(false);
-  const [newReferrer, setNewReferrer] = useState({ name: "", phone: "", email: "", type: "Doctor" });
+  const [newReferrer, setNewReferrer] = useState({ name: "", phone: "", email: "", type: "Doctor", linkedLeadId: null as number | null });
   const [referrerSearch, setReferrerSearch] = useState("");
 
   const { data: referralsList = [], isLoading } = useQuery<ReferralRecord[]>({
@@ -221,21 +222,29 @@ export default function ReferralsPage() {
   }
 
   function handleAddReferrer() {
-    if (!newReferrer.name.trim()) {
-      toast({ title: "Referrer name is required", variant: "destructive" });
-      return;
-    }
-    if (!newReferrer.phone.trim()) {
-      toast({ title: "Mobile number is required (used as primary key for duplication check)", variant: "destructive" });
-      return;
+    if (newReferrer.type === "Patient") {
+      if (!newReferrer.linkedLeadId) {
+        toast({ title: "Please select a patient from the search", variant: "destructive" });
+        return;
+      }
+    } else {
+      if (!newReferrer.name.trim()) {
+        toast({ title: "Referrer name is required", variant: "destructive" });
+        return;
+      }
+      if (!newReferrer.phone.trim()) {
+        toast({ title: "Mobile number is required (used as primary key for duplication check)", variant: "destructive" });
+        return;
+      }
     }
     const code = newReferrer.name.toUpperCase().replace(/\s+/g, "_").substring(0, 50);
     addReferrerMutation.mutate({
       code,
       name: newReferrer.name,
-      phone: newReferrer.phone,
+      phone: newReferrer.phone || null,
       email: newReferrer.email || null,
       type: newReferrer.type,
+      linkedLeadId: newReferrer.linkedLeadId || null,
       status: "Active",
       displayOrder: 0,
     });
@@ -662,36 +671,11 @@ export default function ReferralsPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Referrer Name *</Label>
-              <Input
-                value={newReferrer.name}
-                onChange={e => setNewReferrer({ ...newReferrer, name: e.target.value })}
-                placeholder="Dr. Rajesh Kumar"
-                data-testid="input-new-referrer-name"
-              />
-            </div>
-            <div>
-              <Label>Mobile Number *</Label>
-              <Input
-                value={newReferrer.phone}
-                onChange={e => setNewReferrer({ ...newReferrer, phone: e.target.value })}
-                placeholder="+91 98765 43210"
-                data-testid="input-new-referrer-phone"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">Used for duplicate detection. Each mobile number can only be registered once.</p>
-            </div>
-            <div>
-              <Label>Email</Label>
-              <Input
-                value={newReferrer.email}
-                onChange={e => setNewReferrer({ ...newReferrer, email: e.target.value })}
-                placeholder="doctor@clinic.com"
-                data-testid="input-new-referrer-email"
-              />
-            </div>
-            <div>
               <Label>Referrer Type</Label>
-              <Select value={newReferrer.type} onValueChange={v => setNewReferrer({ ...newReferrer, type: v })}>
+              <Select
+                value={newReferrer.type}
+                onValueChange={v => setNewReferrer({ name: "", phone: "", email: "", type: v, linkedLeadId: null })}
+              >
                 <SelectTrigger data-testid="select-new-referrer-type">
                   <SelectValue />
                 </SelectTrigger>
@@ -700,6 +684,68 @@ export default function ReferralsPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {newReferrer.type === "Patient" ? (
+              <div>
+                <Label>Select Patient *</Label>
+                <PatientSearchSelect
+                  value={newReferrer.linkedLeadId}
+                  onSelect={(p: PatientSearchResult | null) => {
+                    if (p) {
+                      setNewReferrer({
+                        ...newReferrer,
+                        linkedLeadId: p.id,
+                        name: p.name,
+                        phone: p.phoneE164 || "",
+                        email: p.email || "",
+                      });
+                    } else {
+                      setNewReferrer({ ...newReferrer, linkedLeadId: null, name: "", phone: "", email: "" });
+                    }
+                  }}
+                  placeholder="Search by name or phone..."
+                  data-testid="input-patient-search"
+                />
+                {newReferrer.linkedLeadId && (
+                  <div className="mt-2 space-y-1 text-xs text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
+                    {newReferrer.phone && <div>Phone: {newReferrer.phone}</div>}
+                    {newReferrer.email && <div>Email: {newReferrer.email}</div>}
+                  </div>
+                )}
+                <p className="text-[11px] text-muted-foreground mt-1">Search for an existing lead/patient record to link.</p>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <Label>Referrer Name *</Label>
+                  <Input
+                    value={newReferrer.name}
+                    onChange={e => setNewReferrer({ ...newReferrer, name: e.target.value })}
+                    placeholder="Dr. Rajesh Kumar"
+                    data-testid="input-new-referrer-name"
+                  />
+                </div>
+                <div>
+                  <Label>Mobile Number *</Label>
+                  <Input
+                    value={newReferrer.phone}
+                    onChange={e => setNewReferrer({ ...newReferrer, phone: e.target.value })}
+                    placeholder="+91 98765 43210"
+                    data-testid="input-new-referrer-phone"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">Used for duplicate detection. Each mobile number can only be registered once.</p>
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input
+                    value={newReferrer.email}
+                    onChange={e => setNewReferrer({ ...newReferrer, email: e.target.value })}
+                    placeholder="doctor@clinic.com"
+                    data-testid="input-new-referrer-email"
+                  />
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddReferrerOpen(false)} data-testid="button-cancel-add-referrer">Cancel</Button>
