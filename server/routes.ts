@@ -269,6 +269,54 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Record<string, { canView: boolean
     insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
     reports: { canView: true, canCreate: false, canEdit: false, canDelete: false },
   },
+  OT_IP_COORDINATOR: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: true, canCreate: false, canEdit: true, canDelete: false },
+    episodes: { canView: true, canCreate: false, canEdit: true, canDelete: false },
+    appointments: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    transactions: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    reports: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+  },
+  POST_CARE_COORDINATOR: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: true, canCreate: false, canEdit: true, canDelete: false },
+    episodes: { canView: true, canCreate: false, canEdit: true, canDelete: false },
+    appointments: { canView: true, canCreate: true, canEdit: true, canDelete: false },
+    campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    transactions: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    reports: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+  },
+  REFERRAL_COORDINATOR: {
+    dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: true, canCreate: false, canEdit: true, canDelete: false },
+    episodes: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    appointments: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    transactions: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    team: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    masters: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    connectors: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    branding: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    settings: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    quotation: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    insurance: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+    reports: { canView: false, canCreate: false, canEdit: false, canDelete: false },
+  },
 };
 
 // Seed role_permissions for all roles for a given tenant
@@ -2384,7 +2432,19 @@ export async function registerRoutes(
         }
       }
 
+      // Step 1: freeze assignedCrmUserId — set only at lead creation, never overwritten by updates
+      delete (input as any).assignedCrmUserId;
+
       let lead = await storage.updateLead(leadId, input);
+
+      // Step 8: trigger auto-handover on direct lead status changes
+      if (input.status && oldLead?.status !== input.status) {
+        try {
+          const hTid = await getDefaultTenantId(req);
+          const hUserId = String((req as any).session?.crmUserId || "system");
+          await processAutoHandover("Lead", leadId, input.status, hTid, hUserId, {});
+        } catch {}
+      }
 
       if (input.status === "Nurture" && oldLead?.status !== "Nurture") {
         try {
@@ -8545,11 +8605,19 @@ export async function registerRoutes(
             } catch {}
           }
 
-          if (["Estimate Shared", "Checked In", "Consultation Done"].includes(body.status)) {
+          const handoverTriggerStatuses = [
+            "Estimate Shared", "Checked In", "Consultation Done",
+            "Surgery Scheduled", "Pre-op Assessment", "Surgery Done",
+            "In Treatment", "Discharge / Billing Clearance", "Post Care", "Follow Up",
+          ];
+          if (handoverTriggerStatuses.includes(body.status)) {
             try {
               await processAutoHandover("Lead", oldEpisode.leadId, body.status, tid, userId, {
                 branchId: oldEpisode.branchId,
                 doctorId: oldEpisode.doctorId,
+                surgeryDoctorId: (ep as any).surgeryDoctorId || oldEpisode.surgeryDoctorId || null,
+                episodeId,
+                preopAssignedUserId: (ep as any).preopAssignedUserId || oldEpisode.preopAssignedUserId || null,
               });
             } catch {}
           }
@@ -9094,7 +9162,7 @@ export async function registerRoutes(
          ) epa ON TRUE
          WHERE e.tenant_id = $1
            AND e.preop_entered_at IS NOT NULL
-           AND e.status NOT IN ('Surgery Done', 'In Treatment', 'Post Care', 'Follow Up', 'Completed', 'Discontinued')
+           AND e.status NOT IN ('Surgery Done', 'In Treatment', 'Discharge / Billing Clearance', 'Post Care', 'Follow Up', 'Completed', 'Discontinued')
          ORDER BY e.surgery_date ASC NULLS LAST, e.preop_entered_at DESC
          LIMIT 50`,
         [tid]
@@ -9799,7 +9867,7 @@ export async function registerRoutes(
   app.get("/api/referrals/treated-patients", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      const treatedStatuses = ["Surgery Done", "In Treatment", "Post Care", "Follow Up", "Completed"];
+      const treatedStatuses = ["Surgery Done", "In Treatment", "Discharge / Billing Clearance", "Post Care", "Follow Up", "Completed"];
       const treatedEpisodes = await db.select({
         episodeId: episodes.id,
         leadId: episodes.leadId,
@@ -11410,9 +11478,9 @@ export async function registerRoutes(
       if (isManagement || isManager) {
         const ratioResult = (await pool.query(
           `SELECT
-            COUNT(*) FILTER (WHERE e.status IN ('Treatment Planning','Surgery Scheduled','Surgery Done','In Treatment','Post Care','Follow Up','Completed','Discontinued')) as treatment_planned_count,
-            COUNT(*) FILTER (WHERE e.status IN ('Surgery Scheduled','Surgery Done','In Treatment','Post Care','Follow Up','Completed')) as surgery_scheduled_count,
-            COUNT(*) FILTER (WHERE e.status IN ('Surgery Done','In Treatment','Post Care','Follow Up','Completed')) as surgery_done_count
+            COUNT(*) FILTER (WHERE e.status IN ('Treatment Planning','Surgery Scheduled','Surgery Done','In Treatment','Discharge / Billing Clearance','Post Care','Follow Up','Completed','Discontinued')) as treatment_planned_count,
+            COUNT(*) FILTER (WHERE e.status IN ('Surgery Scheduled','Surgery Done','In Treatment','Discharge / Billing Clearance','Post Care','Follow Up','Completed')) as surgery_scheduled_count,
+            COUNT(*) FILTER (WHERE e.status IN ('Surgery Done','In Treatment','Discharge / Billing Clearance','Post Care','Follow Up','Completed')) as surgery_done_count
           FROM episodes e WHERE e.tenant_id = $1`,
           [tid]
         )).rows;
@@ -13839,6 +13907,7 @@ export async function registerRoutes(
   await migrateAgentToPatientCoordinator();
   await ensureAllCanonicalRolesSeeded();
   await ensureMarketingRolePermissions();
+  await ensureNewRolePermissions();
   return httpServer;
 }
 
@@ -13846,7 +13915,7 @@ export async function registerRoutes(
 const CANONICAL_ROLE_CODES = [
   "ADMIN", "MANAGER", "COUNSELLOR", "PATIENT_COORDINATOR", "TELECALLER",
   "RECEPTIONIST", "DOCTOR", "MEDICAL_ASSISTANT", "BILLING", "INSURANCE_DESK",
-  "MIS_VIEWER", "MARKETING",
+  "MIS_VIEWER", "MARKETING", "OT_IP_COORDINATOR", "POST_CARE_COORDINATOR", "REFERRAL_COORDINATOR",
 ];
 
 const CANONICAL_ROLE_DEFS: { code: string; name: string; displayOrder: number }[] = [
@@ -13862,6 +13931,9 @@ const CANONICAL_ROLE_DEFS: { code: string; name: string; displayOrder: number }[
   { code: "MEDICAL_ASSISTANT", name: "Medical Assistant", displayOrder: 10 },
   { code: "MIS_VIEWER", name: "MIS Viewer", displayOrder: 11 },
   { code: "MARKETING", name: "Marketing", displayOrder: 12 },
+  { code: "OT_IP_COORDINATOR", name: "OT / IP Coordinator", displayOrder: 13 },
+  { code: "POST_CARE_COORDINATOR", name: "Post Care Coordinator", displayOrder: 14 },
+  { code: "REFERRAL_COORDINATOR", name: "Referral Coordinator", displayOrder: 15 },
 ];
 
 async function ensureMarketingRolePermissions() {
@@ -13881,6 +13953,29 @@ async function ensureMarketingRolePermissions() {
     console.log("[Roles] MARKETING role permissions ensured for all tenants");
   } catch (err: any) {
     console.error("[Roles] Error ensuring MARKETING permissions:", err.message);
+  }
+}
+
+async function ensureNewRolePermissions() {
+  const newRoleCodes = ["OT_IP_COORDINATOR", "POST_CARE_COORDINATOR", "REFERRAL_COORDINATOR"];
+  const modules = ["dashboard", "leads", "episodes", "appointments", "campaigns", "transactions", "team", "masters", "connectors", "branding", "settings", "quotation", "insurance", "reports"];
+  try {
+    const allTenants = await pool.query(`SELECT id FROM tenants ORDER BY id`);
+    for (const t of allTenants.rows) {
+      const tid = t.id as number;
+      for (const roleCode of newRoleCodes) {
+        const perms = DEFAULT_ROLE_PERMISSIONS[roleCode] || {};
+        for (const module of modules) {
+          const p = perms[module] || { canView: false, canCreate: false, canEdit: false, canDelete: false };
+          await db.insert(rolePermissions)
+            .values({ tenantId: tid, roleCode, module, canView: p.canView, canCreate: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete })
+            .onConflictDoNothing();
+        }
+      }
+    }
+    console.log("[Roles] OT_IP_COORDINATOR / POST_CARE_COORDINATOR / REFERRAL_COORDINATOR permissions ensured for all tenants");
+  } catch (err: any) {
+    console.error("[Roles] Error ensuring new role permissions:", err.message);
   }
 }
 

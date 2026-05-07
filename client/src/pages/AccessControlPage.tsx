@@ -34,6 +34,9 @@ const ALL_ROLE_CODES = [
   { code: "MEDICAL_ASSISTANT", label: "Medical Assistant" },
   { code: "MIS_VIEWER", label: "MIS Viewer" },
   { code: "MARKETING", label: "Marketing" },
+  { code: "OT_IP_COORDINATOR", label: "OT / IP Coordinator" },
+  { code: "POST_CARE_COORDINATOR", label: "Post Care Coordinator" },
+  { code: "REFERRAL_COORDINATOR", label: "Referral Coordinator" },
 ];
 
 const MODULES = [

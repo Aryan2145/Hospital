@@ -95,6 +95,7 @@ const UNIFIED_JOURNEY_STAGES = [
   "Surgery Scheduled",
   "Surgery Done",
   "In Treatment",
+  "Discharge / Billing Clearance",
   "Post Care",
   "Follow Up",
   "Completed",

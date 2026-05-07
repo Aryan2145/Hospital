@@ -43,6 +43,9 @@ export async function provisionNewTenant(tid: number) {
     { code: "BILLING", name: "Billing Executive", displayOrder: 9 },
     { code: "INSURANCE_DESK", name: "Insurance Desk", displayOrder: 10 },
     { code: "MIS_VIEWER", name: "MIS Viewer", displayOrder: 11 },
+    { code: "OT_IP_COORDINATOR", name: "OT / IP Coordinator", displayOrder: 12 },
+    { code: "POST_CARE_COORDINATOR", name: "Post Care Coordinator", displayOrder: 13 },
+    { code: "REFERRAL_COORDINATOR", name: "Referral Coordinator", displayOrder: 14 },
   ], async (r) => {
     await db.insert(systemRoles).values({ tenantId: tid, code: r.code, name: r.name, status: "Active", displayOrder: r.displayOrder });
   });

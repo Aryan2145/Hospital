@@ -21,6 +21,7 @@ export const EPISODE_STATUSES = [
   "Pre-op Assessment",
   "Surgery Done",
   "In Treatment",
+  "Discharge / Billing Clearance",
   "Post Care",
   "Follow Up",
   "Completed",
@@ -48,8 +49,9 @@ const EPISODE_TRANSITIONS: Record<string, string[]> = {
   "Treatment Planning": ["Surgery Scheduled", "In Treatment", "Discontinued"],
   "Surgery Scheduled": ["Pre-op Assessment", "Discontinued"],
   "Pre-op Assessment": ["Surgery Done", "Discontinued"],
-  "Surgery Done": ["In Treatment", "Post Care", "Follow Up", "Completed"],
-  "In Treatment": ["Post Care", "Follow Up", "Completed", "Discontinued"],
+  "Surgery Done": ["In Treatment", "Discharge / Billing Clearance", "Post Care", "Follow Up", "Completed"],
+  "In Treatment": ["Discharge / Billing Clearance", "Post Care", "Follow Up", "Completed", "Discontinued"],
+  "Discharge / Billing Clearance": ["Post Care", "Follow Up", "Completed"],
   "Post Care": ["Follow Up", "Completed"],
   "Follow Up": ["Post Care", "Completed", "Discontinued"],
   "Completed": [],
@@ -90,6 +92,7 @@ export function getStatusColor(status: string): string {
     case "Pre-op Assessment": return "bg-amber-100 text-amber-800 border-amber-200";
     case "Surgery Done": return "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200";
     case "In Treatment": return "bg-orange-100 text-orange-800 border-orange-200";
+    case "Discharge / Billing Clearance": return "bg-rose-100 text-rose-800 border-rose-200";
     case "Post Care": return "bg-sky-100 text-sky-800 border-sky-200";
     case "Follow Up": return "bg-lime-100 text-lime-800 border-lime-200";
     case "Closed Won": return "bg-emerald-100 text-emerald-800 border-emerald-200";

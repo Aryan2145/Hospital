@@ -42,6 +42,7 @@ const EPISODE_STAGES = [
   "Surgery Scheduled",
   "Surgery Done",
   "In Treatment",
+  "Discharge / Billing Clearance",
   "Post Care",
   "Follow Up",
   "Completed",

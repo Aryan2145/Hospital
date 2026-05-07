@@ -440,6 +440,7 @@ export default function EpisodeDetailPage() {
     "Pre-op Assessment",
     "Surgery Done",
     "In Treatment",
+    "Discharge / Billing Clearance",
     "Post Care",
     "Follow Up",
     "Completed",
@@ -608,7 +609,7 @@ export default function EpisodeDetailPage() {
               </TabsTrigger>
             )}
             {(!!episode.preopEnteredAt || episode.status === "Pre-op Assessment" ||
-              ["Surgery Done", "In Treatment", "Post Care", "Follow Up", "Completed", "Discontinued"].includes(episode.status)) && (
+              ["Surgery Done", "In Treatment", "Discharge / Billing Clearance", "Post Care", "Follow Up", "Completed", "Discontinued"].includes(episode.status)) && (
               <TabsTrigger value="preop" data-testid="tab-preop">
                 <HeartPulse className="w-3.5 h-3.5 mr-1.5" />
                 Pre-op
@@ -811,7 +812,7 @@ export default function EpisodeDetailPage() {
           </TabsContent>
 
           {(!!episode.preopEnteredAt || episode.status === "Pre-op Assessment" || episode.status === "Surgery Scheduled" ||
-            ["Surgery Done", "In Treatment", "Post Care", "Follow Up", "Completed", "Discontinued"].includes(episode.status)) && (
+            ["Surgery Done", "In Treatment", "Discharge / Billing Clearance", "Post Care", "Follow Up", "Completed", "Discontinued"].includes(episode.status)) && (
             <TabsContent value="preop" className="mt-4" data-testid="tab-content-preop">
               <PreopAssessmentTab
                 episode={episode}
@@ -1101,7 +1102,7 @@ export default function EpisodeDetailPage() {
 
 function ReferralReadyCard({ episode, onUpdate }: { episode: any; onUpdate: () => void }) {
   const { toast } = useToast();
-  const referralReadyStatuses = ["Post Care", "Follow Up", "Completed", "Surgery Done", "In Treatment"];
+  const referralReadyStatuses = ["Post Care", "Follow Up", "Completed", "Surgery Done", "In Treatment", "Discharge / Billing Clearance"];
   const showCard = referralReadyStatuses.includes(episode.status);
 
   const markReadyMutation = useMutation({

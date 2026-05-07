@@ -780,17 +780,36 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getNextAssignableCrmUser(tenantId: number, branchId?: number, departmentId?: number): Promise<CrmUser | undefined> {
-    const conditions = [eq(crmUsers.tenantId, tenantId), eq(crmUsers.isActive, true)];
-    if (branchId) conditions.push(eq(crmUsers.branchId, branchId));
-    if (departmentId) conditions.push(eq(crmUsers.departmentId, departmentId));
+    // Intake assignment is always TELECALLER-role-only, round-robin.
+    // Pool 1: logged-in Telecallers (expire > NOW in sessions).
+    // Pool 2 (fallback): all active Telecallers.
+    const loggedInResult = await pool.query(
+      `SELECT DISTINCT (sess->>'crmUserId')::int AS crm_user_id
+       FROM sessions
+       WHERE expire > NOW()
+         AND sess->>'crmUserId' IS NOT NULL
+         AND (sess->>'tenantId')::int = $1`,
+      [tenantId]
+    );
+    const loggedInIds: Set<number> = new Set(
+      loggedInResult.rows.map((r: any) => Number(r.crm_user_id)).filter(Boolean)
+    );
 
-    const availableUsers = await db.select().from(crmUsers).where(and(...conditions));
-    if (availableUsers.length === 0) {
-      if (branchId || departmentId) {
-        return this.getNextAssignableCrmUser(tenantId);
-      }
-      return undefined;
-    }
+    const telecallerQuery = await pool.query(
+      `SELECT cu.id, cu.name, cu.branch_id FROM crm_users cu
+       JOIN system_roles sr ON cu.system_role_id = sr.id
+       WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
+         AND sr.code = 'TELECALLER'
+       ORDER BY cu.id`,
+      [tenantId]
+    );
+    const allTelecallers: CrmUser[] = telecallerQuery.rows as CrmUser[];
+
+    if (allTelecallers.length === 0) return undefined;
+
+    // Prefer logged-in Telecallers for the primary round-robin pool
+    const loggedInTelecallers = allTelecallers.filter(u => loggedInIds.has(u.id));
+    const candidatePool = loggedInTelecallers.length > 0 ? loggedInTelecallers : allTelecallers;
 
     const lastAssigned = await db.select({ assignedCrmUserId: leads.assignedCrmUserId })
       .from(leads)
@@ -799,11 +818,11 @@ export class DatabaseStorage implements IStorage {
       .limit(1);
 
     const lastId = lastAssigned[0]?.assignedCrmUserId;
-    if (!lastId) return availableUsers[0];
+    if (!lastId) return candidatePool[0];
 
-    const lastIndex = availableUsers.findIndex(u => u.id === lastId);
-    const nextIndex = (lastIndex + 1) % availableUsers.length;
-    return availableUsers[nextIndex];
+    const lastIndex = candidatePool.findIndex(u => u.id === lastId);
+    const nextIndex = (lastIndex + 1) % candidatePool.length;
+    return candidatePool[nextIndex];
   }
 
   // --- Generic Master CRUD ---
