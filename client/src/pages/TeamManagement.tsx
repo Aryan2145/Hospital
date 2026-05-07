@@ -16,7 +16,7 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import type { CrmUser, MasterRecord } from "@shared/schema";
 import {
   UserPlus, Search, ChevronDown, ChevronRight, Mail, Phone, Shield, Eye, EyeOff,
-  Users, UserCog, Network, List, Pencil, Trash2, KeyRound, Building2, RotateCcw, LockOpen, Lock
+  Users, UserCog, Network, List, Pencil, Trash2, KeyRound, Building2, RotateCcw, LockOpen, Lock, Megaphone
 } from "lucide-react";
 
 type ViewMode = "list" | "tree";
@@ -308,6 +308,11 @@ export default function TeamManagement() {
     return branch ? branch.name : null;
   };
 
+  const marketingRole = roles.find((r: any) => r.code === "MARKETING");
+  const marketingUsers = marketingRole
+    ? users.filter(u => u.systemRoleId === marketingRole.id && u.isActive !== false)
+    : [];
+
   const filteredUsers = users.filter(u => {
     const matchesSearch =
       u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -341,7 +346,7 @@ export default function TeamManagement() {
             <Button onClick={openCreate} data-testid="button-add-user"><UserPlus className="w-4 h-4 mr-2" />Add User</Button>
           </div>
 
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
             <Card>
               <CardContent className="pt-4 pb-3">
                 <div className="flex items-center gap-3">
@@ -371,6 +376,18 @@ export default function TeamManagement() {
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30"><Network className="w-5 h-5 text-amber-600" /></div>
                   <div><p className="text-2xl font-bold">{users.filter(u => users.some(r => r.reportingTo === u.id)).length}</p><p className="text-xs text-muted-foreground">Managers</p></div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card
+              className={`cursor-pointer transition-all ${roleFilter === "MARKETING" ? "ring-2 ring-orange-400 bg-orange-50 dark:bg-orange-900/20" : "hover:bg-orange-50/50 dark:hover:bg-orange-900/10"}`}
+              onClick={() => setRoleFilter(roleFilter === "MARKETING" ? "all" : "MARKETING")}
+              data-testid="card-marketing-filter"
+            >
+              <CardContent className="pt-4 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30"><Megaphone className="w-5 h-5 text-orange-600" /></div>
+                  <div><p className="text-2xl font-bold" data-testid="text-marketing-users">{marketingUsers.length}</p><p className="text-xs text-muted-foreground">Marketing</p></div>
                 </div>
               </CardContent>
             </Card>
@@ -430,6 +447,30 @@ export default function TeamManagement() {
               >
                 {showInactive ? "Hide inactive users" : "Show inactive users"}
               </button>
+            </div>
+          )}
+
+          {roleFilter === "MARKETING" && (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800" data-testid="banner-marketing-team">
+              <Megaphone className="w-5 h-5 text-orange-600 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-orange-800 dark:text-orange-300">Marketing Team</p>
+                <p className="text-xs text-orange-700/80 dark:text-orange-400/80">
+                  {filteredUsers.length === 0 ? "No marketing staff yet." : `${filteredUsers.length} marketing staff member${filteredUsers.length === 1 ? "" : "s"}.`} Marketing users manage campaigns, events, and lead generation.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditingUser(null);
+                  setFormData({ ...EMPTY_FORM, systemRoleId: marketingRole?.id ?? null });
+                  setDialogOpen(true);
+                }}
+                className="bg-orange-600 hover:bg-orange-700 text-white text-xs"
+                data-testid="button-add-marketing-user"
+              >
+                <UserPlus className="w-3.5 h-3.5 mr-1" />Add Marketing User
+              </Button>
             </div>
           )}
 
