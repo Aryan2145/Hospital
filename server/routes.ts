@@ -5049,6 +5049,7 @@ export async function registerRoutes(
   // --- CRM Users list (for assignment dropdown) ---
   app.get("/api/crm-users/active", isAuthenticated, async (req, res) => {
     const tid = await getDefaultTenantId(req);
+    const roleCodeFilter = req.query.roleCode as string | undefined;
     const users = await storage.getCrmUsers(tid);
     const active = users.filter(u => u.isActive && u.code !== "SUPERADMIN");
     // Enrich with role info via a single JOIN query
@@ -5063,7 +5064,8 @@ export async function registerRoutes(
     for (const row of enriched.rows as RoleRow[]) {
       roleMap[row.id] = { roleName: row.roleName ?? null, roleCode: row.roleCode ?? null };
     }
-    res.json(active.map(u => ({ ...u, ...(roleMap[u.id] ?? { roleName: null, roleCode: null }) })));
+    const result = active.map(u => ({ ...u, ...(roleMap[u.id] ?? { roleName: null, roleCode: null }) }));
+    res.json(roleCodeFilter ? result.filter((u: any) => u.roleCode === roleCodeFilter) : result);
   });
 
   // Helper: get the default tenant ID
@@ -5526,6 +5528,35 @@ export async function registerRoutes(
         body.phone = normalizedPhone || body.phone;
       }
 
+      if (tableName === "doctors" && body.crmUserId) {
+        const [linkedUser] = await db.select({ id: crmUsers.id, name: crmUsers.name, phone: crmUsers.phone, email: crmUsers.email, systemRoleId: crmUsers.systemRoleId, isActive: crmUsers.isActive })
+          .from(crmUsers).where(and(eq(crmUsers.id, Number(body.crmUserId)), eq(crmUsers.tenantId, tid)));
+        if (!linkedUser) return res.status(400).json({ message: "Selected CRM user does not exist." });
+        if (!linkedUser.isActive) return res.status(400).json({ message: "Selected CRM user is not active." });
+        if (linkedUser.systemRoleId) {
+          const [role] = await db.select({ code: systemRoles.code }).from(systemRoles).where(eq(systemRoles.id, linkedUser.systemRoleId));
+          if (!role || role.code !== "DOCTOR") return res.status(400).json({ message: "Selected CRM user does not have the Doctor role. Please select a user with the Doctor role." });
+        } else {
+          return res.status(400).json({ message: "Selected CRM user has no assigned role. Please assign the Doctor role first." });
+        }
+        if (!body.name && linkedUser.name) body.name = linkedUser.name;
+        if (!body.phone && linkedUser.phone) body.phone = linkedUser.phone;
+        if (!body.email && linkedUser.email) body.email = linkedUser.email;
+      }
+
+      if (tableName === "opdTimings" && body.doctorId && body.dayOfWeek && body.startTime && body.endTime) {
+        const tMin = (t: string) => { const p = t.split(":"); return parseInt(p[0]) * 60 + parseInt(p[1]); };
+        const ns = tMin(body.startTime), ne = tMin(body.endTime);
+        const existing = await db.select().from(opdTimings)
+          .where(and(eq(opdTimings.doctorId, Number(body.doctorId)), eq(opdTimings.dayOfWeek, body.dayOfWeek), eq(opdTimings.tenantId, tid), eq(opdTimings.status, "Active")));
+        const conflict = existing.find(t => { const es = tMin(t.startTime!), ee = tMin(t.endTime!); return ns < ee && ne > es; });
+        if (conflict) {
+          const branchRec = conflict.branchId ? await db.select({ name: branches.name }).from(branches).where(eq(branches.id, conflict.branchId)) : [];
+          const where = branchRec[0]?.name || "another location";
+          return res.status(400).json({ message: `Doctor is already scheduled on ${body.dayOfWeek} from ${conflict.startTime?.slice(0,5)} to ${conflict.endTime?.slice(0,5)} at ${where}. Please choose a non-overlapping time window.` });
+        }
+      }
+
       const autoApproveTable = tableName === "referrers";
       const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid, approvalStatus: autoApproveTable ? "Approved" : "Pending" });
       res.status(201).json(record);
@@ -5546,6 +5577,24 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["leaveDate", "leaveEndDate", "holidayDate", "startDate", "endDate"]);
+
+      if (tableName === "opdTimings" && body.doctorId && body.dayOfWeek && body.startTime && body.endTime) {
+        const tMin = (t: string) => { const p = t.split(":"); return parseInt(p[0]) * 60 + parseInt(p[1]); };
+        const ns = tMin(body.startTime), ne = tMin(body.endTime);
+        const existing = await db.select().from(opdTimings)
+          .where(and(eq(opdTimings.doctorId, Number(body.doctorId)), eq(opdTimings.dayOfWeek, body.dayOfWeek), eq(opdTimings.tenantId, tid), eq(opdTimings.status, "Active")));
+        const conflict = existing.find(t => {
+          if (t.id === Number(id)) return false;
+          const es = tMin(t.startTime!), ee = tMin(t.endTime!);
+          return ns < ee && ne > es;
+        });
+        if (conflict) {
+          const branchRec = conflict.branchId ? await db.select({ name: branches.name }).from(branches).where(eq(branches.id, conflict.branchId)) : [];
+          const where = branchRec[0]?.name || "another location";
+          return res.status(400).json({ message: `Doctor is already scheduled on ${body.dayOfWeek} from ${conflict.startTime?.slice(0,5)} to ${conflict.endTime?.slice(0,5)} at ${where}. Please choose a non-overlapping time window.` });
+        }
+      }
+
       const record = await storage.updateMasterRecord(tableName, Number(id), body, tid);
       res.json(record);
     } catch (err: any) {
@@ -6491,6 +6540,44 @@ export async function registerRoutes(
   // =============================================
   // DOCTOR AVAILABILITY / LEAVE CALENDAR
   // =============================================
+  app.get("/api/opd-schedule", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const rows = await pool.query(`
+        SELECT ot.id, ot.doctor_id, ot.branch_id, ot.day_of_week, ot.start_time, ot.end_time,
+               ot.max_patients, ot.slot_duration, ot.status,
+               d.name as doctor_name, b.name as branch_name,
+               td.name as department_name
+        FROM opd_timings ot
+        JOIN doctors d ON ot.doctor_id = d.id
+        LEFT JOIN branches b ON ot.branch_id = b.id
+        LEFT JOIN treatment_departments td ON d.treatment_department_id = td.id
+        WHERE ot.tenant_id = $1 AND ot.status = 'Active' AND d.status = 'Active'
+        ORDER BY
+          CASE ot.day_of_week
+            WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
+            WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6
+            WHEN 'Sunday' THEN 7 ELSE 8 END,
+          d.name, ot.start_time
+      `, [tid]);
+      res.json(rows.rows.map((r: any) => ({
+        id: r.id,
+        doctorId: r.doctor_id,
+        doctorName: r.doctor_name || "Unknown Doctor",
+        branchId: r.branch_id,
+        branchName: r.branch_name || "Not Assigned",
+        departmentName: r.department_name || "",
+        dayOfWeek: r.day_of_week,
+        startTime: r.start_time ? String(r.start_time).slice(0, 5) : "",
+        endTime: r.end_time ? String(r.end_time).slice(0, 5) : "",
+        maxPatients: r.max_patients || 0,
+        slotDuration: r.slot_duration || 15,
+      })));
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.get("/api/doctor-leaves", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);

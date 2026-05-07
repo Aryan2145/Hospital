@@ -137,6 +137,7 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
   ],
   // CATEGORY 4: DOCTORS MASTERS
   doctors: [
+    { key: "crmUserId", label: "Linked CRM User (Doctor role)", type: "ref", refTable: "docCrmUsers" },
     { key: "specialization", label: "Specialization", type: "text" },
     { key: "qualification", label: "Qualification", type: "text" },
     { key: "branchId", label: "Branch", type: "ref", refTable: "branches" },
@@ -270,10 +271,15 @@ export default function MasterData() {
       const result: Record<string, MasterRecord[]> = {};
       for (const table of refTables) {
         try {
-          const res = await fetch(`/api/masters/${table}`, { credentials: "include" });
+          const url = table === "docCrmUsers"
+            ? "/api/crm-users/active?roleCode=DOCTOR"
+            : `/api/masters/${table}`;
+          const res = await fetch(url, { credentials: "include" });
           if (res.ok) {
             const records = await res.json();
-            result[table] = records.filter((r: MasterRecord) => r.approvalStatus === "Approved" || !r.approvalStatus);
+            result[table] = table === "docCrmUsers"
+              ? records
+              : records.filter((r: MasterRecord) => r.approvalStatus === "Approved" || !r.approvalStatus);
           }
         } catch {}
       }
@@ -1351,9 +1357,20 @@ export default function MasterData() {
                       ) : field.type === "ref" && field.refTable ? (
                         <SearchableSelect
                           value={formData[field.key] ? String(formData[field.key]) : ""}
-                          onValueChange={(val) => setFormData({ ...formData, [field.key]: parseInt(val) || 0 })}
+                          onValueChange={(val) => {
+                            const updates: Record<string, any> = { [field.key]: parseInt(val) || 0 };
+                            if (field.key === "crmUserId" && selectedTable === "doctors") {
+                              const chosen = (refDataMap[field.refTable!] || []).find((r: any) => String(r.id) === val);
+                              if (chosen) {
+                                if (chosen.name) updates.name = chosen.name;
+                                if (chosen.phone) updates.phone = chosen.phone;
+                                if ((chosen as any).email) updates.email = (chosen as any).email;
+                              }
+                            }
+                            setFormData({ ...formData, ...updates });
+                          }}
                           options={(refDataMap[field.refTable] || [])
-                            .filter((r: any) => r.status === "Active")
+                            .filter((r: any) => field.refTable === "docCrmUsers" || r.status === "Active")
                             .map((r: any) => ({ value: String(r.id), label: r.name }))}
                           placeholder={`Select ${field.label}`}
                           data-testid={`select-${field.key}`}

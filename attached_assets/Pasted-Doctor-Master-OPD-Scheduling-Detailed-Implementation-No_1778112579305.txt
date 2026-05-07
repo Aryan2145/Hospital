@@ -1,0 +1,236 @@
+Doctor Master & OPD Scheduling — Detailed Implementation Note
+1. Core Principle
+
+Doctor should be treated as a CRM User, not as a separately created master record.
+
+Every doctor must first exist as a user in the system with the role Doctor.
+The Doctor Master should only act as an extension of the CRM User profile, where doctor-specific scheduling and availability rules are maintained.
+
+This will avoid duplicate doctor creation and ensure one single doctor identity across:
+
+Branch assignment
+OPD scheduling
+Consultation
+Surgery planning
+Post-care involvement
+Reporting
+
+2. Doctor Structure
+Required Change
+
+Remove the current logic where doctors can be created separately as independent master records.
+
+New Logic
+
+Doctor = CRM User with Doctor Role
+
+Doctor Master = linked configuration table connected to CRM User ID
+
+The linked Doctor Master should contain:
+
+Doctor profile reference
+Departments / specialities
+OPD schedule
+Time slots
+Location availability
+Consultation duration
+Slot capacity
+Surgery availability logic, if required
+Leave / unavailability reference
+Scheduling rules
+
+3. Multi-Location Doctor Mapping
+
+A doctor may visit multiple locations, but can physically be present at only one location at one specific time.
+
+The system should support doctor assignment across:
+
+Branches
+Hubs
+Spokes
+Any combination of locations
+
+Required Functionality
+
+In Doctor Master / Doctor Scheduling configuration, admin should be able to map one doctor to multiple locations using multi-select.
+
+Example:
+
+Dr. A can be mapped to:
+
+Viroc Main Branch
+Satellite OPD Hub
+Spoke Clinic 1
+Spoke Clinic 2
+
+This mapping only defines where the doctor is allowed to be scheduled.
+Actual availability will be defined separately in the OPD schedule.
+
+4. OPD Schedule Definition
+
+The OPD schedule should allow the admin / allocator to define:
+
+Doctor
+Date / recurring day
+Location
+Start time
+End time
+Slot duration
+Number of available slots
+Consultation type, if needed
+Active / inactive status
+
+Example
+
+Dr. A
+Monday
+10:00 AM to 1:00 PM
+Main Branch
+12 slots
+15 minutes per slot
+
+Dr. A
+Monday
+4:00 PM to 7:00 PM
+Spoke Clinic 1
+12 slots
+15 minutes per slot
+
+This should be allowed because the timings do not overlap.
+
+5. Conflict Handling
+
+The system must prevent double allocation of the same doctor at overlapping time slots.
+
+Validation Required
+
+The same doctor cannot be scheduled at two different locations during the same time window.
+
+Example:
+
+Dr. A
+Monday
+10:00 AM to 1:00 PM
+Main Branch
+
+Dr. A
+Monday
+11:00 AM to 2:00 PM
+Spoke Clinic 1
+
+This should be blocked.
+
+Error Message
+
+“Doctor is already scheduled at another location during this time. Please select a different time slot or location.”
+
+6. OPD Slot Booking Logic
+
+Appointment booking should be based on the doctor’s actual schedule.
+
+When booking an OPD appointment, the system should show available slots based on:
+
+Selected branch / hub / spoke
+Selected doctor
+Selected date
+Doctor’s OPD schedule
+Available slot capacity
+Already booked appointments
+Leave / unavailable status
+
+The system should not allow:
+
+Booking outside doctor’s scheduled OPD time
+Booking doctor at a location where the doctor is not scheduled
+Overbooking beyond slot capacity
+Booking when doctor leave / unavailability is marked
+Booking across conflicting doctor schedules
+
+7. Doctor Schedule View for Allocator
+
+The allocator should have a clear doctor schedule screen to see:
+
+Which doctor is available
+On which date
+At which branch / hub / spoke
+During which time slot
+How many slots are available
+How many slots are already booked
+How many slots are remaining
+
+Suggested View
+
+Date-wise view
+Doctor-wise view
+Branch-wise view
+Calendar view
+List view with filters
+
+Filters required:
+
+Doctor
+Branch / Hub / Spoke
+Date range
+Department
+Availability status
+
+8. Surgery Role Linkage
+
+Doctor scheduling should also support surgery planning properly.
+
+A doctor who is scheduled for OPD at one location should not be simultaneously allocated for surgery at another location during the same time.
+
+Required Validation
+
+Before confirming surgery schedule, the system should check:
+
+Doctor OPD schedule
+Existing surgery schedule
+Leave / unavailable status
+Branch/location availability
+Time conflict
+
+If conflict exists, system should alert:
+
+“Doctor has OPD / another surgery scheduled during this time. Please review doctor availability before confirming.”
+
+9. Doctor Leave
+
+Doctor leave should not be part of Doctor Master.
+
+Doctor leave should be treated as an admin-level transaction.
+
+This requires separate review with Palakji before redesign.
+
+Proposed Direction
+
+Doctor Leave / Unavailability should be managed as a transaction containing:
+
+Doctor
+Date
+Full day / partial day
+Start time
+End time
+Reason
+Applicable location, if needed
+Approved by
+Status
+
+Once leave is approved, it should automatically block OPD and surgery booking for that doctor during that period.
+
+10. OPD UI Revisit
+
+Current OPD slot UI should be revisited before finalization.
+
+Aryan has a different UI thought process, so the OPD scheduling screen should not be finalized without review.
+
+UI should support:
+
+Easy weekly schedule creation
+Multi-location visibility
+Drag / copy schedule if possible
+Slot count visibility
+Conflict alerts
+Doctor-wise calendar
+Branch-wise availability
+Quick edit for slot changes
