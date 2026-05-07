@@ -14312,15 +14312,15 @@ async function ensureSuperAdmin() {
       console.error("[seed] Failed to unlock Neha Sharma:", e);
     }
 
-    // --- Unlock Aryan (user 38) in Viroc tenant — locked due to failed attempts ---
+    // --- Remove Aryan (user 38) from Viroc tenant — duplicate phone, not needed there ---
     try {
       await pool.query(
-        `UPDATE crm_users SET failed_login_attempts = 0, locked_until = NULL WHERE id = 38 AND tenant_id = 4`,
+        `UPDATE crm_users SET is_active = FALSE, status = 'Inactive', failed_login_attempts = 0, locked_until = NULL WHERE id = 38 AND tenant_id = 4`,
         []
       );
-      console.log("[seed] Aryan (id=38, viroc SYS_ADMIN) unlocked — failed_login_attempts reset");
+      console.log("[seed] Aryan (id=38, viroc) deactivated and removed from Viroc tenant");
     } catch (e) {
-      console.error("[seed] Failed to unlock Aryan (id=38):", e);
+      console.error("[seed] Failed to deactivate Aryan (id=38):", e);
     }
 
     // --- Seed Nirman (tenant 8) first admin user ---
