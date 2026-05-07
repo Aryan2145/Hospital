@@ -5700,7 +5700,7 @@ export async function registerRoutes(
       for (const { rowNum, isUpdate, recordId, data } of validRows) {
         try {
           if (isUpdate && recordId) {
-            await storage.updateMasterRecord(tableName, recordId, { ...data, tenantId });
+            await storage.updateMasterRecord(tableName, recordId, { ...data }, tenantId);
           } else {
             await storage.createMasterRecord(tableName, {
               tenantId,
