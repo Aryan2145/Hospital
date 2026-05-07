@@ -51,23 +51,44 @@ export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   app.use(getSession());
 
+  // Public: list active hospitals for the login page hospital selector.
+  // No auth required — only exposes name + id, never PII.
+  app.get("/api/tenants/list", async (_req, res) => {
+    try {
+      const rows = await db.execute(
+        sql`SELECT id, name, display_name AS "displayName" FROM tenants WHERE subscription_status = 'Active' ORDER BY name ASC`
+      );
+      res.json(rows.rows ?? rows);
+    } catch (err: any) {
+      console.error("[tenants/list] error:", err?.message || err);
+      res.status(500).json({ message: "Failed to load hospitals" });
+    }
+  });
+
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const { mobile, password } = req.body;
+      const { mobile, password, tenantId: bodyTenantId } = req.body;
       if (!mobile || !password) {
         return res.status(400).json({ message: "Mobile number and password are required" });
       }
 
       const normalizedMobile = mobile.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
 
-      // Resolve tenant from subdomain FIRST — this is the primary isolation mechanism.
-      // viroc.rgbindia.com must only log in viroc (tenant 4) users, never rgb-demo users.
+      // Tenant resolution priority:
+      // 1. Explicit tenantId sent by the login form (hospital selector) — most reliable
+      // 2. Subdomain match (viroc.rgbindia.com → tenant 4) — for future per-hospital subdomains
+      // 3. null → search all tenants (single-URL fallback, works only when phone is globally unique)
       const subdomainTenant = await resolveTenantFromRequest(req);
+      const resolvedTenantId: number | null = bodyTenantId
+        ? parseInt(String(bodyTenantId), 10)
+        : (subdomainTenant?.id ?? null);
+
+      console.log(`[login] tenantId resolution: body=${bodyTenantId ?? "none"}, subdomain=${subdomainTenant?.id ?? "none"} → resolved=${resolvedTenantId ?? "any"}`);
 
       let allMatches = await db.select().from(crmUsers).where(
         and(
           eq(crmUsers.phone, normalizedMobile),
-          ...(subdomainTenant ? [eq(crmUsers.tenantId, subdomainTenant.id)] : [])
+          ...(resolvedTenantId ? [eq(crmUsers.tenantId, resolvedTenantId)] : [])
         )
       );
 
@@ -75,7 +96,7 @@ export async function setupAuth(app: Express) {
         allMatches = await db.select().from(crmUsers).where(
           and(
             eq(crmUsers.phone, `+91${normalizedMobile}`),
-            ...(subdomainTenant ? [eq(crmUsers.tenantId, subdomainTenant.id)] : [])
+            ...(resolvedTenantId ? [eq(crmUsers.tenantId, resolvedTenantId)] : [])
           )
         );
       }

@@ -12,7 +12,7 @@ The platform is built with a modern web stack:
 - **Backend:** Express.js and Node.js.
 - **Database:** PostgreSQL, accessed via Drizzle ORM.
 - **Authentication:** Replit Auth (OpenID Connect).
-- **Multi-Tenancy:** Implemented with `tenantId` for strict data isolation, including tenant-specific SMTP configurations and master data provisioning.
+- **Multi-Tenancy:** Implemented with `tenantId` for strict data isolation, including tenant-specific SMTP configurations and master data provisioning. Single URL (`hcrm.rgbindia.com`) — tenant is selected via a **Hospital dropdown on the login page**, not per-subdomain. The backend resolves tenant from (1) explicit `tenantId` in the login body (hospital selector), (2) subdomain match as a future fallback for per-hospital subdomains. Public endpoint `GET /api/tenants/list` returns active hospital names for the login dropdown (no auth required).
 
 **Key Features & Design Patterns:**
 - **Patient Journey Management:** Distinct workflows for Leads (pre-consultation) and Episodes (post-consultation treatment). Includes a unified 12-stage funnel display.

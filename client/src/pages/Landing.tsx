@@ -1,10 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Activity, ShieldCheck, HeartPulse, Stethoscope, Phone, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Activity, ShieldCheck, HeartPulse, Stethoscope, Phone, Lock, Eye, EyeOff, Loader2, Building2, ChevronDown } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+
+interface TenantOption {
+  id: number;
+  name: string;
+  displayName: string | null;
+}
 
 export default function Landing() {
   const [mobile, setMobile] = useState("");
@@ -12,12 +18,31 @@ export default function Landing() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [tenantId, setTenantId] = useState<number | "">("");
+  const [hospitals, setHospitals] = useState<TenantOption[]>([]);
+  const [hospitalsLoading, setHospitalsLoading] = useState(true);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    fetch("/api/tenants/list")
+      .then(r => r.json())
+      .then((data: unknown) => {
+        const list = Array.isArray(data) ? (data as TenantOption[]) : [];
+        setHospitals(list);
+        if (list.length === 1) setTenantId(list[0].id);
+      })
+      .catch(() => {})
+      .finally(() => setHospitalsLoading(false));
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
+    if (!tenantId) {
+      setError("Please select your hospital");
+      return;
+    }
     if (!mobile.trim()) {
       setError("Please enter your mobile number");
       return;
@@ -33,7 +58,7 @@ export default function Landing() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ mobile: mobile.trim(), password }),
+        body: JSON.stringify({ mobile: mobile.trim(), password, tenantId }),
       });
 
       const data = await res.json();
@@ -110,6 +135,32 @@ export default function Landing() {
                 {error}
               </div>
             )}
+
+            {/* Hospital selector */}
+            <div className="space-y-2">
+              <Label htmlFor="hospital" className="text-sm font-medium text-gray-700">Hospital</Label>
+              <div className="relative">
+                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <select
+                  id="hospital"
+                  value={tenantId}
+                  onChange={e => setTenantId(e.target.value ? Number(e.target.value) : "")}
+                  className="w-full h-12 pl-10 pr-10 border border-input rounded-md bg-white text-sm text-gray-900 appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary disabled:opacity-50"
+                  disabled={hospitalsLoading}
+                  data-testid="select-hospital"
+                >
+                  <option value="">
+                    {hospitalsLoading ? "Loading hospitals…" : "Select your hospital"}
+                  </option>
+                  {hospitals.map(h => (
+                    <option key={h.id} value={h.id}>
+                      {h.displayName || h.tenantName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="mobile" className="text-sm font-medium text-gray-700">Mobile Number</Label>
