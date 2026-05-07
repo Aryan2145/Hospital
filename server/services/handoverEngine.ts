@@ -24,6 +24,7 @@ const STAGE_TEAM_MAP: Record<string, string> = {
   "Surgery Done":                  "Doctor",
   "In Treatment":                  "Medical",
   "Discharge / Billing Clearance": "Billing",
+  "Discharge":                     "Billing",   // backward-compat alias
   "Post Care":                     "Post Care Coordinator",
   "Follow Up":                     "Post Care Coordinator",
   "Referral Ready":                "Referral Coordinator",
@@ -200,6 +201,11 @@ async function notifyManagersAdmins(
 
 // ── Core user resolution ───────────────────────────────────────────────────────
 
+// Stages that use the episode's assigned doctor (not surgery doctor)
+const DOCTOR_STAGE_TRIGGERS = new Set(["Checked In", "Consultation Done"]);
+// Stages that use surgery doctor
+const SURGERY_DOCTOR_TRIGGERS = new Set(["Surgery Done"]);
+
 async function findTeamUser(
   tenantId: number,
   team: string,
@@ -209,13 +215,23 @@ async function findTeamUser(
     doctorId?: number | null;
     surgeryDoctorId?: number | null;
     preopAssignedUserId?: number | null;
+    triggerEvent?: string;
   } = {}
 ): Promise<{ userId: number | null; method: string }> {
   const loggedInIds = await getLoggedInUserIds(tenantId);
 
   // ── Doctor stages: resolve specific doctor CRM account ──────────────────────
   if (team === "Doctor") {
-    const docDbId = options.surgeryDoctorId || options.doctorId;
+    // Pick the right doctor ID based on trigger event
+    let docDbId: number | null = null;
+    if (options.triggerEvent && SURGERY_DOCTOR_TRIGGERS.has(options.triggerEvent)) {
+      docDbId = options.surgeryDoctorId ?? null;
+    } else if (options.triggerEvent && DOCTOR_STAGE_TRIGGERS.has(options.triggerEvent)) {
+      docDbId = options.doctorId ?? null;
+    } else {
+      // Generic fallback: prefer doctorId, then surgeryDoctorId
+      docDbId = options.doctorId || options.surgeryDoctorId || null;
+    }
     if (docDbId) {
       const docRow = await pool.query(
         `SELECT crm_user_id FROM doctors WHERE id = $1 AND tenant_id = $2`,
@@ -329,6 +345,7 @@ export async function processAutoHandover(
     doctorId: context?.doctorId,
     surgeryDoctorId: context?.surgeryDoctorId,
     preopAssignedUserId: context?.preopAssignedUserId,
+    triggerEvent,
   });
 
   // Always write a handover log entry

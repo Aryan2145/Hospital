@@ -2320,7 +2320,7 @@ export async function registerRoutes(
         metadata: { fromTeam: null, toTeam: "Telecalling", fromUserId: null, toUserId: intakeUserId, triggerEvent: "Lead Created", assignmentMethod: intakeTelecallerFound ? "telecaller-round-robin" : "unassigned-no-telecaller" },
       } as any).catch(() => {});
       if (!intakeTelecallerFound) {
-        // Notify managers/admins that no telecaller was available at intake
+        // Notify managers/admins (in-app + email) that no telecaller was available at intake
         (async () => {
           try {
             const mgrs = await pool.query(
@@ -2332,6 +2332,7 @@ export async function registerRoutes(
             );
             const title = `Unassigned Lead Alert — Lead Created`;
             const body = `New lead "${(lead as any).name}" was created but no active Telecaller was available for intake assignment. Manual assignment required.`;
+            // In-app notifications
             for (const mgr of mgrs.rows) {
               await pool.query(
                 `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
@@ -2339,6 +2340,34 @@ export async function registerRoutes(
                 [tid, mgr.id, title, body, lead.id, `/leads/${lead.id}`]
               );
             }
+            // SMTP email to each manager/admin
+            try {
+              const smtpRows = await pool.query(
+                `SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = $1
+                 AND setting_key IN ('smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from_email')`,
+                [tid]
+              );
+              const cfg: Record<string, string> = {};
+              smtpRows.rows.forEach((r: any) => { cfg[r.setting_key] = r.setting_value || ""; });
+              const host = cfg.smtp_host || process.env.SMTP_HOST;
+              const port = Number(cfg.smtp_port || process.env.SMTP_PORT || 587);
+              const user = cfg.smtp_user || process.env.SMTP_USER;
+              const pass = cfg.smtp_pass || process.env.SMTP_PASS;
+              const from = cfg.smtp_from_email || process.env.SMTP_FROM_EMAIL;
+              if (host && user && pass && from) {
+                const nodemailer = await import("nodemailer");
+                const transporter = nodemailer.default.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
+                for (const mgr of mgrs.rows) {
+                  if (!mgr.email) continue;
+                  await transporter.sendMail({
+                    from,
+                    to: mgr.email,
+                    subject: title,
+                    text: body + `\n\nView lead: /leads/${lead.id}`,
+                  });
+                }
+              }
+            } catch {}
           } catch {}
         })();
       }
