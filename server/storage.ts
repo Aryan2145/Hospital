@@ -33,7 +33,7 @@ import {
   type MasterRecord,
   MASTER_TABLE_REGISTRY,
 } from "@shared/schema";
-import { eq, and, desc, gte, lte, sql, ne, count, notInArray } from "drizzle-orm";
+import { eq, and, asc, desc, gte, lte, sql, ne, count, notInArray } from "drizzle-orm";
 
 export interface IStorage {
   // Tenant
@@ -414,11 +414,11 @@ export class DatabaseStorage implements IStorage {
 
     const baseWhere = eq(crmUsers.tenantId, tenantId);
     if (sysAdminRoleIds.length === 0) {
-      return await db.select().from(crmUsers).where(baseWhere);
+      return await db.select().from(crmUsers).where(baseWhere).orderBy(asc(crmUsers.name));
     }
     return await db.select().from(crmUsers).where(
       and(baseWhere, notInArray(crmUsers.systemRoleId, sysAdminRoleIds))
-    );
+    ).orderBy(asc(crmUsers.name));
   }
 
   async getCrmUser(id: number, tenantId: number): Promise<CrmUser | undefined> {
@@ -600,7 +600,8 @@ export class DatabaseStorage implements IStorage {
 
   async getDoctors(tenantId: number): Promise<any[]> {
     return await db.select().from(doctors)
-      .where(and(eq(doctors.tenantId, tenantId), eq(doctors.status, "Active")));
+      .where(and(eq(doctors.tenantId, tenantId), eq(doctors.status, "Active")))
+      .orderBy(asc(doctors.displayOrder), asc(doctors.name));
   }
 
   // --- Episodes ---

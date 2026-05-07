@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { KanbanBoard } from "@/components/kanban/KanbanBoard";
-import { useLeads, useCreateLead } from "@/hooks/use-leads";
+import { useLeads, useCreateLead, useMasterData } from "@/hooks/use-leads";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -781,17 +781,6 @@ function LeadsListView({ leads }: { leads: any[] }) {
       </Table>
     </div>
   );
-}
-
-function useMasterData(tableName: string) {
-  return useQuery<any[]>({
-    queryKey: ["/api/masters", tableName],
-    queryFn: async () => {
-      const res = await fetch(`/api/masters/${tableName}`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
 }
 
 const CONTACT_RELATIONSHIP_OPTIONS = ["Self","Spouse","Parent","Child","Sibling","Guardian","Friend","Colleague","Caregiver","Power of Attorney","Other"];

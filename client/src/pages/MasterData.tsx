@@ -648,7 +648,7 @@ export default function MasterData() {
         if (dayA !== dayB) return dayA - dayB;
         return (a.startTime as string || "").localeCompare(b.startTime as string || "");
       })
-    : records;
+    : [...records].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || a.id - b.id);
 
   const filteredRecords = sortedRecords.filter((r) => {
     const term = searchTerm.toLowerCase();

@@ -275,6 +275,17 @@ export function useAppointments(filters?: Record<string, string>) {
   });
 }
 
+export function useMasterData(tableName: string) {
+  return useQuery<any[]>({
+    queryKey: ["/api/masters", tableName],
+    queryFn: async () => {
+      const res = await fetch(`/api/masters/${tableName}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+}
+
 export function useNextActionTypes() {
   return useQuery<any[]>({
     queryKey: ["/api/masters/nextActionTypes"],

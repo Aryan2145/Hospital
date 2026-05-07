@@ -49,6 +49,9 @@ export function SearchableSelect({
     const term = search.toLowerCase();
     return options.filter((o) => o.label.toLowerCase().includes(term));
   }, [options, search]);
+  // Options are rendered in the exact order provided by the caller.
+  // Callers must not sort options alphabetically — they should pass options
+  // in server-returned displayOrder so admin-configured ordering is preserved.
 
   const showSearch = options.length > 6;
 
