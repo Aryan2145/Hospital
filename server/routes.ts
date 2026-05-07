@@ -5240,6 +5240,8 @@ export async function registerRoutes(
     type: MasterColType;
     refTable?: string;  // snake_case DB table name for ref lookups
     options?: string[]; // allowed values for select fields
+    unique?: boolean;   // must be unique per tenant (checked both within file and against DB)
+    dbCol?: string;     // snake_case DB column name (defaults to snake_case of key)
   }
 
   const MASTER_COLUMN_DEFS: Record<string, MasterColDef[]> = {
@@ -5265,7 +5267,7 @@ export async function registerRoutes(
       { key: "phone", csvHeader: "phone", type: "phone" },
     ],
     callingLines: [
-      { key: "phoneNumber", csvHeader: "phoneNumber", type: "phone" },
+      { key: "phoneNumber", csvHeader: "phoneNumber", type: "phone", unique: true, dbCol: "phone_number" },
       { key: "provider", csvHeader: "provider", type: "text" },
     ],
     userLineAssignments: [
@@ -5274,8 +5276,8 @@ export async function registerRoutes(
       { key: "isPrimary", csvHeader: "isPrimary", type: "boolean" },
     ],
     crmUsers: [
-      { key: "email", csvHeader: "email", type: "email", required: true },
-      { key: "phone", csvHeader: "phone", type: "phone" },
+      { key: "email", csvHeader: "email", type: "email", required: true, unique: true, dbCol: "email" },
+      { key: "phone", csvHeader: "phone", type: "phone", unique: true, dbCol: "phone" },
       { key: "branchId", csvHeader: "branch", type: "ref", refTable: "branches" },
       { key: "departmentId", csvHeader: "department", type: "ref", refTable: "administrative_departments" },
       { key: "designationId", csvHeader: "designation", type: "ref", refTable: "designations" },
@@ -5442,7 +5444,7 @@ export async function registerRoutes(
     }
   });
 
-  // --- Template Download — same columns as export, blank id, sample values ---
+  // --- Template Download — same columns as export, header row only (no data rows) ---
   app.get("/api/masters/:tableName/template", isAuthenticated, async (req, res) => {
     const tableName = req.params.tableName as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
@@ -5450,15 +5452,8 @@ export async function registerRoutes(
     }
     const colDefs = MASTER_COLUMN_DEFS[tableName] || [];
     const allCols = ["id", "code", "name", "status", "displayOrder", ...colDefs.map(c => c.csvHeader)];
-    const sampleRow: Record<string, any> = { id: "", code: "SAMPLE_CODE", name: "Sample Name", status: "Active", displayOrder: 1 };
-    for (const col of colDefs) {
-      if (col.type === "ref") sampleRow[col.csvHeader] = `Enter ${col.csvHeader} name or code`;
-      else if (col.type === "boolean") sampleRow[col.csvHeader] = "true";
-      else if (col.type === "select" && col.options) sampleRow[col.csvHeader] = col.options[0];
-      else if (col.type === "date") sampleRow[col.csvHeader] = "DD/MM/YYYY";
-      else sampleRow[col.csvHeader] = "";
-    }
-    const csvData = stringify([sampleRow], { header: true, columns: allCols });
+    // Header-only template — structurally identical to export minus data rows
+    const csvData = stringify([], { header: true, columns: allCols });
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="${tableName}_template.csv"`);
     res.send(csvData);
@@ -5509,6 +5504,23 @@ export async function registerRoutes(
       const existingById = new Map(existingRecords.map(r => [r.id, r]));
       const importedCodes = new Set<string>(); // track codes used in this upload
 
+      // Build DB lookup maps for unique fields (e.g. email, phone)
+      const uniqueCols = colDefs.filter(c => c.unique);
+      const dbUniqueValues = new Map<string, Set<string>>(); // colKey -> Set of existing values (lowercased)
+      const pgTblName = MASTER_TABLE_REGISTRY[tableName];
+      for (const col of uniqueCols) {
+        const dbCol = col.dbCol || col.key.replace(/([A-Z])/g, "_$1").toLowerCase();
+        try {
+          const res2 = await pool.query(
+            `SELECT LOWER(${dbCol}::text) AS val FROM "${pgTblName}" WHERE tenant_id = $1 AND ${dbCol} IS NOT NULL`,
+            [tenantId]
+          );
+          dbUniqueValues.set(col.key, new Set(res2.rows.map((r: any) => r.val)));
+        } catch { dbUniqueValues.set(col.key, new Set()); }
+      }
+      const fileUniqueValues = new Map<string, Set<string>>(); // colKey -> Set of seen values in this file
+      for (const col of uniqueCols) fileUniqueValues.set(col.key, new Set());
+
       type ValidRow = { rowNum: number; isUpdate: boolean; recordId?: number; data: Record<string, any> };
       const validRows: ValidRow[] = [];
       const errors: { row: number; message: string }[] = [];
@@ -5540,7 +5552,7 @@ export async function registerRoutes(
         // Duplicate code check (insert only, also check within this file)
         if (!isUpdate && code) {
           if (existingByCode.has(code.toUpperCase())) {
-            rowErrors.push(`Duplicate code: ${code} (already exists)`);
+            rowErrors.push(`Duplicate code: ${code} (already exists in tenant)`);
           } else if (importedCodes.has(code.toUpperCase())) {
             rowErrors.push(`Duplicate code: ${code} (appears more than once in this file)`);
           }
@@ -5548,6 +5560,8 @@ export async function registerRoutes(
 
         // Extra field validation
         const extraData: Record<string, any> = {};
+        const pendingUniqueAdds: Array<{ colKey: string; value: string }> = [];
+
         for (const col of colDefs) {
           const csvVal = (row[col.csvHeader] || row[col.key] || "").trim();
 
@@ -5570,11 +5584,33 @@ export async function registerRoutes(
             if (isNaN(num)) rowErrors.push(`${col.csvHeader} must be a number, got "${csvVal}"`);
             else extraData[col.key] = num;
           } else if (col.type === "email") {
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(csvVal)) rowErrors.push(`${col.csvHeader}: invalid email format`);
-            else extraData[col.key] = csvVal;
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(csvVal)) {
+              rowErrors.push(`${col.csvHeader}: invalid email format`);
+            } else {
+              extraData[col.key] = csvVal;
+              if (col.unique) {
+                const lc = csvVal.toLowerCase();
+                const dbSet = dbUniqueValues.get(col.key);
+                const fileSet = fileUniqueValues.get(col.key);
+                if (dbSet?.has(lc)) rowErrors.push(`${col.csvHeader}: "${csvVal}" already exists in tenant`);
+                else if (fileSet?.has(lc)) rowErrors.push(`${col.csvHeader}: "${csvVal}" appears more than once in this file`);
+                else pendingUniqueAdds.push({ colKey: col.key, value: lc });
+              }
+            }
           } else if (col.type === "phone") {
-            if (!/^[0-9+\-\s().]{6,20}$/.test(csvVal)) rowErrors.push(`${col.csvHeader}: invalid phone format`);
-            else extraData[col.key] = csvVal;
+            if (!/^[0-9+\-\s().]{6,20}$/.test(csvVal)) {
+              rowErrors.push(`${col.csvHeader}: invalid phone format`);
+            } else {
+              extraData[col.key] = csvVal;
+              if (col.unique) {
+                const normalized = csvVal.replace(/[\s\-().+]/g, "");
+                const dbSet = dbUniqueValues.get(col.key);
+                const fileSet = fileUniqueValues.get(col.key);
+                if (dbSet?.has(normalized)) rowErrors.push(`${col.csvHeader}: "${csvVal}" already exists in tenant`);
+                else if (fileSet?.has(normalized)) rowErrors.push(`${col.csvHeader}: "${csvVal}" appears more than once in this file`);
+                else pendingUniqueAdds.push({ colKey: col.key, value: normalized });
+              }
+            }
           } else if (col.type === "date") {
             let dateVal: Date | null = null;
             if (/^\d{2}\/\d{2}\/\d{4}$/.test(csvVal)) {
@@ -5600,6 +5636,7 @@ export async function registerRoutes(
           errors.push({ row: rowNum, message: rowErrors.join("; ") });
         } else {
           if (!isUpdate && code) importedCodes.add(code.toUpperCase());
+          for (const { colKey, value } of pendingUniqueAdds) fileUniqueValues.get(colKey)?.add(value);
           validRows.push({ rowNum, isUpdate, recordId: recordId ?? undefined, data: { code, name, status, ...extraData } });
         }
       }
@@ -5626,7 +5663,7 @@ export async function registerRoutes(
       let failureCount = invalid;
       const saveErrors = [...errors];
 
-      for (const { isUpdate, recordId, data } of validRows) {
+      for (const { rowNum, isUpdate, recordId, data } of validRows) {
         try {
           if (isUpdate && recordId) {
             await storage.updateMasterRecord(tableName, recordId, { ...data, tenantId });
@@ -5642,7 +5679,7 @@ export async function registerRoutes(
           successCount++;
         } catch (err: any) {
           failureCount++;
-          saveErrors.push({ row: -1, message: err.message });
+          saveErrors.push({ row: rowNum, message: `Save failed: ${err.message}` });
         }
       }
 

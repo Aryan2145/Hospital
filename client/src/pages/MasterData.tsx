@@ -250,6 +250,8 @@ export default function MasterData() {
   const [formData, setFormData] = useState<Record<string, any>>({ code: "", name: "", status: "Active", displayOrder: 0 });
   const [showImportResult, setShowImportResult] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [lastImportErrors, setLastImportErrors] = useState<{ row: number; message: string }[]>([]);
+  const [lastImportTable, setLastImportTable] = useState<string>("");
   const [showImportPreview, setShowImportPreview] = useState(false);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
@@ -535,6 +537,14 @@ export default function MasterData() {
       setImportPreview(null);
       setImportResult(result);
       setShowImportResult(true);
+      // Persist errors so the user can download after closing the dialog
+      if (result.errors && result.errors.length > 0) {
+        setLastImportErrors(result.errors);
+        setLastImportTable(selectedTable);
+      } else {
+        setLastImportErrors([]);
+        setLastImportTable("");
+      }
     },
     onError: (err: any) => {
       toast({ title: "Import Failed", description: err.message, variant: "destructive" });
@@ -1066,6 +1076,30 @@ export default function MasterData() {
                   <span className="hidden md:inline">Logs</span>
                 </Button>
               </div>
+
+              {lastImportErrors.length > 0 && lastImportTable === selectedTable && (
+                <div className="flex items-center gap-3 mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-800 dark:bg-amber-950/30 dark:border-amber-900 dark:text-amber-300" data-testid="banner-last-import-errors">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                  <span>Last import had {lastImportErrors.length} row error(s).</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1 ml-auto border-amber-400 text-amber-800 hover:bg-amber-100 dark:text-amber-300 dark:border-amber-700"
+                    onClick={() => downloadErrorFile(lastImportErrors)}
+                    data-testid="button-download-last-import-errors"
+                  >
+                    <FileDown className="h-3 w-3" />
+                    Download Error File
+                  </Button>
+                  <button
+                    className="text-amber-500 hover:text-amber-700 text-xs"
+                    onClick={() => { setLastImportErrors([]); setLastImportTable(""); }}
+                    data-testid="button-dismiss-last-import-errors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
 
               {showImportLogs && (
                 <Card className="mb-4 p-4 overflow-x-auto">
