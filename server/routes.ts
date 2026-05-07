@@ -5588,7 +5588,10 @@ export async function registerRoutes(
           const csvVal = (row[col.csvHeader] || row[col.key] || "").trim();
 
           if (!csvVal) {
-            // For update rows: missing fields are silently skipped — existing DB value is kept
+            // Partial-update semantics: for update rows, blank extra fields are intentionally
+            // skipped so users can export → change a subset of columns → re-import without
+            // having to re-supply every FK column. The existing DB value is preserved.
+            // For insert rows, all required fields must be present.
             if (col.required && !isUpdate) rowErrors.push(`Required field missing: ${col.csvHeader}`);
             continue;
           }

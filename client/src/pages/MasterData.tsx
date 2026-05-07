@@ -251,7 +251,7 @@ export default function MasterData() {
   const [showImportResult, setShowImportResult] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [lastImportErrors, setLastImportErrors] = useState<{ row: number; message: string }[]>([]);
-  const [lastImportTable, setLastImportTable] = useState<string>("");
+  const [lastImportTable, setLastImportTable] = useState<string | null>(null);
   const [showImportPreview, setShowImportPreview] = useState(false);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
@@ -543,7 +543,7 @@ export default function MasterData() {
         setLastImportTable(selectedTable);
       } else {
         setLastImportErrors([]);
-        setLastImportTable("");
+        setLastImportTable(null);
       }
     },
     onError: (err: any) => {
@@ -1093,7 +1093,7 @@ export default function MasterData() {
                   </Button>
                   <button
                     className="text-amber-500 hover:text-amber-700 text-xs"
-                    onClick={() => { setLastImportErrors([]); setLastImportTable(""); }}
+                    onClick={() => { setLastImportErrors([]); setLastImportTable(null); }}
                     data-testid="button-dismiss-last-import-errors"
                   >
                     ✕
