@@ -45,6 +45,8 @@ import {
   Check,
   X,
   ShieldCheck,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { fmtDate, fmtDateTime } from "@/lib/date-utils";
 
@@ -400,6 +402,18 @@ export default function MasterData() {
       queryClient.invalidateQueries({ queryKey: ["/api/masters"] });
       queryClient.invalidateQueries({ queryKey: ["/api/masters/pending-approvals"] });
       toast({ title: "Record rejected" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const reorderMutation = useMutation({
+    mutationFn: async ({ id, direction }: { id: number; direction: "up" | "down" }) => {
+      await apiRequest("PATCH", `/api/masters/${selectedTable}/${id}/reorder`, { direction });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/masters", selectedTable] });
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -1146,6 +1160,32 @@ export default function MasterData() {
                                     </Button>
                                   </>
                                 )}
+                                {!hideStatusDisplayOrder && (
+                                  <>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-8 w-8 text-muted-foreground"
+                                      onClick={() => reorderMutation.mutate({ id: record.id, direction: "up" })}
+                                      disabled={reorderMutation.isPending || filteredRecords.indexOf(record) === 0}
+                                      title="Move up"
+                                      data-testid={`button-move-up-${record.id}`}
+                                    >
+                                      <ChevronUp className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-8 w-8 text-muted-foreground"
+                                      onClick={() => reorderMutation.mutate({ id: record.id, direction: "down" })}
+                                      disabled={reorderMutation.isPending || filteredRecords.indexOf(record) === filteredRecords.length - 1}
+                                      title="Move down"
+                                      data-testid={`button-move-down-${record.id}`}
+                                    >
+                                      <ChevronDown className="h-4 w-4" />
+                                    </Button>
+                                  </>
+                                )}
                                 <Button
                                   size="icon"
                                   variant="ghost"
@@ -1225,15 +1265,6 @@ export default function MasterData() {
                       { value: "Inactive", label: "Inactive" },
                     ]}
                     data-testid="select-status"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Display Order</label>
-                  <Input
-                    type="number"
-                    value={formData.displayOrder}
-                    onChange={(e) => setFormData({ ...formData, displayOrder: parseInt(e.target.value) || 0 })}
-                    data-testid="input-display-order"
                   />
                 </div>
               </>

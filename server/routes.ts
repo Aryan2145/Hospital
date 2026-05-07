@@ -1633,12 +1633,19 @@ export async function registerRoutes(
 
       const code = name.toUpperCase().replace(/\s+/g, "_").substring(0, 50);
 
+      const pgTblQA = MASTER_TABLE_REGISTRY[tableName];
+      const maxQA = await pool.query(
+        `SELECT COALESCE(MAX(display_order), 0) AS max_order FROM "${pgTblQA}" WHERE tenant_id = $1`,
+        [tid]
+      );
+      const nextOrderQA = (maxQA.rows[0]?.max_order ?? 0) + 1;
+
       const record = await storage.createMasterRecord(tableName, {
         tenantId: tid,
         code,
         name,
         status: "Active",
-        displayOrder: 0,
+        displayOrder: nextOrderQA,
         approvalStatus: "Pending",
       });
       res.status(201).json(record);
@@ -5380,12 +5387,18 @@ export async function registerRoutes(
       let duplicateCount = 0;
       const errors: { row: number; message: string }[] = [];
 
+      const pgTblImport = MASTER_TABLE_REGISTRY[tableName];
+      const maxImportResult = await pool.query(
+        `SELECT COALESCE(MAX(display_order), 0) AS max_order FROM "${pgTblImport}" WHERE tenant_id = $1`,
+        [tenantId]
+      );
+      let nextImportOrder = (maxImportResult.rows[0]?.max_order ?? 0) + 1;
+
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         const code = (row.code || "").trim();
         const name = (row.name || "").trim();
         const status = (row.status || "Active").trim();
-        const displayOrder = parseInt(row.displayOrder || "0") || 0;
 
         if (!code || !name) {
           failureCount++;
@@ -5405,7 +5418,7 @@ export async function registerRoutes(
             code,
             name,
             status,
-            displayOrder,
+            displayOrder: nextImportOrder,
             approvalStatus: autoApprove ? "Approved" : "Pending",
           };
 
@@ -5454,6 +5467,7 @@ export async function registerRoutes(
 
           await storage.createMasterRecord(tableName, recordData);
           existingCodes.add(code.toUpperCase());
+          nextImportOrder++;
           successCount++;
         } catch (err: any) {
           failureCount++;
@@ -5557,6 +5571,13 @@ export async function registerRoutes(
         }
       }
 
+      const pgTblName = MASTER_TABLE_REGISTRY[tableName];
+      const maxOrderResult = await pool.query(
+        `SELECT COALESCE(MAX(display_order), 0) AS max_order FROM "${pgTblName}" WHERE tenant_id = $1`,
+        [tid]
+      );
+      body.displayOrder = (maxOrderResult.rows[0]?.max_order ?? 0) + 1;
+
       const autoApproveTable = tableName === "referrers";
       const record = await storage.createMasterRecord(tableName, { ...body, tenantId: tid, approvalStatus: autoApproveTable ? "Approved" : "Pending" });
       res.status(201).json(record);
@@ -5599,6 +5620,62 @@ export async function registerRoutes(
       res.json(record);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.patch("/api/masters/:tableName/:id/reorder", isAuthenticated, async (req, res) => {
+    const tableName = req.params.tableName as string;
+    const id = Number(req.params.id);
+    const { direction } = req.body as { direction: "up" | "down" };
+    if (!MASTER_TABLE_REGISTRY[tableName]) {
+      return res.status(400).json({ message: `Unknown master table: ${tableName}` });
+    }
+    if (!["up", "down"].includes(direction)) {
+      return res.status(400).json({ message: "direction must be 'up' or 'down'" });
+    }
+    try {
+      const tid = await getDefaultTenantId(req);
+      const pgTbl = MASTER_TABLE_REGISTRY[tableName];
+
+      const allRows = await pool.query(
+        `SELECT id, display_order FROM "${pgTbl}" WHERE tenant_id = $1 ORDER BY display_order ASC, id ASC`,
+        [tid]
+      );
+      const rows: { id: number; display_order: number }[] = allRows.rows;
+      const idx = rows.findIndex(r => r.id === id);
+      if (idx === -1) return res.status(404).json({ message: "Record not found" });
+
+      const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= rows.length) {
+        return res.status(400).json({ message: "Cannot move further in that direction" });
+      }
+
+      const current = rows[idx];
+      const neighbour = rows[swapIdx];
+
+      // If they share the same displayOrder, normalize first
+      if (current.display_order === neighbour.display_order) {
+        for (let i = 0; i < rows.length; i++) {
+          await pool.query(
+            `UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`,
+            [i + 1, rows[i].id, tid]
+          );
+        }
+        // After normalization, pick the correct positions
+        const newCurrentOrder = idx + 1;
+        const newNeighbourOrder = swapIdx + 1;
+        await pool.query(`UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`, [newNeighbourOrder, current.id, tid]);
+        await pool.query(`UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`, [newCurrentOrder, neighbour.id, tid]);
+      } else {
+        // Simple swap
+        await pool.query(`UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`, [neighbour.display_order, current.id, tid]);
+        await pool.query(`UPDATE "${pgTbl}" SET display_order = $1 WHERE id = $2 AND tenant_id = $3`, [current.display_order, neighbour.id, tid]);
+      }
+
+      const updated = await storage.getMasterRecords(tableName, tid);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
     }
   });
 
