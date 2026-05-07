@@ -2233,31 +2233,16 @@ export async function registerRoutes(
           });
         }
       }
-      const sessionCrmUserId = (req.session as any)?.crmUserId;
-      if (sessionCrmUserId) {
-        const crmUserResult = await pool.query(
-          `SELECT cu.id, cu.name, sr.code as role_code, cu.branch_id
-           FROM crm_users cu
-           LEFT JOIN system_roles sr ON cu.system_role_id = sr.id
-           WHERE cu.id = $1 AND cu.tenant_id = $2 AND cu.is_active = true
-           LIMIT 1`,
-          [sessionCrmUserId, tid]
-        );
-        const creatingUser = crmUserResult.rows[0];
-        if (creatingUser) {
-          if (!input.assignedCrmUserId) {
-            (input as any).assignedCrmUserId = creatingUser.id;
-          }
-          if (!(input as any).primaryOwnerUserId) {
-            (input as any).primaryOwnerUserId = creatingUser.id;
-          }
-          if (!(input as any).ownerTeam) {
-            const roleTeamMap: Record<string, string> = {
-              PATIENT_COORDINATOR: "Telecalling", COUNSELLOR: "Front Office", MANAGER: "Management", ADMIN: "Management"
-            };
-            (input as any).ownerTeam = roleTeamMap[creatingUser.role_code] || "Telecalling";
-          }
-        }
+      // Intake assignment: always use Telecaller round-robin pool
+      const intakeTelecaller = await storage.getNextAssignableCrmUser(tid, (input as any).branchId, (input as any).departmentId);
+      const intakeTelecallerFound = !!intakeTelecaller;
+      if (intakeTelecaller) {
+        (input as any).assignedCrmUserId = intakeTelecaller.id;
+        (input as any).primaryOwnerUserId = intakeTelecaller.id;
+        (input as any).ownerTeam = "Telecalling";
+      } else {
+        // No telecaller available: leave unassigned, notify managers after creation
+        (input as any).ownerTeam = "Telecalling";
       }
       (input as any).lastActivityAt = new Date();
 
@@ -2317,6 +2302,46 @@ export async function registerRoutes(
         }
         return newLead;
       });
+
+      // Log intake assignment and handle empty-pool notification (fire-and-forget)
+      const intakeUserId = (lead as any).primaryOwnerUserId || null;
+      const intakeChangedBy = String((req.session as any)?.crmUserId || "system");
+      pool.query(
+        `INSERT INTO handover_logs (tenant_id, entity_type, entity_id, from_user_id, to_user_id, from_team, to_team, trigger_event, notes, created_at)
+         VALUES ($1, 'Lead', $2, NULL, $3, NULL, 'Telecalling', 'Lead Created', $4, NOW())`,
+        [tid, lead.id, intakeUserId, `Intake assignment [${intakeTelecallerFound ? "telecaller-round-robin" : "unassigned-no-telecaller"}]`]
+      ).catch(() => {});
+      db.insert(activities).values({
+        tenantId: tid,
+        leadId: lead.id,
+        type: "auto_handover",
+        description: `Intake assignment [${intakeTelecallerFound ? "telecaller-round-robin" : "unassigned-no-telecaller"}]: → Telecalling${intakeUserId ? ` (User #${intakeUserId})` : " (no user found)"}`,
+        createdBy: intakeChangedBy,
+        metadata: { fromTeam: null, toTeam: "Telecalling", fromUserId: null, toUserId: intakeUserId, triggerEvent: "Lead Created", assignmentMethod: intakeTelecallerFound ? "telecaller-round-robin" : "unassigned-no-telecaller" },
+      } as any).catch(() => {});
+      if (!intakeTelecallerFound) {
+        // Notify managers/admins that no telecaller was available at intake
+        (async () => {
+          try {
+            const mgrs = await pool.query(
+              `SELECT cu.id, cu.email, cu.name FROM crm_users cu
+               JOIN system_roles sr ON cu.system_role_id = sr.id
+               WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
+                 AND sr.code IN ('MANAGER','ADMIN')`,
+              [tid]
+            );
+            const title = `Unassigned Lead Alert — Lead Created`;
+            const body = `New lead "${(lead as any).name}" was created but no active Telecaller was available for intake assignment. Manual assignment required.`;
+            for (const mgr of mgrs.rows) {
+              await pool.query(
+                `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
+                 VALUES ($1, $2, 'unassigned_lead_alert', $3, $4, 'lead', $5, $6, FALSE, NOW())`,
+                [tid, mgr.id, title, body, lead.id, `/leads/${lead.id}`]
+              );
+            }
+          } catch {}
+        })();
+      }
 
       res.status(201).json(lead);
     } catch (err: any) {

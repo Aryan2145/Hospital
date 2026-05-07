@@ -16,7 +16,7 @@ const STAGE_TEAM_MAP: Record<string, string> = {
   "Lead Created":                  "Telecalling",
   "Appointment Booked":            "Front Office",
   "Checked In":                    "Doctor",
-  "Consultation Done":             "Doctor",
+  "Consultation Done":             "Counsellor",
   "Estimate Shared":               "Counsellor",
   "Insurance Applicable":          "Insurance",
   "Surgery Scheduled":             "OT / IP Coordinator",
@@ -350,7 +350,7 @@ export async function processAutoHandover(
     // For Pre-op Assessment: also sync preopAssignedUserId on the episode
     if (triggerEvent === "Pre-op Assessment" && context?.episodeId) {
       await pool.query(
-        `UPDATE episodes SET preop_assigned_user_id = $1 WHERE id = $2 AND tenant_id = $3 AND (preop_assigned_user_id IS NULL)`,
+        `UPDATE episodes SET preop_assigned_user_id = $1 WHERE id = $2 AND tenant_id = $3`,
         [toUserId, context.episodeId, tenantId]
       );
     }
