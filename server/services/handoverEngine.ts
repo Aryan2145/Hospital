@@ -30,18 +30,19 @@ const STAGE_TEAM_MAP: Record<string, string> = {
   "Referral Ready":                "Referral Coordinator",
 };
 
-// Team → primary role(s) to query, plus optional PATIENT_COORDINATOR fallback
-const TEAM_ROLES: Record<string, { roles: string[]; patientCoordFallback?: boolean }> = {
+// Team → primary role(s) to query.
+// All teams use universal fallback chain: primary roles → PATIENT_COORDINATOR → MANAGER/ADMIN.
+const TEAM_ROLES: Record<string, { roles: string[] }> = {
   "Telecalling":          { roles: ["TELECALLER"] },
   "Front Office":         { roles: ["RECEPTIONIST"] },
   "Doctor":               { roles: ["DOCTOR"] },
   "Counsellor":           { roles: ["COUNSELLOR"] },
   "Insurance":            { roles: ["INSURANCE_DESK"] },
-  "OT / IP Coordinator":  { roles: ["OT_IP_COORDINATOR"], patientCoordFallback: true },
+  "OT / IP Coordinator":  { roles: ["OT_IP_COORDINATOR"] },
   "Medical":              { roles: ["MEDICAL_ASSISTANT"] },
   "Billing":              { roles: ["BILLING"] },
-  "Post Care Coordinator":{ roles: ["POST_CARE_COORDINATOR"], patientCoordFallback: true },
-  "Referral Coordinator": { roles: ["REFERRAL_COORDINATOR"], patientCoordFallback: true },
+  "Post Care Coordinator":{ roles: ["POST_CARE_COORDINATOR"] },
+  "Referral Coordinator": { roles: ["REFERRAL_COORDINATOR"] },
 };
 
 const TERMINAL_LEAD_STATUSES = ["Closed Won", "Closed Lost", "Unqualified", "Discontinued", "Completed"];
@@ -279,22 +280,27 @@ async function findTeamUser(
     }
   }
 
+  const preferred = options.leadId ? await getPreviousOwnerForTeam(tenantId, options.leadId, team) : null;
+
   // ── Attempt primary roles ────────────────────────────────────────────────────
   const primaryCandidates = await getUsersInRoles(tenantId, teamConfig.roles, options.branchId);
   if (primaryCandidates.length > 0) {
-    const preferred = options.leadId ? await getPreviousOwnerForTeam(tenantId, options.leadId, team) : null;
     const result = await pickLeastLoad(primaryCandidates, tenantId, loggedInIds, preferred);
     if (result) return result;
   }
 
-  // ── PATIENT_COORDINATOR fallback (for OT_IP, POST_CARE, REFERRAL) ───────────
-  if (teamConfig.patientCoordFallback) {
-    const pcCandidates = await getUsersInRoles(tenantId, ["PATIENT_COORDINATOR"], options.branchId);
-    if (pcCandidates.length > 0) {
-      const preferred = options.leadId ? await getPreviousOwnerForTeam(tenantId, options.leadId, team) : null;
-      const result = await pickLeastLoad(pcCandidates, tenantId, loggedInIds, preferred);
-      if (result) return { userId: result.userId, method: `pc-fallback-${result.method}` };
-    }
+  // ── Universal fallback 1: PATIENT_COORDINATOR ────────────────────────────────
+  const pcCandidates = await getUsersInRoles(tenantId, ["PATIENT_COORDINATOR"], options.branchId);
+  if (pcCandidates.length > 0) {
+    const result = await pickLeastLoad(pcCandidates, tenantId, loggedInIds, preferred);
+    if (result) return { userId: result.userId, method: `pc-fallback-${result.method}` };
+  }
+
+  // ── Universal fallback 2: MANAGER / ADMIN (last resort) ─────────────────────
+  const mgrCandidates = await getUsersInRoles(tenantId, ["MANAGER", "ADMIN"], options.branchId);
+  if (mgrCandidates.length > 0) {
+    const result = await pickLeastLoad(mgrCandidates, tenantId, loggedInIds, preferred);
+    if (result) return { userId: result.userId, method: `manager-last-resort-${result.method}` };
   }
 
   return { userId: null, method: "no-user-found" };

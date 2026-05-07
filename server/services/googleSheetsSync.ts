@@ -1,23 +1,108 @@
-import { db } from "../db";
+import { db, pool } from "../db";
 import { googleSheetsSyncConfigs, leadImportLogs, handoverLogs, activities } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { storage, toProperCase } from "../storage";
 
-// Minimal intake audit trail for auto-sync paths (mirrors logIntakeOwnership in routes.ts)
-async function logSyncIntakeOwnership(tenantId: number, leadId: number, leadName: string, telecallerId: number | null): Promise<void> {
-  const method = telecallerId ? "telecaller-round-robin" : "unassigned-no-telecaller";
+// Full intake fallback chain for auto-sync: TELECALLER → PC → MANAGER/ADMIN → null.
+// Mirrors resolveIntakeOwner in routes.ts (no round-robin cursor advance for PC/MANAGER tiers).
+async function resolveIntakeOwnerForSync(
+  tenantId: number,
+): Promise<{ assignedCrmUserId: number | null; primaryOwnerUserId: number | null; ownerTeam: string; method: string }> {
+  const telecaller = await storage.getNextAssignableCrmUser(tenantId);
+  if (telecaller) {
+    return { assignedCrmUserId: telecaller.id, primaryOwnerUserId: telecaller.id, ownerTeam: "Telecalling", method: "telecaller-round-robin" };
+  }
+  const pcRow = await pool.query(
+    `SELECT cu.id FROM crm_users cu
+     JOIN system_roles sr ON cu.system_role_id = sr.id
+     WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
+       AND sr.code = 'PATIENT_COORDINATOR'
+     ORDER BY (SELECT COUNT(*) FROM leads l WHERE l.primary_owner_user_id = cu.id AND l.tenant_id = $1
+                AND l.status NOT IN ('Closed Won','Closed Lost','Unqualified','Discontinued','Completed')) ASC, cu.id
+     LIMIT 1`,
+    [tenantId]
+  );
+  if (pcRow.rows.length > 0) {
+    return { assignedCrmUserId: null, primaryOwnerUserId: pcRow.rows[0].id, ownerTeam: "Telecalling", method: "pc-fallback" };
+  }
+  const mgrRow = await pool.query(
+    `SELECT cu.id FROM crm_users cu
+     JOIN system_roles sr ON cu.system_role_id = sr.id
+     WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
+       AND sr.code IN ('MANAGER','ADMIN')
+     ORDER BY cu.id LIMIT 1`,
+    [tenantId]
+  );
+  if (mgrRow.rows.length > 0) {
+    return { assignedCrmUserId: null, primaryOwnerUserId: mgrRow.rows[0].id, ownerTeam: "Telecalling", method: "manager-last-resort" };
+  }
+  return { assignedCrmUserId: null, primaryOwnerUserId: null, ownerTeam: "Telecalling", method: "unassigned-no-telecaller" };
+}
+
+// Audit trail + manager notification (mirrors logIntakeOwnership in routes.ts).
+async function logSyncIntakeOwnership(
+  tenantId: number, leadId: number, leadName: string,
+  primaryOwnerId: number | null, method: string,
+): Promise<void> {
   db.insert(handoverLogs).values({
     tenantId, entityType: "Lead", entityId: leadId,
-    fromUserId: null, toUserId: telecallerId ?? null,
+    fromUserId: null, toUserId: primaryOwnerId ?? null,
     fromTeam: null, toTeam: "Telecalling",
     triggerEvent: "Lead Created", notes: `Intake [${method}]`,
   } as any).catch(() => {});
   db.insert(activities).values({
     tenantId, leadId, type: "auto_handover",
-    description: `Intake [${method}]: → Telecalling${telecallerId ? ` (User #${telecallerId})` : " (no telecaller found)"}`,
+    description: `Intake [${method}]: → Telecalling${primaryOwnerId ? ` (User #${primaryOwnerId})` : " (no user found)"}`,
     createdBy: "google-sheets-sync",
-    metadata: { fromTeam: null, toTeam: "Telecalling", fromUserId: null, toUserId: telecallerId, triggerEvent: "Lead Created", assignmentMethod: method },
+    metadata: { fromTeam: null, toTeam: "Telecalling", fromUserId: null, toUserId: primaryOwnerId, triggerEvent: "Lead Created", assignmentMethod: method },
   } as any).catch(() => {});
+
+  // Notify MANAGER/ADMIN whenever intake did not land on a Telecaller
+  if (method !== "telecaller-round-robin") {
+    (async () => {
+      try {
+        const mgrs = await pool.query(
+          `SELECT cu.id, cu.email, cu.name FROM crm_users cu
+           JOIN system_roles sr ON cu.system_role_id = sr.id
+           WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
+             AND sr.code IN ('MANAGER','ADMIN')`,
+          [tenantId]
+        );
+        const title = `Intake Alert — No Telecaller Available (Google Sheets Sync)`;
+        const assignMsg = primaryOwnerId ? `assigned to fallback owner (User #${primaryOwnerId}) via ${method}` : "left unassigned — no user found";
+        const body = `Lead "${leadName}" was synced from Google Sheets but no Telecaller was available. It was ${assignMsg}.`;
+        for (const mgr of mgrs.rows) {
+          await pool.query(
+            `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
+             VALUES ($1, $2, 'unassigned_lead_alert', $3, $4, 'lead', $5, $6, FALSE, NOW())`,
+            [tenantId, mgr.id, title, body, leadId, `/leads/${leadId}`]
+          );
+        }
+        try {
+          const smtpRows = await pool.query(
+            `SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = $1
+             AND setting_key IN ('smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from_email')`,
+            [tenantId]
+          );
+          const cfg: Record<string, string> = {};
+          smtpRows.rows.forEach((r: any) => { cfg[r.setting_key] = r.setting_value || ""; });
+          const host = cfg.smtp_host || process.env.SMTP_HOST;
+          const port = Number(cfg.smtp_port || process.env.SMTP_PORT || 587);
+          const smtpUser = cfg.smtp_user || process.env.SMTP_USER;
+          const pass = cfg.smtp_pass || process.env.SMTP_PASS;
+          const from = cfg.smtp_from_email || process.env.SMTP_FROM_EMAIL;
+          if (host && smtpUser && pass && from) {
+            const nodemailer = await import("nodemailer");
+            const transporter = nodemailer.default.createTransport({ host, port, secure: port === 465, auth: { user: smtpUser, pass } });
+            for (const mgr of mgrs.rows) {
+              if (!mgr.email) continue;
+              await transporter.sendMail({ from, to: mgr.email, subject: title, text: body + `\n\nView lead: /leads/${leadId}` });
+            }
+          }
+        } catch {}
+      } catch {}
+    })();
+  }
 }
 
 export function normalizePhone(phone: string): string {
@@ -220,7 +305,8 @@ export async function processSheetRows(
         }
       }
 
-      const assignedUser = await storage.getNextAssignableCrmUser(tenantId);
+      // Full fallback chain: TELECALLER → PC → MANAGER
+      const syncOwner = await resolveIntakeOwnerForSync(tenantId);
       const newLead = await storage.createLead({
         tenantId,
         name: name || "Unknown",
@@ -235,13 +321,13 @@ export async function processSheetRows(
         utmContent: mapped.utmContent || undefined,
         notes: autoNotes || undefined,
         priority: mapped.priority || "Normal",
-        assignedCrmUserId: assignedUser?.id ?? null,
-        assignedTo: assignedUser?.name,
-        primaryOwnerUserId: assignedUser?.id ?? null,
-        ownerTeam: "Telecalling",
+        assignedCrmUserId: syncOwner.assignedCrmUserId,
+        assignedTo: null,
+        primaryOwnerUserId: syncOwner.primaryOwnerUserId,
+        ownerTeam: syncOwner.ownerTeam,
       } as any);
-      // Unified intake audit trail
-      logSyncIntakeOwnership(tenantId, newLead.id, newLead.name, assignedUser?.id ?? null);
+      // Unified intake audit trail + manager notification
+      logSyncIntakeOwnership(tenantId, newLead.id, newLead.name, syncOwner.primaryOwnerUserId, syncOwner.method);
       leadsCreated++;
     } catch { leadsSkipped++; }
   }
