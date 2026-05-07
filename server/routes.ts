@@ -2328,7 +2328,7 @@ export async function registerRoutes(
           });
         }
       }
-      // Intake assignment: TELECALLER → PC → MANAGER/ADMIN → null
+      // Intake assignment: TELECALLER-only round-robin; null if no telecaller available
       const intakeOwner = await resolveIntakeOwner(tid, (input as any).branchId, (input as any).departmentId);
       (input as any).assignedCrmUserId = intakeOwner.assignedCrmUserId;
       (input as any).primaryOwnerUserId = intakeOwner.primaryOwnerUserId;
@@ -2903,7 +2903,7 @@ export async function registerRoutes(
         return res.status(200).json({ lead: existingLead, deduped: true });
       }
 
-      // Intake: TELECALLER → PC → MANAGER/ADMIN → null
+      // Intake: TELECALLER-only round-robin; null if no telecaller available
       const intakeOwnerApi = await resolveIntakeOwner(tid, body.branchId, body.departmentId);
 
       const newLead = await storage.createLead({
@@ -4551,7 +4551,7 @@ export async function registerRoutes(
                     }
                   }
 
-                  // Always use full fallback chain for intake (TELECALLER → PC → MANAGER)
+                  // Intake: TELECALLER-only round-robin; null if no telecaller available
                   const metaOwner = await resolveIntakeOwner(tid);
 
                   const newLead = await storage.createLead({
@@ -4638,7 +4638,7 @@ export async function registerRoutes(
         }
       }
 
-      // Full fallback chain for intake (TELECALLER → PC → MANAGER)
+      // Intake: TELECALLER-only round-robin; null if no telecaller available
       const webhookOwner = await resolveIntakeOwner(tid);
 
       const newLead = await storage.createLead({
@@ -4947,7 +4947,7 @@ export async function registerRoutes(
             }
             callyzerLeadSourceId = callyzerSource.id;
 
-            // Full fallback chain for intake (TELECALLER → PC → MANAGER)
+            // Intake: TELECALLER-only round-robin; null if no telecaller available
             const callyzerOwner = await resolveIntakeOwner(tid);
             const newLead = await storage.createLead({
               tenantId: tid,
@@ -9717,7 +9717,7 @@ export async function registerRoutes(
       if (existingLeads.length > 0) {
         leadId = existingLeads[0].id;
       } else {
-        // Full fallback chain for intake (TELECALLER → PC → MANAGER)
+        // Intake: TELECALLER-only round-robin; null if no telecaller available
         const eventOwner = await resolveIntakeOwner(tid);
         const [newLead] = await db.insert(leads).values({
           tenantId: tid,
@@ -10205,7 +10205,7 @@ export async function registerRoutes(
         .where(and(eq(leadSources.tenantId, tid), eq(leadSources.name, "Referral")));
     }
 
-    // Full fallback chain for intake (TELECALLER → PC → MANAGER)
+    // Intake: TELECALLER-only round-robin; null if no telecaller available
     const referralOwner = await resolveIntakeOwner(tid, config.assignToBranchId || null);
 
     const leadInput: any = {

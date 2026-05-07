@@ -281,7 +281,7 @@ export async function processSheetRows(
         }
       }
 
-      // Full fallback chain: TELECALLER → PC → MANAGER
+      // Intake: TELECALLER-only round-robin; null if no telecaller available
       const syncOwner = await resolveIntakeOwnerForSync(tenantId);
       const newLead = await storage.createLead({
         tenantId,
