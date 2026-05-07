@@ -2750,10 +2750,13 @@ export async function registerRoutes(
       const userId = String((req as any).session?.crmUserId || "system");
 
       if (action === "accept") {
+        // Only update primaryOwnerUserId — assignedCrmUserId is immutable after intake
         const updated = await storage.updateLead(leadId, {
           handoverStatus: "Accepted",
           handoverAcceptedAt: new Date(),
-          assignedCrmUserId: lead.handoverToUserId,
+          primaryOwnerUserId: lead.handoverToUserId,
+          ownerTeam: (lead as any).handoverToTeam || (lead as any).ownerTeam || null,
+          lastHandoverAt: new Date(),
         });
         await storage.createActivity({
           leadId, tenantId: tid, createdBy: userId,
@@ -2764,11 +2767,13 @@ export async function registerRoutes(
         });
         return res.json(updated);
       } else if (action === "reject") {
+        // Revert primaryOwnerUserId to handoverFromUserId — assignedCrmUserId is immutable after intake
         const updated = await storage.updateLead(leadId, {
           handoverStatus: "Rejected",
           handoverRejectedAt: new Date(),
           handoverRejectionReason: rejectionReason || null,
-          assignedCrmUserId: lead.handoverFromUserId,
+          primaryOwnerUserId: lead.handoverFromUserId,
+          lastHandoverAt: new Date(),
         });
         await storage.createActivity({
           leadId, tenantId: tid, createdBy: userId,
@@ -2890,14 +2895,72 @@ export async function registerRoutes(
         utmTerm: body.utmTerm,
         utmContent: body.utmContent,
         notes: body.notes,
-        assignedCrmUserId: assignedUser?.id,
-      });
+        assignedCrmUserId: assignedUser?.id,          // frozen at intake
+        primaryOwnerUserId: assignedUser?.id ?? null, // mutable ownership chain
+        ownerTeam: "Telecalling",
+        lastActivityAt: new Date(),
+      } as any);
 
+      // Log intake assignment (fire-and-forget)
+      const intakeFound = !!assignedUser;
+      pool.query(
+        `INSERT INTO handover_logs (tenant_id, entity_type, entity_id, from_user_id, to_user_id, from_team, to_team, trigger_event, notes, created_at)
+         VALUES ($1, 'Lead', $2, NULL, $3, NULL, 'Telecalling', 'Lead Created', $4, NOW())`,
+        [tid, newLead.id, assignedUser?.id ?? null, `Intake [${intakeFound ? "telecaller-round-robin" : "unassigned-no-telecaller"}]`]
+      ).catch(() => {});
       await storage.createActivity({
         leadId: newLead.id, tenantId: tid, createdBy: userId,
-        type: "note",
-        description: `Lead created via intake${assignedUser ? ` and auto-assigned to ${assignedUser.name}` : ""}`,
-      });
+        type: "auto_handover",
+        description: `Intake assignment [${intakeFound ? "telecaller-round-robin" : "unassigned-no-telecaller"}]: → Telecalling${assignedUser ? ` (${assignedUser.name})` : " (no telecaller found)"}`,
+        metadata: { fromTeam: null, toTeam: "Telecalling", fromUserId: null, toUserId: assignedUser?.id ?? null, triggerEvent: "Lead Created", assignmentMethod: intakeFound ? "telecaller-round-robin" : "unassigned-no-telecaller" },
+      } as any);
+
+      if (!intakeFound) {
+        // Notify MANAGER/ADMIN (in-app + email) when no Telecaller available
+        (async () => {
+          try {
+            const mgrs = await pool.query(
+              `SELECT cu.id, cu.email, cu.name FROM crm_users cu
+               JOIN system_roles sr ON cu.system_role_id = sr.id
+               WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
+                 AND sr.code IN ('MANAGER','ADMIN')`,
+              [tid]
+            );
+            const title = `Unassigned Lead Alert — Intake`;
+            const body2 = `New lead "${body.name}" created via intake but no active Telecaller was available. Manual assignment required.`;
+            for (const mgr of mgrs.rows) {
+              await pool.query(
+                `INSERT INTO in_app_notifications (tenant_id, crm_user_id, type, title, body, entity_type, entity_id, link, is_read, created_at)
+                 VALUES ($1, $2, 'unassigned_lead_alert', $3, $4, 'lead', $5, $6, FALSE, NOW())`,
+                [tid, mgr.id, title, body2, newLead.id, `/leads/${newLead.id}`]
+              );
+            }
+            // SMTP email
+            try {
+              const smtpRows = await pool.query(
+                `SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = $1
+                 AND setting_key IN ('smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from_email')`,
+                [tid]
+              );
+              const cfg: Record<string, string> = {};
+              smtpRows.rows.forEach((r: any) => { cfg[r.setting_key] = r.setting_value || ""; });
+              const host = cfg.smtp_host || process.env.SMTP_HOST;
+              const port = Number(cfg.smtp_port || process.env.SMTP_PORT || 587);
+              const smtpUser = cfg.smtp_user || process.env.SMTP_USER;
+              const pass = cfg.smtp_pass || process.env.SMTP_PASS;
+              const from = cfg.smtp_from_email || process.env.SMTP_FROM_EMAIL;
+              if (host && smtpUser && pass && from) {
+                const nodemailer = await import("nodemailer");
+                const transporter = nodemailer.default.createTransport({ host, port, secure: port === 465, auth: { user: smtpUser, pass } });
+                for (const mgr of mgrs.rows) {
+                  if (!mgr.email) continue;
+                  await transporter.sendMail({ from, to: mgr.email, subject: title, text: body2 + `\n\nView lead: /leads/${newLead.id}` });
+                }
+              }
+            } catch {}
+          } catch {}
+        })();
+      }
 
       return res.status(201).json({ lead: newLead, deduped: false, assignedTo: assignedUser?.name });
     } catch (err: any) {

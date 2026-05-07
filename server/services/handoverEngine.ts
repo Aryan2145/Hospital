@@ -91,14 +91,25 @@ async function getLeadLoad(userId: number, tenantId: number): Promise<number> {
   return Number(result.rows[0]?.cnt ?? 0);
 }
 
-async function getPreviousOwnerForTeam(leadId: number, toTeam: string): Promise<number | null> {
+async function getPreviousOwnerForTeam(tenantId: number, leadId: number, toTeam: string): Promise<number | null> {
   const result = await pool.query(
     `SELECT to_user_id FROM handover_logs
-     WHERE entity_id = $1 AND entity_type = 'Lead' AND to_team = $2 AND to_user_id IS NOT NULL
+     WHERE tenant_id = $1 AND entity_id = $2 AND entity_type = 'Lead' AND to_team = $3 AND to_user_id IS NOT NULL
      ORDER BY created_at DESC LIMIT 1`,
-    [leadId, toTeam]
+    [tenantId, leadId, toTeam]
   );
   return result.rows[0]?.to_user_id ?? null;
+}
+
+async function recentHandoverExists(tenantId: number, entityId: number, triggerEvent: string, windowSecs = 10): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT 1 FROM handover_logs
+     WHERE tenant_id = $1 AND entity_id = $2 AND trigger_event = $3
+       AND created_at > NOW() - ($4 || ' seconds')::interval
+     LIMIT 1`,
+    [tenantId, entityId, triggerEvent, windowSecs]
+  );
+  return result.rows.length > 0;
 }
 
 async function pickLeastLoad(
@@ -271,7 +282,7 @@ async function findTeamUser(
   // ── Attempt primary roles ────────────────────────────────────────────────────
   const primaryCandidates = await getUsersInRoles(tenantId, teamConfig.roles, options.branchId);
   if (primaryCandidates.length > 0) {
-    const preferred = options.leadId ? await getPreviousOwnerForTeam(options.leadId, team) : null;
+    const preferred = options.leadId ? await getPreviousOwnerForTeam(tenantId, options.leadId, team) : null;
     const result = await pickLeastLoad(primaryCandidates, tenantId, loggedInIds, preferred);
     if (result) return result;
   }
@@ -280,7 +291,7 @@ async function findTeamUser(
   if (teamConfig.patientCoordFallback) {
     const pcCandidates = await getUsersInRoles(tenantId, ["PATIENT_COORDINATOR"], options.branchId);
     if (pcCandidates.length > 0) {
-      const preferred = options.leadId ? await getPreviousOwnerForTeam(options.leadId, team) : null;
+      const preferred = options.leadId ? await getPreviousOwnerForTeam(tenantId, options.leadId, team) : null;
       const result = await pickLeastLoad(pcCandidates, tenantId, loggedInIds, preferred);
       if (result) return { userId: result.userId, method: `pc-fallback-${result.method}` };
     }
@@ -309,6 +320,11 @@ export async function processAutoHandover(
   const toTeam = STAGE_TEAM_MAP[triggerEvent];
   if (!toTeam) {
     return { fromTeam: null, toTeam: "Unknown", fromUserId: null, toUserId: null, handoverExecuted: false, assignmentMethod: "no-stage-match" };
+  }
+
+  // Dedupe guard: skip if an identical handover was logged within the last 10 seconds
+  if (await recentHandoverExists(tenantId, entityId, triggerEvent)) {
+    return { fromTeam: null, toTeam, fromUserId: null, toUserId: null, handoverExecuted: false, assignmentMethod: "dedupe-skipped" };
   }
 
   let fromTeam: string | null = null;
