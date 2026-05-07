@@ -67,42 +67,28 @@ export async function setupAuth(app: Express) {
 
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const { mobile, password, tenantId: bodyTenantId } = req.body;
+      const { mobile, password } = req.body;
       if (!mobile || !password) {
         return res.status(400).json({ message: "Mobile number and password are required" });
       }
 
       const normalizedMobile = mobile.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
 
-      // Tenant resolution priority:
-      // 1. Explicit tenantId sent by the login form (hospital selector) — most reliable
-      // 2. Subdomain match (viroc.rgbindia.com → tenant 4) — for future per-hospital subdomains
-      // 3. null → search all tenants (single-URL fallback, works only when phone is globally unique)
-      const subdomainTenant = await resolveTenantFromRequest(req);
-      const resolvedTenantId: number | null = bodyTenantId
-        ? parseInt(String(bodyTenantId), 10)
-        : (subdomainTenant?.id ?? null);
-
-      console.log(`[login] tenantId resolution: body=${bodyTenantId ?? "none"}, subdomain=${subdomainTenant?.id ?? "none"} → resolved=${resolvedTenantId ?? "any"}`);
-
+      // Single-URL multi-tenant: search all tenants by phone number.
+      // Phone numbers are unique per staff member across the entire platform,
+      // so this safely resolves the correct tenant without exposing tenant info.
       let allMatches = await db.select().from(crmUsers).where(
-        and(
-          eq(crmUsers.phone, normalizedMobile),
-          ...(resolvedTenantId ? [eq(crmUsers.tenantId, resolvedTenantId)] : [])
-        )
+        eq(crmUsers.phone, normalizedMobile)
       );
 
       if (allMatches.length === 0 && normalizedMobile.length === 10) {
         allMatches = await db.select().from(crmUsers).where(
-          and(
-            eq(crmUsers.phone, `+91${normalizedMobile}`),
-            ...(resolvedTenantId ? [eq(crmUsers.tenantId, resolvedTenantId)] : [])
-          )
+          eq(crmUsers.phone, `+91${normalizedMobile}`)
         );
       }
 
       if (allMatches.length === 0) {
-        console.log(`[login] No user found for mobile ${normalizedMobile} (tenant=${subdomainTenant?.id ?? "any"})`);
+        console.log(`[login] No user found for mobile ${normalizedMobile}`);
         return res.status(401).json({ message: "Invalid mobile number or password" });
       }
 
