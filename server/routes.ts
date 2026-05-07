@@ -5244,6 +5244,11 @@ export async function registerRoutes(
     dbCol?: string;     // snake_case DB column name (defaults to snake_case of key)
   }
 
+  // Tables where code and name are not required base fields (e.g. junction/schedule tables)
+  const TABLES_WITHOUT_REQUIRED_BASE_FIELDS = new Set([
+    "opdTimings", "userLineAssignments", "doctorLeaveExceptions",
+  ]);
+
   const MASTER_COLUMN_DEFS: Record<string, MasterColDef[]> = {
     states: [
       { key: "countryId", csvHeader: "country", type: "ref", refTable: "countries" },
@@ -5504,21 +5509,30 @@ export async function registerRoutes(
       const existingById = new Map(existingRecords.map(r => [r.id, r]));
       const importedCodes = new Set<string>(); // track codes used in this upload
 
+      // Helper: normalize a value for unique comparison (digits-only for phone, lowercase for email)
+      function normalizeUnique(val: string, type: MasterColType): string {
+        if (type === "phone") return val.replace(/\D/g, "");
+        return val.toLowerCase().trim();
+      }
+
       // Build DB lookup maps for unique fields (e.g. email, phone)
+      // Store as Map<colKey, Map<normalizedValue, recordId>> so we can exclude self on update
       const uniqueCols = colDefs.filter(c => c.unique);
-      const dbUniqueValues = new Map<string, Set<string>>(); // colKey -> Set of existing values (lowercased)
+      const dbUniqueByCol = new Map<string, Map<string, number>>(); // colKey -> normalizedValue -> recordId
       const pgTblName = MASTER_TABLE_REGISTRY[tableName];
       for (const col of uniqueCols) {
         const dbCol = col.dbCol || col.key.replace(/([A-Z])/g, "_$1").toLowerCase();
         try {
           const res2 = await pool.query(
-            `SELECT LOWER(${dbCol}::text) AS val FROM "${pgTblName}" WHERE tenant_id = $1 AND ${dbCol} IS NOT NULL`,
+            `SELECT id, ${dbCol}::text AS val FROM "${pgTblName}" WHERE tenant_id = $1 AND ${dbCol} IS NOT NULL`,
             [tenantId]
           );
-          dbUniqueValues.set(col.key, new Set(res2.rows.map((r: any) => r.val)));
-        } catch { dbUniqueValues.set(col.key, new Set()); }
+          const m = new Map<string, number>();
+          for (const r of res2.rows) m.set(normalizeUnique(r.val, col.type), r.id);
+          dbUniqueByCol.set(col.key, m);
+        } catch { dbUniqueByCol.set(col.key, new Map()); }
       }
-      const fileUniqueValues = new Map<string, Set<string>>(); // colKey -> Set of seen values in this file
+      const fileUniqueValues = new Map<string, Set<string>>(); // colKey -> Set of seen normalized values in this file
       for (const col of uniqueCols) fileUniqueValues.set(col.key, new Set());
 
       type ValidRow = { rowNum: number; isUpdate: boolean; recordId?: number; data: Record<string, any> };
@@ -5542,9 +5556,10 @@ export async function registerRoutes(
         const code = (row.code || "").trim();
         const name = (row.name || "").trim();
         const status = (row.status || "Active").trim();
+        const baseRequired = !TABLES_WITHOUT_REQUIRED_BASE_FIELDS.has(tableName);
 
-        if (!code) rowErrors.push("Missing required field: code");
-        if (!name) rowErrors.push("Missing required field: name");
+        if (baseRequired && !code) rowErrors.push("Missing required field: code");
+        if (baseRequired && !name) rowErrors.push("Missing required field: name");
         if (status && !["Active", "Inactive"].includes(status)) {
           rowErrors.push(`Invalid status "${status}" — must be Active or Inactive`);
         }
@@ -5566,7 +5581,8 @@ export async function registerRoutes(
           const csvVal = (row[col.csvHeader] || row[col.key] || "").trim();
 
           if (!csvVal) {
-            if (col.required) rowErrors.push(`Required field missing: ${col.csvHeader}`);
+            // For update rows: missing fields are silently skipped — existing DB value is kept
+            if (col.required && !isUpdate) rowErrors.push(`Required field missing: ${col.csvHeader}`);
             continue;
           }
 
@@ -5589,12 +5605,18 @@ export async function registerRoutes(
             } else {
               extraData[col.key] = csvVal;
               if (col.unique) {
-                const lc = csvVal.toLowerCase();
-                const dbSet = dbUniqueValues.get(col.key);
+                const normalized = normalizeUnique(csvVal, col.type);
+                const dbMap = dbUniqueByCol.get(col.key);
                 const fileSet = fileUniqueValues.get(col.key);
-                if (dbSet?.has(lc)) rowErrors.push(`${col.csvHeader}: "${csvVal}" already exists in tenant`);
-                else if (fileSet?.has(lc)) rowErrors.push(`${col.csvHeader}: "${csvVal}" appears more than once in this file`);
-                else pendingUniqueAdds.push({ colKey: col.key, value: lc });
+                const dbOwner = dbMap?.get(normalized);
+                // Allow same value if it already belongs to the record being updated
+                if (dbOwner !== undefined && dbOwner !== (recordId ?? -1)) {
+                  rowErrors.push(`${col.csvHeader}: "${csvVal}" already exists in tenant`);
+                } else if (fileSet?.has(normalized)) {
+                  rowErrors.push(`${col.csvHeader}: "${csvVal}" appears more than once in this file`);
+                } else {
+                  pendingUniqueAdds.push({ colKey: col.key, value: normalized });
+                }
               }
             }
           } else if (col.type === "phone") {
@@ -5603,12 +5625,17 @@ export async function registerRoutes(
             } else {
               extraData[col.key] = csvVal;
               if (col.unique) {
-                const normalized = csvVal.replace(/[\s\-().+]/g, "");
-                const dbSet = dbUniqueValues.get(col.key);
+                const normalized = normalizeUnique(csvVal, col.type);
+                const dbMap = dbUniqueByCol.get(col.key);
                 const fileSet = fileUniqueValues.get(col.key);
-                if (dbSet?.has(normalized)) rowErrors.push(`${col.csvHeader}: "${csvVal}" already exists in tenant`);
-                else if (fileSet?.has(normalized)) rowErrors.push(`${col.csvHeader}: "${csvVal}" appears more than once in this file`);
-                else pendingUniqueAdds.push({ colKey: col.key, value: normalized });
+                const dbOwner = dbMap?.get(normalized);
+                if (dbOwner !== undefined && dbOwner !== (recordId ?? -1)) {
+                  rowErrors.push(`${col.csvHeader}: "${csvVal}" already exists in tenant`);
+                } else if (fileSet?.has(normalized)) {
+                  rowErrors.push(`${col.csvHeader}: "${csvVal}" appears more than once in this file`);
+                } else {
+                  pendingUniqueAdds.push({ colKey: col.key, value: normalized });
+                }
               }
             }
           } else if (col.type === "date") {
