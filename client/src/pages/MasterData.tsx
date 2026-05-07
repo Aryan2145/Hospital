@@ -1252,15 +1252,29 @@ export default function MasterData() {
                     />
                   </div>
                 )}
-                <div>
-                  <label className="text-sm font-medium">Name</label>
-                  <Input
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g. Orthopaedics"
-                    data-testid="input-name"
-                  />
-                </div>
+                {!(selectedTable === "referrers" && formData.type === "Patient") && (
+                  <div>
+                    <label className="text-sm font-medium">Name</label>
+                    <Input
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="e.g. Orthopaedics"
+                      data-testid="input-name"
+                    />
+                  </div>
+                )}
+                {selectedTable === "referrers" && formData.type === "Patient" && formData.name && (
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Name (from patient)</label>
+                    <Input
+                      value={formData.name}
+                      readOnly
+                      disabled
+                      className="bg-muted"
+                      data-testid="input-name"
+                    />
+                  </div>
+                )}
               </>
             )}
             {!hideStatusDisplayOrder && (
