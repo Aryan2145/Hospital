@@ -286,6 +286,8 @@ const HELP_SECTIONS: HelpSection[] = [
       { id: "kanban", title: "Kanban Workspace", icon: LayoutDashboard },
       { id: "lead-detail", title: "Lead Detail Page", icon: FileText },
       { id: "merge-duplicates", title: "Merge & Duplicates", icon: Users },
+      { id: "lead-ownership", title: "Lead Assignment & Ownership", icon: UserCheck },
+      { id: "auto-handover", title: "Auto-Handover Engine", icon: ArrowRight },
       { id: "nurture-engine", title: "Nurture Engine", icon: Bell },
       { id: "dormant-detection", title: "Dormant Lead Detection", icon: Clock },
     ],
@@ -313,6 +315,7 @@ const HELP_SECTIONS: HelpSection[] = [
       { id: "quotation-builder", title: "Quotation Builder", icon: Receipt },
       { id: "room-allocation", title: "Room Allocation", icon: BedDouble },
       { id: "surgery-scheduling", title: "Surgery Scheduling", icon: Scissors },
+      { id: "discharge-billing", title: "Discharge & Billing Clearance", icon: Receipt },
       { id: "insurance-tab", title: "Insurance & Pre-Auth", icon: Shield },
       { id: "family-tab", title: "Family & Decision Status", icon: Users },
       { id: "treatment-planning", title: "Treatment Planning", icon: FileText },
@@ -646,6 +649,35 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Optional Coordinator Roles</h3>
+                <p className="text-xs text-muted-foreground mb-2 leading-relaxed">These three roles are optional — hospitals that do not staff them will have the relevant stages fall back to Patient Coordinator automatically. They are ideal for larger hospitals with dedicated teams for each care phase.</p>
+                <div className="space-y-2">
+                  {[
+                    { role: "OT/IP Coordinator", code: "OT_IP_COORDINATOR", desc: "Coordinates operating theatre scheduling and inpatient management. Owns the Surgery Scheduled and Pre-op Assessment stages. Falls back to Patient Coordinator if unstaffed." },
+                    { role: "Post-Care Coordinator", code: "POST_CARE_COORDINATOR", desc: "Manages post-operative follow-up and discharge planning. Owns the Post Care and Follow Up stages. Falls back to Patient Coordinator if unstaffed." },
+                    { role: "Referral Coordinator", code: "REFERRAL_COORDINATOR", desc: "Handles referral follow-up and referrer relationship management. Owns the Referral Follow-Up stage. Falls back to Patient Coordinator if unstaffed." },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-start gap-3 p-3 rounded-lg border bg-teal-50/40">
+                      <div className="flex-1">
+                        <span className="text-sm font-semibold text-foreground">{item.role} </span>
+                        <span className="text-xs text-muted-foreground font-mono">({item.code})</span>
+                        <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Marketing</h3>
+                <div className="flex items-start gap-3 p-3 rounded-lg border bg-pink-50/40">
+                  <div className="flex-1">
+                    <span className="text-sm font-semibold text-foreground">Marketing </span>
+                    <span className="text-xs text-muted-foreground font-mono">(MARKETING)</span>
+                    <p className="text-xs text-muted-foreground mt-0.5">Manages campaigns, events, and lead-generation analytics. Can access Campaigns, Events, and marketing dashboards. Does not own leads or episodes — focused on pipeline top-of-funnel visibility and creative asset management (Google Drive resource links for posters, reels, landing pages).</p>
+                  </div>
                 </div>
               </div>
               <div>
@@ -995,6 +1027,179 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
               <li>Leads with future scheduled appointments</li>
             </ul>
           </section>
+        </div>
+      ),
+    },
+    "leads/lead-ownership": {
+      title: "Lead Assignment & Ownership",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Two Ownership Fields</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              Every lead in the CRM carries two distinct ownership fields that serve different purposes. Understanding the difference helps you read the lead list accurately and avoids confusion when ownership appears to have changed.
+            </p>
+            <div className="space-y-3">
+              <div className="p-3 rounded-lg border bg-blue-50/40">
+                <div className="text-sm font-semibold text-foreground mb-1">Original Assignee (Telecaller)</div>
+                <p className="text-xs text-muted-foreground">The Telecaller who was assigned the lead at intake via round-robin. This field is <strong>frozen after creation</strong> — it never changes even as the lead moves through stages. It preserves a permanent record of who first owned the lead for accountability and commission tracking.</p>
+              </div>
+              <div className="p-3 rounded-lg border bg-orange-50/40">
+                <div className="text-sm font-semibold text-foreground mb-1">Current Owner (Primary Owner)</div>
+                <p className="text-xs text-muted-foreground">The user who currently owns the lead at its present stage. This changes automatically as the lead progresses through stages (via the Auto-Handover Engine) or when a manual reassignment is made. This is the field shown as "Owner" in the lead list and detail pages.</p>
+              </div>
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Intake Assignment: Telecaller Round-Robin</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              When any lead enters the system — whether via manual entry, CSV import, Google Sheets sync, Meta Ads webhook, WhatsApp, Callyzer telephony, event registration, or referral — the CRM assigns it to a Telecaller using a round-robin algorithm:
+            </p>
+            <StepList steps={[
+              "If the user creating the lead is a logged-in Telecaller, they are preferred first",
+              "If not, the system selects the next Telecaller in the rotation (least recently assigned)",
+              "If no active Telecaller is available, the lead is created without an owner and the Manager/Admin is notified immediately (in-app notification + email alert)",
+            ]} />
+            <TipBox>The round-robin cursor advances with each assignment, ensuring workload is distributed evenly across all active Telecallers. Inactive or suspended users are excluded from the rotation automatically.</TipBox>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Viewing Ownership on the Lead Detail Page</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              On the Lead Detail page, the <strong>right sidebar</strong> shows the current ownership status:
+            </p>
+            <FieldTable fields={[
+              { field: "Current Owner", desc: "The user who owns the lead at its current stage (changes with handovers)" },
+              { field: "Owner Team", desc: "The team responsible at this stage (e.g., Telecalling, Counselling, Medical)" },
+              { field: "Original Assignee", desc: "The Telecaller who first received the lead at intake — never changes" },
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Manual Reassignment</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Managers and Admins can manually reassign a lead's current owner at any time:
+            </p>
+            <StepList steps={[
+              "Open the Lead Detail page",
+              "In the right sidebar, find the 'Current Owner' field",
+              "Click the edit icon next to the owner's name",
+              "Select the new owner from the dropdown (filtered to active users in the relevant team)",
+              "Save — the change is logged in the ownership trail",
+            ]} />
+            <WarningBox>Manual reassignment changes the Current Owner but does not affect the Original Assignee (frozen Telecaller). The change is recorded in the handover log for audit purposes.</WarningBox>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Ownership Trail</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Every ownership change — whether automatic (via stage transition) or manual — is recorded in the lead's activity timeline under the type <strong>"Auto Handover"</strong> or <strong>"Manual Reassignment"</strong>. Each entry shows the previous owner, new owner, team, trigger event, and assignment method (e.g., least-load, round-robin, prior-owner preference). Managers can view the full trail by scrolling the activity feed on the Lead Detail page.
+            </p>
+          </section>
+        </div>
+      ),
+    },
+    "leads/auto-handover": {
+      title: "Auto-Handover Engine",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is the Auto-Handover Engine?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              The Auto-Handover Engine automatically transfers lead and episode ownership to the right team member whenever a lead or episode moves to a new stage. This ensures patients are always attended to by the most relevant role without manual intervention from managers.
+            </p>
+            <TipBox>The engine fires on every status change — whether triggered from the Kanban board, the Lead Detail page, a webhook, or an automated rule.</TipBox>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Stage-to-Role Mapping</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Each stage is mapped to a team and primary role. When a lead or episode enters that stage, the engine finds the best available user in that role:
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-muted/60">
+                    <th className="text-left p-2 font-semibold text-foreground border">Stage</th>
+                    <th className="text-left p-2 font-semibold text-foreground border">Team</th>
+                    <th className="text-left p-2 font-semibold text-foreground border">Primary Role(s)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { stage: "Raw Lead Captured", team: "Telecalling", role: "Telecaller" },
+                    { stage: "Contacted", team: "Telecalling", role: "Telecaller" },
+                    { stage: "Qualified", team: "Telecalling", role: "Telecaller" },
+                    { stage: "Appointment Booked", team: "Front Office", role: "Receptionist" },
+                    { stage: "Consultation In Progress", team: "Counselling", role: "Counsellor / Patient Coordinator" },
+                    { stage: "Consultation Done", team: "Counselling", role: "Counsellor / Patient Coordinator" },
+                    { stage: "Treatment Planning", team: "Counselling", role: "Counsellor / Patient Coordinator" },
+                    { stage: "Surgery Scheduled", team: "OT / IP Coordination", role: "OT/IP Coordinator" },
+                    { stage: "Pre-op Assessment", team: "Medical", role: "Medical Assistant / Doctor" },
+                    { stage: "Surgery Done / In Treatment", team: "Medical", role: "Medical Assistant / Doctor" },
+                    { stage: "Discharge / Billing Clearance", team: "Billing", role: "Billing" },
+                    { stage: "Post Care", team: "Post Care", role: "Post-Care Coordinator" },
+                    { stage: "Follow Up", team: "Post Care", role: "Post-Care Coordinator" },
+                    { stage: "Referral Follow-Up", team: "Referral", role: "Referral Coordinator" },
+                  ].map((row, i) => (
+                    <tr key={i} className={i % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                      <td className="p-2 border text-foreground font-medium">{row.stage}</td>
+                      <td className="p-2 border text-muted-foreground">{row.team}</td>
+                      <td className="p-2 border text-muted-foreground">{row.role}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">How the Engine Selects a User</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Within each team, the engine applies a preference hierarchy to pick the best user:
+            </p>
+            <div className="space-y-2">
+              {[
+                { label: "1. Prior-owner preference", desc: "If this lead/episode was previously owned by a user in the target team, they are preferred. This ensures continuity of care." },
+                { label: "2. Least-load selection", desc: "Among all eligible users, the one with the fewest active open leads/episodes is selected. This distributes workload evenly." },
+                { label: "3. Logged-in preference", desc: "If multiple users have similar load, those currently logged in (active in the last 15 minutes) are preferred." },
+                { label: "4. Patient Coordinator fallback", desc: "If no user is found in the primary role, a Patient Coordinator with the lowest open-lead count is selected automatically." },
+                { label: "5. Manager/Admin alert", desc: "If no user is found even after the fallback, the Manager and Admin are notified via in-app notification and email. The lead remains with its previous owner until manually reassigned." },
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
+                  <div className="text-xs font-bold text-primary w-6 flex-shrink-0 mt-0.5">{i + 1}</div>
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">{item.label}</div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Optional Coordinator Roles</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Three optional roles are available for hospitals that have dedicated coordinators for specialised stages. Smaller hospitals that do not staff these roles will have their cases fall back automatically to Patient Coordinator:
+            </p>
+            <div className="space-y-2">
+              {[
+                { role: "OT/IP Coordinator", code: "OT_IP_COORDINATOR", stages: "Surgery Scheduled, Pre-op Assessment", fallback: "Patient Coordinator" },
+                { role: "Post-Care Coordinator", code: "POST_CARE_COORDINATOR", stages: "Post Care, Follow Up", fallback: "Patient Coordinator" },
+                { role: "Referral Coordinator", code: "REFERRAL_COORDINATOR", stages: "Referral Follow-Up", fallback: "Patient Coordinator" },
+              ].map((item, i) => (
+                <div key={i} className="p-3 rounded-lg border bg-muted/30">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-semibold text-foreground">{item.role}</span>
+                    <span className="text-xs text-muted-foreground font-mono">({item.code})</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground"><strong>Owns stages:</strong> {item.stages}</div>
+                  <div className="text-xs text-muted-foreground"><strong>If unstaffed:</strong> Falls back to {item.fallback}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Duplicate Suppression</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              The engine has a built-in guard that prevents duplicate handovers — if the same lead/episode triggers the same handover event within 10 seconds (e.g., from a rapid double-click or race condition), only the first handover is processed. This is visible in the activity trail as a single entry.
+            </p>
+          </section>
+          <TipBox>Handover events are always logged in the activity feed under "Auto Handover" with the trigger event, method, and before/after ownership details. Managers can review the full handover history for any lead at any time.</TipBox>
         </div>
       ),
     },
@@ -1608,6 +1813,78 @@ function getArticleContent(sectionId: string, topicId: string): { title: string;
             </ul>
           </section>
           <WarningBox>Surgery scheduling validates that all required fields (date, time, surgeon) are provided. The system prevents scheduling surgeries in the past.</WarningBox>
+        </div>
+      ),
+    },
+    "episodes/discharge-billing": {
+      title: "Discharge & Billing Clearance",
+      content: (
+        <div className="space-y-6">
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What is Discharge & Billing Clearance?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+              <strong>Discharge / Billing Clearance</strong> is a dedicated episode stage that sits between <strong>In Treatment</strong> and <strong>Post Care</strong>. It marks the point where the patient is clinically ready for discharge but the financial and administrative paperwork — billing, payment collection, and insurance reconciliation — must be completed before the episode can move forward.
+            </p>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-50 text-sm text-muted-foreground">
+              <ArrowRight className="w-4 h-4 text-purple-600 flex-shrink-0" />
+              <span>In Treatment → <strong className="text-foreground">Discharge / Billing Clearance</strong> → Post Care → Follow Up → Completed</span>
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">When Does This Stage Activate?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              The episode moves to this stage when:
+            </p>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>A Doctor or Counsellor marks the patient as clinically ready for discharge from the "In Treatment" stage</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                <span>The Auto-Handover Engine transfers ownership to the <strong>Billing</strong> team automatically</span>
+              </li>
+            </ul>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What the Billing Role Does Here</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              During Discharge / Billing Clearance, the Billing user is responsible for:
+            </p>
+            <div className="space-y-2">
+              {[
+                { title: "Final Bill Generation", desc: "Prepare the final itemized bill using the Quotation Builder on the Financial tab. Confirm all cost heads (surgery, room, pharmacy, investigation, implants) are accounted for." },
+                { title: "Payment Collection", desc: "Record payment received — cash, card, NEFT/RTGS, or insurance. Update the Actual Bill field with the confirmed collected amount." },
+                { title: "Insurance Reconciliation", desc: "If the patient has insurance, verify the final approved amount from the insurer against the bill. Update the Pre-Auth approved amount fields and note any shortfall that the patient must pay directly." },
+                { title: "Discharge Summary", desc: "Confirm that the discharge summary has been issued by the medical team and attach or note any relevant documentation." },
+              ].map((item, i) => (
+                <div key={i} className="p-3 rounded-lg border bg-muted/30">
+                  <div className="text-sm font-semibold text-foreground mb-1">{item.title}</div>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">Moving to Post Care</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+              Once billing is cleared, advance the episode to "Post Care":
+            </p>
+            <StepList steps={[
+              "Open the Episode Detail page",
+              "Confirm the Actual Bill is entered and the payment status is updated on the Financial tab",
+              "For insured patients, verify the pre-auth approved amount is reconciled",
+              "Use the Status dropdown (or the stage transition button) to change the status to 'Post Care'",
+              "The Auto-Handover Engine will transfer ownership to the Post-Care Coordinator (or Patient Coordinator if no Post-Care Coordinator is assigned)",
+            ]} />
+          </section>
+          <section>
+            <h2 className="text-lg font-bold text-foreground mb-3">What If No Billing User Is Available?</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              If no active Billing user is found when the episode enters this stage, the Auto-Handover Engine falls back to a <strong>Patient Coordinator</strong> (least-load selection). The Manager and Admin are simultaneously notified via in-app notification and email that no Billing user was available, so they can manually reassign the episode or activate a Billing user account.
+            </p>
+          </section>
+          <TipBox>The Billing role sees both the Clinical and Financial tabs on episodes. Ensure your Billing users have at least "Masked" PHI access so they can see the relevant patient and cost information needed for discharge processing.</TipBox>
         </div>
       ),
     },
