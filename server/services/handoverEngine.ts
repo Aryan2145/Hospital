@@ -269,8 +269,8 @@ async function findTeamUser(
   const teamConfig = TEAM_ROLES[team];
   if (!teamConfig) return { userId: null, method: "unknown-team" };
 
-  // ── Pre-op: honour preopAssignedUserId if already set ────────────────────────
-  if (team === "Medical" && options.preopAssignedUserId) {
+  // ── Pre-op: honour preopAssignedUserId only for the Pre-op Assessment trigger ─
+  if (team === "Medical" && options.preopAssignedUserId && options.triggerEvent === "Pre-op Assessment") {
     const active = await pool.query(
       `SELECT id FROM crm_users WHERE id = $1 AND tenant_id = $2 AND status = 'Active' AND is_active = TRUE`,
       [options.preopAssignedUserId, tenantId]
@@ -296,13 +296,8 @@ async function findTeamUser(
     if (result) return { userId: result.userId, method: `pc-fallback-${result.method}` };
   }
 
-  // ── Universal fallback 2: MANAGER / ADMIN (last resort) ─────────────────────
-  const mgrCandidates = await getUsersInRoles(tenantId, ["MANAGER", "ADMIN"], options.branchId);
-  if (mgrCandidates.length > 0) {
-    const result = await pickLeastLoad(mgrCandidates, tenantId, loggedInIds, preferred);
-    if (result) return { userId: result.userId, method: `manager-last-resort-${result.method}` };
-  }
-
+  // Manager/Admin are notification-only — never assignment candidates.
+  // When no user found, processAutoHandover calls notifyManagersAdmins().
   return { userId: null, method: "no-user-found" };
 }
 

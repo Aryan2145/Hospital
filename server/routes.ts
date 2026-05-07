@@ -2165,47 +2165,17 @@ export async function registerRoutes(
   });
 
   // ── Intake Owner Resolution ───────────────────────────────────────────────────
-  // Resolves the best available intake owner via: TELECALLER → PATIENT_COORDINATOR
-  // → MANAGER/ADMIN → null. Returns both assignedCrmUserId (only set for
-  // telecallers; frozen at intake) and primaryOwnerUserId (never null if anyone
-  // exists). Advances the round-robin cursor only for the TELECALLER tier.
+  // Intake is strictly TELECALLER-ONLY round-robin (logged-in preferred, then all
+  // active telecallers). If the pool is empty, returns null owners and the caller
+  // uses logIntakeOwnership to notify MANAGER/ADMIN. Do NOT fall back to PC or Manager.
   async function resolveIntakeOwner(
     tid: number,
     branchId?: number | null,
     departmentId?: number | null,
   ): Promise<{ assignedCrmUserId: number | null; primaryOwnerUserId: number | null; ownerTeam: string; method: string }> {
-    // Tier 1: TELECALLER (round-robin via storage)
     const telecaller = await storage.getNextAssignableCrmUser(tid, branchId, departmentId);
     if (telecaller) {
       return { assignedCrmUserId: telecaller.id, primaryOwnerUserId: telecaller.id, ownerTeam: "Telecalling", method: "telecaller-round-robin" };
-    }
-    // Tier 2: PATIENT_COORDINATOR (least-load)
-    const pcRow = await pool.query(
-      `SELECT cu.id FROM crm_users cu
-       JOIN system_roles sr ON cu.system_role_id = sr.id
-       WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
-         AND sr.code = 'PATIENT_COORDINATOR'
-       ORDER BY (SELECT COUNT(*) FROM leads l WHERE l.primary_owner_user_id = cu.id AND l.tenant_id = $1
-                  AND l.status NOT IN ('Closed Won','Closed Lost','Unqualified','Discontinued','Completed')) ASC, cu.id
-       LIMIT 1`,
-      [tid]
-    );
-    if (pcRow.rows.length > 0) {
-      const pcId = pcRow.rows[0].id;
-      return { assignedCrmUserId: null, primaryOwnerUserId: pcId, ownerTeam: "Telecalling", method: "pc-fallback" };
-    }
-    // Tier 3: MANAGER / ADMIN (last resort)
-    const mgrRow = await pool.query(
-      `SELECT cu.id FROM crm_users cu
-       JOIN system_roles sr ON cu.system_role_id = sr.id
-       WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
-         AND sr.code IN ('MANAGER','ADMIN')
-       ORDER BY cu.id LIMIT 1`,
-      [tid]
-    );
-    if (mgrRow.rows.length > 0) {
-      const mgrId = mgrRow.rows[0].id;
-      return { assignedCrmUserId: null, primaryOwnerUserId: mgrId, ownerTeam: "Telecalling", method: "manager-last-resort" };
     }
     return { assignedCrmUserId: null, primaryOwnerUserId: null, ownerTeam: "Telecalling", method: "unassigned-no-telecaller" };
   }

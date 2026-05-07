@@ -3,38 +3,14 @@ import { googleSheetsSyncConfigs, leadImportLogs, handoverLogs, activities } fro
 import { eq, and } from "drizzle-orm";
 import { storage, toProperCase } from "../storage";
 
-// Full intake fallback chain for auto-sync: TELECALLER → PC → MANAGER/ADMIN → null.
-// Mirrors resolveIntakeOwner in routes.ts (no round-robin cursor advance for PC/MANAGER tiers).
+// Intake is strictly TELECALLER-ONLY round-robin (mirrors resolveIntakeOwner in routes.ts).
+// If no telecaller exists, returns null owners; logSyncIntakeOwnership will notify managers.
 async function resolveIntakeOwnerForSync(
   tenantId: number,
 ): Promise<{ assignedCrmUserId: number | null; primaryOwnerUserId: number | null; ownerTeam: string; method: string }> {
   const telecaller = await storage.getNextAssignableCrmUser(tenantId);
   if (telecaller) {
     return { assignedCrmUserId: telecaller.id, primaryOwnerUserId: telecaller.id, ownerTeam: "Telecalling", method: "telecaller-round-robin" };
-  }
-  const pcRow = await pool.query(
-    `SELECT cu.id FROM crm_users cu
-     JOIN system_roles sr ON cu.system_role_id = sr.id
-     WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
-       AND sr.code = 'PATIENT_COORDINATOR'
-     ORDER BY (SELECT COUNT(*) FROM leads l WHERE l.primary_owner_user_id = cu.id AND l.tenant_id = $1
-                AND l.status NOT IN ('Closed Won','Closed Lost','Unqualified','Discontinued','Completed')) ASC, cu.id
-     LIMIT 1`,
-    [tenantId]
-  );
-  if (pcRow.rows.length > 0) {
-    return { assignedCrmUserId: null, primaryOwnerUserId: pcRow.rows[0].id, ownerTeam: "Telecalling", method: "pc-fallback" };
-  }
-  const mgrRow = await pool.query(
-    `SELECT cu.id FROM crm_users cu
-     JOIN system_roles sr ON cu.system_role_id = sr.id
-     WHERE cu.tenant_id = $1 AND cu.status = 'Active' AND cu.is_active = TRUE
-       AND sr.code IN ('MANAGER','ADMIN')
-     ORDER BY cu.id LIMIT 1`,
-    [tenantId]
-  );
-  if (mgrRow.rows.length > 0) {
-    return { assignedCrmUserId: null, primaryOwnerUserId: mgrRow.rows[0].id, ownerTeam: "Telecalling", method: "manager-last-resort" };
   }
   return { assignedCrmUserId: null, primaryOwnerUserId: null, ownerTeam: "Telecalling", method: "unassigned-no-telecaller" };
 }
