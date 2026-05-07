@@ -13052,6 +13052,110 @@ export async function registerRoutes(
     }
   });
 
+  // ── Admin: list admin/manager users for a tenant ──────────────────────────
+  app.get("/api/admin/tenants/:id/admin-users", isAuthenticated, isSysAdmin, async (req: any, res) => {
+    try {
+      const tenantId = Number(req.params.id);
+      const result = await pool.query(
+        `SELECT cu.id, cu.name, cu.email, cu.phone, cu.is_active, cu.status,
+                cu.failed_login_attempts, cu.locked_until, cu.created_at,
+                sr.code as role_code, sr.name as role_name
+         FROM crm_users cu
+         JOIN system_roles sr ON cu.system_role_id = sr.id
+         WHERE cu.tenant_id = $1
+           AND sr.code IN ('ADMIN','MANAGER','SYS_ADMIN')
+         ORDER BY cu.is_active DESC, cu.id ASC`,
+        [tenantId]
+      );
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // ── Admin: create or reset first admin user for a tenant ──────────────────
+  app.post("/api/admin/tenants/:id/create-admin", isAuthenticated, isSysAdmin, async (req: any, res) => {
+    try {
+      const tenantId = Number(req.params.id);
+      const { name, phone, password } = req.body;
+      if (!name || !phone || !password) return res.status(400).json({ message: "name, phone and password are required" });
+
+      const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId));
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+
+      const normalizedPhone = phone.trim().replace(/\D/g, "").length === 10
+        ? "+91" + phone.trim().replace(/\D/g, "")
+        : "+" + phone.trim().replace(/\D/g, "");
+
+      // Ensure a default branch exists
+      const branchRow = await pool.query(
+        `SELECT id FROM branches WHERE tenant_id = $1 ORDER BY id LIMIT 1`, [tenantId]
+      );
+      let branchId: number | null = null;
+      if (branchRow.rows.length === 0) {
+        const nb = await pool.query(
+          `INSERT INTO branches (tenant_id, code, name, status, display_order, approval_status)
+           VALUES ($1, $2, $3, 'Active', 1, 'Approved') RETURNING id`,
+          [tenantId, (tenant.subdomain || "HQ").toUpperCase() + "-HQ", (tenant.displayName || tenant.name) + " Main Branch"]
+        );
+        branchId = nb.rows[0]?.id || null;
+      } else {
+        branchId = branchRow.rows[0].id;
+      }
+
+      const [adminRole] = await db.select().from(systemRoles).where(
+        and(eq(systemRoles.tenantId, tenantId), eq(systemRoles.code, "ADMIN"))
+      );
+      if (!adminRole) return res.status(500).json({ message: "ADMIN role not provisioned for this tenant" });
+
+      const { hashPassword } = await import("./replit_integrations/auth/replitAuth");
+      const hash = await hashPassword(password);
+
+      // Check if user with this phone already exists in this tenant
+      const existing = await pool.query(
+        `SELECT id FROM crm_users WHERE tenant_id = $1 AND phone = $2 LIMIT 1`,
+        [tenantId, normalizedPhone]
+      );
+
+      let userId: number;
+      if (existing.rows.length > 0) {
+        userId = existing.rows[0].id;
+        await pool.query(
+          `UPDATE crm_users SET name=$1, password_hash=$2, system_role_id=$3, is_active=TRUE, status='Active',
+           failed_login_attempts=0, locked_until=NULL, access_scope_type='All', phi_access_level='Full'
+           WHERE id=$4`,
+          [name, hash, adminRole.id, userId]
+        );
+      } else {
+        const ins = await pool.query(
+          `INSERT INTO crm_users (tenant_id, code, name, phone, system_role_id, branch_id, is_active, status,
+           access_scope_type, phi_access_level, password_hash, display_order)
+           VALUES ($1,$2,$3,$4,$5,$6,TRUE,'Active','All','Full',$7,0) RETURNING id`,
+          [tenantId, "ADMIN-" + Date.now(), name, normalizedPhone, adminRole.id, branchId, hash]
+        );
+        userId = ins.rows[0].id;
+      }
+
+      res.json({ success: true, userId, phone: normalizedPhone, message: existing.rows.length > 0 ? "Admin user updated" : "Admin user created" });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // ── Admin: unlock a CRM user (reset failed attempts & lock) ───────────────
+  app.post("/api/admin/tenants/:tenantId/users/:userId/unlock", isAuthenticated, isSysAdmin, async (req: any, res) => {
+    try {
+      const { tenantId, userId } = req.params;
+      await pool.query(
+        `UPDATE crm_users SET failed_login_attempts=0, locked_until=NULL WHERE id=$1 AND tenant_id=$2`,
+        [Number(userId), Number(tenantId)]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.get("/api/communication-preferences/:entityType/:entityId", isAuthenticated, async (req: any, res) => {
     try {
       const tid = await getDefaultTenantId(req);

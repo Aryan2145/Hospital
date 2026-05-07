@@ -28,7 +28,8 @@ import {
   Building2, Plus, Ban, CheckCircle, Globe, Phone, Mail, User,
   ExternalLink, Calendar, RefreshCw, FlaskConical, Download, Upload,
   ShieldCheck, Eye, EyeOff, AlertTriangle, FileCheck, Lock,
-  Info, ChevronRight, CheckCircle2, CalendarClock,
+  Info, ChevronRight, CheckCircle2, CalendarClock, UserCog, UserPlus,
+  Unlock, BadgeCheck, XCircle,
 } from "lucide-react";
 
 function fmtDate(val: string | null | undefined) {
@@ -537,12 +538,214 @@ function ImportDialog({ tenants, onClose }: { tenants: any[]; onClose: () => voi
   );
 }
 
+// ─── Manage Admin Dialog ───────────────────────────────────────────────────────
+function ManageAdminDialog({ tenant, onClose }: { tenant: any; onClose: () => void }) {
+  const { toast } = useToast();
+  const [tab, setTab] = useState<"list" | "create">("list");
+  const [form, setForm] = useState({ name: "", phone: "", password: "" });
+  const [showPass, setShowPass] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<{ phone: string; password: string } | null>(null);
+
+  const { data: adminUsers = [], isLoading, refetch } = useQuery<any[]>({
+    queryKey: ["/api/admin/tenants", tenant.tenantId, "admin-users"],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/tenants/${tenant.tenantId}/admin-users`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load");
+      return res.json();
+    },
+  });
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/tenants/${tenant.tenantId}/create-admin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(form),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message);
+      setCreated({ phone: json.phone, password: form.password });
+      refetch();
+      toast({ title: json.message });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUnlock(userId: number) {
+    try {
+      const res = await fetch(`/api/admin/tenants/${tenant.tenantId}/users/${userId}/unlock`, {
+        method: "POST", credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed");
+      refetch();
+      toast({ title: "Account unlocked" });
+    } catch {
+      toast({ title: "Failed to unlock", variant: "destructive" });
+    }
+  }
+
+  const isLocked = (u: any) => u.locked_until && new Date(u.locked_until) > new Date();
+
+  return (
+    <div className="space-y-4">
+      {/* Tab switcher */}
+      <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+        <button
+          className={`flex-1 text-sm py-1.5 rounded-md font-medium transition-colors ${tab === "list" ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"}`}
+          onClick={() => { setTab("list"); setCreated(null); }}
+          data-testid="tab-admin-list"
+        >
+          Admin Users ({adminUsers.length})
+        </button>
+        <button
+          className={`flex-1 text-sm py-1.5 rounded-md font-medium transition-colors ${tab === "create" ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"}`}
+          onClick={() => { setTab("create"); setCreated(null); }}
+          data-testid="tab-admin-create"
+        >
+          <UserPlus className="w-3.5 h-3.5 inline mr-1" />
+          Create / Reset
+        </button>
+      </div>
+
+      {/* List tab */}
+      {tab === "list" && (
+        <div>
+          {isLoading ? (
+            <div className="text-center py-6 text-slate-400 text-sm">Loading…</div>
+          ) : adminUsers.length === 0 ? (
+            <div className="text-center py-8 space-y-2">
+              <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+              <p className="text-sm font-medium text-slate-700">No admin users yet</p>
+              <p className="text-xs text-slate-400">Use the "Create / Reset" tab to add the first admin.</p>
+              <Button size="sm" className="mt-2" onClick={() => setTab("create")} data-testid="button-goto-create">
+                <UserPlus className="w-3.5 h-3.5 mr-1" /> Create First Admin
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {adminUsers.map((u: any) => (
+                <div key={u.id} className={`rounded-lg border p-3 flex items-center gap-3 ${!u.is_active ? "opacity-50 bg-slate-50" : isLocked(u) ? "border-red-200 bg-red-50" : "border-slate-200 bg-white"}`} data-testid={`admin-user-row-${u.id}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${!u.is_active ? "bg-slate-200 text-slate-400" : isLocked(u) ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-700"}`}>
+                    {u.name?.[0]?.toUpperCase() || "?"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-slate-800 truncate">{u.name}</span>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">{u.role_name}</Badge>
+                      {!u.is_active && <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-slate-400">Inactive</Badge>}
+                      {isLocked(u) && <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Locked</Badge>}
+                    </div>
+                    <div className="text-xs text-slate-400 mt-0.5">{u.phone}</div>
+                    {isLocked(u) && (
+                      <div className="text-xs text-red-500 mt-0.5">{u.failed_login_attempts} failed attempts</div>
+                    )}
+                  </div>
+                  {isLocked(u) && (
+                    <Button size="sm" variant="outline" className="text-emerald-600 border-emerald-200 hover:bg-emerald-50 shrink-0" onClick={() => handleUnlock(u.id)} data-testid={`button-unlock-${u.id}`}>
+                      <Unlock className="w-3.5 h-3.5 mr-1" /> Unlock
+                    </Button>
+                  )}
+                  {u.is_active && !isLocked(u) && (
+                    <BadgeCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Create / Reset tab */}
+      {tab === "create" && !created && (
+        <form onSubmit={handleCreate} className="space-y-3">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
+            Creates a new ADMIN user for <strong>{tenant.displayName || tenant.tenantName}</strong>. If the phone already exists in this tenant, the password and role will be reset.
+          </div>
+          <div>
+            <Label className="text-sm">Full Name *</Label>
+            <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Dr. Aryan Sharma" required className="mt-1" data-testid="input-admin-name" />
+          </div>
+          <div>
+            <Label className="text-sm">Mobile Number *</Label>
+            <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="10-digit mobile" required className="mt-1" data-testid="input-admin-phone" />
+          </div>
+          <div>
+            <Label className="text-sm">Password *</Label>
+            <div className="relative mt-1">
+              <Input
+                type={showPass ? "text" : "password"}
+                value={form.password}
+                onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                placeholder="Min 6 characters"
+                required
+                minLength={6}
+                className="pr-10"
+                data-testid="input-admin-password"
+              />
+              <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" onClick={() => setShowPass(v => !v)}>
+                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button type="button" variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+            <Button type="submit" className="flex-1 bg-blue-700 hover:bg-blue-800" disabled={busy} data-testid="button-create-admin-submit">
+              {busy ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving…</> : <><UserPlus className="w-4 h-4 mr-1" />Create Admin</>}
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {/* Success state */}
+      {tab === "create" && created && (
+        <div className="space-y-4">
+          <div className="text-center py-2">
+            <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+            </div>
+            <p className="font-semibold text-slate-800">Admin user ready</p>
+            <p className="text-xs text-slate-400 mt-1">Share these credentials securely.</p>
+          </div>
+          <div className="bg-slate-50 rounded-lg p-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-500">URL</span>
+              <span className="font-mono font-medium text-blue-700">{tenant.subdomain}.rgbindia.com</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Phone</span>
+              <span className="font-mono font-medium">{created.phone}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Password</span>
+              <span className="font-mono font-medium">{created.password}</span>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => { setCreated(null); setForm({ name: "", phone: "", password: "" }); }}>Create Another</Button>
+            <Button className="flex-1" onClick={() => { setTab("list"); setCreated(null); }} data-testid="button-view-admin-list">View Users</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 export default function AdminHospitals() {
   const { toast } = useToast();
   const [showAdd, setShowAdd]         = useState(false);
   const [exportTenant, setExportTenant] = useState<any | null>(null);
   const [showImport, setShowImport]   = useState(false);
+  const [manageAdminTenant, setManageAdminTenant] = useState<any | null>(null);
   const [form, setForm] = useState({
     name: "", subdomain: "", displayName: "",
     contactPerson: "", contactEmail: "", contactPhone: "",
@@ -737,6 +940,18 @@ export default function AdminHospitals() {
                 </div>
               )}
 
+              {/* Manage Admin — warning strip when no users */}
+              {t.users === 0 && (
+                <button
+                  className="w-full mb-2 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs text-amber-800 hover:bg-amber-100 transition-colors text-left"
+                  onClick={() => setManageAdminTenant(t)}
+                  data-testid={`button-no-users-warning-${t.tenantId}`}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span><strong>No admin user yet.</strong> Click to create the first admin.</span>
+                </button>
+              )}
+
               <div className="flex gap-2">
                 <Button
                   variant="outline" size="sm"
@@ -757,6 +972,17 @@ export default function AdminHospitals() {
                   <Download className="w-3.5 h-3.5 mr-1" /> Export
                 </Button>
 
+                <Button
+                  variant="outline" size="sm"
+                  className={`flex-1 border ${t.users === 0 ? "text-amber-600 border-amber-300 hover:bg-amber-50" : "text-slate-600 border-slate-200 hover:bg-slate-50"}`}
+                  onClick={() => setManageAdminTenant(t)}
+                  data-testid={`button-manage-admin-${t.tenantId}`}
+                >
+                  <UserCog className="w-3.5 h-3.5 mr-1" /> Admin
+                </Button>
+              </div>
+
+              <div className="flex gap-2 mt-2">
                 {t.subscriptionStatus === "Active" ? (
                   <Button
                     variant="outline" size="sm"
@@ -862,6 +1088,21 @@ export default function AdminHospitals() {
               </DialogTitle>
             </DialogHeader>
             <ImportDialog tenants={tenantList} onClose={() => setShowImport(false)} />
+          </DialogContent>
+        </Dialog>
+
+        {/* Manage Admin Dialog */}
+        <Dialog open={!!manageAdminTenant} onOpenChange={v => { if (!v) setManageAdminTenant(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserCog className="w-4 h-4 text-blue-600" />
+                Admin Users — {manageAdminTenant?.displayName || manageAdminTenant?.tenantName}
+              </DialogTitle>
+            </DialogHeader>
+            {manageAdminTenant && (
+              <ManageAdminDialog tenant={manageAdminTenant} onClose={() => setManageAdminTenant(null)} />
+            )}
           </DialogContent>
         </Dialog>
       </div>
