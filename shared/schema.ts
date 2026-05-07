@@ -525,7 +525,7 @@ export const referrers = pgTable("referrers", {
   type: text("type"),
   phone: text("phone"),
   email: text("email"),
-  linkedLeadId: integer("linked_lead_id"),
+  linkedLeadId: integer("linked_lead_id").references(() => leads.id, { onDelete: "set null" }),
   status: text("status").notNull().default("Active"),
   displayOrder: integer("display_order").default(0),
   approvalStatus: text("approval_status").default("Approved"),

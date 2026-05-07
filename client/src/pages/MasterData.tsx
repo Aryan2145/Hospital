@@ -1313,7 +1313,13 @@ export default function MasterData() {
                       ) : field.type === "select" && field.options ? (
                         <SearchableSelect
                           value={formData[field.key] || ""}
-                          onValueChange={(val) => setFormData({ ...formData, [field.key]: val })}
+                          onValueChange={(val) => {
+                            const updates: Record<string, any> = { [field.key]: val };
+                            if (selectedTable === "referrers" && field.key === "type" && val !== "Patient") {
+                              updates.linkedLeadId = null;
+                            }
+                            setFormData({ ...formData, ...updates });
+                          }}
                           options={field.options.map((opt) => ({ value: opt, label: opt }))}
                           placeholder={`Select ${field.label}`}
                           data-testid={`select-${field.key}`}

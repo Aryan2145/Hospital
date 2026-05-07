@@ -1723,18 +1723,42 @@ export async function registerRoutes(
 
   app.get("/api/leads/search", isAuthenticated, async (req: any, res) => {
     try {
-      const tid = req.session?.tenantId;
+      const reqTid = req.session?.tenantId;
       const q = ((req.query.q as string) || "").trim();
       if (!q || q.length < 2) return res.json([]);
       const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+      const sessionCrmUserId = req.session?.crmUserId;
+      const allCrmUsers = await storage.getCrmUsers(reqTid);
+      const crmUser = sessionCrmUserId ? allCrmUsers.find((u: any) => u.id === sessionCrmUserId) || null : null;
+      const phiLevel = crmUser?.phiAccessLevel || "None";
+
+      let scopeClause = "l.tenant_id = $1";
+      const params: any[] = [reqTid];
+      if (crmUser && crmUser.accessScopeType === "Self") {
+        params.push(crmUser.id);
+        scopeClause += ` AND l.assigned_crm_user_id = $${params.length}`;
+      } else if (crmUser && crmUser.accessScopeType === "Branch" && crmUser.branchId) {
+        params.push(crmUser.branchId);
+        scopeClause += ` AND l.branch_id = $${params.length}`;
+      }
+
       const term = `%${q}%`;
+      params.push(term);
+      const termIdx = params.length;
+      params.push(limit);
+      const limitIdx = params.length;
+
       const result = await pool.query(
-        `SELECT id, name, phone_e164 AS "phoneE164", email FROM leads
-         WHERE tenant_id = $1 AND (name ILIKE $2 OR phone_e164 ILIKE $2 OR mobile_normalized ILIKE $2)
-         ORDER BY name ASC LIMIT $3`,
-        [tid, term, limit]
+        `SELECT l.id, l.name, l.phone_e164 AS "phoneE164", l.email
+         FROM leads l
+         WHERE ${scopeClause}
+           AND (l.name ILIKE $${termIdx} OR l.phone_e164 ILIKE $${termIdx} OR l.mobile_normalized ILIKE $${termIdx})
+         ORDER BY l.name ASC LIMIT $${limitIdx}`,
+        params
       );
-      res.json(result.rows);
+
+      const rows = result.rows.map((r: any) => applyPhiMasking(r, phiLevel));
+      res.json(rows);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
