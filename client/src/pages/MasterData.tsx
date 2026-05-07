@@ -533,8 +533,8 @@ export default function MasterData() {
       status: record.status,
       displayOrder: record.displayOrder ?? 0,
     };
-    extraFields.forEach((f) => {
-      let val = record[f.key] ?? (f.type === "number" ? 0 : f.type === "boolean" ? false : f.type === "ref" ? "" : "");
+    allExtraFields.forEach((f) => {
+      let val = record[f.key] ?? (f.type === "number" ? 0 : f.type === "boolean" ? false : f.type === "ref" ? "" : f.type === "patient-picker" ? null : "");
       if (f.type === "date" && val) {
         try {
           val = new Date(val).toISOString().split("T")[0];

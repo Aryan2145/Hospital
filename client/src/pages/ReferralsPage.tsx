@@ -170,7 +170,7 @@ export default function ReferralsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/masters/referrers"] });
       setFormData(prev => ({ ...prev, referrerId: created.id }));
       setAddReferrerOpen(false);
-      setNewReferrer({ name: "", phone: "", email: "", type: "Doctor" });
+      setNewReferrer({ name: "", phone: "", email: "", type: "Doctor", linkedLeadId: null });
       toast({ title: "Referrer added to master" });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -528,7 +528,7 @@ export default function ReferralsPage() {
                   size="sm"
                   variant="outline"
                   className="h-7 text-xs gap-1"
-                  onClick={() => { setNewReferrer({ name: "", phone: "", email: "", type: "Doctor" }); setAddReferrerOpen(true); }}
+                  onClick={() => { setNewReferrer({ name: "", phone: "", email: "", type: "Doctor", linkedLeadId: null }); setAddReferrerOpen(true); }}
                   data-testid="button-add-referrer"
                 >
                   <Plus className="w-3 h-3" /> Add Referrer
@@ -556,7 +556,7 @@ export default function ReferralsPage() {
                             size="sm"
                             variant="link"
                             className="mt-1 h-auto p-0 text-xs"
-                            onClick={() => { setNewReferrer({ name: "", phone: "", email: "", type: "Doctor" }); setAddReferrerOpen(true); }}
+                            onClick={() => { setNewReferrer({ name: "", phone: "", email: "", type: "Doctor", linkedLeadId: null }); setAddReferrerOpen(true); }}
                           >
                             Add your first referrer
                           </Button>
