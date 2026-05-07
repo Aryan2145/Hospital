@@ -62,6 +62,14 @@ interface MasterRecord {
   [key: string]: any;
 }
 
+interface ImportPreview {
+  total: number;
+  valid: number;
+  invalid: number;
+  duplicateCount: number;
+  errors: { row: number; message: string }[];
+}
+
 interface ImportResult {
   importLogId: number;
   totalRows: number;
@@ -242,6 +250,9 @@ export default function MasterData() {
   const [formData, setFormData] = useState<Record<string, any>>({ code: "", name: "", status: "Active", displayOrder: 0 });
   const [showImportResult, setShowImportResult] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [showImportPreview, setShowImportPreview] = useState(false);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
   const [showImportLogs, setShowImportLogs] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -475,14 +486,39 @@ export default function MasterData() {
     },
   });
 
+  const importPreviewMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/masters/${selectedTable}/import?mode=preview`, {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Preview failed");
+      }
+      return res.json() as Promise<ImportPreview>;
+    },
+    onSuccess: (preview, file) => {
+      setPendingImportFile(file);
+      setImportPreview(preview);
+      setShowImportPreview(true);
+    },
+    onError: (err: any) => {
+      toast({ title: "Import Preview Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
+      const fd = new FormData();
+      fd.append("file", file);
       const res = await fetch(`/api/masters/${selectedTable}/import`, {
         method: "POST",
         credentials: "include",
-        body: formData,
+        body: fd,
       });
       if (!res.ok) {
         const err = await res.json();
@@ -494,18 +530,27 @@ export default function MasterData() {
       queryClient.invalidateQueries({ queryKey: ["/api/masters", selectedTable] });
       queryClient.invalidateQueries({ queryKey: ["/api/masters", selectedTable, "import-logs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/masters/pending-approvals"] });
+      setShowImportPreview(false);
+      setPendingImportFile(null);
+      setImportPreview(null);
       setImportResult(result);
       setShowImportResult(true);
-      const approvalMsg = result.sentToApproval ? " and sent to approval queue" : "";
-      toast({
-        title: "Import Complete",
-        description: `${result.successCount} of ${result.totalRows} records imported${approvalMsg}`,
-      });
     },
     onError: (err: any) => {
       toast({ title: "Import Failed", description: err.message, variant: "destructive" });
     },
   });
+
+  function downloadErrorFile(errors: { row: number; message: string }[], prefix = "import_errors") {
+    const lines = ["row,error", ...errors.map(e => `${e.row},"${e.message.replace(/"/g, '""')}"`)];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${prefix}_${selectedTable}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const FIELD_DEFAULTS: Record<string, Record<string, any>> = {
     crmUsers: { accessScopeType: "Self", phiAccessLevel: "None", isActive: true },
@@ -622,7 +667,7 @@ export default function MasterData() {
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) {
-      importMutation.mutate(file);
+      importPreviewMutation.mutate(file);
     }
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
@@ -986,11 +1031,13 @@ export default function MasterData() {
                     <Button
                       variant="outline"
                       onClick={() => fileInputRef.current?.click()}
-                      disabled={importMutation.isPending}
+                      disabled={importPreviewMutation.isPending || importMutation.isPending}
                       data-testid="button-import-csv"
                     >
                       <Upload className="h-4 w-4 mr-2" />
-                      <span className="hidden md:inline">{importMutation.isPending ? "Importing..." : "Import CSV"}</span>
+                      <span className="hidden md:inline">
+                        {importPreviewMutation.isPending ? "Validating..." : importMutation.isPending ? "Importing..." : "Import CSV"}
+                      </span>
                     </Button>
                   </>
                 )}
@@ -1568,6 +1615,98 @@ export default function MasterData() {
         </DialogContent>
       </Dialog>
 
+      {/* Import Preview Dialog */}
+      <Dialog open={showImportPreview} onOpenChange={(open) => { if (!open) { setShowImportPreview(false); setPendingImportFile(null); setImportPreview(null); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle data-testid="text-import-preview-title">Import Preview</DialogTitle>
+          </DialogHeader>
+          {importPreview && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Review the validation summary before confirming. Only valid rows will be imported.
+              </p>
+              <div className="grid grid-cols-3 gap-3">
+                <Card className="p-3">
+                  <div className="flex items-center gap-2">
+                    <Database className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Total Rows</span>
+                  </div>
+                  <p className="text-xl font-semibold mt-1" data-testid="text-preview-total">{importPreview.total}</p>
+                </Card>
+                <Card className="p-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <span className="text-xs text-muted-foreground">Will Import</span>
+                  </div>
+                  <p className="text-xl font-semibold mt-1 text-green-600" data-testid="text-preview-valid">{importPreview.valid}</p>
+                </Card>
+                <Card className="p-3">
+                  <div className="flex items-center gap-2">
+                    <XCircle className="h-4 w-4 text-red-600" />
+                    <span className="text-xs text-muted-foreground">Will Skip</span>
+                  </div>
+                  <p className="text-xl font-semibold mt-1 text-red-600" data-testid="text-preview-invalid">{importPreview.invalid}</p>
+                </Card>
+              </div>
+
+              {importPreview.errors.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold">Validation Errors ({importPreview.errors.length})</h4>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => downloadErrorFile(importPreview.errors, "preview_errors")}
+                      data-testid="button-download-preview-errors"
+                    >
+                      <FileDown className="h-3 w-3" />
+                      Download Error File
+                    </Button>
+                  </div>
+                  <div className="max-h-40 overflow-auto border rounded-md p-2 text-sm space-y-1">
+                    {importPreview.errors.slice(0, 50).map((err, i) => (
+                      <div key={i} className="flex gap-2 text-muted-foreground" data-testid={`text-preview-error-${i}`}>
+                        <span className="font-mono text-xs shrink-0">Row {err.row}:</span>
+                        <span>{err.message}</span>
+                      </div>
+                    ))}
+                    {importPreview.errors.length > 50 && (
+                      <p className="text-xs text-muted-foreground italic">…and {importPreview.errors.length - 50} more. Download error file for full list.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {importPreview.valid === 0 && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-800 dark:bg-red-950/30 dark:border-red-900 dark:text-red-300">
+                  <XCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>No valid rows to import. Fix the errors and re-upload.</span>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { setShowImportPreview(false); setPendingImportFile(null); setImportPreview(null); }}
+              data-testid="button-cancel-import-preview"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => { if (pendingImportFile) importMutation.mutate(pendingImportFile); }}
+              disabled={importMutation.isPending || !importPreview || importPreview.valid === 0}
+              data-testid="button-confirm-import"
+            >
+              {importMutation.isPending ? "Importing..." : `Confirm Import (${importPreview?.valid ?? 0} rows)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Results Dialog */}
       <Dialog open={showImportResult} onOpenChange={setShowImportResult}>
         <DialogContent>
           <DialogHeader>
@@ -1586,7 +1725,7 @@ export default function MasterData() {
                 <Card className="p-3">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    <span className="text-sm text-muted-foreground">Success</span>
+                    <span className="text-sm text-muted-foreground">Imported</span>
                   </div>
                   <p className="text-xl font-semibold mt-1 text-green-600" data-testid="text-success-count">{importResult.successCount}</p>
                 </Card>
@@ -1609,20 +1748,35 @@ export default function MasterData() {
               {importResult.sentToApproval && importResult.successCount > 0 && (
                 <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-800 dark:bg-blue-950/30 dark:border-blue-900 dark:text-blue-300" data-testid="text-approval-queue-notice">
                   <ShieldCheck className="h-4 w-4 flex-shrink-0" />
-                  <span>{importResult.successCount} record(s) have been sent to the approval queue. An admin must approve them before they become active.</span>
+                  <span>{importResult.successCount} record(s) sent to approval queue. An admin must approve them before they become active.</span>
                 </div>
               )}
 
               {importResult.errors.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-semibold mb-2">Error Details</h4>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold">Error Details ({importResult.errors.length})</h4>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => downloadErrorFile(importResult.errors)}
+                      data-testid="button-download-import-errors"
+                    >
+                      <FileDown className="h-3 w-3" />
+                      Download Error File
+                    </Button>
+                  </div>
                   <div className="max-h-40 overflow-auto border rounded-md p-2 text-sm space-y-1">
-                    {importResult.errors.map((err, i) => (
+                    {importResult.errors.slice(0, 50).map((err, i) => (
                       <div key={i} className="flex gap-2 text-muted-foreground" data-testid={`text-import-error-${i}`}>
-                        <span className="font-mono text-xs">Row {err.row}:</span>
+                        <span className="font-mono text-xs shrink-0">Row {err.row}:</span>
                         <span>{err.message}</span>
                       </div>
                     ))}
+                    {importResult.errors.length > 50 && (
+                      <p className="text-xs text-muted-foreground italic">…and {importResult.errors.length - 50} more. Download error file for full list.</p>
+                    )}
                   </div>
                 </div>
               )}

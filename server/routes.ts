@@ -5229,7 +5229,171 @@ export async function registerRoutes(
     }
   });
 
-  // --- CSV Export (Download) --- must be before /:tableName/:id to avoid conflict
+  // =============================================
+  // MASTER COLUMN DEFS — single source of truth for export / template / import
+  // =============================================
+  type MasterColType = "text" | "number" | "boolean" | "date" | "email" | "phone" | "select" | "ref";
+  interface MasterColDef {
+    key: string;        // camelCase DB field name
+    csvHeader: string;  // canonical CSV column header
+    required?: boolean;
+    type: MasterColType;
+    refTable?: string;  // snake_case DB table name for ref lookups
+    options?: string[]; // allowed values for select fields
+  }
+
+  const MASTER_COLUMN_DEFS: Record<string, MasterColDef[]> = {
+    states: [
+      { key: "countryId", csvHeader: "country", type: "ref", refTable: "countries" },
+    ],
+    cities: [
+      { key: "stateId", csvHeader: "state", type: "ref", refTable: "states", required: true },
+    ],
+    pinCodes: [
+      { key: "cityId", csvHeader: "city", type: "ref", refTable: "cities", required: true },
+    ],
+    areas: [
+      { key: "cityId", csvHeader: "city", type: "ref", refTable: "cities", required: true },
+      { key: "pinCode", csvHeader: "pinCode", type: "text" },
+      { key: "serviceable", csvHeader: "serviceable", type: "boolean" },
+      { key: "defaultNearestBranchId", csvHeader: "defaultNearestBranch", type: "ref", refTable: "branches" },
+    ],
+    branches: [
+      { key: "organisationId", csvHeader: "organisation", type: "ref", refTable: "organisations", required: true },
+      { key: "cityId", csvHeader: "city", type: "ref", refTable: "cities" },
+      { key: "address", csvHeader: "address", type: "text" },
+      { key: "phone", csvHeader: "phone", type: "phone" },
+    ],
+    callingLines: [
+      { key: "phoneNumber", csvHeader: "phoneNumber", type: "phone" },
+      { key: "provider", csvHeader: "provider", type: "text" },
+    ],
+    userLineAssignments: [
+      { key: "crmUserId", csvHeader: "crmUser", type: "ref", refTable: "crm_users", required: true },
+      { key: "callingLineId", csvHeader: "callingLine", type: "ref", refTable: "calling_lines", required: true },
+      { key: "isPrimary", csvHeader: "isPrimary", type: "boolean" },
+    ],
+    crmUsers: [
+      { key: "email", csvHeader: "email", type: "email", required: true },
+      { key: "phone", csvHeader: "phone", type: "phone" },
+      { key: "branchId", csvHeader: "branch", type: "ref", refTable: "branches" },
+      { key: "departmentId", csvHeader: "department", type: "ref", refTable: "administrative_departments" },
+      { key: "designationId", csvHeader: "designation", type: "ref", refTable: "designations" },
+      { key: "employmentTypeId", csvHeader: "employmentType", type: "ref", refTable: "employment_types" },
+      { key: "systemRoleId", csvHeader: "systemRole", type: "ref", refTable: "system_roles", required: true },
+      { key: "accessScopeType", csvHeader: "accessScopeType", type: "select", options: ["All", "Branch", "Team", "Self"] },
+      { key: "phiAccessLevel", csvHeader: "phiAccessLevel", type: "select", options: ["Full", "Masked", "None"] },
+      { key: "isActive", csvHeader: "isActive", type: "boolean" },
+    ],
+    consultationTypes: [
+      { key: "treatmentDepartmentId", csvHeader: "treatmentDepartment", type: "ref", refTable: "treatment_departments" },
+    ],
+    doctors: [
+      { key: "specialization", csvHeader: "specialization", type: "text" },
+      { key: "qualification", csvHeader: "qualification", type: "text" },
+      { key: "branchId", csvHeader: "branch", type: "ref", refTable: "branches" },
+      { key: "treatmentDepartmentId", csvHeader: "treatmentDepartment", type: "ref", refTable: "treatment_departments" },
+      { key: "consultationTypeId", csvHeader: "consultationType", type: "ref", refTable: "consultation_types" },
+      { key: "phone", csvHeader: "phone", type: "phone" },
+      { key: "email", csvHeader: "email", type: "email" },
+    ],
+    opdTimings: [
+      { key: "doctorId", csvHeader: "doctor", type: "ref", refTable: "doctors", required: true },
+      { key: "branchId", csvHeader: "branch", type: "ref", refTable: "branches", required: true },
+      { key: "dayOfWeek", csvHeader: "dayOfWeek", type: "text" },
+      { key: "startTime", csvHeader: "startTime", type: "text" },
+      { key: "endTime", csvHeader: "endTime", type: "text" },
+      { key: "maxPatients", csvHeader: "maxPatients", type: "number" },
+      { key: "slotDuration", csvHeader: "slotDuration", type: "number" },
+    ],
+    doctorLeaveExceptions: [
+      { key: "doctorId", csvHeader: "doctor", type: "ref", refTable: "doctors", required: true },
+      { key: "leaveDate", csvHeader: "leaveDate", type: "date" },
+      { key: "leaveEndDate", csvHeader: "leaveEndDate", type: "date" },
+      { key: "reason", csvHeader: "reason", type: "text" },
+    ],
+    leadSources: [
+      { key: "categoryId", csvHeader: "category", type: "ref", refTable: "lead_source_categories", required: true },
+    ],
+    referrers: [
+      { key: "type", csvHeader: "type", type: "select", options: ["Doctor", "Patient", "Hospital", "Agent", "Other"] },
+      { key: "phone", csvHeader: "phone", type: "phone" },
+      { key: "email", csvHeader: "email", type: "email" },
+    ],
+    corporateInsurances: [
+      { key: "type", csvHeader: "type", type: "select", options: ["Corporate", "Insurance", "TPA"] },
+    ],
+    conversionStages: [
+      { key: "isTerminal", csvHeader: "isTerminal", type: "boolean" },
+      { key: "isBusinessAchieved", csvHeader: "isBusinessAchieved", type: "boolean" },
+    ],
+    leadStatuses: [
+      { key: "isTerminal", csvHeader: "isTerminal", type: "boolean" },
+      { key: "isBusinessAchieved", csvHeader: "isBusinessAchieved", type: "boolean" },
+      { key: "requiresNextTask", csvHeader: "requiresNextTask", type: "boolean" },
+      { key: "allowNurtureOption", csvHeader: "allowNurtureOption", type: "boolean" },
+      { key: "defaultOwnerRole", csvHeader: "defaultOwnerRole", type: "select", options: ["PATIENT_COORDINATOR", "COUNSELLOR", "MANAGER", "ADMIN"] },
+    ],
+    templates: [
+      { key: "channel", csvHeader: "channel", type: "select", options: ["SMS", "Email", "WhatsApp", "Push"] },
+      { key: "subject", csvHeader: "subject", type: "text" },
+      { key: "body", csvHeader: "body", type: "text" },
+    ],
+    holidays: [
+      { key: "holidayDate", csvHeader: "holidayDate", type: "date" },
+    ],
+    tags: [
+      { key: "color", csvHeader: "color", type: "text" },
+    ],
+    slaRules: [
+      { key: "triggerEvent", csvHeader: "triggerEvent", type: "text" },
+      { key: "timeLimitMinutes", csvHeader: "timeLimitMinutes", type: "number" },
+      { key: "appliesToRole", csvHeader: "appliesToRole", type: "select", options: ["PATIENT_COORDINATOR", "COUNSELLOR", "MANAGER", "ADMIN", "All"] },
+      { key: "escalationRole", csvHeader: "escalationRole", type: "select", options: ["MANAGER", "ADMIN"] },
+    ],
+    reminderPolicies: [
+      { key: "offsetMinutes", csvHeader: "offsetMinutes", type: "number" },
+      { key: "channel", csvHeader: "channel", type: "select", options: ["SMS", "Email", "WhatsApp", "Push"] },
+      { key: "fallbackChannel", csvHeader: "fallbackChannel", type: "select", options: ["SMS", "Email", "WhatsApp", "Push"] },
+    ],
+    dataRetentionPolicies: [
+      { key: "entityType", csvHeader: "entityType", type: "select", options: ["Lead", "Episode", "Patient", "Activity", "Task", "Appointment"] },
+      { key: "retentionMonths", csvHeader: "retentionMonths", type: "number" },
+      { key: "action", csvHeader: "action", type: "select", options: ["archive", "anonymize", "delete"] },
+    ],
+    costHeads: [
+      { key: "treatmentDepartmentId", csvHeader: "treatmentDepartment", type: "ref", refTable: "treatment_departments" },
+    ],
+  };
+
+  async function resolveRefById(refTable: string, id: number, tenantId: number): Promise<string | null> {
+    if (!id) return null;
+    try {
+      const result = await pool.query(
+        `SELECT COALESCE(name, code) AS label FROM "${refTable}" WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
+        [tenantId, id]
+      );
+      return result.rows[0]?.label || null;
+    } catch { return null; }
+  }
+
+  async function resolveRefByValue(refTable: string, value: string, tenantId: number): Promise<number | null> {
+    const numVal = parseInt(value);
+    if (!isNaN(numVal)) {
+      const check = await pool.query(
+        `SELECT id FROM "${refTable}" WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
+        [tenantId, numVal]
+      );
+      return check.rows[0]?.id || null;
+    }
+    const result = await pool.query(
+      `SELECT id FROM "${refTable}" WHERE tenant_id = $1 AND (UPPER(code) = UPPER($2) OR UPPER(name) = UPPER($2)) LIMIT 1`,
+      [tenantId, value.trim()]
+    );
+    return result.rows[0]?.id || null;
+  }
+
+  // --- CSV Export — id first, all columns, FK values resolved to human-readable names ---
   app.get("/api/masters/:tableName/export", isAuthenticated, async (req: any, res) => {
     const tableName = req.params.tableName as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
@@ -5238,16 +5402,38 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const records = await storage.getMasterRecords(tableName, tid);
-      const csvData = stringify(records.map(r => ({
-        code: r.code,
-        name: r.name,
-        status: r.status,
-        displayOrder: r.displayOrder ?? 0,
-      })), { header: true, columns: ["code", "name", "status", "displayOrder"] });
-      const sessionCrmUserId = req.session?.crmUserId;
-      if (sessionCrmUserId) {
-        logAccess(tid, sessionCrmUserId, "EXPORT", "master_data", 0, `table=${tableName}, records=${records.length}`, req);
-      }
+      const colDefs = MASTER_COLUMN_DEFS[tableName] || [];
+      const allCols = ["id", "code", "name", "status", "displayOrder", ...colDefs.map(c => c.csvHeader)];
+
+      const csvRows = await Promise.all(records.map(async (r) => {
+        const row: Record<string, any> = {
+          id: r.id,
+          code: r.code,
+          name: r.name,
+          status: r.status,
+          displayOrder: r.displayOrder ?? 0,
+        };
+        for (const col of colDefs) {
+          const raw = r[col.key];
+          if (col.type === "ref" && col.refTable && raw) {
+            row[col.csvHeader] = (await resolveRefById(col.refTable, raw, tid)) ?? raw;
+          } else if (col.type === "boolean") {
+            row[col.csvHeader] = raw != null ? String(raw) : "";
+          } else if (col.type === "date" && raw) {
+            try {
+              const d = new Date(raw);
+              row[col.csvHeader] = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+            } catch { row[col.csvHeader] = raw ?? ""; }
+          } else {
+            row[col.csvHeader] = raw != null ? raw : "";
+          }
+        }
+        return row;
+      }));
+
+      const csvData = stringify(csvRows, { header: true, columns: allCols });
+      const sessionCrmUserId = (req as any).session?.crmUserId;
+      if (sessionCrmUserId) logAccess(tid, sessionCrmUserId, "EXPORT", "master_data", 0, `table=${tableName}, records=${records.length}`, req);
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="${tableName}_export.csv"`);
       res.send(csvData);
@@ -5256,53 +5442,23 @@ export async function registerRoutes(
     }
   });
 
-  const TEMPLATE_FK_FRIENDLY: Record<string, string> = {
-    stateId: "state",
-    countryId: "country",
-    cityId: "city",
-    organisationId: "organisation",
-    branchId: "branch",
-    treatmentDepartmentId: "treatmentDepartment",
-    categoryId: "category",
-    defaultNearestBranchId: "defaultNearestBranch",
-    crmUserId: "crmUser",
-    callingLineId: "callingLine",
-    departmentId: "department",
-    designationId: "designation",
-    employmentTypeId: "employmentType",
-    systemRoleId: "systemRole",
-    doctorId: "doctor",
-  };
-
-  const FK_FRIENDLY_TO_ID: Record<string, string> = {};
-  for (const [idField, friendly] of Object.entries(TEMPLATE_FK_FRIENDLY)) {
-    FK_FRIENDLY_TO_ID[friendly.toLowerCase()] = idField;
-  }
-
+  // --- Template Download — same columns as export, blank id, sample values ---
   app.get("/api/masters/:tableName/template", isAuthenticated, async (req, res) => {
     const tableName = req.params.tableName as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
-
-    const baseColumns = ["code", "name", "status", "displayOrder"];
-    const extraFieldKeys = IMPORT_EXTRA_FIELDS[tableName] || [];
-    const allColumns = [...baseColumns];
-    const sampleRow: Record<string, any> = { code: "SAMPLE_CODE", name: "Sample Name", status: "Active", displayOrder: 1 };
-
-    for (const fieldKey of extraFieldKeys) {
-      const colName = TEMPLATE_FK_FRIENDLY[fieldKey] || fieldKey;
-      allColumns.push(colName);
-      if (REF_FIELD_TABLES[fieldKey]) {
-        sampleRow[colName] = `Enter ${colName} name or code`;
-      } else if (["isTerminal", "isBusinessAchieved", "requiresNextTask", "allowNurtureOption", "serviceable", "isPrimary"].includes(fieldKey)) {
-        sampleRow[colName] = "true";
-      } else {
-        sampleRow[colName] = "";
-      }
+    const colDefs = MASTER_COLUMN_DEFS[tableName] || [];
+    const allCols = ["id", "code", "name", "status", "displayOrder", ...colDefs.map(c => c.csvHeader)];
+    const sampleRow: Record<string, any> = { id: "", code: "SAMPLE_CODE", name: "Sample Name", status: "Active", displayOrder: 1 };
+    for (const col of colDefs) {
+      if (col.type === "ref") sampleRow[col.csvHeader] = `Enter ${col.csvHeader} name or code`;
+      else if (col.type === "boolean") sampleRow[col.csvHeader] = "true";
+      else if (col.type === "select" && col.options) sampleRow[col.csvHeader] = col.options[0];
+      else if (col.type === "date") sampleRow[col.csvHeader] = "DD/MM/YYYY";
+      else sampleRow[col.csvHeader] = "";
     }
-
-    const csvData = stringify([sampleRow], { header: true, columns: allColumns });
+    const csvData = stringify([sampleRow], { header: true, columns: allCols });
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="${tableName}_template.csv"`);
     res.send(csvData);
@@ -5325,69 +5481,7 @@ export async function registerRoutes(
     }
   });
 
-  const IMPORT_EXTRA_FIELDS: Record<string, string[]> = {
-    states: ["countryId"],
-    cities: ["stateId"],
-    pinCodes: ["cityId"],
-    areas: ["cityId", "pinCode", "serviceable", "defaultNearestBranchId"],
-    branches: ["organisationId", "cityId", "address", "phone"],
-    callingLines: ["phoneNumber", "provider"],
-    userLineAssignments: ["crmUserId", "callingLineId", "isPrimary"],
-    crmUsers: ["email", "phone", "branchId", "departmentId", "designationId", "employmentTypeId", "systemRoleId", "accessScopeType", "phiAccessLevel", "isActive"],
-    consultationTypes: ["treatmentDepartmentId"],
-    doctors: ["specialization", "qualification", "branchId", "treatmentDepartmentId", "consultationTypeId", "phone", "email"],
-    opdTimings: ["doctorId", "branchId", "dayOfWeek", "startTime", "endTime", "maxPatients", "slotDuration"],
-    doctorLeaveExceptions: ["doctorId", "leaveDate", "leaveEndDate", "reason"],
-    leadSources: ["categoryId"],
-    referrers: ["type", "phone", "email"],
-    corporateInsurances: ["type"],
-    conversionStages: ["isTerminal", "isBusinessAchieved"],
-    leadStatuses: ["isTerminal", "isBusinessAchieved", "requiresNextTask", "allowNurtureOption", "defaultOwnerRole"],
-    templates: ["channel", "subject", "body"],
-    holidays: ["holidayDate"],
-    tags: ["color"],
-    slaRules: ["triggerEvent", "timeLimitMinutes", "appliesToRole", "escalationRole"],
-    reminderPolicies: ["offsetMinutes", "channel", "fallbackChannel"],
-    dataRetentionPolicies: ["entityType", "retentionMonths", "action"],
-  };
-
-  const REF_FIELD_TABLES: Record<string, string> = {
-    stateId: "states",
-    countryId: "countries",
-    cityId: "cities",
-    organisationId: "organisations",
-    branchId: "branches",
-    treatmentDepartmentId: "treatment_departments",
-    consultationTypeId: "consultation_types",
-    categoryId: "lead_source_categories",
-    defaultNearestBranchId: "branches",
-    crmUserId: "crm_users",
-    callingLineId: "calling_lines",
-    departmentId: "administrative_departments",
-    designationId: "designations",
-    employmentTypeId: "employment_types",
-    systemRoleId: "system_roles",
-    doctorId: "doctors",
-  };
-
-  async function resolveRefField(fieldName: string, value: string, tenantId: number): Promise<number | null> {
-    const refTable = REF_FIELD_TABLES[fieldName];
-    if (!refTable) return null;
-    const numVal = parseInt(value);
-    if (!isNaN(numVal)) {
-      const check = await pool.query(
-        `SELECT id FROM "${refTable}" WHERE tenant_id = $1 AND id = $2 LIMIT 1`,
-        [tenantId, numVal]
-      );
-      return check.rows[0]?.id || null;
-    }
-    const result = await pool.query(
-      `SELECT id FROM "${refTable}" WHERE tenant_id = $1 AND (UPPER(code) = UPPER($2) OR UPPER(name) = UPPER($2)) LIMIT 1`,
-      [tenantId, value.trim()]
-    );
-    return result.rows[0]?.id || null;
-  }
-
+  // --- Import — unified validation pipeline; ?mode=preview returns summary without saving ---
   app.post("/api/masters/:tableName/import", isAuthenticated, upload.single("file"), async (req, res) => {
     const tableName = req.params.tableName as string;
     if (!MASTER_TABLE_REGISTRY[tableName]) {
@@ -5400,121 +5494,155 @@ export async function registerRoutes(
       return res.status(400).json({ message: "No file uploaded" });
     }
 
+    const previewMode = req.query.mode === "preview";
     const tenantId = await getDefaultTenantId(req);
     const fileName = req.file.originalname;
     const autoApprove = tableName === "referrers";
+    const colDefs = MASTER_COLUMN_DEFS[tableName] || [];
 
     try {
       const csvContent = req.file.buffer.toString("utf-8");
       const rows = parse(csvContent, { columns: true, skip_empty_lines: true, trim: true }) as Record<string, string>[];
 
       const existingRecords = await storage.getMasterRecords(tableName, tenantId);
-      const existingCodes = new Set(existingRecords.map(r => r.code?.toUpperCase()));
+      const existingByCode = new Map(existingRecords.map(r => [r.code?.toUpperCase(), r]));
+      const existingById = new Map(existingRecords.map(r => [r.id, r]));
+      const importedCodes = new Set<string>(); // track codes used in this upload
 
-      const extraFieldKeys = IMPORT_EXTRA_FIELDS[tableName] || [];
-
-      const REQUIRED_FK_FIELDS: Record<string, string[]> = {
-        cities: ["stateId"],
-        pinCodes: ["cityId"],
-        areas: ["cityId"],
-        branches: ["organisationId"],
-        opdTimings: ["doctorId", "branchId"],
-        doctorLeaveExceptions: ["doctorId"],
-        leadSources: ["categoryId"],
-        userLineAssignments: ["crmUserId", "callingLineId"],
-      };
-      const requiredFks = REQUIRED_FK_FIELDS[tableName] || [];
-
-      let successCount = 0;
-      let failureCount = 0;
-      let duplicateCount = 0;
+      type ValidRow = { rowNum: number; isUpdate: boolean; recordId?: number; data: Record<string, any> };
+      const validRows: ValidRow[] = [];
       const errors: { row: number; message: string }[] = [];
-
-      const pgTblImport = MASTER_TABLE_REGISTRY[tableName];
-      const maxImportResult = await pool.query(
-        `SELECT COALESCE(MAX(display_order), 0) AS max_order FROM "${pgTblImport}" WHERE tenant_id = $1`,
-        [tenantId]
-      );
-      let nextImportOrder = (maxImportResult.rows[0]?.max_order ?? 0) + 1;
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
+        const rowNum = i + 2;
+        const rowErrors: string[] = [];
+
+        // id-based upsert detection
+        const idStr = (row.id || "").trim();
+        const recordId = idStr && !isNaN(parseInt(idStr)) ? parseInt(idStr) : null;
+        const isUpdate = recordId !== null;
+
+        if (isUpdate && !existingById.has(recordId!)) {
+          rowErrors.push(`Record with id=${recordId} not found in this tenant`);
+        }
+
         const code = (row.code || "").trim();
         const name = (row.name || "").trim();
         const status = (row.status || "Active").trim();
 
-        if (!code || !name) {
-          failureCount++;
-          errors.push({ row: i + 2, message: "Missing required field: code or name" });
-          continue;
+        if (!code) rowErrors.push("Missing required field: code");
+        if (!name) rowErrors.push("Missing required field: name");
+        if (status && !["Active", "Inactive"].includes(status)) {
+          rowErrors.push(`Invalid status "${status}" — must be Active or Inactive`);
         }
 
-        if (existingCodes.has(code.toUpperCase())) {
-          duplicateCount++;
-          errors.push({ row: i + 2, message: `Duplicate code: ${code}` });
-          continue;
-        }
-
-        try {
-          const recordData: Record<string, any> = {
-            tenantId,
-            code,
-            name,
-            status,
-            displayOrder: nextImportOrder,
-            approvalStatus: autoApprove ? "Approved" : "Pending",
-          };
-
-          for (const fieldKey of extraFieldKeys) {
-            const friendlyName = TEMPLATE_FK_FRIENDLY[fieldKey] || fieldKey;
-            const csvValue = (row[fieldKey] || row[friendlyName] || "").trim();
-            if (!csvValue) {
-              if (requiredFks.includes(fieldKey)) {
-                recordData[`_unresolved_${fieldKey}`] = `(missing - required)`;
-              }
-              continue;
-            }
-
-            if (REF_FIELD_TABLES[fieldKey]) {
-              const resolvedId = await resolveRefField(fieldKey, csvValue, tenantId);
-              if (resolvedId) {
-                recordData[fieldKey] = resolvedId;
-              } else {
-                recordData[`_unresolved_${fieldKey}`] = csvValue;
-              }
-            } else if (["isTerminal", "isBusinessAchieved", "requiresNextTask", "allowNurtureOption", "serviceable"].includes(fieldKey)) {
-              recordData[fieldKey] = ["true", "1", "yes"].includes(csvValue.toLowerCase());
-            } else if (["timeLimitMinutes", "offsetMinutes", "retentionMonths", "maxPatients", "slotDuration"].includes(fieldKey)) {
-              const numVal = parseInt(csvValue);
-              if (!isNaN(numVal)) recordData[fieldKey] = numVal;
-            } else {
-              recordData[fieldKey] = csvValue;
-            }
+        // Duplicate code check (insert only, also check within this file)
+        if (!isUpdate && code) {
+          if (existingByCode.has(code.toUpperCase())) {
+            rowErrors.push(`Duplicate code: ${code} (already exists)`);
+          } else if (importedCodes.has(code.toUpperCase())) {
+            rowErrors.push(`Duplicate code: ${code} (appears more than once in this file)`);
           }
+        }
 
-          const unresolvedKeys = Object.keys(recordData).filter(k => k.startsWith("_unresolved_"));
-          if (unresolvedKeys.length > 0) {
-            const details = unresolvedKeys.map(k => {
-              const field = k.replace("_unresolved_", "");
-              const friendlyCol = TEMPLATE_FK_FRIENDLY[field] || field;
-              const val = recordData[k];
-              if (val === "(missing - required)") {
-                return `"${friendlyCol}" column is required but missing from CSV`;
-              }
-              return `${friendlyCol}="${val}" not found in tenant`;
-            }).join("; ");
-            failureCount++;
-            errors.push({ row: i + 2, message: details });
+        // Extra field validation
+        const extraData: Record<string, any> = {};
+        for (const col of colDefs) {
+          const csvVal = (row[col.csvHeader] || row[col.key] || "").trim();
+
+          if (!csvVal) {
+            if (col.required) rowErrors.push(`Required field missing: ${col.csvHeader}`);
             continue;
           }
 
-          await storage.createMasterRecord(tableName, recordData);
-          existingCodes.add(code.toUpperCase());
-          nextImportOrder++;
+          if (col.type === "ref" && col.refTable) {
+            const resolvedId = await resolveRefByValue(col.refTable, csvVal, tenantId);
+            if (!resolvedId) {
+              rowErrors.push(`${col.csvHeader}="${csvVal}" not found`);
+            } else {
+              extraData[col.key] = resolvedId;
+            }
+          } else if (col.type === "boolean") {
+            extraData[col.key] = ["true", "1", "yes"].includes(csvVal.toLowerCase());
+          } else if (col.type === "number") {
+            const num = parseInt(csvVal);
+            if (isNaN(num)) rowErrors.push(`${col.csvHeader} must be a number, got "${csvVal}"`);
+            else extraData[col.key] = num;
+          } else if (col.type === "email") {
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(csvVal)) rowErrors.push(`${col.csvHeader}: invalid email format`);
+            else extraData[col.key] = csvVal;
+          } else if (col.type === "phone") {
+            if (!/^[0-9+\-\s().]{6,20}$/.test(csvVal)) rowErrors.push(`${col.csvHeader}: invalid phone format`);
+            else extraData[col.key] = csvVal;
+          } else if (col.type === "date") {
+            let dateVal: Date | null = null;
+            if (/^\d{2}\/\d{2}\/\d{4}$/.test(csvVal)) {
+              const [d, m, y] = csvVal.split("/");
+              dateVal = new Date(`${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`);
+            } else {
+              dateVal = new Date(csvVal);
+            }
+            if (!dateVal || isNaN(dateVal.getTime())) rowErrors.push(`${col.csvHeader}: invalid date, use DD/MM/YYYY`);
+            else extraData[col.key] = dateVal;
+          } else if (col.type === "select" && col.options) {
+            if (!col.options.includes(csvVal)) {
+              rowErrors.push(`${col.csvHeader}: "${csvVal}" is not allowed (options: ${col.options.join(", ")})`);
+            } else {
+              extraData[col.key] = csvVal;
+            }
+          } else {
+            extraData[col.key] = csvVal;
+          }
+        }
+
+        if (rowErrors.length > 0) {
+          errors.push({ row: rowNum, message: rowErrors.join("; ") });
+        } else {
+          if (!isUpdate && code) importedCodes.add(code.toUpperCase());
+          validRows.push({ rowNum, isUpdate, recordId: recordId ?? undefined, data: { code, name, status, ...extraData } });
+        }
+      }
+
+      const total = rows.length;
+      const valid = validRows.length;
+      const invalid = errors.length;
+      const duplicateCount = errors.filter(e => e.message.includes("Duplicate code")).length;
+
+      // Preview mode: return summary without touching the database
+      if (previewMode) {
+        return res.json({ total, valid, invalid, duplicateCount, errors });
+      }
+
+      // Save phase
+      const pgTbl = MASTER_TABLE_REGISTRY[tableName];
+      const maxOrderResult = await pool.query(
+        `SELECT COALESCE(MAX(display_order), 0) AS max_order FROM "${pgTbl}" WHERE tenant_id = $1`,
+        [tenantId]
+      );
+      let nextOrder = (maxOrderResult.rows[0]?.max_order ?? 0) + 1;
+
+      let successCount = 0;
+      let failureCount = invalid;
+      const saveErrors = [...errors];
+
+      for (const { isUpdate, recordId, data } of validRows) {
+        try {
+          if (isUpdate && recordId) {
+            await storage.updateMasterRecord(tableName, recordId, { ...data, tenantId });
+          } else {
+            await storage.createMasterRecord(tableName, {
+              tenantId,
+              ...data,
+              displayOrder: nextOrder,
+              approvalStatus: autoApprove ? "Approved" : "Pending",
+            });
+            nextOrder++;
+          }
           successCount++;
         } catch (err: any) {
           failureCount++;
-          errors.push({ row: i + 2, message: err.message });
+          saveErrors.push({ row: -1, message: err.message });
         }
       }
 
@@ -5522,23 +5650,23 @@ export async function registerRoutes(
         tenantId,
         tableName,
         fileName,
-        totalRows: rows.length,
+        totalRows: total,
         successCount,
         failureCount,
         duplicateCount,
-        status: failureCount === 0 && duplicateCount === 0 ? "Completed" : "Completed with Issues",
-        errorDetails: errors.length > 0 ? errors : null,
+        status: failureCount === 0 ? "Completed" : "Completed with Issues",
+        errorDetails: saveErrors.length > 0 ? saveErrors : null,
         completedAt: new Date(),
       }).returning();
 
       res.json({
         importLogId: importLog.id,
-        totalRows: rows.length,
+        totalRows: total,
         successCount,
         failureCount,
         duplicateCount,
-        errors: errors.slice(0, 20),
-        sentToApproval: !autoApprove,
+        errors: saveErrors,
+        sentToApproval: !autoApprove && successCount > 0,
       });
     } catch (err: any) {
       res.status(400).json({ message: `CSV parse error: ${err.message}` });
