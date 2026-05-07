@@ -14312,6 +14312,69 @@ async function ensureSuperAdmin() {
       console.error("[seed] Failed to unlock Neha Sharma:", e);
     }
 
+    // --- Seed Nirman (tenant 8) first admin user ---
+    try {
+      const nirmanTenantId = 8;
+      const nirmanPhone = "+917878038514";
+      const nirmanPassword = "Aryan@RGB";
+      const [nirmanTenant] = await db.select().from(tenants).where(eq(tenants.id, nirmanTenantId));
+      if (nirmanTenant) {
+        // Ensure a default branch exists
+        const nirmanBranchRow = await pool.query(
+          `SELECT id FROM branches WHERE tenant_id = $1 ORDER BY id LIMIT 1`,
+          [nirmanTenantId]
+        );
+        let nirmanBranchId: number | null = null;
+        if (nirmanBranchRow.rows.length === 0) {
+          const newBranch = await pool.query(
+            `INSERT INTO branches (tenant_id, code, name, status, display_order, approval_status)
+             VALUES ($1, 'NIRMAN-HQ', 'Nirman Main Branch', 'Active', 1, 'Approved')
+             RETURNING id`,
+            [nirmanTenantId]
+          );
+          nirmanBranchId = newBranch.rows[0]?.id || null;
+          console.log(`[seed] Created Nirman default branch (id=${nirmanBranchId})`);
+        } else {
+          nirmanBranchId = nirmanBranchRow.rows[0].id;
+        }
+        const [nirmanAdminRole] = await db.select().from(systemRoles).where(
+          and(eq(systemRoles.tenantId, nirmanTenantId), eq(systemRoles.code, "ADMIN"))
+        );
+        if (nirmanAdminRole) {
+          const existingRow = await pool.query(
+            `SELECT id FROM crm_users WHERE tenant_id = $1 AND phone = $2 LIMIT 1`,
+            [nirmanTenantId, nirmanPhone]
+          );
+          const hash = await hashPassword(nirmanPassword);
+          if (existingRow.rows.length > 0) {
+            await pool.query(
+              `UPDATE crm_users SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL, is_active = TRUE, status = 'Active', system_role_id = $2 WHERE id = $3`,
+              [hash, nirmanAdminRole.id, existingRow.rows[0].id]
+            );
+            console.log(`[seed] Nirman admin (id=${existingRow.rows[0].id}) password reset to Aryan@RGB`);
+          } else {
+            await db.insert(crmUsers).values({
+              tenantId: nirmanTenantId,
+              code: "NIRMAN-ADMIN",
+              name: "Aryan",
+              phone: nirmanPhone,
+              systemRoleId: nirmanAdminRole.id,
+              branchId: nirmanBranchId,
+              isActive: true,
+              status: "Active",
+              accessScopeType: "All",
+              phiAccessLevel: "Full",
+              passwordHash: hash,
+              displayOrder: 0,
+            });
+            console.log(`[seed] Nirman admin user created — phone: ${nirmanPhone} / password: ${nirmanPassword}`);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[seed] Failed to seed Nirman admin:", e);
+    }
+
     // --- Ensure all "All-scope" ADMIN users have a valid ADMIN systemRoleId ---
     try {
       const allTenantsList = await db.select().from(tenants);
