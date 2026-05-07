@@ -271,7 +271,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Record<string, { canView: boolean
   },
   OT_IP_COORDINATOR: {
     dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
-    leads: { canView: true, canCreate: false, canEdit: true, canDelete: false },
+    leads: { canView: true, canCreate: false, canEdit: false, canDelete: false },
     episodes: { canView: true, canCreate: false, canEdit: true, canDelete: false },
     appointments: { canView: true, canCreate: false, canEdit: false, canDelete: false },
     campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
@@ -287,7 +287,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Record<string, { canView: boolean
   },
   POST_CARE_COORDINATOR: {
     dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
-    leads: { canView: true, canCreate: false, canEdit: true, canDelete: false },
+    leads: { canView: true, canCreate: false, canEdit: false, canDelete: false },
     episodes: { canView: true, canCreate: false, canEdit: true, canDelete: false },
     appointments: { canView: true, canCreate: true, canEdit: true, canDelete: false },
     campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
@@ -303,8 +303,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Record<string, { canView: boolean
   },
   REFERRAL_COORDINATOR: {
     dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
-    leads: { canView: true, canCreate: false, canEdit: true, canDelete: false },
-    episodes: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    leads: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    episodes: { canView: true, canCreate: false, canEdit: true, canDelete: false },
     appointments: { canView: true, canCreate: false, canEdit: false, canDelete: false },
     campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
     transactions: { canView: false, canCreate: false, canEdit: false, canDelete: false },
@@ -2815,7 +2815,8 @@ export async function registerRoutes(
       const slaDeadline = new Date(now.getTime() + 30 * 60 * 1000);
 
       const updated = await storage.updateLead(leadId, {
-        handoverFromUserId: lead.assignedCrmUserId,
+        // Use primaryOwnerUserId as the "from" user — assignedCrmUserId is frozen at intake
+        handoverFromUserId: (lead as any).primaryOwnerUserId || lead.assignedCrmUserId,
         handoverToUserId: assignToCrmUserId,
         handoverStatus: "Pending",
         handoverAt: now,
@@ -14084,9 +14085,13 @@ async function ensureNewRolePermissions() {
         const perms = DEFAULT_ROLE_PERMISSIONS[roleCode] || {};
         for (const module of modules) {
           const p = perms[module] || { canView: false, canCreate: false, canEdit: false, canDelete: false };
+          // Use UPSERT (update on conflict) so corrected permissions overwrite stale entries
           await db.insert(rolePermissions)
             .values({ tenantId: tid, roleCode, module, canView: p.canView, canCreate: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete })
-            .onConflictDoNothing();
+            .onConflictDoUpdate({
+              target: [rolePermissions.tenantId, rolePermissions.roleCode, rolePermissions.module],
+              set: { canView: p.canView, canCreate: p.canCreate, canEdit: p.canEdit, canDelete: p.canDelete },
+            });
         }
       }
     }
