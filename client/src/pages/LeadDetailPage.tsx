@@ -1112,6 +1112,10 @@ function QuickActions({ lead }: { lead: any }) {
     .filter((s: any) => s.status === "Active")
     .map((s: any) => s.name);
   const validTransitions = allStatuses.filter((s: string) => s !== lead.status);
+
+  const { data: branchesList } = useQuery<any[]>({ queryKey: ["/api/masters/branches"] });
+  const activeBranches = (branchesList || []).filter((b: any) => b.status === "Active");
+
   const [callDialogOpen, setCallDialogOpen] = useState(false);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
@@ -1129,6 +1133,7 @@ function QuickActions({ lead }: { lead: any }) {
   const [taskPriority, setTaskPriority] = useState("Normal");
   const [selectedCrmUserId, setSelectedCrmUserId] = useState("");
   const [handoverReason, setHandoverReason] = useState("");
+  const [apptBranchId, setApptBranchId] = useState("");
   const [apptDoctorId, setApptDoctorId] = useState("");
   const [apptDate, setApptDate] = useState("");
   const [apptSlot, setApptSlot] = useState("");
@@ -1136,6 +1141,12 @@ function QuickActions({ lead }: { lead: any }) {
   const [apptNotes, setApptNotes] = useState("");
 
   const effectiveApptTime = apptSlot || apptManualTime;
+
+  useEffect(() => {
+    if (activeBranches.length === 1 && !apptBranchId) {
+      setApptBranchId(String(activeBranches[0].id));
+    }
+  }, [activeBranches.length]);
 
   const { data: availability, isLoading: availLoading } = useDoctorAvailability(
     apptDoctorId ? Number(apptDoctorId) : null,
@@ -1435,6 +1446,18 @@ function QuickActions({ lead }: { lead: any }) {
               <DialogTitle>Book Appointment</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
+              {activeBranches.length > 1 && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Branch *</label>
+                  <SearchableSelect
+                    value={apptBranchId}
+                    onValueChange={setApptBranchId}
+                    options={activeBranches.map((b: any) => ({ value: String(b.id), label: b.name }))}
+                    placeholder="Select branch"
+                    data-testid="select-appt-branch"
+                  />
+                </div>
+              )}
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Doctor</label>
                 <SearchableSelect
@@ -1567,6 +1590,7 @@ function QuickActions({ lead }: { lead: any }) {
                   const selectedIndivSlot = availability?.individualSlots?.find(s => s.startTime === apptSlot);
                   const selectedWinSlot = availability?.slots.find(s => s.startTime === apptSlot);
                   const resolvedEndTime = selectedIndivSlot?.endTime || selectedWinSlot?.endTime;
+                  const effectiveBranchId = apptBranchId || (activeBranches.length > 0 ? String(activeBranches[0].id) : "");
                   createAppointment.mutate(
                     {
                       leadId: lead.id,
@@ -1576,11 +1600,13 @@ function QuickActions({ lead }: { lead: any }) {
                       endTime: resolvedEndTime || undefined,
                       notes: apptNotes || undefined,
                       status: "Scheduled",
+                      ...(effectiveBranchId ? { branchId: Number(effectiveBranchId) } : {}),
                     },
                     {
                       onSuccess: (data) => {
                         toast({ title: "Appointment booked", description: `Token #${data.tokenNumber}` });
                         setApptDialogOpen(false);
+                        setApptBranchId("");
                         setApptDoctorId("");
                         setApptDate("");
                         setApptSlot("");
