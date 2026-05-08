@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { fmtDate, fmtDateTime } from "@/lib/date-utils";
 import {
   Ticket,
@@ -29,6 +30,9 @@ import {
   Image,
   ImageOff,
   X,
+  Users,
+  User,
+  Eye,
 } from "lucide-react";
 
 const CATEGORIES = [
@@ -53,6 +57,7 @@ const STATUS_CONFIG: Record<string, { color: string; icon: any }> = {
 
 type TicketType = {
   id: number;
+  crmUserId?: number;
   ticketNumber: string;
   category: string;
   priority: string;
@@ -60,6 +65,7 @@ type TicketType = {
   description: string;
   attachments: string[];
   createdByName?: string | null;
+  submitterName?: string | null;
   hospitalName?: string | null;
   status: string;
   assignedName: string | null;
@@ -82,19 +88,38 @@ type CommentType = {
 
 export default function SupportTicketsPage() {
   const { toast } = useToast();
+  const { isAdmin, crmUser } = useCurrentUser();
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("open");
+  const [viewMode, setViewMode] = useState<"mine" | "team">("mine");
 
   const { data: tickets = [], isLoading } = useQuery<TicketType[]>({
     queryKey: ["/api/support-tickets"],
   });
 
-  const openTickets = tickets.filter(t => t.status === "Open" || t.status === "In Progress");
-  const closedTickets = tickets.filter(t => t.status === "Resolved" || t.status === "Closed");
+  const currentCrmUserId = crmUser?.id;
+
+  // For admins: split into my tickets vs. all team tickets
+  const myTickets = isAdmin && currentCrmUserId
+    ? tickets.filter(t => t.crmUserId === currentCrmUserId)
+    : tickets;
+  const teamTickets = tickets;
+
+  const activeTickets = (viewMode === "team" && isAdmin ? teamTickets : myTickets);
+
+  const openTickets = activeTickets.filter(t => t.status === "Open" || t.status === "In Progress");
+  const closedTickets = activeTickets.filter(t => t.status === "Resolved" || t.status === "Closed");
 
   if (selectedTicket) {
-    return <TicketDetailView ticketId={selectedTicket} onBack={() => setSelectedTicket(null)} toast={toast} />;
+    return (
+      <TicketDetailView
+        ticketId={selectedTicket}
+        currentCrmUserId={currentCrmUserId}
+        onBack={() => setSelectedTicket(null)}
+        toast={toast}
+      />
+    );
   }
 
   return (
@@ -110,9 +135,29 @@ export default function SupportTicketsPage() {
                 <p className="text-sm text-muted-foreground">Report issues, request features, or ask for training</p>
               </div>
             </div>
-            <Button onClick={() => setCreateOpen(true)} data-testid="button-create-ticket">
-              <Plus className="w-4 h-4 mr-2" /> New Ticket
-            </Button>
+            <div className="flex items-center gap-2">
+              {isAdmin && (
+                <div className="flex rounded-lg border overflow-hidden text-sm" data-testid="toggle-view-mode">
+                  <button
+                    className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors ${viewMode === "mine" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                    onClick={() => setViewMode("mine")}
+                    data-testid="button-view-mine"
+                  >
+                    <User className="w-3.5 h-3.5" /> My Tickets
+                  </button>
+                  <button
+                    className={`flex items-center gap-1.5 px-3 py-1.5 transition-colors border-l ${viewMode === "team" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                    onClick={() => setViewMode("team")}
+                    data-testid="button-view-team"
+                  >
+                    <Users className="w-3.5 h-3.5" /> Team Tickets
+                  </button>
+                </div>
+              )}
+              <Button onClick={() => setCreateOpen(true)} data-testid="button-create-ticket">
+                <Plus className="w-4 h-4 mr-2" /> New Ticket
+              </Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-4 mb-6">
@@ -145,18 +190,18 @@ export default function SupportTicketsPage() {
                 Resolved / Closed ({closedTickets.length})
               </TabsTrigger>
               <TabsTrigger value="all" data-testid="tab-all-tickets">
-                All ({tickets.length})
+                All ({activeTickets.length})
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="open">
-              <TicketList tickets={openTickets} isLoading={isLoading} onSelect={setSelectedTicket} emptyText="No open tickets" />
+              <TicketList tickets={openTickets} isLoading={isLoading} onSelect={setSelectedTicket} emptyText="No open tickets" showSubmitter={viewMode === "team" && isAdmin} currentCrmUserId={currentCrmUserId} />
             </TabsContent>
             <TabsContent value="closed">
-              <TicketList tickets={closedTickets} isLoading={isLoading} onSelect={setSelectedTicket} emptyText="No resolved tickets" />
+              <TicketList tickets={closedTickets} isLoading={isLoading} onSelect={setSelectedTicket} emptyText="No resolved tickets" showSubmitter={viewMode === "team" && isAdmin} currentCrmUserId={currentCrmUserId} />
             </TabsContent>
             <TabsContent value="all">
-              <TicketList tickets={tickets} isLoading={isLoading} onSelect={setSelectedTicket} emptyText="No tickets yet" />
+              <TicketList tickets={activeTickets} isLoading={isLoading} onSelect={setSelectedTicket} emptyText="No tickets yet" showSubmitter={viewMode === "team" && isAdmin} currentCrmUserId={currentCrmUserId} />
             </TabsContent>
           </Tabs>
         </div>
@@ -167,11 +212,13 @@ export default function SupportTicketsPage() {
   );
 }
 
-function TicketList({ tickets, isLoading, onSelect, emptyText }: {
+function TicketList({ tickets, isLoading, onSelect, emptyText, showSubmitter, currentCrmUserId }: {
   tickets: TicketType[];
   isLoading: boolean;
   onSelect: (id: number) => void;
   emptyText: string;
+  showSubmitter?: boolean;
+  currentCrmUserId?: number;
 }) {
   if (isLoading) return <div className="py-8 text-center text-muted-foreground">Loading tickets...</div>;
 
@@ -194,6 +241,7 @@ function TicketList({ tickets, isLoading, onSelect, emptyText }: {
         const CatIcon = catConfig?.icon || Bug;
         const statusCfg = STATUS_CONFIG[ticket.status] || STATUS_CONFIG.Open;
         const priorityCfg = PRIORITIES.find(p => p.value === (ticket.adminPriority || ticket.priority));
+        const isOwnTicket = ticket.crmUserId === currentCrmUserId;
 
         return (
           <Card
@@ -213,11 +261,22 @@ function TicketList({ tickets, isLoading, onSelect, emptyText }: {
                       <span className="text-xs font-mono text-muted-foreground">{ticket.ticketNumber}</span>
                       <Badge className={`text-[10px] ${statusCfg.color}`}>{ticket.status}</Badge>
                       <Badge className={`text-[10px] ${priorityCfg?.color || ""}`}>{ticket.adminPriority || ticket.priority}</Badge>
+                      {showSubmitter && !isOwnTicket && (
+                        <Badge variant="outline" className="text-[10px] flex items-center gap-0.5">
+                          <Eye className="w-2.5 h-2.5" /> Read-only
+                        </Badge>
+                      )}
                     </div>
                     <h3 className="font-medium text-sm truncate">{ticket.subject}</h3>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
                       <span>{ticket.category}</span>
                       <span>{fmtDate(ticket.createdAt)}</span>
+                      {showSubmitter && ticket.submitterName && (
+                        <span className="flex items-center gap-1 font-medium text-foreground/70">
+                          <User className="w-3 h-3" />
+                          {isOwnTicket ? "You" : ticket.submitterName}
+                        </span>
+                      )}
                       {ticket.hospitalName && <span className="text-primary/70">{ticket.hospitalName}</span>}
                       {ticket.assignedName && <span>Assigned: {ticket.assignedName}</span>}
                       {ticket.commentCount > 0 && (
@@ -413,7 +472,12 @@ function AttachmentThumbnail({ url, index, onView, size = "w-20 h-20" }: { url: 
   );
 }
 
-function TicketDetailView({ ticketId, onBack, toast }: { ticketId: number; onBack: () => void; toast: any }) {
+function TicketDetailView({ ticketId, currentCrmUserId, onBack, toast }: {
+  ticketId: number;
+  currentCrmUserId?: number;
+  onBack: () => void;
+  toast: any;
+}) {
   const [newComment, setNewComment] = useState("");
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [lightboxBroken, setLightboxBroken] = useState(false);
@@ -449,6 +513,10 @@ function TicketDetailView({ ticketId, onBack, toast }: { ticketId: number; onBac
   const statusCfg = STATUS_CONFIG[ticket.status] || STATUS_CONFIG.Open;
   const priorityCfg = PRIORITIES.find(p => p.value === (ticket.adminPriority || ticket.priority));
 
+  // If the ticket was created by someone else and a currentCrmUserId is provided, this is read-only
+  const isReadOnly = !!(currentCrmUserId && ticket.crmUserId && ticket.crmUserId !== currentCrmUserId);
+  const submitterName = ticket.createdByName || ticket.submitterName;
+
   return (
     <div className="flex h-screen bg-background" data-testid="page-ticket-detail">
       <Sidebar />
@@ -457,6 +525,13 @@ function TicketDetailView({ ticketId, onBack, toast }: { ticketId: number; onBac
           <Button variant="ghost" className="mb-4" onClick={onBack} data-testid="button-back-to-tickets">
             <ArrowLeft className="w-4 h-4 mr-2" /> Back to Tickets
           </Button>
+
+          {isReadOnly && submitterName && (
+            <div className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800" data-testid="banner-readonly">
+              <Eye className="w-4 h-4 shrink-0" />
+              Viewing ticket raised by <strong className="ml-1">{submitterName}</strong> — read only
+            </div>
+          )}
 
           <Card className="mb-6">
             <CardContent className="p-6">
@@ -486,9 +561,9 @@ function TicketDetailView({ ticketId, onBack, toast }: { ticketId: number; onBac
                     </div>
                   )}
 
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground border-t pt-3">
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground border-t pt-3 flex-wrap">
                     <span>Created: {fmtDateTime(ticket.createdAt)}</span>
-                    {ticket.createdByName && <span>Raised by: <strong>{ticket.createdByName}</strong></span>}
+                    {submitterName && <span>Raised by: <strong>{submitterName}</strong></span>}
                     <span>Updated: {fmtDateTime(ticket.updatedAt)}</span>
                     {ticket.assignedName && <span>Assigned to: <strong>{ticket.assignedName}</strong></span>}
                     {ticket.closedAt && <span>Closed: {fmtDateTime(ticket.closedAt)}</span>}
@@ -508,7 +583,7 @@ function TicketDetailView({ ticketId, onBack, toast }: { ticketId: number; onBac
               {ticket.comments && ticket.comments.length > 0 ? (
                 <div className="space-y-4 mb-6">
                   {ticket.comments.map(comment => (
-                    <div key={comment.id} className={`flex gap-3 ${comment.authorType === "support_user" ? "" : ""}`}
+                    <div key={comment.id} className="flex gap-3"
                       data-testid={`comment-${comment.id}`}
                     >
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
@@ -520,7 +595,7 @@ function TicketDetailView({ ticketId, onBack, toast }: { ticketId: number; onBac
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-sm font-medium">{comment.authorName}</span>
                           <Badge variant="outline" className="text-[10px]">
-                            {comment.authorType === "support_user" ? "Support Team" : "You"}
+                            {comment.authorType === "support_user" ? "Support Team" : (isReadOnly ? submitterName : "You")}
                           </Badge>
                           <span className="text-xs text-muted-foreground">{fmtDateTime(comment.createdAt)}</span>
                         </div>
@@ -539,11 +614,13 @@ function TicketDetailView({ ticketId, onBack, toast }: { ticketId: number; onBac
                 </div>
               ) : (
                 <div className="text-center py-6 text-muted-foreground text-sm mb-4">
-                  No comments yet. The support team will respond to your ticket soon.
+                  {isReadOnly
+                    ? "No comments on this ticket yet."
+                    : "No comments yet. The support team will respond to your ticket soon."}
                 </div>
               )}
 
-              {(ticket.status === "Open" || ticket.status === "In Progress") && (
+              {!isReadOnly && (ticket.status === "Open" || ticket.status === "In Progress") && (
                 <div className="border-t pt-4">
                   <div className="flex gap-2">
                     <Textarea
