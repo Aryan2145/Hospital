@@ -10481,7 +10481,7 @@ export async function registerRoutes(
   // EPISODE CLINICAL NOTES EDIT WITH AUDIT (T008)
   // =============================================
 
-  const DEFAULT_CLINICAL_EDIT_ROLES = ["SYS_ADMIN", "ADMIN", "MANAGER"];
+  const DEFAULT_CLINICAL_EDIT_ROLES = ["SYS_ADMIN", "ADMIN", "MANAGER", "DOCTOR", "MEDICAL_ASSISTANT"];
   const ROLE_DISPLAY_NAMES: Record<string, string> = {
     SYS_ADMIN: "Super Admin",
     ADMIN: "Medical Admin",
@@ -14924,6 +14924,7 @@ export async function runDeferredStartupTasks() {
     await linkUnlinkedEpisodePatients();
     await seedConsultationOutcomes();
     await seedGovernanceMasterData();
+    await seedClinicalNotesEditRoles();
     await seedDummyAppointments();
     await seedNirmanAdminUser();
   } catch (err: any) {
@@ -15237,6 +15238,29 @@ async function seedConsultationOutcomes() {
     console.log("[seed] Consultation outcomes & remarks seeded for all tenants");
   } catch (err: any) {
     console.error("[seed] Error seeding consultation outcomes:", err.message);
+  }
+}
+
+async function seedClinicalNotesEditRoles() {
+  // Ensures DOCTOR, MEDICAL_ASSISTANT, MANAGER, ADMIN, SYS_ADMIN can always edit
+  // clinical notes. Uses ON CONFLICT DO NOTHING so existing manual overrides are safe.
+  const roles = ["SYS_ADMIN", "ADMIN", "MANAGER", "DOCTOR", "MEDICAL_ASSISTANT"];
+  try {
+    const allTenants = await pool.query(`SELECT id FROM tenants ORDER BY id`);
+    for (const t of allTenants.rows) {
+      const tid = t.id;
+      for (const roleCode of roles) {
+        await pool.query(
+          `INSERT INTO clinical_notes_edit_roles (tenant_id, role_code, is_active)
+           VALUES ($1, $2, true)
+           ON CONFLICT DO NOTHING`,
+          [tid, roleCode]
+        );
+      }
+    }
+    console.log("[seed] Clinical notes edit roles ensured for all tenants (DOCTOR, MEDICAL_ASSISTANT included)");
+  } catch (err: any) {
+    console.error("[seed] Error seeding clinical notes edit roles:", err.message);
   }
 }
 

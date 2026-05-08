@@ -360,27 +360,31 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
 
 
   const handleCheckIn = async (apptId: number) => {
-    setCheckInPending(true);
     const appt = actionDialog?.appt;
-    try {
-      await apiRequest("POST", `/api/appointments/${apptId}/check-in`);
-      toast({ title: "Patient checked in successfully" });
-      setActionDialog(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/patients"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-      if (appt && !appt.episodeId) {
-        setEpisodePrompt({ appt: { ...appt, id: apptId } });
-        setEpisodeSearchQuery("");
-        setEpisodeCreateMode(false);
-        setNewEpisodeNotes("");
-        setNewEpisodeTreatmentDeptId("");
-        setNewEpisodeSubDeptId("");
+    setActionDialog(null);
+
+    if (appt && !appt.episodeId) {
+      // Episode is mandatory — show the episode dialog first.
+      // The actual check-in API call happens only AFTER the episode is linked/created.
+      setEpisodePrompt({ appt: { ...appt, id: apptId } });
+      setEpisodeCreateMode(false);
+      setNewEpisodeNotes("");
+      setNewEpisodeTreatmentDeptId("");
+      setNewEpisodeSubDeptId("");
+    } else {
+      // Appointment already linked to an episode — check in immediately.
+      setCheckInPending(true);
+      try {
+        await apiRequest("POST", `/api/appointments/${apptId}/check-in`);
+        toast({ title: "Patient checked in successfully" });
+        queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/patients"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      } catch (err: any) {
+        toast({ title: "Check-in failed", description: err.message, variant: "destructive" });
+      } finally {
+        setCheckInPending(false);
       }
-    } catch (err: any) {
-      toast({ title: "Check-in failed", description: err.message, variant: "destructive" });
-    } finally {
-      setCheckInPending(false);
     }
   };
 
@@ -388,14 +392,16 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
     if (!episodePrompt) return;
     setIsLinkingEpisode(true);
     try {
-      await apiRequest("PATCH", `/api/appointments/${episodePrompt.appt.id}`, {
-        episodeId,
-      });
-      toast({ title: "Appointment linked to episode" });
+      // Check in first, then link — both steps are required
+      await apiRequest("POST", `/api/appointments/${episodePrompt.appt.id}/check-in`);
+      await apiRequest("PATCH", `/api/appointments/${episodePrompt.appt.id}`, { episodeId });
+      toast({ title: "Patient checked in and linked to episode" });
       setEpisodePrompt(null);
       queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/patients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
     } catch (err: any) {
-      toast({ title: "Failed to link episode", description: err.message, variant: "destructive" });
+      toast({ title: "Check-in failed", description: err.message, variant: "destructive" });
     } finally {
       setIsLinkingEpisode(false);
     }
@@ -406,6 +412,9 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
     const appt = episodePrompt.appt;
     setIsCreatingEpisode(true);
     try {
+      // Step 1: Check in (creates patient UHID if needed)
+      await apiRequest("POST", `/api/appointments/${appt.id}/check-in`);
+      // Step 2: Create the episode
       const body: any = {
         leadId: appt.leadId ? Number(appt.leadId) : undefined,
         patientId: appt.patientId ? Number(appt.patientId) : undefined,
@@ -418,15 +427,16 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
       if (newEpisodeSubDeptId) body.consultationTypeId = Number(newEpisodeSubDeptId);
       const res = await apiRequest("POST", "/api/episodes", body);
       const newEpisode = await res.json();
-      await apiRequest("PATCH", `/api/appointments/${appt.id}`, {
-        episodeId: newEpisode.id,
-      });
-      toast({ title: "Episode created and linked to appointment" });
+      // Step 3: Link episode to appointment
+      await apiRequest("PATCH", `/api/appointments/${appt.id}`, { episodeId: newEpisode.id });
+      toast({ title: "Patient checked in with new episode" });
       setEpisodePrompt(null);
       queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
       queryClient.invalidateQueries({ queryKey: ["/api/episodes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/patients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
     } catch (err: any) {
-      toast({ title: "Failed to create episode", description: err.message, variant: "destructive" });
+      toast({ title: "Check-in failed", description: err.message, variant: "destructive" });
     } finally {
       setIsCreatingEpisode(false);
     }
@@ -918,18 +928,18 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5 text-primary" />
-              Find or Create Episode
+              Link Episode to Complete Check-in
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {episodePrompt && (
-              <div className="p-3 bg-muted/50 rounded-lg space-y-1.5">
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-1.5">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <User className="w-4 h-4 text-primary" />
                   {episodePrompt.appt.patientName || episodePrompt.appt.leadName || "Patient"}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Checked in successfully. Link this appointment to an existing episode or create a new one.
+                <p className="text-xs text-blue-700">
+                  A consultation episode is required to complete check-in. Link to an existing episode or create a new one. Closing this dialog will cancel the check-in.
                 </p>
               </div>
             )}
@@ -1081,16 +1091,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
               </div>
             )}
 
-            {!episodeCreateMode && (
-              <Button
-                variant="ghost"
-                className="w-full text-xs text-muted-foreground"
-                onClick={() => setEpisodePrompt(null)}
-                data-testid="button-skip-episode"
-              >
-                Skip — I'll do this later
-              </Button>
-            )}
+            {/* Skip button removed: episode is mandatory for check-in */}
           </div>
         </DialogContent>
       </Dialog>
