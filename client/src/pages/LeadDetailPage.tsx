@@ -1143,10 +1143,10 @@ function QuickActions({ lead }: { lead: any }) {
   const effectiveApptTime = apptSlot || apptManualTime;
 
   useEffect(() => {
-    if (activeBranches.length === 1 && !apptBranchId) {
+    if (apptDialogOpen && activeBranches.length === 1) {
       setApptBranchId(String(activeBranches[0].id));
     }
-  }, [activeBranches.length]);
+  }, [apptDialogOpen, activeBranches.length]);
 
   const { data: availability, isLoading: availLoading } = useDoctorAvailability(
     apptDoctorId ? Number(apptDoctorId) : null,
@@ -1446,7 +1446,7 @@ function QuickActions({ lead }: { lead: any }) {
               <DialogTitle>Book Appointment</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
-              {activeBranches.length > 1 && (
+              {activeBranches.length > 0 && (
                 <div>
                   <label className="text-xs font-medium text-muted-foreground">Branch *</label>
                   <SearchableSelect
@@ -1590,7 +1590,6 @@ function QuickActions({ lead }: { lead: any }) {
                   const selectedIndivSlot = availability?.individualSlots?.find(s => s.startTime === apptSlot);
                   const selectedWinSlot = availability?.slots.find(s => s.startTime === apptSlot);
                   const resolvedEndTime = selectedIndivSlot?.endTime || selectedWinSlot?.endTime;
-                  const effectiveBranchId = apptBranchId || (activeBranches.length > 0 ? String(activeBranches[0].id) : "");
                   createAppointment.mutate(
                     {
                       leadId: lead.id,
@@ -1600,7 +1599,7 @@ function QuickActions({ lead }: { lead: any }) {
                       endTime: resolvedEndTime || undefined,
                       notes: apptNotes || undefined,
                       status: "Scheduled",
-                      ...(effectiveBranchId ? { branchId: Number(effectiveBranchId) } : {}),
+                      ...(apptBranchId ? { branchId: Number(apptBranchId) } : {}),
                     },
                     {
                       onSuccess: (data) => {
@@ -1618,7 +1617,7 @@ function QuickActions({ lead }: { lead: any }) {
                   );
                 }}
                 className="w-full"
-                disabled={createAppointment.isPending || !apptDoctorId || !apptDate || !effectiveApptTime}
+                disabled={createAppointment.isPending || !apptDoctorId || !apptDate || !effectiveApptTime || (activeBranches.length > 0 && !apptBranchId)}
                 data-testid="button-confirm-appointment"
               >
                 Book Appointment
