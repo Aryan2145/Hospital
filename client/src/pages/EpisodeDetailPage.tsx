@@ -1926,7 +1926,7 @@ function FinancialTab({ episode, onUpdate, isPending }: { episode: any; onUpdate
                   value={localDiscountPercent || ""}
                   onChange={(e) => setLocalDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
                   disabled={fieldsReadOnly}
-                  className="text-xs"
+                  className="text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   data-testid="input-discount-percent"
                 />
                 {localDiscountPercent > 0 && localInitialQuote > 0 && (
