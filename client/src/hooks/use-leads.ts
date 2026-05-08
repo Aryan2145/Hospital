@@ -328,6 +328,7 @@ export function useCreateAppointment() {
       queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
       queryClient.invalidateQueries({ queryKey: [api.leads.list.path] });
+      queryClient.invalidateQueries({ queryKey: ["/api/doctors"] });
     },
   });
 }
