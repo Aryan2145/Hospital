@@ -3102,11 +3102,10 @@ function PreopAssessmentTab({
     );
   }
 
-  const assessment = preopData?.assessment || {};
   const clearanceGiven = !!episode.preopClearanceGiven;
-  const assessmentReadinessStatus = assessment.readiness_status || assessment.readinessStatus || "Pending";
+  const assessmentReadinessStatus = fields.readiness_status || fields.readinessStatus || "Pending";
 
-  const checkedCount = CHECKLIST_ITEMS.filter(item => assessment[item.key]).length;
+  const checkedCount = CHECKLIST_ITEMS.filter(item => fields[item.key]).length;
   const totalCount = CHECKLIST_ITEMS.length;
   const progressPct = Math.round((checkedCount / totalCount) * 100);
 
@@ -3153,22 +3152,22 @@ function PreopAssessmentTab({
             key={item.key}
             className={cn(
               "flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors",
-              assessment[item.key]
+              fields[item.key]
                 ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800"
                 : "bg-muted/30 border-border hover:bg-muted/50"
             )}
             onClick={() => {
-              const updated = { ...assessment, [item.key]: !assessment[item.key] };
-              setLocalFields(prev => ({ ...prev, [item.key]: !assessment[item.key] }));
-              handleSave({ [item.key]: !assessment[item.key] });
+              const newVal = !fields[item.key];
+              setLocalFields(prev => ({ ...prev, [item.key]: newVal }));
+              handleSave({ [item.key]: newVal });
             }}
             data-testid={`preop-check-${item.key}`}
           >
             <div className={cn(
               "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0",
-              assessment[item.key] ? "bg-green-500 border-green-500" : "border-muted-foreground"
+              fields[item.key] ? "bg-green-500 border-green-500" : "border-muted-foreground"
             )}>
-              {assessment[item.key] && <CheckCircle2 className="w-3 h-3 text-white" />}
+              {fields[item.key] && <CheckCircle2 className="w-3 h-3 text-white" />}
             </div>
             <span className="text-xs text-foreground">{item.label}</span>
           </div>
