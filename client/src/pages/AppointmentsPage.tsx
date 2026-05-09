@@ -2092,7 +2092,7 @@ function AvailabilityDaySlots({ date, doctorId, doctorName, availability, select
       ) : (
         <div className="space-y-2">
           {availability.data.slots.map((slot: any) => (
-            <div key={slot.startTime} className={cn("flex items-center justify-between p-2.5 rounded border text-xs", slot.availableCount <= 0 ? "bg-muted/50 opacity-60" : "bg-green-50/40 border-green-200 hover:bg-green-50")}>
+            <div key={slot.startTime} className={cn("flex items-center justify-between p-2.5 rounded border text-xs", slot.availableCount <= 0 ? "bg-red-50/60 border-red-200 opacity-80" : "bg-green-50/40 border-green-200 hover:bg-green-50")}>
               <div className="flex items-center gap-2">
                 <Clock className="w-3 h-3 text-primary" />
                 <span className="font-medium">{slot.startTime} - {slot.endTime}</span>
@@ -2257,7 +2257,7 @@ function DayDoctorSlotRow({ doctorId, doctorName, date, onLeave, selectMode, onS
               className={cn(
                 "px-1.5 py-0.5 rounded text-[9px] border transition-colors",
                 slot.availableCount <= 0
-                  ? "bg-muted/50 text-muted-foreground cursor-not-allowed"
+                  ? "bg-red-50 text-red-500 border-red-200 cursor-not-allowed"
                   : selectMode
                     ? "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 cursor-pointer"
                     : "bg-muted/30 text-foreground"
