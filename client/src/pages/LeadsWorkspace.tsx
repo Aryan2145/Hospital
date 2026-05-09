@@ -831,8 +831,6 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
   const { data: leadSourceCategories = [] } = useMasterData("leadSourceCategories");
   const { data: leadSources = [] } = useMasterData("leadSources");
   const { data: treatmentDepartments = [] } = useMasterData("treatmentDepartments");
-  const { data: consultationTypes = [] } = useMasterData("consultationTypes");
-  const { data: doctors = [] } = useMasterData("doctors");
   const { data: referrers = [] } = useMasterData("referrers");
   const { data: campaigns = [] } = useQuery<any[]>({
     queryKey: ["/api/masters", "campaigns"],
@@ -1174,69 +1172,19 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
             name="treatmentDepartmentId"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Treatment Department</FormLabel>
+                <FormLabel>Area of Interest</FormLabel>
                 <FormControl>
                   <SearchableSelect
                     value={field.value ? String(field.value) : ""}
-                    onValueChange={(v) => {
-                      field.onChange(v ? Number(v) : null);
-                      form.setValue("consultationTypeId", null);
-                    }}
+                    onValueChange={(v) => field.onChange(v ? Number(v) : null)}
                     options={treatmentDepartments.map((d: any) => ({ value: String(d.id), label: d.name }))}
-                    placeholder="Select department"
+                    placeholder="e.g. Cardiology, Orthopaedics"
                     data-testid="select-lead-treatment-dept"
                   />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="doctorId"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Doctor</FormLabel>
-                <FormControl>
-                  <SearchableSelect
-                    value={field.value ? String(field.value) : ""}
-                    onValueChange={(v) => field.onChange(v ? Number(v) : null)}
-                    options={doctors.map((d: any) => ({ value: String(d.id), label: d.name }))}
-                    placeholder="Select doctor"
-                    data-testid="select-lead-doctor"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="consultationTypeId"
-            render={({ field }) => {
-              const selectedDeptId = form.watch("treatmentDepartmentId");
-              const filteredSubDepts = selectedDeptId
-                ? consultationTypes.filter((c: any) => !c.treatmentDepartmentId || c.treatmentDepartmentId === Number(selectedDeptId))
-                : consultationTypes;
-              return (
-                <FormItem>
-                  <FormLabel>Treatment Sub-Department</FormLabel>
-                  <FormControl>
-                    <SearchableSelect
-                      value={field.value ? String(field.value) : ""}
-                      onValueChange={(v) => field.onChange(v ? Number(v) : null)}
-                      options={filteredSubDepts.map((c: any) => ({ value: String(c.id), label: c.name }))}
-                      placeholder="Select sub-department"
-                      data-testid="select-lead-consult-type"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              );
-            }}
           />
         </div>
 
