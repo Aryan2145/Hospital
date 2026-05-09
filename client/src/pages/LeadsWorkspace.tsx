@@ -87,7 +87,7 @@ export default function LeadsWorkspace() {
   const [filterDateTo, setFilterDateTo] = useState("");
   const [filterSource, setFilterSource] = useState<string>("");
   const [filterUtmCampaign, setFilterUtmCampaign] = useState<string>("");
-  const { data: leadSourcesForFilter = [] } = useMasterData("lead_sources");
+  const { data: leadSourcesForFilter = [] } = useMasterData("leadSources");
   const [, navigate] = useLocation();
 
   useEffect(() => {
@@ -828,10 +828,10 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
   const cpPhoneDebounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const { data: branches = [] } = useMasterData("branches");
-  const { data: leadSourceCategories = [] } = useMasterData("lead_source_categories");
-  const { data: leadSources = [] } = useMasterData("lead_sources");
-  const { data: treatmentDepartments = [] } = useMasterData("treatment_departments");
-  const { data: consultationTypes = [] } = useMasterData("consultation_types");
+  const { data: leadSourceCategories = [] } = useMasterData("leadSourceCategories");
+  const { data: leadSources = [] } = useMasterData("leadSources");
+  const { data: treatmentDepartments = [] } = useMasterData("treatmentDepartments");
+  const { data: consultationTypes = [] } = useMasterData("consultationTypes");
   const { data: doctors = [] } = useMasterData("doctors");
   const { data: referrers = [] } = useMasterData("referrers");
   const { data: campaigns = [] } = useQuery<any[]>({
