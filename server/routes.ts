@@ -6892,6 +6892,7 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const doctorId = Number(req.params.id);
       const date = req.query.date as string;
+      const branchId = req.query.branchId ? Number(req.query.branchId) : null;
       if (!date) return res.status(400).json({ message: "date query parameter required (YYYY-MM-DD)" });
 
       const dayOfWeek = new Date(date + "T12:00:00").toLocaleDateString("en-US", { weekday: "long" });
@@ -6901,7 +6902,7 @@ export async function registerRoutes(
         return res.json({ available: false, reason: "Doctor on leave", slots: [], windows: [] });
       }
 
-      const timings = await storage.getDoctorOpdTimings(doctorId, tid);
+      const timings = await storage.getDoctorOpdTimings(doctorId, tid, branchId);
       const dayTimings = timings.filter((t: any) => t.dayOfWeek === dayOfWeek);
       if (dayTimings.length === 0) {
         return res.json({ available: false, reason: "No OPD on this day", slots: [], windows: [] });

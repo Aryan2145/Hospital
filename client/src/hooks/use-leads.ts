@@ -251,11 +251,13 @@ export interface DoctorAvailability {
   individualSlots?: IndividualSlot[];
   windows?: Array<{ startTime: string; endTime: string; maxPatients: number; slotDuration: number }>;
 }
-export function useDoctorAvailability(doctorId: number | null, date: string | null) {
+export function useDoctorAvailability(doctorId: number | null, date: string | null, branchId?: number | null) {
   return useQuery<DoctorAvailability>({
-    queryKey: ["/api/doctors", doctorId, "availability", date],
+    queryKey: ["/api/doctors", doctorId, "availability", date, branchId ?? null],
     queryFn: async () => {
-      const res = await fetch(`/api/doctors/${doctorId}/availability?date=${date}`, { credentials: "include" });
+      const params = new URLSearchParams({ date: date! });
+      if (branchId) params.set("branchId", String(branchId));
+      const res = await fetch(`/api/doctors/${doctorId}/availability?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch availability");
       return res.json();
     },

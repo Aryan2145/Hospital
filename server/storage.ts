@@ -90,7 +90,7 @@ export interface IStorage {
   getAppointment(id: number, tenantId: number): Promise<Appointment | undefined>;
   createAppointment(data: InsertAppointment): Promise<Appointment>;
   updateAppointment(id: number, tenantId: number, data: Partial<InsertAppointment>): Promise<Appointment>;
-  getDoctorOpdTimings(doctorId: number, tenantId: number): Promise<any[]>;
+  getDoctorOpdTimings(doctorId: number, tenantId: number, branchId?: number | null): Promise<any[]>;
   getDoctorLeaveExceptions(doctorId: number, tenantId: number, date: string): Promise<any[]>;
   getAppointmentsForDoctorOnDate(doctorId: number, tenantId: number, date: string): Promise<Appointment[]>;
   getNextTokenNumber(doctorId: number, tenantId: number, date: string): Promise<number>;
@@ -553,9 +553,14 @@ export class DatabaseStorage implements IStorage {
     return appt;
   }
 
-  async getDoctorOpdTimings(doctorId: number, tenantId: number): Promise<any[]> {
-    return await db.select().from(opdTimings)
-      .where(and(eq(opdTimings.doctorId, doctorId), eq(opdTimings.tenantId, tenantId), eq(opdTimings.status, "Active")));
+  async getDoctorOpdTimings(doctorId: number, tenantId: number, branchId?: number | null): Promise<any[]> {
+    const conditions: any[] = [
+      eq(opdTimings.doctorId, doctorId),
+      eq(opdTimings.tenantId, tenantId),
+      eq(opdTimings.status, "Active"),
+    ];
+    if (branchId) conditions.push(eq(opdTimings.branchId, branchId));
+    return await db.select().from(opdTimings).where(and(...conditions));
   }
 
   async getDoctorLeaveExceptions(doctorId: number, tenantId: number, date: string): Promise<any[]> {

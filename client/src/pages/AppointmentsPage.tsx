@@ -167,6 +167,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
   const { data: branchesListSchedule } = useBranches();
   const activeBranches = (branchesListSchedule || []).filter((b: any) => b.status === "Active");
   const defaultBranchId = activeBranches.length > 0 ? String(activeBranches[0].id) : "";
+  const { data: opdSchedule } = useQuery<any[]>({ queryKey: ["/api/opd-schedule"] });
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookDoctorId, setBookDoctorId] = useState("");
   const [bookDate, setBookDate] = useState("");
@@ -190,9 +191,21 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
   const [isCreatingLead, setIsCreatingLead] = useState(false);
   const [phoneLookupMatches, setPhoneLookupMatches] = useState<Array<{type:"lead"|"patient";id:string;name:string;leadId?:string;patientId?:string}>>([]);
 
+  // Derive which doctor IDs have OPD timings at the selected booking branch
+  const effectiveBranchId = bookBranchId || defaultBranchId;
+  const doctorIdsAtBranch = useMemo(() => {
+    if (!opdSchedule || !effectiveBranchId) return new Set<string>();
+    return new Set(
+      opdSchedule
+        .filter((t: any) => t.branchId && String(t.branchId) === String(effectiveBranchId))
+        .map((t: any) => String(t.doctorId))
+    );
+  }, [opdSchedule, effectiveBranchId]);
+
   const availability = useDoctorAvailability(
     bookDoctorId ? Number(bookDoctorId) : null,
-    bookDate || null
+    bookDate || null,
+    effectiveBranchId ? Number(effectiveBranchId) : null
   );
 
   const resetBookingForm = () => {
@@ -1110,7 +1123,16 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                   <Label className="text-xs font-medium text-muted-foreground">Branch *</Label>
                   <SearchableSelect
                     value={bookBranchId || defaultBranchId}
-                    onValueChange={setBookBranchId}
+                    onValueChange={(v) => {
+                      setBookBranchId(v);
+                      // Reset doctor if it has no OPD at the newly selected branch
+                      if (bookDoctorId && opdSchedule) {
+                        const hasSlotAtBranch = opdSchedule.some(
+                          (t: any) => String(t.doctorId) === bookDoctorId && String(t.branchId) === v
+                        );
+                        if (!hasSlotAtBranch) { setBookDoctorId(""); setBookSlot(""); }
+                      }
+                    }}
                     options={activeBranches.map((b: any) => ({ value: String(b.id), label: b.name }))}
                     placeholder="Select branch"
                     data-testid="book-select-branch"
@@ -1121,8 +1143,10 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                   <SearchableSelect
                     value={bookDoctorId}
                     onValueChange={(v) => { setBookDoctorId(v); setBookSlot(""); }}
-                    options={doctorsList?.map((d: any) => ({ value: String(d.id), label: d.name })) || []}
-                    placeholder="Select doctor"
+                    options={(doctorsList || [])
+                      .filter((d: any) => d.status === "Active" && doctorIdsAtBranch.has(String(d.id)))
+                      .map((d: any) => ({ value: String(d.id), label: d.name }))}
+                    placeholder={effectiveBranchId ? "Select doctor" : "Select branch first"}
                     data-testid="book-select-doctor"
                   />
                 </div>
@@ -1771,18 +1795,35 @@ function AvailabilityCalendarModal({ open, onOpenChange, selectMode, onSlotSelec
   onSlotSelected: (doctorId: string, date: string, time: string) => void;
 }) {
   const { data: doctorsList } = useDoctors();
+  const { data: branchesListCal } = useBranches();
+  const { data: opdScheduleCal } = useQuery<any[]>({ queryKey: ["/api/opd-schedule"] });
+  const [selectedBranchCal, setSelectedBranchCal] = useState("all");
   const [selectedDoctor, setSelectedDoctor] = useState("all");
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [viewMode, setViewMode] = useState<"month" | "day" | "week">("month");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const { data: leaves, isLoading: leavesLoading } = useDoctorLeaves(selectedDoctor);
 
-  const activeDoctors = (doctorsList?.filter((d: any) => d.status === "Active") || []);
+  const activeBranchesCal = (branchesListCal || []).filter((b: any) => b.status === "Active");
+
+  // Filter doctors to only those with OPD at the selected branch
+  const activeDoctors = useMemo(() => {
+    const all = (doctorsList?.filter((d: any) => d.status === "Active") || []);
+    if (selectedBranchCal === "all" || !opdScheduleCal) return all;
+    const doctorIdsAtBranchCal = new Set(
+      opdScheduleCal
+        .filter((t: any) => t.branchId && String(t.branchId) === selectedBranchCal)
+        .map((t: any) => String(t.doctorId))
+    );
+    return all.filter((d: any) => doctorIdsAtBranchCal.has(String(d.id)));
+  }, [doctorsList, opdScheduleCal, selectedBranchCal]);
 
   const selectedDayDoctorId = selectedDoctor !== "all" ? selectedDoctor : null;
+  const calBranchId = selectedBranchCal !== "all" ? Number(selectedBranchCal) : null;
   const dayAvailability = useDoctorAvailability(
     selectedDayDoctorId ? Number(selectedDayDoctorId) : null,
-    selectedDay
+    selectedDay,
+    calBranchId
   );
 
   const monthStart = startOfMonth(currentMonth);
@@ -1838,7 +1879,23 @@ function AvailabilityCalendarModal({ open, onOpenChange, selectMode, onSlotSelec
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid gap-3 md:grid-cols-3 mb-4">
+        <div className="grid gap-3 md:grid-cols-4 mb-4">
+          <div className="min-w-0">
+            <SearchableSelect
+              value={selectedBranchCal}
+              onValueChange={(v) => {
+                setSelectedBranchCal(v);
+                setSelectedDoctor("all");
+                setSelectedDay(null);
+              }}
+              options={[
+                { value: "all", label: "All Branches" },
+                ...activeBranchesCal.map((b: any) => ({ value: String(b.id), label: b.name })),
+              ]}
+              placeholder="Filter by branch..."
+              data-testid="avail-select-branch"
+            />
+          </div>
           <div className="min-w-0">
             <SearchableSelect
               value={selectedDoctor}
