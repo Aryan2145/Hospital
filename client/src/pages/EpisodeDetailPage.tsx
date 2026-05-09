@@ -3210,10 +3210,10 @@ function PreopAssessmentTab({
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Reason Not Ready</Label>
             <Textarea
-              key={`preop-not-ready-${assessment.not_ready_reason}`}
-              defaultValue={assessment.not_ready_reason || ""}
+              key={`preop-not-ready-${fields.not_ready_reason}`}
+              defaultValue={fields.not_ready_reason || ""}
               onBlur={(e) => {
-                if (e.target.value !== (assessment.not_ready_reason || "")) {
+                if (e.target.value !== (fields.not_ready_reason || "")) {
                   handleSave({ notReadyReason: e.target.value });
                 }
               }}
@@ -3229,10 +3229,10 @@ function PreopAssessmentTab({
               min={1}
               max={90}
               className="h-8 w-full rounded-md border border-input bg-background px-2.5 py-1 text-xs"
-              defaultValue={assessment.advised_revisit_days || ""}
+              defaultValue={fields.advised_revisit_days || ""}
               onBlur={(e) => {
                 const val = e.target.value ? Number(e.target.value) : null;
-                if (val !== (assessment.advised_revisit_days || null)) {
+                if (val !== (fields.advised_revisit_days || null)) {
                   handleSave({ advisedRevisitDays: val });
                 }
               }}
@@ -3246,7 +3246,7 @@ function PreopAssessmentTab({
       <div className="space-y-1.5">
         <Label className="text-xs font-medium">Mental / Psychological Readiness</Label>
         <Select
-          value={assessment.mental_readiness || assessment.mentalReadiness || "Calm"}
+          value={fields.mental_readiness || fields.mentalReadiness || "Calm"}
           onValueChange={(val) => handleSave({ mentalReadiness: val })}
           disabled={saving}
         >
@@ -3270,7 +3270,7 @@ function PreopAssessmentTab({
             "Anticoagulants", "Renal Issues", "Liver Issues", "Anaemia",
             "Obesity", "Previous Surgeries", "Allergies",
           ].map(cond => {
-            const selected = (assessment.medical_conditions || []).includes(cond);
+            const selected = (fields.medical_conditions || []).includes(cond);
             return (
               <button
                 key={cond}
@@ -3282,7 +3282,7 @@ function PreopAssessmentTab({
                     : "bg-background text-muted-foreground border-border hover:border-primary"
                 )}
                 onClick={() => {
-                  const current: string[] = assessment.medical_conditions || [];
+                  const current: string[] = fields.medical_conditions || [];
                   const next = selected ? current.filter((c: string) => c !== cond) : [...current, cond];
                   handleSave({ medicalConditions: next });
                 }}
@@ -3298,10 +3298,10 @@ function PreopAssessmentTab({
       <div className="space-y-1.5">
         <Label className="text-xs font-medium">Medical Condition Notes</Label>
         <Textarea
-          key={`preop-med-notes-${assessment.medical_condition_notes}`}
-          defaultValue={assessment.medical_condition_notes || ""}
+          key={`preop-med-notes-${fields.medical_condition_notes}`}
+          defaultValue={fields.medical_condition_notes || ""}
           onBlur={(e) => {
-            if (e.target.value !== (assessment.medical_condition_notes || "")) {
+            if (e.target.value !== (fields.medical_condition_notes || "")) {
               handleSave({ medicalConditionNotes: e.target.value });
             }
           }}
@@ -3314,10 +3314,10 @@ function PreopAssessmentTab({
       <div className="space-y-1.5">
         <Label className="text-xs font-medium">Mental Readiness Notes</Label>
         <Textarea
-          key={`preop-mental-notes-${assessment.mental_readiness_notes}`}
-          defaultValue={assessment.mental_readiness_notes || ""}
+          key={`preop-mental-notes-${fields.mental_readiness_notes}`}
+          defaultValue={fields.mental_readiness_notes || ""}
           onBlur={(e) => {
-            if (e.target.value !== (assessment.mental_readiness_notes || "")) {
+            if (e.target.value !== (fields.mental_readiness_notes || "")) {
               handleSave({ mentalReadinessNotes: e.target.value });
             }
           }}
@@ -3330,10 +3330,10 @@ function PreopAssessmentTab({
       <div className="space-y-1.5">
         <Label className="text-xs font-medium">Clinical Notes</Label>
         <Textarea
-          key={`preop-notes-${assessment.notes}`}
-          defaultValue={assessment.notes || ""}
+          key={`preop-notes-${fields.notes}`}
+          defaultValue={fields.notes || ""}
           onBlur={(e) => {
-            if (e.target.value !== (assessment.notes || "")) {
+            if (e.target.value !== (fields.notes || "")) {
               handleSave({ notes: e.target.value });
             }
           }}

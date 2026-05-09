@@ -7101,6 +7101,43 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/appointments/checked-in-today", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const doctorId = req.query.doctorId ? Number(req.query.doctorId) : null;
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      let query = `
+        SELECT a.*, p.first_name, p.last_name, p.primary_phone, p.uhid,
+               l.name as lead_name
+        FROM appointments a
+        LEFT JOIN patients p ON a.patient_id = p.id
+        LEFT JOIN leads l ON a.lead_id = l.id
+        WHERE a.tenant_id = $1
+          AND a.status = 'Checked In'
+          AND a.appointment_date >= $2
+          AND a.appointment_date < $3
+      `;
+      const params: any[] = [tid, today, tomorrow];
+
+      if (doctorId) {
+        query += ` AND a.doctor_id = $${params.length + 1}`;
+        params.push(doctorId);
+      }
+
+      query += ` ORDER BY a.checked_in_at ASC`;
+
+      const result = await pool.query(query, params);
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.get("/api/appointments-enriched", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
@@ -7813,43 +7850,6 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/appointments/checked-in-today", isAuthenticated, async (req, res) => {
-    try {
-      const tid = await getDefaultTenantId(req);
-      const doctorId = req.query.doctorId ? Number(req.query.doctorId) : null;
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      let query = `
-        SELECT a.*, p.first_name, p.last_name, p.primary_phone, p.uhid,
-               l.name as lead_name
-        FROM appointments a
-        LEFT JOIN patients p ON a.patient_id = p.id
-        LEFT JOIN leads l ON a.lead_id = l.id
-        WHERE a.tenant_id = $1
-          AND a.status = 'Checked In'
-          AND a.appointment_date >= $2
-          AND a.appointment_date < $3
-      `;
-      const params: any[] = [tid, today, tomorrow];
-
-      if (doctorId) {
-        query += ` AND a.doctor_id = $${params.length + 1}`;
-        params.push(doctorId);
-      }
-
-      query += ` ORDER BY a.checked_in_at ASC`;
-
-      const result = await pool.query(query, params);
-      res.json(result.rows);
-    } catch (err: any) {
-      res.status(500).json({ message: humanizeError(err) });
-    }
-  });
-
   // =============================================
   // CAMPAIGN ROUTES
   // =============================================
@@ -8333,6 +8333,66 @@ export async function registerRoutes(
       const leadId = req.query.leadId ? Number(req.query.leadId) : undefined;
       const result = await storage.getEpisodes(tid, leadId);
       res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/episodes/clinical-notes-edit-roles", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const allowedRoles = await getClinicalNotesAllowedRoles(tid);
+      res.json({ allowedRoles });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.get("/api/episodes/clinical-notes-edit-roles/config", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admins can manage clinical notes edit roles" });
+      }
+      const rows = await db
+        .select()
+        .from(clinicalNotesEditRoles)
+        .where(eq(clinicalNotesEditRoles.tenantId, tid));
+      res.json({ roles: rows, defaults: DEFAULT_CLINICAL_EDIT_ROLES });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/episodes/clinical-notes-edit-roles/config", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Only Admins can manage clinical notes edit roles" });
+      }
+      const { roleCodes } = req.body;
+      if (!Array.isArray(roleCodes) || roleCodes.length === 0) {
+        return res.status(400).json({ message: "At least one role must be selected" });
+      }
+      await db.delete(clinicalNotesEditRoles).where(eq(clinicalNotesEditRoles.tenantId, tid));
+      for (const rc of roleCodes) {
+        await db.insert(clinicalNotesEditRoles).values({ tenantId: tid, roleCode: rc, isActive: true });
+      }
+      const userName = crmUser.employeeName || req.user?.email || "System";
+      await storage.createAuditLog({
+        tenantId: tid,
+        entityType: "config",
+        entityId: 0,
+        action: "clinical_notes_edit_roles_updated",
+        oldValues: null,
+        newValues: { roleCodes },
+        changedFields: "roleCodes",
+        performedBy: userName,
+        performedByCrmUserId: crmUser.id,
+      });
+      res.json({ allowedRoles: roleCodes });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -10503,66 +10563,6 @@ export async function registerRoutes(
     }
     return DEFAULT_CLINICAL_EDIT_ROLES;
   }
-
-  app.get("/api/episodes/clinical-notes-edit-roles", isAuthenticated, async (req: any, res) => {
-    try {
-      const tid = await getDefaultTenantId(req);
-      const allowedRoles = await getClinicalNotesAllowedRoles(tid);
-      res.json({ allowedRoles });
-    } catch (err: any) {
-      res.status(500).json({ message: humanizeError(err) });
-    }
-  });
-
-  app.get("/api/episodes/clinical-notes-edit-roles/config", isAuthenticated, async (req: any, res) => {
-    try {
-      const tid = await getDefaultTenantId(req);
-      const crmUser = await getSessionCrmUserWithRole(req);
-      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
-        return res.status(403).json({ message: "Only Admins can manage clinical notes edit roles" });
-      }
-      const rows = await db
-        .select()
-        .from(clinicalNotesEditRoles)
-        .where(eq(clinicalNotesEditRoles.tenantId, tid));
-      res.json({ roles: rows, defaults: DEFAULT_CLINICAL_EDIT_ROLES });
-    } catch (err: any) {
-      res.status(500).json({ message: humanizeError(err) });
-    }
-  });
-
-  app.post("/api/episodes/clinical-notes-edit-roles/config", isAuthenticated, async (req: any, res) => {
-    try {
-      const tid = await getDefaultTenantId(req);
-      const crmUser = await getSessionCrmUserWithRole(req);
-      if (!crmUser || !["SYS_ADMIN", "ADMIN"].includes(crmUser.roleCode)) {
-        return res.status(403).json({ message: "Only Admins can manage clinical notes edit roles" });
-      }
-      const { roleCodes } = req.body;
-      if (!Array.isArray(roleCodes) || roleCodes.length === 0) {
-        return res.status(400).json({ message: "At least one role must be selected" });
-      }
-      await db.delete(clinicalNotesEditRoles).where(eq(clinicalNotesEditRoles.tenantId, tid));
-      for (const rc of roleCodes) {
-        await db.insert(clinicalNotesEditRoles).values({ tenantId: tid, roleCode: rc, isActive: true });
-      }
-      const userName = crmUser.employeeName || req.user?.email || "System";
-      await storage.createAuditLog({
-        tenantId: tid,
-        entityType: "config",
-        entityId: 0,
-        action: "clinical_notes_edit_roles_updated",
-        oldValues: null,
-        newValues: { roleCodes },
-        changedFields: "roleCodes",
-        performedBy: userName,
-        performedByCrmUserId: crmUser.id,
-      });
-      res.json({ allowedRoles: roleCodes });
-    } catch (err: any) {
-      res.status(500).json({ message: humanizeError(err) });
-    }
-  });
 
   app.put("/api/episodes/:id/clinical-notes", isAuthenticated, async (req: any, res) => {
     try {
