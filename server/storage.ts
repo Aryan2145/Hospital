@@ -33,7 +33,7 @@ import {
   type MasterRecord,
   MASTER_TABLE_REGISTRY,
 } from "@shared/schema";
-import { eq, and, asc, desc, gte, lte, sql, ne, count, notInArray } from "drizzle-orm";
+import { eq, and, or, asc, desc, gte, lte, sql, ne, count, notInArray, isNull } from "drizzle-orm";
 
 export interface IStorage {
   // Tenant
@@ -559,7 +559,7 @@ export class DatabaseStorage implements IStorage {
       eq(opdTimings.tenantId, tenantId),
       eq(opdTimings.status, "Active"),
     ];
-    if (branchId) conditions.push(eq(opdTimings.branchId, branchId));
+    if (branchId) conditions.push(or(eq(opdTimings.branchId, branchId), isNull(opdTimings.branchId)));
     return await db.select().from(opdTimings).where(and(...conditions));
   }
 

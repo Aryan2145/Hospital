@@ -41,18 +41,17 @@ export function useCreateLead() {
         body: JSON.stringify(lead),
         credentials: "include",
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        if (res.status === 409 && errData.existingLeadId) {
-          const err = new Error(errData.message || "Duplicate lead exists") as any;
-          err.status = 409;
-          err.existingLeadId = errData.existingLeadId;
-          err.existingLead = errData.existingLead;
-          throw err;
-        }
-        throw new Error(errData.message || "Failed to create lead");
+      const body = await res.json().catch(() => ({}));
+      if (res.status === 200 && (body as any).requiresAcknowledgement) {
+        const err = new Error("Duplicate leads found — acknowledgement required") as any;
+        err.requiresAcknowledgement = true;
+        err.existingLeads = (body as any).existingLeads ?? [];
+        throw err;
       }
-      return api.leads.create.responses[201].parse(await res.json());
+      if (!res.ok) {
+        throw new Error((body as any).message || "Failed to create lead");
+      }
+      return api.leads.create.responses[201].parse(body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.leads.list.path] });

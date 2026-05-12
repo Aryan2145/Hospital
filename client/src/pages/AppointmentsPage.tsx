@@ -189,15 +189,17 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
   const [newPatientTreatmentDeptId, setNewPatientTreatmentDeptId] = useState("");
   const [newPatientConsultationType, setNewPatientConsultationType] = useState("");
   const [isCreatingLead, setIsCreatingLead] = useState(false);
-  const [phoneLookupMatches, setPhoneLookupMatches] = useState<Array<{type:"lead"|"patient";id:string;name:string;leadId?:string;patientId?:string}>>([]);
+  const [phoneLookupMatches, setPhoneLookupMatches] = useState<Array<{type:"lead"|"patient";id:string;name:string;status?:string;leadId?:string;patientId?:string}>>([]);
+  const [bookNewLeadAllowDuplicate, setBookNewLeadAllowDuplicate] = useState(false);
 
-  // Derive which doctor IDs have OPD timings at the selected booking branch
+  // Derive which doctor IDs have OPD timings at the selected booking branch.
+  // Timings with branchId=null are treated as available at all branches.
   const effectiveBranchId = bookBranchId || defaultBranchId;
   const doctorIdsAtBranch = useMemo(() => {
     if (!opdSchedule || !effectiveBranchId) return new Set<string>();
     return new Set(
       opdSchedule
-        .filter((t: any) => t.branchId && String(t.branchId) === String(effectiveBranchId))
+        .filter((t: any) => !t.branchId || String(t.branchId) === String(effectiveBranchId))
         .map((t: any) => String(t.doctorId))
     );
   }, [opdSchedule, effectiveBranchId]);
@@ -228,6 +230,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
     setNewPatientGender("");
     setNewPatientConsultationType("");
     setPhoneLookupMatches([]);
+    setBookNewLeadAllowDuplicate(false);
   };
 
   const selectedLeadForEpisodes = bookMode === "existing" && bookLeadId && bookLeadId !== "none" ? bookLeadId : null;
@@ -292,6 +295,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
             newPatientAge ? `Age: ${newPatientAge}` : "",
             newPatientGender ? `Gender: ${newPatientGender}` : "",
           ].filter(Boolean).join(", "),
+          ...(bookNewLeadAllowDuplicate ? { allowDuplicate: true } : {}),
         });
         const newLead = await leadRes.json();
         leadId = newLead.id;
@@ -1144,7 +1148,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                     value={bookDoctorId}
                     onValueChange={(v) => { setBookDoctorId(v); setBookSlot(""); }}
                     options={(doctorsList || [])
-                      .filter((d: any) => d.status === "Active" && doctorIdsAtBranch.has(String(d.id)))
+                      .filter((d: any) => d.status === "Active" && (!effectiveBranchId || doctorIdsAtBranch.has(String(d.id))))
                       .map((d: any) => ({ value: String(d.id), label: d.name }))}
                     placeholder={effectiveBranchId ? "Select doctor" : "Select branch first"}
                     data-testid="book-select-doctor"
@@ -1302,6 +1306,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                       const val = e.target.value.replace(/\D/g, "").slice(0, 10);
                       setNewPatientPhone(val);
                       setPhoneLookupMatches([]);
+                      setBookNewLeadAllowDuplicate(false);
                       if (val.length === 10) {
                         const matchedLeads = (leadsList || []).filter((l: any) => {
                           const lPhone = (l.phoneE164 || l.phone || "").replace(/\D/g, "").slice(-10);
@@ -1312,16 +1317,10 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                           return pPhone === val;
                         });
                         const allMatches = [
-                          ...matchedLeads.map((l: any) => ({ type: "lead" as const, id: String(l.id), name: l.name || "Unnamed", leadId: String(l.id), patientId: l.patientId ? String(l.patientId) : undefined })),
-                          ...matchedPatients.filter((p: any) => !matchedLeads.some((l: any) => l.patientId === p.id)).map((p: any) => ({ type: "patient" as const, id: String(p.id), name: [p.firstName, p.lastName].filter(Boolean).join(" ") || "Unnamed", leadId: undefined, patientId: String(p.id) })),
+                          ...matchedLeads.map((l: any) => ({ type: "lead" as const, id: String(l.id), name: l.name || "Unnamed", status: l.status || "", leadId: String(l.id), patientId: l.patientId ? String(l.patientId) : undefined })),
+                          ...matchedPatients.filter((p: any) => !matchedLeads.some((l: any) => l.patientId === p.id)).map((p: any) => ({ type: "patient" as const, id: String(p.id), name: [p.firstName, p.lastName].filter(Boolean).join(" ") || "Unnamed", status: "", leadId: undefined, patientId: String(p.id) })),
                         ];
-                        if (allMatches.length === 1) {
-                          const m = allMatches[0];
-                          setBookLeadId(m.leadId || "");
-                          setBookPatientId(m.patientId || "");
-                          setNewPatientName(m.name);
-                          setBookMode("existing");
-                        } else if (allMatches.length > 1) {
+                        if (allMatches.length >= 1) {
                           setPhoneLookupMatches(allMatches);
                           setBookLeadId("");
                           setBookPatientId("");
@@ -1345,11 +1344,11 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                 </div>
               </div>
 
-              {newPatientPhone.length === 10 && phoneLookupMatches.length > 1 && (
+              {newPatientPhone.length === 10 && phoneLookupMatches.length >= 1 && (
                 <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-md space-y-2">
                   <p className="text-xs font-semibold text-blue-800 flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5" />
-                    {phoneLookupMatches.length} patients found with this number — select the correct one:
+                    {phoneLookupMatches.length === 1 ? "1 existing record found — select or create new:" : `${phoneLookupMatches.length} records found — select the correct one:`}
                   </p>
                   {phoneLookupMatches.map((m) => (
                     <button
@@ -1361,14 +1360,34 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                         setNewPatientName(m.name);
                         setBookMode("existing");
                         setPhoneLookupMatches([]);
+                        setBookNewLeadAllowDuplicate(false);
                       }}
                       className="w-full text-left px-3 py-2 rounded-md border border-blue-200 bg-white hover:bg-blue-50 transition-colors"
                       data-testid={`book-phone-match-${m.id}`}
                     >
                       <span className="text-xs font-medium text-blue-900">{m.name}</span>
-                      <span className="ml-2 text-[10px] text-blue-500">{m.type === "lead" ? "Lead" : "Patient"}</span>
+                      {m.status && <span className="ml-2 text-[10px] text-blue-600">{m.status}</span>}
+                      <span className="ml-2 text-[10px] text-blue-400">{m.type === "lead" ? "Lead" : "Patient"}</span>
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBookLeadId("");
+                      setBookPatientId("");
+                      setNewPatientName("");
+                      setBookMode("new");
+                      setPhoneLookupMatches([]);
+                      setBookNewLeadAllowDuplicate(true);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-md border border-dashed border-blue-300 bg-white hover:bg-blue-50 transition-colors"
+                    data-testid="book-phone-create-new"
+                  >
+                    <span className="text-xs font-medium text-blue-700 flex items-center gap-1.5">
+                      <UserPlus className="w-3 h-3" />
+                      Create New Lead with this number
+                    </span>
+                  </button>
                 </div>
               )}
 

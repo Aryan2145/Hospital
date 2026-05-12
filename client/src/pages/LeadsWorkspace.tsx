@@ -812,10 +812,13 @@ const defaultContact = (): InlineContact => ({
 function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
   const createLead = useCreateLead();
   const [, navigate] = useLocation();
-  const [duplicateInfo, setDuplicateInfo] = useState<{
-    isDuplicate: boolean;
-    existingLead?: { id: number; name: string; status: string; assignedTo: string; createdAt: string };
-  } | null>(null);
+  type DuplicateMatch = {
+    id: number; name: string; status: string;
+    assignedToName: string; lastActivityDate: string | null;
+    matchType: "lead_phone" | "contact_person"; contactPersonName?: string;
+  };
+  const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([]);
+  const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const duplicateDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const lastCheckedPhone = useRef<string>("");
@@ -852,7 +855,8 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
   const checkDuplicate = useCallback(async (phone: string) => {
     const digitsOnly = phone.replace(/\D/g, "");
     if (digitsOnly.length < 10) {
-      setDuplicateInfo(null);
+      setDuplicateMatches([]);
+      setDuplicateAcknowledged(false);
       lastCheckedPhone.current = "";
       return;
     }
@@ -863,12 +867,13 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
       const res = await fetch(`/api/leads/check-duplicate?mobile=${encodeURIComponent(phone)}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        setDuplicateInfo(data.isDuplicate ? data : null);
+        setDuplicateMatches(data.existingLeads ?? []);
+        setDuplicateAcknowledged(false);
       } else {
-        setDuplicateInfo(null);
+        setDuplicateMatches([]);
       }
     } catch {
-      setDuplicateInfo(null);
+      setDuplicateMatches([]);
     } finally {
       setCheckingDuplicate(false);
     }
@@ -876,7 +881,8 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
 
   const handlePhoneChange = useCallback((value: string, originalOnChange: (v: string) => void) => {
     originalOnChange(value);
-    setDuplicateInfo(null);
+    setDuplicateMatches([]);
+    setDuplicateAcknowledged(false);
     lastCheckedPhone.current = "";
     if (duplicateDebounceRef.current) clearTimeout(duplicateDebounceRef.current);
     const digitsOnly = value.replace(/\D/g, "");
@@ -909,7 +915,7 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
     ? leadSources.filter((s: any) => s.categoryId === selectedSourceCategoryId)
     : leadSources;
 
-  const isDuplicateDetected = duplicateInfo?.isDuplicate === true;
+  const isDuplicateDetected = duplicateMatches.length > 0 && !duplicateAcknowledged;
 
   // Check if lead has at least one reachable phone (own phone or inline contact with phone)
   const leadPhone = form.watch("phoneE164");
@@ -956,8 +962,10 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
 
   function onSubmit(data: InsertLead) {
     if (isDuplicateDetected) return;
-    // Include inline contacts in the create payload so server handles them atomically
     const payload: any = { ...data };
+    if (duplicateMatches.length > 0 && duplicateAcknowledged) {
+      payload.allowDuplicate = true;
+    }
     if (inlineContacts.length > 0) {
       payload.contactPersons = inlineContacts.map(c => ({
         contactPersonId: c.existingContactPersonId || undefined,
@@ -976,8 +984,9 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
     createLead.mutate(payload, {
       onSuccess: () => onSuccess(),
       onError: (error: any) => {
-        if (error.status === 409 && error.existingLeadId) {
-          setDuplicateInfo({ isDuplicate: true, existingLead: error.existingLead });
+        if (error.requiresAcknowledgement && error.existingLeads) {
+          setDuplicateMatches(error.existingLeads);
+          setDuplicateAcknowledged(false);
         }
       },
     });
@@ -1019,46 +1028,53 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
                 {checkingDuplicate && (
                   <p className="text-xs text-muted-foreground" data-testid="text-checking-duplicate">Checking for duplicates...</p>
                 )}
-                {isDuplicateDetected && duplicateInfo?.existingLead && (
-                  <Alert variant="destructive" className="mt-2" data-testid="duplicate-warning-banner">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertTitle data-testid="text-duplicate-heading">Duplicate Lead Found</AlertTitle>
-                    <AlertDescription>
-                      <div className="mt-1 space-y-1 text-sm">
-                        <p data-testid="text-duplicate-name"><span className="font-medium">Name:</span> {duplicateInfo.existingLead.name}</p>
-                        <p data-testid="text-duplicate-status"><span className="font-medium">Status:</span> {duplicateInfo.existingLead.status}</p>
-                        <p data-testid="text-duplicate-assigned"><span className="font-medium">Assigned To:</span> {duplicateInfo.existingLead.assignedTo || "Unassigned"}</p>
-                        <p data-testid="text-duplicate-created"><span className="font-medium">Created:</span> {duplicateInfo.existingLead.createdAt ? fmtDate(duplicateInfo.existingLead.createdAt) : "—"}</p>
-                        {(duplicateInfo.existingLead as any).matchedVia && (
-                          <p className="text-amber-700" data-testid="text-duplicate-matched-via"><span className="font-medium">Matched via:</span> {(duplicateInfo.existingLead as any).matchedVia}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-3 flex-wrap">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => navigate(`/leads/${duplicateInfo.existingLead!.id}`)}
-                          data-testid="button-open-existing-lead"
-                        >
-                          Open Existing Lead
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setDuplicateInfo(null);
-                            lastCheckedPhone.current = "";
-                            form.setValue("phoneE164", "");
-                          }}
-                          data-testid="button-cancel-duplicate"
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </AlertDescription>
-                  </Alert>
+                {duplicateMatches.length > 0 && !duplicateAcknowledged && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2" data-testid="duplicate-nudge-panel">
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <p className="text-sm font-semibold text-amber-800">This number is already in the system</p>
+                    </div>
+                    <p className="text-xs text-amber-700">Review the existing lead(s) below. If this is a different case, you can still proceed.</p>
+                    <div className="space-y-1.5">
+                      {duplicateMatches.map(match => (
+                        <div key={match.id} className="rounded-md border border-amber-200 bg-white p-2.5 flex items-start justify-between gap-3" data-testid={`duplicate-match-${match.id}`}>
+                          <div className="space-y-0.5 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate" data-testid="text-duplicate-name">{match.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              <span data-testid="text-duplicate-status">{match.status}</span>
+                              {" · "}
+                              <span data-testid="text-duplicate-assigned">Assigned to: {match.assignedToName}</span>
+                              {match.matchType === "contact_person" && match.contactPersonName && (
+                                <span className="text-amber-600" data-testid="text-duplicate-matched-via"> · Contact person of {match.contactPersonName}</span>
+                              )}
+                            </p>
+                            {match.lastActivityDate && (
+                              <p className="text-[10px] text-muted-foreground">Last activity: {fmtDate(match.lastActivityDate)}</p>
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="shrink-0 h-7 text-xs"
+                            onClick={() => navigate(`/leads/${match.id}`)}
+                            data-testid="button-open-existing-lead"
+                          >
+                            View
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full mt-1 border-amber-300 text-amber-800 hover:bg-amber-100"
+                      onClick={() => setDuplicateAcknowledged(true)}
+                      data-testid="button-create-anyway"
+                    >
+                      Create New Lead Anyway
+                    </Button>
+                  </div>
                 )}
               </FormItem>
             )}
@@ -1448,9 +1464,11 @@ function CreateLeadForm({ onSuccess }: { onSuccess: () => void }) {
           </div>
         )}
 
-        <Button type="submit" className="w-full" disabled={createLead.isPending || isDuplicateDetected || !hasReachablePhone} data-testid="button-create-lead">
-          {createLead.isPending ? "Creating..." : isDuplicateDetected ? "Duplicate Detected — Cannot Submit" : !hasReachablePhone ? "Add a Phone Number or Contact Person" : "Create Lead"}
-        </Button>
+        {!isDuplicateDetected && (
+          <Button type="submit" className="w-full" disabled={createLead.isPending || !hasReachablePhone} data-testid="button-create-lead">
+            {createLead.isPending ? "Creating..." : !hasReachablePhone ? "Add a Phone Number or Contact Person" : duplicateMatches.length > 0 ? "Create Lead (Duplicate Acknowledged)" : "Create Lead"}
+          </Button>
+        )}
       </form>
     </Form>
   );

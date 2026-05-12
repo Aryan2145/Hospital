@@ -149,19 +149,10 @@ export function useCurrentUser() {
   // Role-specific home page — where the user lands after login
   const getDefaultHomePage = (): string => {
     switch (roleCode) {
-      case "DOCTOR":
-      case "MEDICAL_ASSISTANT":
-      case "RECEPTIONIST":
-        return "/appointments";
-      case "TELECALLER":
-        return "/leads";
-      case "BILLING":
       case "INSURANCE_DESK":
         return "/transactions";
       case "MIS_VIEWER":
         return "/dashboard";
-      case "MARKETING":
-        return "/campaigns";
       default:
         return "/";
     }

@@ -2013,40 +2013,32 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const mobile = req.query.mobile as string;
       if (!mobile || mobile.trim().length < 7) {
-        return res.json({ isDuplicate: false });
+        return res.json({ isDuplicate: false, existingLeads: [] });
       }
       const normalized = normalizePhone(mobile);
       const closedStatuses = ["Closed Won", "Closed Lost", "Unqualified"];
-      const result = await pool.query(
+
+      // All active leads matching by direct phone
+      const leadResult = await pool.query(
         `SELECT l.id, l.name, l.status, l.phone_e164, l.created_at,
-          cu.name as assigned_to_name
+          cu.name as assigned_to_name,
+          (SELECT MAX(la.created_at) FROM activities la WHERE la.lead_id = l.id) as last_activity_date
         FROM leads l
         LEFT JOIN crm_users cu ON l.assigned_crm_user_id = cu.id
         WHERE l.tenant_id = $1 AND l.mobile_normalized = $2
           AND (l.merge_status IS NULL OR l.merge_status = 'ACTIVE')
           AND l.status NOT IN (${closedStatuses.map((_, i) => `$${i + 3}`).join(",")})
           AND l.status NOT LIKE '%Closed%'
-        ORDER BY l.created_at DESC LIMIT 1`,
+        ORDER BY l.created_at DESC`,
         [tid, normalized, ...closedStatuses]
       );
-      if (result.rows.length > 0) {
-        const row = result.rows[0];
-        return res.json({
-          isDuplicate: true,
-          existingLead: {
-            id: row.id,
-            name: row.name,
-            status: row.status,
-            phone: row.phone_e164,
-            assignedTo: row.assigned_to_name || "Unassigned",
-            createdAt: row.created_at,
-          },
-        });
-      }
-      // Also check contact person phones linked to leads
+
+      // All active leads matching via a contact person's phone
       const cpResult = await pool.query(
         `SELECT l.id, l.name, l.status, l.phone_e164, l.created_at,
-          cu.name as assigned_to_name, cp.name as contact_person_name, lcp.relationship as cp_relationship
+          cu.name as assigned_to_name,
+          (SELECT MAX(la.created_at) FROM activities la WHERE la.lead_id = l.id) as last_activity_date,
+          cp.name as contact_person_name
         FROM contact_persons cp
         JOIN lead_contact_persons lcp ON lcp.contact_person_id = cp.id
         JOIN leads l ON l.id = lcp.lead_id
@@ -2055,26 +2047,48 @@ export async function registerRoutes(
           AND (l.merge_status IS NULL OR l.merge_status = 'ACTIVE')
           AND l.status NOT IN (${closedStatuses.map((_, i) => `$${i + 3}`).join(",")})
           AND l.status NOT LIKE '%Closed%'
-        ORDER BY l.created_at DESC LIMIT 1`,
+        ORDER BY l.created_at DESC`,
         [tid, mobile, ...closedStatuses]
       );
-      if (cpResult.rows.length > 0) {
-        const row = cpResult.rows[0];
-        return res.json({
-          isDuplicate: true,
-          matchType: "contact_person",
-          existingLead: {
+
+      const seenIds = new Set<number>();
+      const existingLeads: any[] = [];
+      for (const row of leadResult.rows) {
+        if (!seenIds.has(row.id)) {
+          seenIds.add(row.id);
+          existingLeads.push({
             id: row.id,
             name: row.name,
             status: row.status,
-            phone: row.phone_e164,
-            assignedTo: row.assigned_to_name || "Unassigned",
-            createdAt: row.created_at,
-            matchedVia: `Contact: ${row.contact_person_name} (${row.cp_relationship})`,
-          },
+            assignedToName: row.assigned_to_name || "Unassigned",
+            lastActivityDate: row.last_activity_date || null,
+            matchType: "lead_phone",
+          });
+        }
+      }
+      for (const row of cpResult.rows) {
+        if (!seenIds.has(row.id)) {
+          seenIds.add(row.id);
+          existingLeads.push({
+            id: row.id,
+            name: row.name,
+            status: row.status,
+            assignedToName: row.assigned_to_name || "Unassigned",
+            lastActivityDate: row.last_activity_date || null,
+            matchType: "contact_person",
+            contactPersonName: row.contact_person_name,
+          });
+        }
+      }
+
+      if (existingLeads.length > 0) {
+        return res.json({
+          isDuplicate: true,
+          existingLeads,
+          existingLead: existingLeads[0], // backward compat
         });
       }
-      res.json({ isDuplicate: false });
+      res.json({ isDuplicate: false, existingLeads: [] });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -2272,6 +2286,9 @@ export async function registerRoutes(
         (input as any).mobileNormalized = normalizePhone(input.phoneE164);
       }
       const closedStatuses = ["Closed Won", "Closed Lost", "Unqualified"];
+      const allowDuplicate = req.body.allowDuplicate === true;
+      let duplicateLeadsForLog: Array<{ id: number; name: string }> = [];
+
       if (input.phoneE164) {
         const dupResult = await pool.query(
           `SELECT l.id, l.name, l.status, l.created_at, cu.name as assigned_to_name
@@ -2280,25 +2297,9 @@ export async function registerRoutes(
            WHERE l.tenant_id = $1 AND l.mobile_normalized = $2
            AND (l.merge_status IS NULL OR l.merge_status = 'ACTIVE')
            AND l.status NOT IN (${closedStatuses.map((_, i) => `$${i + 3}`).join(",")})
-           AND l.status NOT LIKE '%Closed%'
-           LIMIT 1`,
+           AND l.status NOT LIKE '%Closed%'`,
           [tid, (input as any).mobileNormalized, ...closedStatuses]
         );
-        if (dupResult.rows.length > 0) {
-          const dup = dupResult.rows[0];
-          return res.status(409).json({
-            message: `A lead with this mobile number already exists: ${dup.name} (${dup.status})`,
-            existingLeadId: dup.id,
-            existingLead: {
-              id: dup.id,
-              name: dup.name,
-              status: dup.status,
-              assignedTo: dup.assigned_to_name || "Unassigned",
-              createdAt: dup.created_at,
-            },
-          });
-        }
-        // Also check contact person phone duplicates
         const cpDupResult = await pool.query(
           `SELECT l.id, l.name, l.status, l.created_at, cu.name as assigned_to_name, cp.name as cp_name, lcp.relationship as cp_rel
            FROM contact_persons cp
@@ -2308,24 +2309,29 @@ export async function registerRoutes(
            WHERE cp.tenant_id = $1 AND cp.phone_e164 = $2
            AND (l.merge_status IS NULL OR l.merge_status = 'ACTIVE')
            AND l.status NOT IN (${closedStatuses.map((_, i) => `$${i + 3}`).join(",")})
-           AND l.status NOT LIKE '%Closed%'
-           LIMIT 1`,
+           AND l.status NOT LIKE '%Closed%'`,
           [tid, input.phoneE164, ...closedStatuses]
         );
-        if (cpDupResult.rows.length > 0) {
-          const dup = cpDupResult.rows[0];
-          return res.status(409).json({
-            message: `This phone matches a contact person (${dup.cp_name}, ${dup.cp_rel}) linked to an existing lead: ${dup.name}`,
-            existingLeadId: dup.id,
-            existingLead: {
-              id: dup.id,
-              name: dup.name,
-              status: dup.status,
-              assignedTo: dup.assigned_to_name || "Unassigned",
-              createdAt: dup.created_at,
-              matchedVia: `Contact: ${dup.cp_name} (${dup.cp_rel})`,
-            },
-          });
+
+        const seenIds = new Set<number>();
+        const existingLeads: any[] = [];
+        for (const dup of dupResult.rows) {
+          if (!seenIds.has(dup.id)) {
+            seenIds.add(dup.id);
+            existingLeads.push({ id: dup.id, name: dup.name, status: dup.status, assignedToName: dup.assigned_to_name || "Unassigned", matchType: "lead_phone" });
+            duplicateLeadsForLog.push({ id: dup.id, name: dup.name });
+          }
+        }
+        for (const dup of cpDupResult.rows) {
+          if (!seenIds.has(dup.id)) {
+            seenIds.add(dup.id);
+            existingLeads.push({ id: dup.id, name: dup.name, status: dup.status, assignedToName: dup.assigned_to_name || "Unassigned", matchType: "contact_person", contactPersonName: dup.cp_name });
+            duplicateLeadsForLog.push({ id: dup.id, name: dup.name });
+          }
+        }
+
+        if (existingLeads.length > 0 && !allowDuplicate) {
+          return res.status(200).json({ requiresAcknowledgement: true, existingLeads });
         }
       }
       // Intake assignment: TELECALLER-only round-robin; null if no telecaller available
@@ -2395,6 +2401,17 @@ export async function registerRoutes(
       // Unified intake audit trail via shared helper
       const intakeChangedBy = String((req.session as any)?.crmUserId || "system");
       logIntakeOwnership(tid, lead.id, (lead as any).name, (lead as any).primaryOwnerUserId ?? null, intakeChangedBy, intakeOwner.method);
+
+      // Log duplicate acknowledgement when operator explicitly overrode the duplicate nudge
+      if (allowDuplicate && duplicateLeadsForLog.length > 0) {
+        await db.insert(activities).values({
+          tenantId: tid,
+          leadId: lead.id,
+          type: "system_note",
+          description: `Lead created with acknowledged duplicate phone. Existing leads sharing this number: ${duplicateLeadsForLog.map(d => `${d.name} (#${d.id})`).join(", ")}.`,
+          createdBy: intakeChangedBy,
+        } as any);
+      }
 
       res.status(201).json(lead);
     } catch (err: any) {
