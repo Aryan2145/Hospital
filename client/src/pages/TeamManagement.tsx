@@ -330,7 +330,16 @@ export default function TeamManagement() {
     }
   }
 
+  const adminRole = roles.find((r: any) => r.code === "ADMIN");
+  const activeAdminCount = adminRole ? users.filter(u => u.systemRoleId === adminRole.id && u.isActive !== false).length : 0;
+  const isLastAdmin = (user: CrmUser) => !!adminRole && user.systemRoleId === adminRole.id && activeAdminCount <= 1;
+
   function confirmDelete(id: number) {
+    const user = users.find(u => u.id === id);
+    if (user && isLastAdmin(user)) {
+      toast({ title: "Cannot Delete", description: "Cannot delete the last admin. Assign another admin first.", variant: "destructive" });
+      return;
+    }
     const hasReports = users.some(u => u.reportingTo === id);
     if (hasReports) {
       toast({ title: "Cannot Delete", description: "User has direct reports. Reassign them first.", variant: "destructive" });
@@ -632,7 +641,7 @@ export default function TeamManagement() {
                                   )}
                                   <Button size="icon" variant="ghost" onClick={() => { setPasswordTarget(user); setNewPassword(""); setPasswordDialogOpen(true); }} title="Set Password" data-testid={`button-password-user-${user.id}`}><KeyRound className="w-3.5 h-3.5" /></Button>
                                   <Button size="icon" variant="ghost" onClick={() => openEdit(user)} data-testid={`button-edit-user-${user.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
-                                  <Button size="icon" variant="ghost" onClick={() => confirmDelete(user.id)} data-testid={`button-delete-user-${user.id}`}><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
+                                  <Button size="icon" variant="ghost" onClick={() => confirmDelete(user.id)} disabled={isLastAdmin(user)} title={isLastAdmin(user) ? "Cannot delete the last admin" : "Delete user"} data-testid={`button-delete-user-${user.id}`}><Trash2 className={`w-3.5 h-3.5 ${isLastAdmin(user) ? "text-muted-foreground" : "text-destructive"}`} /></Button>
                                 </div>
                               )}
                             </td>

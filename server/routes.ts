@@ -6471,6 +6471,21 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       if (!(await requireAdminRole(req, res, tid))) return;
       const userId = Number(req.params.id);
+
+      // Guard: the last active ADMIN cannot be deleted
+      const userToDelete = await storage.getCrmUser(userId, tid);
+      if (userToDelete?.systemRoleId) {
+        const [role] = await db.select().from(systemRoles).where(eq(systemRoles.id, userToDelete.systemRoleId));
+        if (role?.code === "ADMIN") {
+          const activeAdmins = await db.select({ id: crmUsers.id }).from(crmUsers).where(
+            and(eq(crmUsers.tenantId, tid), eq(crmUsers.systemRoleId, userToDelete.systemRoleId), eq(crmUsers.isActive, true))
+          );
+          if (activeAdmins.length <= 1) {
+            return res.status(400).json({ message: "Cannot delete the last admin. Assign another admin first." });
+          }
+        }
+      }
+
       await db.update(leads).set({ assignedCrmUserId: null }).where(and(eq(leads.tenantId, tid), eq(leads.assignedCrmUserId, userId)));
       await db.update(leads).set({ handoverFromUserId: null }).where(and(eq(leads.tenantId, tid), eq(leads.handoverFromUserId, userId)));
       await db.update(leads).set({ handoverToUserId: null }).where(and(eq(leads.tenantId, tid), eq(leads.handoverToUserId, userId)));
