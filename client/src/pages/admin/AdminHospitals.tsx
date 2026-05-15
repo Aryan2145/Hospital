@@ -25,7 +25,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Building2, Plus, Ban, CheckCircle, Globe, Phone, Mail, User,
+  Building2, Plus, Ban, CheckCircle, Globe, Phone, Mail,
   ExternalLink, Calendar, RefreshCw, FlaskConical, Download, Upload,
   ShieldCheck, Eye, EyeOff, AlertTriangle, FileCheck, Lock,
   Info, ChevronRight, CheckCircle2, CalendarClock, UserCog, UserPlus,
@@ -744,18 +744,31 @@ export default function AdminHospitals() {
   const [manageAdminTenant, setManageAdminTenant] = useState<any | null>(null);
   const [form, setForm] = useState({
     name: "", displayName: "",
-    contactPerson: "", contactEmail: "", contactPhone: "",
+    adminName: "", adminPhone: "", adminPassword: "",
   });
+  const [showAdminPass, setShowAdminPass] = useState(false);
 
   const { data: stats, isLoading } = useQuery<any>({ queryKey: ["/api/admin/stats"] });
 
   const createTenant = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/tenants", data),
+    mutationFn: async (data: typeof form) => {
+      const tenantRes = await apiRequest("POST", "/api/tenants", {
+        name: data.name,
+        displayName: data.displayName,
+      });
+      const newTenant = await tenantRes.json();
+      await apiRequest("POST", `/api/admin/tenants/${newTenant.id}/create-admin`, {
+        name: data.adminName,
+        phone: data.adminPhone,
+        password: data.adminPassword,
+      });
+      return newTenant;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tenants/all"] });
       setShowAdd(false);
-      setForm({ name: "", displayName: "", contactPerson: "", contactEmail: "", contactPhone: "" });
+      setForm({ name: "", displayName: "", adminName: "", adminPhone: "", adminPassword: "" });
       toast({ title: "Hospital added successfully" });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -873,13 +886,6 @@ export default function AdminHospitals() {
               <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-3" data-testid={`text-created-${t.tenantId}`}>
                 <Calendar className="w-3 h-3 shrink-0" />
                 <span>Onboarded {fmtDate(t.createdAt)}</span>
-                {t.contactPerson && (
-                  <>
-                    <span className="text-slate-300">·</span>
-                    <User className="w-3 h-3 shrink-0" />
-                    <span className="truncate max-w-[120px]">{t.contactPerson}</span>
-                  </>
-                )}
               </div>
 
               <div className="grid grid-cols-3 gap-3 mb-4">
@@ -1027,19 +1033,34 @@ export default function AdminHospitals() {
                   <Input value={form.displayName} onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} placeholder="Short display name" data-testid="input-hospital-display" />
                 </div>
                 <div className="col-span-2 border-t pt-4">
-                  <p className="text-sm font-medium text-slate-700 mb-3">Contact Person</p>
+                  <p className="text-sm font-medium text-slate-700">First Admin User</p>
+                  <p className="text-xs text-slate-400 mt-0.5">This person will be able to log in and manage the hospital.</p>
                 </div>
                 <div>
-                  <Label>Name</Label>
-                  <Input value={form.contactPerson} onChange={e => setForm(f => ({ ...f, contactPerson: e.target.value }))} placeholder="Contact person name" data-testid="input-contact-person" />
+                  <Label>Name *</Label>
+                  <Input value={form.adminName} onChange={e => setForm(f => ({ ...f, adminName: e.target.value }))} placeholder="Admin full name" required data-testid="input-admin-name" />
                 </div>
                 <div>
-                  <Label>Phone</Label>
-                  <Input value={form.contactPhone} onChange={e => setForm(f => ({ ...f, contactPhone: e.target.value }))} placeholder="+91 98765 43210" data-testid="input-contact-phone" />
+                  <Label>Mobile *</Label>
+                  <Input value={form.adminPhone} onChange={e => setForm(f => ({ ...f, adminPhone: e.target.value }))} placeholder="10-digit mobile" required data-testid="input-admin-phone" />
                 </div>
                 <div className="col-span-2">
-                  <Label>Email</Label>
-                  <Input value={form.contactEmail} onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))} placeholder="admin@hospital.com" type="email" data-testid="input-contact-email" />
+                  <Label>Password *</Label>
+                  <div className="relative mt-1">
+                    <Input
+                      type={showAdminPass ? "text" : "password"}
+                      value={form.adminPassword}
+                      onChange={e => setForm(f => ({ ...f, adminPassword: e.target.value }))}
+                      placeholder="Min 6 characters"
+                      required
+                      minLength={6}
+                      className="pr-10"
+                      data-testid="input-admin-password"
+                    />
+                    <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" onClick={() => setShowAdminPass(v => !v)}>
+                      {showAdminPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-2">
