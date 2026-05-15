@@ -160,7 +160,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Record<string, { canView: boolean
   RECEPTIONIST: {
     dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false },
     leads: { canView: true, canCreate: true, canEdit: false, canDelete: false },
-    episodes: { canView: true, canCreate: false, canEdit: false, canDelete: false },
+    episodes: { canView: true, canCreate: true, canEdit: false, canDelete: false },
     appointments: { canView: true, canCreate: true, canEdit: true, canDelete: false },
     campaigns: { canView: false, canCreate: false, canEdit: false, canDelete: false },
     transactions: { canView: false, canCreate: false, canEdit: false, canDelete: false },
@@ -7978,6 +7978,9 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const userId = String((req as any).session?.crmUserId || "system");
       const apptId = Number(req.params.id);
+      const { episodeId } = req.body;
+
+      if (!episodeId) return res.status(400).json({ message: "A consultation episode must be selected to complete check-in" });
 
       const appt = await storage.getAppointment(apptId, tid);
       if (!appt) return res.status(404).json({ message: "Appointment not found" });
@@ -8022,6 +8025,7 @@ export async function registerRoutes(
       const updated = await storage.updateAppointment(apptId, tid, {
         status: "Checked In",
         patientId,
+        episodeId: Number(episodeId),
         checkedInAt: new Date(),
         checkedInBy: userId,
         checkedInByCrmUserId: (req as any).session?.crmUserId || null,
@@ -8043,19 +8047,7 @@ export async function registerRoutes(
         } catch {}
       }
 
-      let existingEpisodes: any[] = [];
-      if (patientId) {
-        const epResult = await pool.query(
-          `SELECT id, episode_name, status, doctor_id, treatment_department_id, created_at
-           FROM episodes WHERE tenant_id = $1 AND patient_id = $2
-           AND status NOT IN ('Completed', 'Discontinued')
-           ORDER BY created_at DESC LIMIT 10`,
-          [tid, patientId]
-        );
-        existingEpisodes = epResult.rows;
-      }
-
-      res.json({ ...updated, patientId, existingEpisodes, needsEpisodeAction: true });
+      res.json({ ...updated, patientId });
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }

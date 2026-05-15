@@ -376,42 +376,19 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
   });
 
 
-  const handleCheckIn = async (apptId: number) => {
-    const appt = actionDialog?.appt;
-    setActionDialog(null);
-
-    if (appt && !appt.episodeId) {
-      // Episode is mandatory — show the episode dialog first.
-      // The actual check-in API call happens only AFTER the episode is linked/created.
-      setEpisodePrompt({ appt: { ...appt, id: apptId } });
-      setEpisodeCreateMode(false);
-      setNewEpisodeNotes("");
-      setNewEpisodeTreatmentDeptId("");
-      setNewEpisodeSubDeptId("");
-    } else {
-      // Appointment already linked to an episode — check in immediately.
-      setCheckInPending(true);
-      try {
-        await apiRequest("POST", `/api/appointments/${apptId}/check-in`);
-        toast({ title: "Patient checked in successfully" });
-        queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/patients"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-      } catch (err: any) {
-        toast({ title: "Check-in failed", description: err.message, variant: "destructive" });
-      } finally {
-        setCheckInPending(false);
-      }
-    }
+  const openCheckIn = (appt: any) => {
+    setEpisodePrompt({ appt });
+    setEpisodeCreateMode(false);
+    setNewEpisodeNotes("");
+    setNewEpisodeTreatmentDeptId("");
+    setNewEpisodeSubDeptId("");
   };
 
   const handleLinkEpisode = async (episodeId: number) => {
     if (!episodePrompt) return;
     setIsLinkingEpisode(true);
     try {
-      // Check in first, then link — both steps are required
-      await apiRequest("POST", `/api/appointments/${episodePrompt.appt.id}/check-in`);
-      await apiRequest("PATCH", `/api/appointments/${episodePrompt.appt.id}`, { episodeId });
+      await apiRequest("POST", `/api/appointments/${episodePrompt.appt.id}/check-in`, { episodeId });
       toast({ title: "Patient checked in and linked to episode" });
       setEpisodePrompt(null);
       queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
@@ -429,9 +406,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
     const appt = episodePrompt.appt;
     setIsCreatingEpisode(true);
     try {
-      // Step 1: Check in (creates patient UHID if needed)
-      await apiRequest("POST", `/api/appointments/${appt.id}/check-in`);
-      // Step 2: Create the episode
+      // Step 1: Create episode first — if this fails nothing is written to appointments
       const body: any = {
         leadId: appt.leadId ? Number(appt.leadId) : undefined,
         patientId: appt.patientId ? Number(appt.patientId) : undefined,
@@ -444,8 +419,8 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
       if (newEpisodeSubDeptId) body.consultationTypeId = Number(newEpisodeSubDeptId);
       const res = await apiRequest("POST", "/api/episodes", body);
       const newEpisode = await res.json();
-      // Step 3: Link episode to appointment
-      await apiRequest("PATCH", `/api/appointments/${appt.id}`, { episodeId: newEpisode.id });
+      // Step 2: Check in atomically with the new episodeId
+      await apiRequest("POST", `/api/appointments/${appt.id}/check-in`, { episodeId: newEpisode.id });
       toast({ title: "Patient checked in with new episode" });
       setEpisodePrompt(null);
       queryClient.invalidateQueries({ queryKey: ["/api/appointments-enriched"] });
@@ -615,7 +590,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
         <td className="py-1.5 px-2 text-right">
           {isScheduled && (
             <div className="flex gap-0.5 justify-end">
-              <Button size="sm" variant="outline" className="text-[10px] h-6 px-1.5 text-teal-700 border-teal-200 hover:bg-teal-50" onClick={() => setActionDialog({ type: "check-in", appt })} data-testid={`button-checkin-${appt.id}`}>
+              <Button size="sm" variant="outline" className="text-[10px] h-6 px-1.5 text-teal-700 border-teal-200 hover:bg-teal-50" onClick={() => openCheckIn(appt)} data-testid={`button-checkin-${appt.id}`}>
                 <UserPlus className="w-3 h-3 mr-0.5" />Check In
               </Button>
               <Button size="sm" variant="outline" className="text-[10px] h-6 px-1.5" onClick={() => setActionDialog({ type: "consultation-done", appt })} data-testid={`button-consult-done-${appt.id}`}>
@@ -905,47 +880,12 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
         </DialogContent>
       </Dialog>
 
-      <Dialog open={actionDialog?.type === "check-in"} onOpenChange={(open) => !open && setActionDialog(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Check In Patient</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            {actionDialog?.appt && (
-              <div className="p-3 bg-muted/50 rounded-lg space-y-1.5">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <User className="w-4 h-4 text-primary" />
-                  {actionDialog.appt.patientName || actionDialog.appt.leadName || "Unknown"}
-                </div>
-                <div className="text-xs text-muted-foreground flex items-center gap-2">
-                  <Clock className="w-3 h-3" />
-                  {actionDialog.appt.startTime || "—"} with {actionDialog.appt.doctorName || "Doctor"}
-                </div>
-                {!actionDialog.appt.patientId && actionDialog.appt.leadId && (
-                  <div className="text-xs text-teal-700 bg-teal-50 rounded px-2 py-1 mt-1">
-                    <UserPlus className="w-3 h-3 inline mr-1" />
-                    A patient record will be automatically created from the lead data on check-in.
-                  </div>
-                )}
-              </div>
-            )}
-            <Button
-              onClick={() => actionDialog?.appt && handleCheckIn(actionDialog.appt.id)}
-              className="w-full bg-teal-600 hover:bg-teal-700"
-              disabled={checkInPending}
-              data-testid="button-confirm-checkin"
-            >
-              {checkInPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UserPlus className="w-4 h-4 mr-2" />}
-              Confirm Check In
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={!!episodePrompt} onOpenChange={(open) => { if (!open) setEpisodePrompt(null); }}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5 text-primary" />
-              Link Episode to Complete Check-in
+              Check In Patient
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -955,8 +895,18 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                   <User className="w-4 h-4 text-primary" />
                   {episodePrompt.appt.patientName || episodePrompt.appt.leadName || "Patient"}
                 </div>
-                <p className="text-xs text-blue-700">
-                  A consultation episode is required to complete check-in. Link to an existing episode or create a new one. Closing this dialog will cancel the check-in.
+                <div className="text-xs text-muted-foreground flex items-center gap-2">
+                  <Clock className="w-3 h-3" />
+                  {episodePrompt.appt.startTime || "—"} with {episodePrompt.appt.doctorName || "Doctor"}
+                </div>
+                {!episodePrompt.appt.patientId && episodePrompt.appt.leadId && (
+                  <div className="text-xs text-teal-700 bg-teal-50 rounded px-2 py-1 mt-1">
+                    <UserPlus className="w-3 h-3 inline mr-1" />
+                    A patient record will be automatically created from the lead data on check-in.
+                  </div>
+                )}
+                <p className="text-xs text-blue-700 border-t border-blue-200 pt-1.5 mt-1">
+                  Select or create a consultation episode to complete check-in. Closing without selecting cancels the check-in.
                 </p>
               </div>
             )}
@@ -971,17 +921,24 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                       Existing episodes for this patient ({patientEpisodes.length}):
                     </p>
                     <div className="space-y-2 max-h-[240px] overflow-y-auto">
-                      {patientEpisodes.map((ep: any) => (
+                      {patientEpisodes.map((ep: any) => {
+                        const isCurrentlyLinked = ep.id === episodePrompt?.appt?.episodeId;
+                        return (
                         <Card
                           key={ep.id}
-                          className="p-3 hover-elevate cursor-pointer"
+                          className={cn("p-3 hover-elevate cursor-pointer", isCurrentlyLinked && "border-teal-400 bg-teal-50")}
                           data-testid={`episode-option-${ep.id}`}
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium truncate">{ep.episodeName}</div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium truncate">{ep.episodeName}</span>
+                                {isCurrentlyLinked && (
+                                  <Badge className="text-[10px] bg-teal-100 text-teal-700 shrink-0">Currently Linked</Badge>
+                                )}
+                              </div>
                               <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                <Badge className={cn("text-[10px]", 
+                                <Badge className={cn("text-[10px]",
                                   ep.status === "Completed" ? "bg-green-100 text-green-700" :
                                   ep.status === "Consultation Done" ? "bg-blue-100 text-blue-700" :
                                   "bg-amber-100 text-amber-700"
@@ -1001,17 +958,18 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                             <Button
                               size="sm"
                               variant="outline"
-                              className="text-xs shrink-0"
+                              className={cn("text-xs shrink-0", isCurrentlyLinked && "border-teal-400 text-teal-700")}
                               disabled={isLinkingEpisode}
                               onClick={() => handleLinkEpisode(ep.id)}
                               data-testid={`button-link-episode-${ep.id}`}
                             >
                               {isLinkingEpisode ? <Loader2 className="w-3 h-3 animate-spin" /> : <LinkIcon className="w-3 h-3 mr-1" />}
-                              Link
+                              {isCurrentlyLinked ? "Confirm" : "Link"}
                             </Button>
                           </div>
                         </Card>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (
