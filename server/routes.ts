@@ -6176,6 +6176,188 @@ export async function registerRoutes(
     }
   });
 
+  // --- CRM Users: Export CSV (MUST be before /:id) ---
+  app.get("/api/crm-users/export", isAuthenticated, async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      if (!(await requireAdminRole(req, res, tid))) return;
+      const users = await storage.getCrmUsers(tid);
+      const active = users.filter(u => u.isActive !== false && u.code !== "SUPERADMIN");
+      const rows = await Promise.all(active.map(async (u: any) => {
+        const systemRoleName = u.systemRoleId
+          ? (await resolveRefById("system_roles", u.systemRoleId, tid)) ?? ""
+          : "";
+        const branchName = u.branchId
+          ? (await resolveRefById("branches", u.branchId, tid)) ?? ""
+          : "";
+        return {
+          code: u.code ?? "",
+          name: u.name ?? "",
+          phone: u.phone ?? "",
+          email: u.email ?? "",
+          systemRoleCode: systemRoleName,
+          branchCode: branchName,
+          accessScopeType: u.accessScopeType ?? "Self",
+          phiAccessLevel: u.phiAccessLevel ?? "None",
+          status: u.status ?? "Active",
+        };
+      }));
+      const cols = ["code", "name", "phone", "email", "systemRoleCode", "branchCode", "accessScopeType", "phiAccessLevel", "status"];
+      const csvData = stringify(rows, { header: true, columns: cols });
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", 'attachment; filename="users_export.csv"');
+      res.send(csvData);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // --- CRM Users: Import Template (MUST be before /:id) ---
+  app.get("/api/crm-users/import/template", isAuthenticated, async (_req, res) => {
+    const sample = [{ name: "Jane Smith", phone: "+919876543210", email: "jane@example.com", password: "SecurePass1", systemRoleCode: "COUNSELLOR", branchCode: "", accessScopeType: "Self", phiAccessLevel: "None" }];
+    const cols = ["name", "phone", "email", "password", "systemRoleCode", "branchCode", "accessScopeType", "phiAccessLevel"];
+    const csvData = stringify(sample, { header: true, columns: cols });
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", 'attachment; filename="users_import_template.csv"');
+    res.send(csvData);
+  });
+
+  // --- CRM Users: Import CSV (MUST be before /:id) ---
+  app.post("/api/crm-users/import", isAuthenticated, upload.single("file"), async (req: any, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      if (!(await requireAdminRole(req, res, tid))) return;
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+      const previewMode = req.query.mode === "preview";
+      const csvContent = req.file.buffer.toString("utf-8");
+      const rows = parse(csvContent, { columns: true, skip_empty_lines: true, trim: true }) as Record<string, string>[];
+
+      // Pre-load existing phones for duplicate detection
+      const existingUsers = await storage.getCrmUsers(tid);
+      const existingPhones = new Set(existingUsers.map((u: any) => normalizeCrmPhone(u.phone || "")));
+      const filePhones = new Set<string>();
+
+      const VALID_SCOPE = ["All", "Branch", "Team", "Self"];
+      const VALID_PHI = ["Full", "Masked", "None"];
+
+      type ValidImportRow = { rowNum: number; name: string; phone: string; email?: string; password: string; systemRoleId?: number; branchId?: number; accessScopeType: string; phiAccessLevel: string };
+      const validRows: ValidImportRow[] = [];
+      const errors: { row: number; message: string }[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowNum = i + 2;
+        const rowErrors: string[] = [];
+
+        const name = (row.name || "").trim();
+        const phone = (row.phone || "").trim();
+        const email = (row.email || "").trim() || undefined;
+        const password = (row.password || "").trim();
+        const systemRoleCodeRaw = (row.systemRoleCode || row.system_role_code || "").trim();
+        const branchCodeRaw = (row.branchCode || row.branch_code || "").trim();
+        const accessScopeType = (row.accessScopeType || row.access_scope_type || "Self").trim();
+        const phiAccessLevel = (row.phiAccessLevel || row.phi_access_level || "None").trim();
+
+        if (!name) rowErrors.push("name is required");
+        if (!phone) rowErrors.push("phone is required");
+        if (!password) rowErrors.push("password is required");
+        else if (password.length < 6) rowErrors.push("password must be at least 6 characters");
+
+        let normalizedPhone = "";
+        if (phone) {
+          normalizedPhone = normalizeCrmPhone(phone);
+          if (!normalizedPhone) {
+            rowErrors.push("phone: invalid format");
+          } else if (existingPhones.has(normalizedPhone)) {
+            rowErrors.push(`phone: ${phone} already exists in this tenant`);
+          } else if (filePhones.has(normalizedPhone)) {
+            rowErrors.push(`phone: ${phone} appears more than once in this file`);
+          }
+        }
+
+        if (accessScopeType && !VALID_SCOPE.includes(accessScopeType)) {
+          rowErrors.push(`accessScopeType: "${accessScopeType}" invalid (options: ${VALID_SCOPE.join(", ")})`);
+        }
+        if (phiAccessLevel && !VALID_PHI.includes(phiAccessLevel)) {
+          rowErrors.push(`phiAccessLevel: "${phiAccessLevel}" invalid (options: ${VALID_PHI.join(", ")})`);
+        }
+
+        let systemRoleId: number | undefined;
+        if (systemRoleCodeRaw) {
+          const resolved = await resolveRefByValue("system_roles", systemRoleCodeRaw, tid);
+          if (!resolved) rowErrors.push(`systemRoleCode: "${systemRoleCodeRaw}" not found`);
+          else systemRoleId = resolved;
+        }
+
+        let branchId: number | undefined;
+        if (branchCodeRaw) {
+          const resolved = await resolveRefByValue("branches", branchCodeRaw, tid);
+          if (!resolved) rowErrors.push(`branchCode: "${branchCodeRaw}" not found`);
+          else branchId = resolved;
+        }
+
+        if (rowErrors.length > 0) {
+          errors.push({ row: rowNum, message: rowErrors.join("; ") });
+        } else {
+          if (normalizedPhone) filePhones.add(normalizedPhone);
+          validRows.push({ rowNum, name, phone: normalizedPhone, email, password, systemRoleId, branchId, accessScopeType: accessScopeType || "Self", phiAccessLevel: phiAccessLevel || "None" });
+        }
+      }
+
+      if (previewMode) {
+        return res.json({ total: rows.length, valid: validRows.length, invalid: errors.length, errors });
+      }
+
+      // Determine starting code sequence
+      const lastUser = await pool.query(
+        `SELECT code FROM crm_users WHERE tenant_id = $1 AND code LIKE 'USR_%' ORDER BY code DESC LIMIT 1`,
+        [tid]
+      );
+      let userSeq = 1;
+      if (lastUser.rows.length > 0) {
+        const n = parseInt(lastUser.rows[0].code.split("_").pop() || "0", 10);
+        if (!isNaN(n)) userSeq = n + 1;
+      }
+
+      const { hashPassword } = await import("./replit_integrations/auth/replitAuth");
+      let successCount = 0;
+      const saveErrors = [...errors];
+
+      for (const row of validRows) {
+        try {
+          const digits = Math.max(3, String(userSeq).length);
+          const code = `USR_${String(userSeq).padStart(digits, "0")}`;
+          const passwordHash = await hashPassword(row.password);
+          const parsed = insertCrmUserSchema.parse({
+            tenantId: tid,
+            code,
+            name: row.name,
+            phone: row.phone,
+            email: row.email,
+            passwordHash,
+            systemRoleId: row.systemRoleId,
+            branchId: row.branchId,
+            accessScopeType: row.accessScopeType,
+            phiAccessLevel: row.phiAccessLevel,
+            approvalStatus: "Approved",
+            isActive: true,
+            status: "Active",
+          });
+          await storage.createCrmUser(parsed);
+          userSeq++;
+          successCount++;
+        } catch (err: any) {
+          saveErrors.push({ row: row.rowNum, message: `Save failed: ${err.message}` });
+        }
+      }
+
+      res.json({ total: rows.length, imported: successCount, failed: rows.length - successCount, errors: saveErrors });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.get("/api/crm-users/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);

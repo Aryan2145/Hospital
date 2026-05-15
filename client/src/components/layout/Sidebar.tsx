@@ -79,7 +79,7 @@ const sections: { label: string; items: NavItem[] }[] = [
   {
     label: "Team",
     items: [
-      { icon: UserCog, label: "Team Management", href: "/team", page: "team" },
+      { icon: UserCog, label: "Users", href: "/team", page: "team" },
     ],
   },
   {

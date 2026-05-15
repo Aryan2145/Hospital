@@ -16,7 +16,8 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import type { CrmUser, MasterRecord } from "@shared/schema";
 import {
   UserPlus, Search, ChevronDown, ChevronRight, Mail, Phone, Shield, Eye, EyeOff,
-  Users, UserCog, Network, List, Pencil, Trash2, KeyRound, Building2, RotateCcw, LockOpen, Lock, Megaphone
+  Users, UserCog, Network, List, Pencil, Trash2, KeyRound, Building2, RotateCcw, LockOpen, Lock, Megaphone,
+  Upload, Download, FileText, AlertCircle, CheckCircle2
 } from "lucide-react";
 
 type ViewMode = "list" | "tree";
@@ -150,6 +151,11 @@ export default function TeamManagement() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
   const [formData, setFormData] = useState<UserFormData>({ ...EMPTY_FORM });
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<{ total: number; valid: number; invalid: number; errors: { row: number; message: string }[] } | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; failed: number } | null>(null);
 
   const usersQueryKey = showInactive && isAdmin ? ["/api/crm-users", "includeInactive"] : ["/api/crm-users"];
   const usersQueryUrl = showInactive && isAdmin ? "/api/crm-users?includeInactive=true" : "/api/crm-users";
@@ -219,6 +225,48 @@ export default function TeamManagement() {
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
+
+  function closeImportDialog() {
+    setImportDialogOpen(false);
+    setImportFile(null);
+    setImportPreview(null);
+    setImportResult(null);
+    setImportLoading(false);
+  }
+
+  async function handleImportPreview(file: File) {
+    setImportLoading(true);
+    setImportPreview(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/crm-users/import?mode=preview", { method: "POST", body: fd, credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Preview failed");
+      setImportPreview(data);
+    } catch (err: any) {
+      toast({ title: "Preview Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function handleImportConfirm() {
+    if (!importFile) return;
+    setImportLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", importFile);
+      const res = await fetch("/api/crm-users/import", { method: "POST", body: fd, credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Import failed");
+      setImportResult({ imported: data.imported, failed: data.failed });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm-users"] });
+    } catch (err: any) {
+      toast({ title: "Import Failed", description: err.message, variant: "destructive" });
+      setImportLoading(false);
+    }
+  }
 
   function closeDialog() {
     setDialogOpen(false);
@@ -340,10 +388,21 @@ export default function TeamManagement() {
         <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground" data-testid="text-page-title">Team Management</h2>
-              <p className="text-muted-foreground mt-1">Manage CRM users, roles, reporting hierarchy, and access levels.</p>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground" data-testid="text-page-title">Users</h2>
+              <p className="text-muted-foreground mt-1">Manage users, roles, reporting hierarchy, and access levels.</p>
             </div>
-            <Button onClick={openCreate} data-testid="button-add-user"><UserPlus className="w-4 h-4 mr-2" />Add User</Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" size="sm" onClick={() => window.open("/api/crm-users/import/template")} title="Download CSV template" data-testid="button-import-template">
+                <FileText className="w-4 h-4 mr-1" />Template
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => window.open("/api/crm-users/export")} title="Export users as CSV" data-testid="button-export-users">
+                <Download className="w-4 h-4 mr-1" />Export
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} data-testid="button-import-users">
+                <Upload className="w-4 h-4 mr-1" />Import CSV
+              </Button>
+              <Button onClick={openCreate} data-testid="button-add-user"><UserPlus className="w-4 h-4 mr-2" />Add User</Button>
+            </div>
           </div>
 
           <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
@@ -646,27 +705,41 @@ export default function TeamManagement() {
             </div>
 
             {!editingUser && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 dark:bg-amber-900/10 dark:border-amber-800/40 p-3 space-y-3">
                 <div>
-                  <Label htmlFor="password">Password *</Label>
-                  <div className="relative">
-                    <Input id="password" type={formData.showPassword ? "text" : "password"} value={formData.password} onChange={e => setFormData(p => ({ ...p, password: e.target.value }))} placeholder="Minimum 6 characters" className="pr-10" data-testid="input-user-password" />
-                    <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setFormData(p => ({ ...p, showPassword: !p.showPassword }))} tabIndex={-1} data-testid="button-toggle-password">
-                      {formData.showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <KeyRound className="w-3.5 h-3.5" />Login Password <span className="text-amber-600 dark:text-amber-400 normal-case font-normal">— required</span>
+                  </p>
+                  <p className="text-xs text-amber-700/80 dark:text-amber-400/70 mt-0.5">User cannot log in without a password. Set it now before saving.</p>
                 </div>
-                <div>
-                  <Label htmlFor="confirm-password">Confirm Password *</Label>
-                  <div className="relative">
-                    <Input id="confirm-password" type={formData.showConfirmPassword ? "text" : "password"} value={formData.confirmPassword} onChange={e => setFormData(p => ({ ...p, confirmPassword: e.target.value }))} placeholder="Re-enter password" className="pr-10" data-testid="input-user-confirm-password" />
-                    <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setFormData(p => ({ ...p, showConfirmPassword: !p.showConfirmPassword }))} tabIndex={-1} data-testid="button-toggle-confirm-password">
-                      {formData.showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="password">Password *</Label>
+                    <div className="relative">
+                      <Input id="password" type={formData.showPassword ? "text" : "password"} value={formData.password} onChange={e => setFormData(p => ({ ...p, password: e.target.value }))} placeholder="Minimum 6 characters" className="pr-10" data-testid="input-user-password" />
+                      <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setFormData(p => ({ ...p, showPassword: !p.showPassword }))} tabIndex={-1} data-testid="button-toggle-password">
+                        {formData.showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    {formData.password.length > 0 && formData.password.length < 6 && (
+                      <p className="text-xs text-destructive mt-1">Minimum 6 characters</p>
+                    )}
                   </div>
-                  {formData.confirmPassword && formData.password !== formData.confirmPassword && (
-                    <p className="text-xs text-destructive mt-1">Passwords do not match</p>
-                  )}
+                  <div>
+                    <Label htmlFor="confirm-password">Confirm Password *</Label>
+                    <div className="relative">
+                      <Input id="confirm-password" type={formData.showConfirmPassword ? "text" : "password"} value={formData.confirmPassword} onChange={e => setFormData(p => ({ ...p, confirmPassword: e.target.value }))} placeholder="Re-enter password" className="pr-10" data-testid="input-user-confirm-password" />
+                      <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setFormData(p => ({ ...p, showConfirmPassword: !p.showConfirmPassword }))} tabIndex={-1} data-testid="button-toggle-confirm-password">
+                        {formData.showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    {formData.confirmPassword && formData.password !== formData.confirmPassword && (
+                      <p className="text-xs text-destructive mt-1">Passwords do not match</p>
+                    )}
+                    {formData.confirmPassword && formData.password === formData.confirmPassword && formData.password.length >= 6 && (
+                      <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />Passwords match</p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -754,8 +827,15 @@ export default function TeamManagement() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog} data-testid="button-cancel-user">Cancel</Button>
-            <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-user">
-              {(createMutation.isPending || updateMutation.isPending) ? "Saving..." : editingUser ? "Update" : "Create"}
+            <Button
+              onClick={handleSubmit}
+              disabled={
+                createMutation.isPending || updateMutation.isPending ||
+                (!editingUser && (formData.password.length < 6 || formData.password !== formData.confirmPassword))
+              }
+              data-testid="button-save-user"
+            >
+              {(createMutation.isPending || updateMutation.isPending) ? "Saving..." : editingUser ? "Update" : "Create User"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -797,6 +877,93 @@ export default function TeamManagement() {
             >
               {setPasswordMutation.isPending ? "Setting..." : "Set Password"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import CSV Dialog */}
+      <Dialog open={importDialogOpen} onOpenChange={v => { if (!v) closeImportDialog(); else setImportDialogOpen(true); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Users from CSV</DialogTitle>
+            <DialogDescription>
+              Upload a CSV file to create multiple users at once. Every row must include a <strong>password</strong>. Download the template first if you need the column format.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {!importResult ? (
+              <>
+                <div
+                  className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                  onClick={() => document.getElementById("import-file-input")?.click()}
+                >
+                  <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm font-medium">{importFile ? importFile.name : "Click to choose a CSV file"}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Columns: name, phone, email, password, systemRoleCode, branchCode, accessScopeType, phiAccessLevel</p>
+                  <input
+                    id="import-file-input"
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0] ?? null;
+                      setImportFile(file);
+                      setImportPreview(null);
+                      if (file) handleImportPreview(file);
+                    }}
+                  />
+                </div>
+
+                {importLoading && (
+                  <div className="flex items-center justify-center gap-2 py-2 text-sm text-muted-foreground">
+                    <LoadingSpinner />Validating file...
+                  </div>
+                )}
+
+                {importPreview && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="rounded-lg bg-muted p-3">
+                        <p className="text-lg font-bold">{importPreview.total}</p>
+                        <p className="text-xs text-muted-foreground">Total Rows</p>
+                      </div>
+                      <div className="rounded-lg bg-green-50 dark:bg-green-900/20 p-3">
+                        <p className="text-lg font-bold text-green-700 dark:text-green-400">{importPreview.valid}</p>
+                        <p className="text-xs text-muted-foreground">Valid</p>
+                      </div>
+                      <div className={`rounded-lg p-3 ${importPreview.invalid > 0 ? "bg-red-50 dark:bg-red-900/20" : "bg-muted"}`}>
+                        <p className={`text-lg font-bold ${importPreview.invalid > 0 ? "text-destructive" : ""}`}>{importPreview.invalid}</p>
+                        <p className="text-xs text-muted-foreground">Invalid</p>
+                      </div>
+                    </div>
+                    {importPreview.errors.length > 0 && (
+                      <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 max-h-40 overflow-y-auto space-y-1">
+                        {importPreview.errors.slice(0, 20).map((e, i) => (
+                          <p key={i} className="text-xs text-destructive flex gap-1"><AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" /><span><strong>Row {e.row}:</strong> {e.message}</span></p>
+                        ))}
+                        {importPreview.errors.length > 20 && <p className="text-xs text-muted-foreground">...and {importPreview.errors.length - 20} more errors</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-4 space-y-2">
+                <CheckCircle2 className="w-10 h-10 mx-auto text-green-600" />
+                <p className="text-lg font-semibold">{importResult.imported} user{importResult.imported !== 1 ? "s" : ""} imported</p>
+                {importResult.failed > 0 && <p className="text-sm text-destructive">{importResult.failed} row{importResult.failed !== 1 ? "s" : ""} failed</p>}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeImportDialog}>
+              {importResult ? "Close" : "Cancel"}
+            </Button>
+            {!importResult && importPreview && importPreview.valid > 0 && (
+              <Button onClick={handleImportConfirm} disabled={importLoading} data-testid="button-confirm-import">
+                {importLoading ? "Importing..." : `Import ${importPreview.valid} User${importPreview.valid !== 1 ? "s" : ""}`}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
