@@ -103,7 +103,7 @@ function ExportDialog({ tenant, onClose }: { tenant: any; onClose: () => void })
       const a    = document.createElement("a");
       a.href     = url;
       const ts   = new Date().toISOString().slice(0, 10);
-      a.download = `hcrmx-${tenant.subdomain}-${ts}.hcrmx`;
+      a.download = `hcrmx-${(tenant.displayName || tenant.name || "hospital").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${ts}.hcrmx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -498,7 +498,7 @@ function ImportDialog({ tenants, onClose }: { tenants: any[]; onClose: () => voi
               <SelectContent>
                 {tenants.map((t: any) => (
                   <SelectItem key={t.tenantId} value={String(t.tenantId)}>
-                    {t.displayName || t.tenantName} ({t.subdomain})
+                    {t.displayName || t.tenantName}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -717,10 +717,6 @@ function ManageAdminDialog({ tenant, onClose }: { tenant: any; onClose: () => vo
           </div>
           <div className="bg-slate-50 rounded-lg p-4 space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-slate-500">URL</span>
-              <span className="font-mono font-medium text-blue-700">{tenant.subdomain}.rgbindia.com</span>
-            </div>
-            <div className="flex justify-between">
               <span className="text-slate-500">Phone</span>
               <span className="font-mono font-medium">{created.phone}</span>
             </div>
@@ -747,7 +743,7 @@ export default function AdminHospitals() {
   const [showImport, setShowImport]   = useState(false);
   const [manageAdminTenant, setManageAdminTenant] = useState<any | null>(null);
   const [form, setForm] = useState({
-    name: "", subdomain: "", displayName: "",
+    name: "", displayName: "",
     contactPerson: "", contactEmail: "", contactPhone: "",
   });
 
@@ -759,7 +755,7 @@ export default function AdminHospitals() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tenants/all"] });
       setShowAdd(false);
-      setForm({ name: "", subdomain: "", displayName: "", contactPerson: "", contactEmail: "", contactPhone: "" });
+      setForm({ name: "", displayName: "", contactPerson: "", contactEmail: "", contactPhone: "" });
       toast({ title: "Hospital added successfully" });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -864,9 +860,6 @@ export default function AdminHospitals() {
                     >
                       {t.displayName || t.tenantName}
                     </button>
-                    <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                      <Globe className="w-3 h-3" />{t.subdomain}
-                    </p>
                   </div>
                 </div>
                 <Badge
@@ -1028,10 +1021,6 @@ export default function AdminHospitals() {
                 <div className="col-span-2">
                   <Label>Hospital Name *</Label>
                   <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Apollo Hospital" required data-testid="input-hospital-name" />
-                </div>
-                <div>
-                  <Label>Subdomain *</Label>
-                  <Input value={form.subdomain} onChange={e => setForm(f => ({ ...f, subdomain: e.target.value }))} placeholder="e.g. apollo" required data-testid="input-hospital-subdomain" />
                 </div>
                 <div>
                   <Label>Display Name</Label>

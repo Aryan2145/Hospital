@@ -1574,15 +1574,26 @@ export async function registerRoutes(
     try {
       const tenantSchema = z.object({
         name: z.string().min(1),
-        subdomain: z.string().min(1),
+        subdomain: z.string().optional(),
         displayName: z.string().optional(),
         primaryColor: z.string().optional(),
         secondaryColor: z.string().optional(),
       });
       const parsed = tenantSchema.parse(req.body);
+      // Auto-generate subdomain from name if not provided
+      let baseSlug = (parsed.subdomain || parsed.name)
+        .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      // Ensure uniqueness by appending a counter if needed
+      let subdomain = baseSlug;
+      let counter = 2;
+      while (true) {
+        const existing = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.subdomain, subdomain));
+        if (existing.length === 0) break;
+        subdomain = `${baseSlug}-${counter++}`;
+      }
       const [newTenant] = await db.insert(tenants).values({
         name: toProperCase(parsed.name),
-        subdomain: parsed.subdomain.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+        subdomain,
         displayName: parsed.displayName || parsed.name,
         primaryColor: parsed.primaryColor || "#005b9f",
         secondaryColor: parsed.secondaryColor || "#f0f7fc",
@@ -14587,10 +14598,17 @@ async function ensureSuperAdmin() {
       // Always enforce email and password
       if (existingUsers[0].email !== adminEmail) updates.email = adminEmail;
       updates.passwordHash = await hashPassword(defaultPassword);
-      const sysAdminRole = await db.select().from(systemRoles).where(
+      let sysAdminRole = await db.select().from(systemRoles).where(
         and(eq(systemRoles.code, "SYS_ADMIN"), eq(systemRoles.tenantId, tid))
       );
-      if (sysAdminRole.length > 0 && existingUsers[0].systemRoleId !== sysAdminRole[0].id) {
+      if (sysAdminRole.length === 0) {
+        const [newRole] = await db.insert(systemRoles).values({
+          tenantId: tid, code: "SYS_ADMIN", name: "System Admin",
+          status: "Active", displayOrder: 0,
+        }).returning();
+        sysAdminRole = [newRole];
+      }
+      if (existingUsers[0].systemRoleId !== sysAdminRole[0].id) {
         updates.systemRoleId = sysAdminRole[0].id;
       }
       await db.update(crmUsers).set(updates).where(eq(crmUsers.id, existingUsers[0].id));
@@ -14600,9 +14618,11 @@ async function ensureSuperAdmin() {
         and(eq(systemRoles.code, "SYS_ADMIN"), eq(systemRoles.tenantId, tid))
       );
       if (roleRows.length === 0) {
-        roleRows = await db.select().from(systemRoles).where(
-          and(eq(systemRoles.code, "ADMIN"), eq(systemRoles.tenantId, tid))
-        );
+        const [newRole] = await db.insert(systemRoles).values({
+          tenantId: tid, code: "SYS_ADMIN", name: "System Admin",
+          status: "Active", displayOrder: 0,
+        }).returning();
+        roleRows = [newRole];
       }
       const adminRoleId = roleRows.length > 0 ? roleRows[0].id : null;
 

@@ -393,7 +393,7 @@ export default function MetaHelpGuide() {
                 </ol>
                 <div className="mt-3">
                   <InfoBox type="info">
-                    <strong>The Verify Token is just the token portion of your webhook URL.</strong> For example, if your webhook URL is <code>https://viroc.rgbindia.com/api/webhook/lead-capture/abc123xyz</code>, the verify token to enter in Meta is <code>abc123xyz</code>.
+                    <strong>The Verify Token is just the token portion of your webhook URL.</strong> For example, if your webhook URL is <code>https://your-domain.com/api/webhook/lead-capture/abc123xyz</code>, the verify token to enter in Meta is <code>abc123xyz</code>.
                   </InfoBox>
                 </div>
                 <div className="mt-2">

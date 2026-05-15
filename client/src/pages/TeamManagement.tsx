@@ -302,6 +302,10 @@ export default function TeamManagement() {
       toast({ title: "Validation Error", description: "Enter a valid 10-digit Indian mobile number", variant: "destructive" });
       return;
     }
+    if (!formData.systemRoleId) {
+      toast({ title: "Validation Error", description: "System Role is required", variant: "destructive" });
+      return;
+    }
     if (!editingUser) {
       if (!formData.password || formData.password.length < 6) {
         toast({ title: "Validation Error", description: "Password must be at least 6 characters", variant: "destructive" });
@@ -557,7 +561,7 @@ export default function TeamManagement() {
                         const isLocked = !isInactive && !!user.lockedUntil && new Date(user.lockedUntil) > new Date();
                         const remainingMin = isLocked ? Math.ceil((new Date(user.lockedUntil!).getTime() - Date.now()) / 60000) : 0;
                         return (
-                          <tr key={user.id} className={`border-b last:border-0 ${isInactive ? 'opacity-60 bg-muted/20' : isLocked ? 'bg-red-50/50' : 'hover-elevate'}`} data-testid={`row-user-${user.id}`}>
+                          <tr key={user.id} className={`border-b last:border-0 cursor-pointer ${isInactive ? 'opacity-60 bg-muted/20' : isLocked ? 'bg-red-50/50' : 'hover-elevate'}`} onClick={() => openEdit(user)} data-testid={`row-user-${user.id}`}>
                             <td className="p-3">
                               <div className="flex items-center gap-2">
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isInactive ? 'bg-muted text-muted-foreground' : isLocked ? 'bg-red-100 text-red-600' : 'bg-primary/10 text-primary'}`}>
@@ -602,7 +606,7 @@ export default function TeamManagement() {
                                 )}
                               </div>
                             </td>
-                            <td className="p-3 text-right">
+                            <td className="p-3 text-right" onClick={e => e.stopPropagation()}>
                               {isInactive ? (
                                 <Button
                                   size="sm"
@@ -831,6 +835,7 @@ export default function TeamManagement() {
               onClick={handleSubmit}
               disabled={
                 createMutation.isPending || updateMutation.isPending ||
+                !formData.systemRoleId ||
                 (!editingUser && (formData.password.length < 6 || formData.password !== formData.confirmPassword))
               }
               data-testid="button-save-user"
