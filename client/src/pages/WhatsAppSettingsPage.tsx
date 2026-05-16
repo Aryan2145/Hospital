@@ -274,12 +274,20 @@ export default function WhatsAppSettingsPage() {
             {/* WATI TAB                                                           */}
             {/* ================================================================= */}
             <TabsContent value="wati" className="space-y-6">
-              <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 flex gap-3 items-start">
-                <Info className="w-4 h-4 text-green-700 mt-0.5 shrink-0" />
-                <div className="text-xs text-green-800 space-y-1">
-                  <p className="font-semibold">WATI (WhatsApp Team Inbox) — Recommended</p>
-                  <p>WATI provides a dedicated WhatsApp Business API with template messaging, session-based two-way chat, and an incoming message webhook. When WATI is enabled it takes priority over Meta Cloud API for sending.</p>
+              <div className="flex items-center justify-between">
+                <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 flex gap-3 items-start flex-1 mr-3">
+                  <Info className="w-4 h-4 text-green-700 mt-0.5 shrink-0" />
+                  <div className="text-xs text-green-800 space-y-1">
+                    <p className="font-semibold">WATI (WhatsApp Team Inbox) — Recommended</p>
+                    <p>WATI provides a dedicated WhatsApp Business API with template messaging, session-based two-way chat, and an incoming message webhook. When WATI is enabled it takes priority over Meta Cloud API for sending.</p>
+                  </div>
                 </div>
+                <a href="/whatsapp-logs" className="shrink-0">
+                  <Button variant="outline" size="sm" className="gap-1.5 whitespace-nowrap">
+                    <ArrowRight className="w-3.5 h-3.5" />
+                    View Message Log
+                  </Button>
+                </a>
               </div>
 
               {/* Credentials */}

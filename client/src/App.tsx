@@ -24,6 +24,7 @@ import TransactionsPage from "@/pages/TransactionsPage";
 import ConnectorsPage from "@/pages/ConnectorsPage";
 import EmailSettingsPage from "@/pages/EmailSettingsPage";
 import WhatsAppSettingsPage from "@/pages/WhatsAppSettingsPage";
+import WhatsAppLogsPage from "@/pages/WhatsAppLogsPage";
 import PendingApproval from "@/pages/PendingApproval";
 import TestingInterface from "@/pages/TestingInterface";
 import LeadImportPage from "@/pages/LeadImportPage";
@@ -205,6 +206,12 @@ function Router() {
       <Route path="/whatsapp-settings">
         {isAuthenticated ? (
           <RoleGate page="whatsapp-settings"><WhatsAppSettingsPage /></RoleGate>
+        ) : <Landing />}
+      </Route>
+
+      <Route path="/whatsapp-logs">
+        {isAuthenticated ? (
+          <RoleGate page="whatsapp-logs"><WhatsAppLogsPage /></RoleGate>
         ) : <Landing />}
       </Route>
 

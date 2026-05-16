@@ -1,4 +1,4 @@
-const WATI_KILL_SWITCH = true;
+const WATI_KILL_SWITCH = false;
 
 export interface WatiConfig {
   apiUrl: string;

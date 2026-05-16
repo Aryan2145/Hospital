@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema, systemErrorLogs, tenantSettings, metaLeadCaptureLogs, googleSheetsSyncConfigs, dataDeletionRequests, dataDeletionAuditLogs } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema, systemErrorLogs, tenantSettings, metaLeadCaptureLogs, googleSheetsSyncConfigs, dataDeletionRequests, dataDeletionAuditLogs, whatsappMessageLogs } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -14595,6 +14595,176 @@ export async function registerRoutes(
 
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
+  });
+
+  // =============================================
+  // WHATSAPP MESSAGE LOGS
+  // =============================================
+  app.get("/api/whatsapp-message-logs", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser) return res.status(403).json({ message: "Not a CRM user" });
+      if (!["SYS_ADMIN", "ADMIN", "MANAGER"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Access restricted to Admin and Manager roles" });
+      }
+
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 25));
+      const offset = (page - 1) * limit;
+      const { dateFrom, dateTo, messageType, status } = req.query as Record<string, string>;
+
+      const conditions: string[] = ["wml.tenant_id = $1"];
+      const params: any[] = [tid];
+      let pi = 2;
+
+      if (dateFrom) { conditions.push(`wml.created_at >= $${pi++}`); params.push(dateFrom); }
+      if (dateTo) { conditions.push(`wml.created_at < ($${pi++}::date + interval '1 day')`); params.push(dateTo); }
+      if (messageType) { conditions.push(`wml.message_type = $${pi++}`); params.push(messageType); }
+      if (status) { conditions.push(`wml.status = $${pi++}`); params.push(status); }
+
+      const whereClause = conditions.join(" AND ");
+
+      const countResult = await pool.query(
+        `SELECT COUNT(*) FROM whatsapp_message_logs wml WHERE ${whereClause}`,
+        params
+      );
+      const total = parseInt(countResult.rows[0].count);
+
+      const dataResult = await pool.query(
+        `SELECT
+           wml.*,
+           l.name AS patient_name,
+           a.appointment_date,
+           a.lead_id
+         FROM whatsapp_message_logs wml
+         LEFT JOIN appointments a ON a.id = wml.appointment_id AND a.tenant_id = wml.tenant_id
+         LEFT JOIN leads l ON l.id = a.lead_id AND l.tenant_id = wml.tenant_id
+         WHERE ${whereClause}
+         ORDER BY wml.created_at DESC
+         LIMIT $${pi++} OFFSET $${pi++}`,
+        [...params, limit, offset]
+      );
+
+      const summaryResult = await pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status = 'SENT' AND DATE(created_at AT TIME ZONE 'Asia/Kolkata') = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date) AS sent_today,
+           COUNT(*) FILTER (WHERE status = 'FAILED' AND DATE(created_at AT TIME ZONE 'Asia/Kolkata') = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date) AS failed_today,
+           COUNT(*) FILTER (WHERE status = 'SENT' AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())) AS sent_this_month
+         FROM whatsapp_message_logs WHERE tenant_id = $1`,
+        [tid]
+      );
+
+      res.json({
+        logs: dataResult.rows,
+        total,
+        page,
+        limit,
+        summary: summaryResult.rows[0],
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  app.post("/api/whatsapp-message-logs/:id/retry", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const crmUser = await getSessionCrmUserWithRole(req);
+      if (!crmUser) return res.status(403).json({ message: "Not a CRM user" });
+      if (!["SYS_ADMIN", "ADMIN", "MANAGER"].includes(crmUser.roleCode)) {
+        return res.status(403).json({ message: "Access restricted to Admin and Manager roles" });
+      }
+
+      const logId = parseInt(req.params.id);
+      const logResult = await pool.query(
+        `SELECT * FROM whatsapp_message_logs WHERE id = $1 AND tenant_id = $2`,
+        [logId, tid]
+      );
+      if (!logResult.rows.length) return res.status(404).json({ message: "Log entry not found" });
+
+      const log = logResult.rows[0];
+      if (log.status !== "FAILED") {
+        return res.status(400).json({ message: "Only failed messages can be retried" });
+      }
+
+      const apptResult = await pool.query(
+        `SELECT a.*, l.name AS lead_name, l.phone_e164,
+                COALESCE(d.name, 'your doctor') AS doctor_name
+         FROM appointments a
+         LEFT JOIN leads l ON l.id = a.lead_id AND l.tenant_id = a.tenant_id
+         LEFT JOIN doctors d ON d.id = a.doctor_id AND d.tenant_id = a.tenant_id
+         WHERE a.id = $1 AND a.tenant_id = $2`,
+        [log.appointment_id, tid]
+      );
+      if (!apptResult.rows.length) return res.status(404).json({ message: "Appointment not found" });
+
+      const appt = apptResult.rows[0];
+      const allSettings = await storage.getTenantSettings(tid);
+
+      const tenantRow = await pool.query(
+        `SELECT name, contact_phone FROM tenants WHERE id = $1`, [tid]
+      );
+      const hospitalName = tenantRow.rows[0]?.name || "Hospital";
+      const hospitalContact = tenantRow.rows[0]?.contact_phone || "";
+
+      const { getWatiConfigFromSettings, sendWatiTemplate, formatPhoneForWati } = await import("./wati");
+      const watiConfig = getWatiConfigFromSettings(allSettings);
+
+      if (!watiConfig.enabled) {
+        return res.status(400).json({ message: "WATI is not enabled. Enable it in WhatsApp Settings first." });
+      }
+
+      const watiPhone = formatPhoneForWati(log.mobile_number || appt.phone_e164 || "");
+      const isConfirmation = log.message_type === "APPOINTMENT_CONFIRMATION";
+      const templateName = isConfirmation ? watiConfig.templateAppointment : watiConfig.templateReminder;
+
+      if (!templateName) {
+        return res.status(400).json({ message: `No template configured for message type ${log.message_type}. Set templates in WhatsApp Settings.` });
+      }
+
+      const apptDate = appt.appointment_date
+        ? new Date(appt.appointment_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+        : "";
+      const apptTime = appt.start_time || "";
+
+      const result = await sendWatiTemplate(watiConfig, {
+        to: watiPhone,
+        templateName,
+        broadcastName: isConfirmation ? "Appointment Confirmation Retry" : "Appointment Reminder Retry",
+        parameters: [
+          { name: "1", value: appt.lead_name || "Patient" },
+          { name: "2", value: appt.doctor_name || "your doctor" },
+          { name: "3", value: apptDate },
+          { name: "4", value: apptTime || "As scheduled" },
+          { name: "5", value: hospitalName },
+          { name: "6", value: hospitalContact },
+        ],
+      });
+
+      await pool.query(
+        `UPDATE whatsapp_message_logs
+         SET status = $1, error_message = $2, sent_at = $3, updated_at = NOW(),
+             wati_response = $4, wati_local_message_id = $5
+         WHERE id = $6 AND tenant_id = $7`,
+        [
+          result.success ? "SENT" : "FAILED",
+          result.success ? null : (result.error || null),
+          result.success ? new Date() : null,
+          result.success ? JSON.stringify({ messageId: result.messageId }) : null,
+          result.success ? (result.messageId || null) : null,
+          logId,
+          tid,
+        ]
+      );
+
+      if (result.success) {
+        return res.json({ success: true, message: "Message resent successfully" });
+      }
+      return res.json({ success: false, message: result.error || "Retry failed" });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
   });
 
   await seedDatabase();

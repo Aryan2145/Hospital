@@ -70,7 +70,7 @@ export function useCurrentUser() {
         return [
           "dashboard", "leads", "episodes", "appointments", "campaigns",
           "transactions", "team", "masters", "connectors", "branding",
-          "email-settings", "whatsapp-settings", "settings", "quotation",
+          "email-settings", "whatsapp-settings", "whatsapp-logs", "settings", "quotation",
           "insurance", "reports", "access-control",
         ].includes(page);
 
@@ -78,6 +78,7 @@ export function useCurrentUser() {
         return [
           "dashboard", "leads", "episodes", "appointments", "campaigns",
           "transactions", "team", "quotation", "insurance", "reports",
+          "whatsapp-logs",
         ].includes(page);
 
       case "COUNSELLOR":

@@ -328,6 +328,17 @@ function WatiConnectorCard({ navigate }: { navigate: (path: string) => void }) {
             <Settings className="h-3.5 w-3.5 mr-1.5" />
             {isEnabled && hasUrl ? "Configure" : "Set Up WATI"}
           </Button>
+          {isEnabled && hasUrl && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => navigate("/whatsapp-logs")}
+              className="text-muted-foreground"
+            >
+              <List className="h-3.5 w-3.5 mr-1.5" />
+              Message Log
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
