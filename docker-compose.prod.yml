@@ -10,36 +10,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: "5001"
-      DATABASE_URL: postgresql://hcrm:${DB_PASSWORD}@db:5432/hcrm_production
     ports:
       - "3000:5001"
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - hcrm-prod
-
-  db:
-    image: postgres:16-alpine
-    container_name: hcrm-db-prod
-    restart: always
-    environment:
-      POSTGRES_DB: hcrm_production
-      POSTGRES_USER: hcrm
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    volumes:
-      - postgres_prod:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hcrm -d hcrm_production"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks:
-      - hcrm-prod
-
-volumes:
-  postgres_prod:
 
 networks:
-  hcrm-prod:
+  default:
     driver: bridge
