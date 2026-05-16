@@ -12,7 +12,7 @@ services:
       PORT: "5001"
       DATABASE_URL: postgresql://hcrm:${DB_PASSWORD}@db:5432/hcrm_production
     ports:
-      - "5001:5001"          # change to "80:5001" if running behind no reverse proxy
+      - "3000:5001"
     depends_on:
       db:
         condition: service_healthy

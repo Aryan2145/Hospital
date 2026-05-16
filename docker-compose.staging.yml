@@ -12,7 +12,7 @@ services:
       PORT: "5001"
       DATABASE_URL: postgresql://hcrm:${DB_PASSWORD:-hcrm_staging}@db:5432/hcrm_staging
     ports:
-      - "5001:5001"
+      - "3001:5001"
     depends_on:
       db:
         condition: service_healthy
