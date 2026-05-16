@@ -1,45 +1,48 @@
 services:
-
-  app:
+  hcrm_production:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: hcrm-app-staging
-    restart: unless-stopped
+    container_name: hcrm_production
+    env_file: .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: "5001"
+    ports:
+      - "3000:5001"
+    restart: always
+
+  hcrm_staging:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hcrm_staging
     env_file: .env.staging
     environment:
       NODE_ENV: development
       PORT: "5001"
-      DATABASE_URL: postgresql://hcrm:${DB_PASSWORD:-hcrm_staging}@db:5432/hcrm_staging
     ports:
       - "3001:5001"
     depends_on:
-      db:
+      hcrm_db_staging:
         condition: service_healthy
-    networks:
-      - hcrm-staging
+    restart: unless-stopped
 
-  db:
+  hcrm_db_staging:
     image: postgres:16-alpine
-    container_name: hcrm-db-staging
+    container_name: hcrm_db_staging
     restart: unless-stopped
     environment:
       POSTGRES_DB: hcrm_staging
       POSTGRES_USER: hcrm
       POSTGRES_PASSWORD: ${DB_PASSWORD:-hcrm_staging}
     volumes:
-      - postgres_staging:/var/lib/postgresql/data
+      - postgres_hcrm_staging:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hcrm -d hcrm_staging"]
       interval: 5s
       timeout: 5s
       retries: 10
-    networks:
-      - hcrm-staging
 
 volumes:
-  postgres_staging:
-
-networks:
-  hcrm-staging:
-    driver: bridge
+  postgres_hcrm_staging:
