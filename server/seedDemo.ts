@@ -1374,16 +1374,17 @@ export async function seedDemoTenant(): Promise<{ message: string; stats: Record
   if (discountEscalationLeadIds.length < 2) assertionErrors.push(`discountEscalationLeadIds < 2 (actual: ${discountEscalationLeadIds.length})`);
   if (stats["demoScenarios"] < 14) assertionErrors.push(`Total named scenarios < 14 (actual: ${stats["demoScenarios"]})`);
 
-  // Named scenario leads must each have a non-null episode_id (8 episode-requiring leads)
+  // Named scenario leads must each have a linked episode (via episodes.lead_id)
   const episodeRequiringLeadIds = [...highValueLeadIds, ...insuranceHeavyLeadIds, ...discountEscalationLeadIds];
   if (episodeRequiringLeadIds.length > 0) {
-    const episodeLinkRes = await pool.query<{ id: number; episode_id: number | null }>(
-      `SELECT id, episode_id FROM leads WHERE id = ANY($1::int[])`,
+    const episodeLinkRes = await pool.query<{ lead_id: number }>(
+      `SELECT lead_id FROM episodes WHERE lead_id = ANY($1::int[])`,
       [episodeRequiringLeadIds]
     );
-    const missingEpisode = episodeLinkRes.rows.filter(r => r.episode_id == null).map(r => r.id);
+    const linkedLeadIds = new Set(episodeLinkRes.rows.map(r => r.lead_id));
+    const missingEpisode = episodeRequiringLeadIds.filter(id => !linkedLeadIds.has(id));
     if (missingEpisode.length > 0) {
-      assertionErrors.push(`Named scenario leads missing episode_id: [${missingEpisode.join(", ")}]`);
+      assertionErrors.push(`Named scenario leads missing episode: [${missingEpisode.join(", ")}]`);
     }
   }
 
@@ -1391,8 +1392,7 @@ export async function seedDemoTenant(): Promise<{ message: string; stats: Record
   if (insuranceHeavyLeadIds.length > 0) {
     const insEpRes = await pool.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM episodes e
-       JOIN leads l ON l.episode_id = e.id
-       WHERE l.id = ANY($1::int[])
+       WHERE e.lead_id = ANY($1::int[])
          AND (e.insurance_applicable IS NOT TRUE OR e.preauth_approved_amount IS NULL)`,
       [insuranceHeavyLeadIds]
     );
@@ -1406,8 +1406,7 @@ export async function seedDemoTenant(): Promise<{ message: string; stats: Record
   if (discountEscalationLeadIds.length > 0) {
     const discEpRes = await pool.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM episodes e
-       JOIN leads l ON l.episode_id = e.id
-       WHERE l.id = ANY($1::int[])
+       WHERE e.lead_id = ANY($1::int[])
          AND e.discount_status IS DISTINCT FROM 'Pending'`,
       [discountEscalationLeadIds]
     );
@@ -1420,12 +1419,11 @@ export async function seedDemoTenant(): Promise<{ message: string; stats: Record
   // DEMO:HighValueSurgical — episodes must have at least 3 episode_quote_items each
   if (highValueLeadIds.length > 0) {
     const hvQiRes = await pool.query<{ lead_id: number; item_count: number }>(
-      `SELECT l.id AS lead_id, count(eqi.id)::int AS item_count
-       FROM leads l
-       JOIN episodes e ON l.episode_id = e.id
+      `SELECT e.lead_id, count(eqi.id)::int AS item_count
+       FROM episodes e
        LEFT JOIN episode_quote_items eqi ON eqi.episode_id = e.id AND eqi.tenant_id = $2
-       WHERE l.id = ANY($1::int[])
-       GROUP BY l.id`,
+       WHERE e.lead_id = ANY($1::int[])
+       GROUP BY e.lead_id`,
       [highValueLeadIds, tid]
     );
     const insufficientItems = hvQiRes.rows.filter(r => r.item_count < 3).map(r => `lead ${r.lead_id} (${r.item_count} items)`);
