@@ -13,8 +13,10 @@ export function IdleTimeout() {
   const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const logout = useCallback(() => {
-    window.location.href = "/api/auth/logout";
+  const logout = useCallback(async () => {
+    const res = await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => null);
+    const data = await res?.json().catch(() => ({})) ?? {};
+    window.location.href = data.redirectTo || "/";
   }, []);
 
   const resetTimers = useCallback(() => {

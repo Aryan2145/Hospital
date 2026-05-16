@@ -227,6 +227,7 @@ export async function setupAuth(app: Express) {
 
           (req.session as any).crmUserId = candidate.id;
           (req.session as any).tenantId  = candidate.tenantId;
+          (req.session as any).isDemo    = true;
 
           return req.session.save((err: any) => {
             if (err) return res.status(500).json({ message: "Login failed" });
@@ -444,12 +445,13 @@ export async function setupAuth(app: Express) {
   });
 
   app.post("/api/auth/logout", (req, res) => {
+    const isDemo = !!(req.session as any).isDemo;
     req.session.destroy((err) => {
       if (err) {
         return res.status(500).json({ message: "Logout failed" });
       }
       res.clearCookie("connect.sid");
-      res.json({ success: true });
+      res.json({ success: true, redirectTo: isDemo ? "/demo-login" : "/" });
     });
   });
 

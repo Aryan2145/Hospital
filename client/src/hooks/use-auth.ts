@@ -25,11 +25,12 @@ async function fetchUser(): Promise<AuthUser | null> {
 }
 
 async function logout(): Promise<void> {
-  await fetch("/api/auth/logout", {
+  const res = await fetch("/api/auth/logout", {
     method: "POST",
     credentials: "include",
   });
-  window.location.href = "/";
+  const data = await res.json().catch(() => ({}));
+  window.location.href = data.redirectTo || "/";
 }
 
 export function useAuth() {
