@@ -2424,3 +2424,49 @@ export const whatsappMessageLogs = pgTable("whatsapp_message_logs", {
 });
 
 export type WhatsappMessageLog = typeof whatsappMessageLogs.$inferSelect;
+
+// =============================================
+// DATA DELETION REQUESTS
+// =============================================
+export const dataDeletionRequests = pgTable("data_deletion_requests", {
+  id: serial("id").primaryKey(),
+  referenceNumber: text("reference_number").notNull().unique(),
+  tenantId: integer("tenant_id").references(() => tenants.id), // nullable — resolved by auto-match
+  fullName: text("full_name").notNull(),
+  mobileNumber: text("mobile_number"),
+  email: text("email"),
+  hospitalOrTenantName: text("hospital_or_tenant_name"),
+  approximateInteractionDate: text("approximate_interaction_date"),
+  sourceOfInteraction: text("source_of_interaction"),
+  requestDescription: text("request_description").notNull(),
+  consentConfirmation: boolean("consent_confirmation").notNull(),
+  requestStatus: text("request_status").notNull().default("Received"),
+  verificationStatus: text("verification_status").notNull().default("Not Started"),
+  matchedRecordsSummary: jsonb("matched_records_summary"),
+  adminNotes: text("admin_notes"),
+  actionTaken: text("action_taken"),
+  retentionReason: text("retention_reason"),
+  confirmationStatus: text("confirmation_status").default("pending"),
+  requestedAt: timestamp("requested_at").defaultNow(),
+  verifiedAt: timestamp("verified_at"),
+  processedAt: timestamp("processed_at"),
+  processedByUserId: integer("processed_by_user_id").references(() => crmUsers.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const dataDeletionAuditLogs = pgTable("data_deletion_audit_logs", {
+  id: serial("id").primaryKey(),
+  dataDeletionRequestId: integer("data_deletion_request_id").notNull().references(() => dataDeletionRequests.id),
+  action: text("action").notNull(),
+  oldStatus: text("old_status"),
+  newStatus: text("new_status"),
+  performedByUserId: integer("performed_by_user_id").references(() => crmUsers.id), // null = system
+  notes: text("notes"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type DataDeletionRequest = typeof dataDeletionRequests.$inferSelect;
+export type DataDeletionAuditLog = typeof dataDeletionAuditLogs.$inferSelect;

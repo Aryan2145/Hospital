@@ -20,6 +20,7 @@ import {
   Activity,
   ShieldAlert,
   FlaskConical,
+  Trash2,
 } from "lucide-react";
 
 type NavItem = { icon: any; label: string; href: string };
@@ -30,6 +31,7 @@ const adminNavItems: NavItem[] = [
   { icon: Package, label: "Subscription Plans", href: "/admin/plans" },
   { icon: CreditCard, label: "Subscriptions", href: "/admin/subscriptions" },
   { icon: Receipt, label: "Payment Records", href: "/admin/payments" },
+  { icon: Trash2, label: "Data Deletion", href: "/admin/data-deletion" },
   { icon: ShieldAlert, label: "Error Logs", href: "/admin/error-logs" },
   { icon: FlaskConical, label: "Demo Seed", href: "/admin/seed-demo" },
 ];

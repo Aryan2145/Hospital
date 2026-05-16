@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api, MASTER_CATEGORIES } from "@shared/routes";
-import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema, systemErrorLogs, tenantSettings, metaLeadCaptureLogs, googleSheetsSyncConfigs } from "@shared/schema";
+import { MASTER_TABLE_REGISTRY, bulkImportLogs, crmUsers, insertCrmUserSchema, insertPatientSchema, insertContactSchema, insertPatientContactLinkSchema, insertAppointmentSchema, insertEpisodeSchema, insertAuditLogSchema, insertCampaignSchema, insertPlatformConnectorSchema, leadImportLogs, leadCaptureRules, insertLeadCaptureRuleSchema, platformConnectors, customFieldSuggestions, insertCustomFieldSuggestionSchema, subscriptionPlans, tenantSubscriptions, subscriptionPayments, insertSubscriptionPlanSchema, insertTenantSubscriptionSchema, insertSubscriptionPaymentSchema, episodes, callyzerWebhookLogs, callyzerEmployees, handoverLogs, rescheduleHistory, temperatureLogs, revenueProbabilityConfig, insertRevenueProbabilityConfigSchema, clinicalNotesEditRoles, leadMergeAudits, leadMergeRoles, accessLogs, communicationPreferences, postCareProtocols, postCareProtocolSteps, insertPostCareProtocolSchema, insertPostCareProtocolStepSchema, referrals, insertReferralSchema, referrers, events, eventRegistrations, insertEventSchema, insertEventRegistrationSchema, referralConfig, insertReferralConfigSchema, referralRewardRules, insertReferralRewardRuleSchema, referralRewardLogs, supportUsers, supportTickets, supportTicketComments, episodeQuoteItems, costHeads, roomTypes, resourceLinks, insertResourceLinkSchema, insertContactPersonSchema, insertLeadContactPersonSchema, rolePermissions, userPermissionOverrides, inAppNotifications, tenantDiscountApprovers, insertRolePermissionSchema, insertUserPermissionOverrideSchema, insertInAppNotificationSchema, systemErrorLogs, tenantSettings, metaLeadCaptureLogs, googleSheetsSyncConfigs, dataDeletionRequests, dataDeletionAuditLogs } from "@shared/schema";
 import { toProperCase } from "./storage";
 import crypto from "crypto";
 import { z } from "zod";
@@ -14300,6 +14300,301 @@ export async function registerRoutes(
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
+  });
+
+  // =============================================
+  // DATA DELETION REQUESTS
+  // =============================================
+
+  async function isAdminOrSysAdminMiddleware(req: any, res: any, next: any) {
+    try {
+      const session = req.session as any;
+      const crmUserId = session?.crmUserId;
+      if (!crmUserId) return res.status(403).json({ message: "Forbidden" });
+      const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, crmUserId));
+      if (!crmUser?.systemRoleId) return res.status(403).json({ message: "Admin access required" });
+      const [role] = await db.select().from(systemRoles).where(eq(systemRoles.id, crmUser.systemRoleId));
+      if (role?.code === "SYS_ADMIN" || role?.code === "ADMIN") return next();
+      return res.status(403).json({ message: "Admin access required" });
+    } catch { return res.status(403).json({ message: "Forbidden" }); }
+  }
+
+  // Generate reference number: DDR-YYYY-NNNNNN
+  async function generateDdrRef(): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `DDR-${year}-`;
+    const [row] = await db.select({ cnt: count() }).from(dataDeletionRequests)
+      .where(sql`reference_number LIKE ${prefix + "%"}`);
+    const seq = ((row?.cnt as number) || 0) + 1;
+    return `${prefix}${String(seq).padStart(6, "0")}`;
+  }
+
+  // Public submission endpoint — no auth
+  app.post("/api/public/data-deletion-request", async (req: any, res) => {
+    try {
+      const { fullName, mobileNumber, email, hospitalOrTenantName, approximateInteractionDate, sourceOfInteraction, requestDescription, consentConfirmation } = req.body;
+      const errors: Record<string, string> = {};
+      if (!fullName?.trim()) errors.fullName = "Full name is required";
+      if (!mobileNumber?.trim() && !email?.trim()) errors.contact = "At least one of mobile number or email is required";
+      if (mobileNumber?.trim() && !/^\+?[\d\s\-()]{7,15}$/.test(mobileNumber.trim())) errors.mobileNumber = "Invalid mobile number format";
+      if (email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.email = "Invalid email format";
+      if (!requestDescription?.trim()) errors.requestDescription = "Please describe your data deletion request";
+      if (!consentConfirmation) errors.consentConfirmation = "You must confirm your consent to submit this request";
+      if (Object.keys(errors).length > 0) return res.status(400).json({ message: "Validation failed", errors });
+
+      const normalizedMobile = mobileNumber?.trim() ? normalizePhone(mobileNumber.trim()) : null;
+      const referenceNumber = await generateDdrRef();
+
+      // Fuzzy-match tenant by hospital name
+      let resolvedTenantId: number | null = null;
+      if (hospitalOrTenantName?.trim()) {
+        const allTenants = await db.select({ id: tenants.id, name: tenants.name, displayName: tenants.displayName }).from(tenants);
+        const search = hospitalOrTenantName.trim().toLowerCase();
+        const match = allTenants.find(t =>
+          (t.name || "").toLowerCase().includes(search) ||
+          (t.displayName || "").toLowerCase().includes(search) ||
+          search.includes((t.name || "").toLowerCase()) ||
+          search.includes((t.displayName || "").toLowerCase())
+        );
+        if (match) resolvedTenantId = match.id;
+      }
+
+      // Auto-match leads and contact persons
+      const leadConditions: any[] = [];
+      const cpConditions: any[] = [];
+      if (normalizedMobile) {
+        leadConditions.push(eq(leads.phoneE164, normalizedMobile));
+        cpConditions.push(eq(contactPersons.phoneE164, normalizedMobile));
+      }
+      if (email?.trim()) {
+        leadConditions.push(eq(leads.email, email.trim().toLowerCase()));
+        cpConditions.push(eq(contactPersons.email, email.trim().toLowerCase()));
+      }
+
+      let matchedLeads = 0, matchedCPs = 0;
+      let verificationStatus = "Manual Verification Required";
+      if (leadConditions.length > 0) {
+        const leadQuery = resolvedTenantId
+          ? await db.select({ id: leads.id }).from(leads).where(and(eq(leads.tenantId, resolvedTenantId), or(...leadConditions)))
+          : await db.select({ id: leads.id }).from(leads).where(or(...leadConditions));
+        matchedLeads = leadQuery.length;
+        const cpQuery = resolvedTenantId
+          ? await db.select({ id: contactPersons.id }).from(contactPersons).where(and(eq(contactPersons.tenantId, resolvedTenantId), or(...cpConditions)))
+          : await db.select({ id: contactPersons.id }).from(contactPersons).where(or(...cpConditions));
+        matchedCPs = cpQuery.length;
+        if (matchedLeads > 0 || matchedCPs > 0) verificationStatus = "Auto Matched";
+      }
+
+      const requestStatus = "Under Review";
+      const [saved] = await db.insert(dataDeletionRequests).values({
+        referenceNumber,
+        tenantId: resolvedTenantId,
+        fullName: fullName.trim(),
+        mobileNumber: normalizedMobile,
+        email: email?.trim().toLowerCase() || null,
+        hospitalOrTenantName: hospitalOrTenantName?.trim() || null,
+        approximateInteractionDate: approximateInteractionDate?.trim() || null,
+        sourceOfInteraction: sourceOfInteraction?.trim() || null,
+        requestDescription: requestDescription.trim(),
+        consentConfirmation: true,
+        requestStatus,
+        verificationStatus,
+        matchedRecordsSummary: { leads: matchedLeads, contactPersons: matchedCPs },
+      }).returning();
+
+      // Audit log
+      await db.insert(dataDeletionAuditLogs).values({
+        dataDeletionRequestId: saved.id,
+        action: "request_received",
+        newStatus: requestStatus,
+        notes: `Auto-match: ${matchedLeads} lead(s), ${matchedCPs} contact(s). Verification: ${verificationStatus}`,
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"] || null,
+      });
+
+      // Notify admin users
+      try {
+        const adminRoleQuery = resolvedTenantId
+          ? await db.select({ id: systemRoles.id }).from(systemRoles).where(and(eq(systemRoles.tenantId, resolvedTenantId), eq(systemRoles.code, "ADMIN")))
+          : [];
+        const notifyUserIds: number[] = [];
+        if (adminRoleQuery.length > 0) {
+          const adminUsers = await db.select({ id: crmUsers.id }).from(crmUsers)
+            .where(and(eq(crmUsers.systemRoleId, adminRoleQuery[0].id), eq(crmUsers.isActive, true)));
+          notifyUserIds.push(...adminUsers.map(u => u.id));
+        }
+        // Also notify SYS_ADMIN users
+        const sysAdminRoles = await db.select({ id: systemRoles.id }).from(systemRoles).where(eq(systemRoles.code, "SYS_ADMIN"));
+        for (const sar of sysAdminRoles) {
+          const sysUsers = await db.select({ id: crmUsers.id }).from(crmUsers).where(and(eq(crmUsers.systemRoleId, sar.id), eq(crmUsers.isActive, true)));
+          notifyUserIds.push(...sysUsers.map(u => u.id));
+        }
+        const notifyTenantId = resolvedTenantId ?? 1;
+        if (notifyUserIds.length > 0) {
+          await sendInAppNotification(notifyTenantId, [...new Set(notifyUserIds)], "data_deletion_request",
+            `Data Deletion Request: ${referenceNumber}`,
+            `New request from ${fullName.trim()}${normalizedMobile ? ` (${normalizedMobile})` : ""}. Status: ${verificationStatus}. Action required.`,
+            { entityType: "data_deletion_request", entityId: saved.id, link: "/admin/data-deletion" }
+          );
+        }
+      } catch {}
+
+      res.json({ referenceNumber, message: "Your data deletion request has been received. Reference: " + referenceNumber });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
+  // Admin: list requests
+  app.get("/api/admin/data-deletion-requests", isAuthenticated, isAdminOrSysAdminMiddleware, async (req: any, res) => {
+    try {
+      const session = req.session as any;
+      const crmUserId = session?.crmUserId;
+      const [crmUser] = await db.select().from(crmUsers).where(eq(crmUsers.id, crmUserId));
+      const [role] = crmUser?.systemRoleId ? await db.select().from(systemRoles).where(eq(systemRoles.id, crmUser.systemRoleId)) : [null];
+      const isSysAdminUser = role?.code === "SYS_ADMIN";
+      const sessionTid = session?.tenantId;
+
+      const conditions: any[] = [];
+      if (!isSysAdminUser && sessionTid) conditions.push(eq(dataDeletionRequests.tenantId, sessionTid));
+      if (req.query.status) conditions.push(eq(dataDeletionRequests.requestStatus, req.query.status as string));
+      if (req.query.verificationStatus) conditions.push(eq(dataDeletionRequests.verificationStatus, req.query.verificationStatus as string));
+      if (req.query.referenceNumber) conditions.push(sql`reference_number ILIKE ${"%" + req.query.referenceNumber + "%"}`);
+      if (req.query.dateFrom) conditions.push(gte(dataDeletionRequests.requestedAt, new Date(req.query.dateFrom as string)));
+      if (req.query.dateTo) conditions.push(lte(dataDeletionRequests.requestedAt, new Date((req.query.dateTo as string) + "T23:59:59.999Z")));
+
+      const rows = conditions.length > 0
+        ? await db.select().from(dataDeletionRequests).where(and(...conditions)).orderBy(desc(dataDeletionRequests.requestedAt))
+        : await db.select().from(dataDeletionRequests).orderBy(desc(dataDeletionRequests.requestedAt));
+
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
+  });
+
+  // Admin: single request detail
+  app.get("/api/admin/data-deletion-requests/:id", isAuthenticated, isAdminOrSysAdminMiddleware, async (req: any, res) => {
+    try {
+      const [record] = await db.select().from(dataDeletionRequests).where(eq(dataDeletionRequests.id, Number(req.params.id)));
+      if (!record) return res.status(404).json({ message: "Request not found" });
+      const auditLogs = await db.select().from(dataDeletionAuditLogs)
+        .where(eq(dataDeletionAuditLogs.dataDeletionRequestId, record.id))
+        .orderBy(dataDeletionAuditLogs.createdAt);
+      res.json({ ...record, auditLogs });
+    } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
+  });
+
+  // Admin: update verification status
+  app.patch("/api/admin/data-deletion-requests/:id/verification", isAuthenticated, isAdminOrSysAdminMiddleware, async (req: any, res) => {
+    try {
+      const { verificationStatus, adminNotes } = req.body;
+      const validStatuses = ["Not Started", "Auto Matched", "Manual Verification Required", "Verified", "Verification Failed"];
+      if (!validStatuses.includes(verificationStatus)) return res.status(400).json({ message: "Invalid verification status" });
+      const [existing] = await db.select().from(dataDeletionRequests).where(eq(dataDeletionRequests.id, Number(req.params.id)));
+      if (!existing) return res.status(404).json({ message: "Request not found" });
+      const [updated] = await db.update(dataDeletionRequests)
+        .set({ verificationStatus, adminNotes: adminNotes || existing.adminNotes, updatedAt: new Date() })
+        .where(eq(dataDeletionRequests.id, existing.id)).returning();
+      const crmUserId = (req.session as any)?.crmUserId;
+      await db.insert(dataDeletionAuditLogs).values({
+        dataDeletionRequestId: existing.id, action: "verification_updated",
+        oldStatus: existing.verificationStatus, newStatus: verificationStatus,
+        performedByUserId: crmUserId || null, notes: adminNotes || null,
+      });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
+  });
+
+  // Admin: take final action
+  app.post("/api/admin/data-deletion-requests/:id/action", isAuthenticated, isAdminOrSysAdminMiddleware, async (req: any, res) => {
+    try {
+      const { action, reason, adminNotes } = req.body;
+      const validActions = ["Anonymize", "Restrict", "Delete", "Retain", "Reject"];
+      if (!validActions.includes(action)) return res.status(400).json({ message: "Invalid action" });
+      if ((action === "Retain" || action === "Reject") && !reason?.trim()) return res.status(400).json({ message: "Reason is required for this action" });
+      const [existing] = await db.select().from(dataDeletionRequests).where(eq(dataDeletionRequests.id, Number(req.params.id)));
+      if (!existing) return res.status(404).json({ message: "Request not found" });
+      const crmUserId = (req.session as any)?.crmUserId;
+      const matchedSummary = existing.matchedRecordsSummary as any;
+      const normalizedMobile = existing.mobileNumber;
+      const emailAddr = existing.email;
+
+      if (action === "Anonymize") {
+        const anonName = `Deleted User ${existing.referenceNumber}`;
+        if (normalizedMobile) {
+          await db.update(leads).set({ name: anonName, phoneE164: null, mobileNormalized: null, email: null, modifiedAt: new Date() } as any)
+            .where(eq(leads.phoneE164, normalizedMobile));
+          await db.update(contactPersons).set({ name: anonName, phoneE164: null, email: null, modifiedAt: new Date() } as any)
+            .where(eq(contactPersons.phoneE164, normalizedMobile));
+        }
+        if (emailAddr) {
+          await db.update(leads).set({ name: anonName, email: null, modifiedAt: new Date() } as any).where(eq(leads.email, emailAddr));
+          await db.update(contactPersons).set({ name: anonName, email: null, modifiedAt: new Date() } as any).where(eq(contactPersons.email, emailAddr));
+        }
+      } else if (action === "Restrict") {
+        // Mark do_not_contact on matched leads via communication preferences
+        if (normalizedMobile || emailAddr) {
+          const matchedLeadRows = normalizedMobile
+            ? await db.select({ id: leads.id, tenantId: leads.tenantId }).from(leads).where(eq(leads.phoneE164, normalizedMobile))
+            : await db.select({ id: leads.id, tenantId: leads.tenantId }).from(leads).where(eq(leads.email, emailAddr!));
+          for (const lead of matchedLeadRows) {
+            for (const channel of ["whatsapp", "sms", "email", "phone"]) {
+              const [existing_pref] = await db.select().from(communicationPreferences).where(and(eq(communicationPreferences.leadId, lead.id), eq(communicationPreferences.channel, channel)));
+              if (existing_pref) {
+                await db.update(communicationPreferences).set({ optedIn: false, optedOutAt: new Date() }).where(eq(communicationPreferences.id, existing_pref.id));
+              } else {
+                await db.insert(communicationPreferences).values({ tenantId: lead.tenantId, leadId: lead.id, channel, optedIn: false, optedOutAt: new Date() });
+              }
+            }
+          }
+        }
+      } else if (action === "Delete") {
+        // Only soft-delete if no clinical/billing records
+        if (normalizedMobile || emailAddr) {
+          const matchedLeadRows = normalizedMobile
+            ? await db.select({ id: leads.id }).from(leads).where(eq(leads.phoneE164, normalizedMobile))
+            : await db.select({ id: leads.id }).from(leads).where(eq(leads.email, emailAddr!));
+          for (const lead of matchedLeadRows) {
+            const [hasEpisode] = await db.select({ id: episodes.id }).from(episodes).where(eq(episodes.leadId, lead.id)).limit(1);
+            if (hasEpisode) return res.status(422).json({ message: "Cannot delete: lead has linked clinical/billing records. Use Anonymize or Restrict instead." });
+          }
+          // Safe to soft-delete — anonymize as delete proxy
+          const anonName = `Deleted User ${existing.referenceNumber}`;
+          for (const lead of matchedLeadRows) {
+            await db.update(leads).set({ name: anonName, phoneE164: null, mobileNormalized: null, email: null, modifiedAt: new Date() } as any).where(eq(leads.id, lead.id));
+          }
+        }
+      }
+
+      const newStatus = action === "Reject" ? "Rejected" : "Completed";
+      const [updated] = await db.update(dataDeletionRequests)
+        .set({ requestStatus: newStatus, actionTaken: action, retentionReason: reason || null, adminNotes: adminNotes || existing.adminNotes, processedAt: new Date(), processedByUserId: crmUserId || null, updatedAt: new Date(), confirmationStatus: "sent" })
+        .where(eq(dataDeletionRequests.id, existing.id)).returning();
+
+      await db.insert(dataDeletionAuditLogs).values({
+        dataDeletionRequestId: existing.id, action: `action_${action.toLowerCase()}`,
+        oldStatus: existing.requestStatus, newStatus,
+        performedByUserId: crmUserId || null,
+        notes: reason ? `Reason: ${reason}` : adminNotes || null,
+      });
+
+      // Send confirmation email
+      try {
+        if (emailAddr) {
+          const actionLabel = action === "Anonymize" ? "anonymized (personal identifiers removed)" : action === "Restrict" ? "restricted (opted out of all communications)" : action === "Delete" ? "deleted" : action === "Retain" ? "retained as required by applicable law or medical obligations" : "reviewed but could not be fulfilled as requested";
+          const nodemailer = await import("nodemailer");
+          const host = process.env.SMTP_HOST, port = parseInt(process.env.SMTP_PORT || "587"), user = process.env.SMTP_USER, pass = process.env.SMTP_PASS, from = process.env.SMTP_FROM_EMAIL;
+          if (host && user && pass && from) {
+            const t = nodemailer.default.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
+            await t.sendMail({
+              from, to: emailAddr, subject: `Data Deletion Request ${existing.referenceNumber} — Update`,
+              html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:32px 24px"><h2 style="color:#0f4c81">Data Deletion Request Update</h2><p>Dear ${existing.fullName},</p><p>Your data deletion request <strong>${existing.referenceNumber}</strong> has been processed.</p><p><strong>Action taken:</strong> Your data has been ${actionLabel}.</p><p><strong>Date:</strong> ${new Date().toLocaleDateString("en-IN")}</p><p>If you have any questions, please contact us at <a href="mailto:tech@rgbindia.com">tech@rgbindia.com</a>.</p><p style="color:#888;font-size:12px;margin-top:24px">RGB Business Growth Consulting | 804, Avadh Kontina, VIP Road, Vesu, Surat, Gujarat, India</p></div>`,
+            });
+          }
+        }
+      } catch {}
+
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: humanizeError(err) }); }
   });
 
   await seedDatabase();

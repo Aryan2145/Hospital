@@ -51,6 +51,9 @@ import EventsPage from "@/pages/EventsPage";
 import EventDetailPage from "@/pages/EventDetailPage";
 import AdminLogin from "@/pages/admin/AdminLogin";
 import PrivacyPolicy from "@/pages/PrivacyPolicy";
+import TermsAndConditions from "@/pages/TermsAndConditions";
+import DataDeletion from "@/pages/DataDeletion";
+import AdminDataDeletion from "@/pages/admin/AdminDataDeletion";
 import MetaHelpGuide from "@/pages/MetaHelpGuide";
 import HelpCenter from "@/pages/HelpCenter";
 import SupportTicketsPage from "@/pages/SupportTicketsPage";
@@ -305,6 +308,14 @@ function Router() {
         <PrivacyPolicy />
       </Route>
 
+      <Route path="/terms">
+        <TermsAndConditions />
+      </Route>
+
+      <Route path="/data-deletion">
+        <DataDeletion />
+      </Route>
+
       <Route path="/help/meta-integration">
         <MetaHelpGuide />
       </Route>
@@ -356,6 +367,9 @@ function Router() {
       </Route>
       <Route path="/admin/seed-demo">
         <SysAdminGate><AdminSeedDemo /></SysAdminGate>
+      </Route>
+      <Route path="/admin/data-deletion">
+        <SysAdminGate><AdminDataDeletion /></SysAdminGate>
       </Route>
 
       <Route path="/support-tickets">

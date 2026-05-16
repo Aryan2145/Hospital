@@ -331,11 +331,13 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
     if (bookEpisodeId && bookEpisodeId !== "none") data.episodeId = Number(bookEpisodeId);
     if (bookNotes) data.notes = bookNotes;
 
+    const bookedDate = bookDate;
     createAppointment.mutate(data, {
       onSuccess: () => {
         toast({ title: "Appointment booked successfully" });
         setBookingOpen(false);
         resetBookingForm();
+        if (bookedDate) setSelectedDate(bookedDate);
       },
       onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
     });
@@ -845,7 +847,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
           <div className="space-y-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground">New Date</label>
-              <Input type="date" value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} min={new Date().toISOString().split("T")[0]} data-testid="input-reschedule-date" />
+              <Input type="date" value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} min={format(new Date(), "yyyy-MM-dd")} data-testid="input-reschedule-date" />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground">New Time Slot (optional)</label>
@@ -1115,7 +1117,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
               </div>
               <div>
                 <Label className="text-xs font-medium text-muted-foreground">Date *</Label>
-                <Input type="date" value={bookDate} onChange={(e) => { setBookDate(e.target.value); setBookSlot(""); }} min={new Date().toISOString().split("T")[0]} data-testid="book-input-date" />
+                <Input type="date" value={bookDate} onChange={(e) => { setBookDate(e.target.value); setBookSlot(""); }} min={format(new Date(), "yyyy-MM-dd")} data-testid="book-input-date" />
               </div>
               <Button
                 type="button"
