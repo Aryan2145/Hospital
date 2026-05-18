@@ -7336,7 +7336,7 @@ export async function registerRoutes(
          WHERE p.tenant_id = $1
            AND RIGHT(REGEXP_REPLACE(p.primary_phone, '[^0-9]', '', 'g'), 10) = $2
          LIMIT 5`,
-        [tid, phone]
+        [tid, rawPhone]
       );
 
       const leadIds = new Set(leadsResult.rows.map((l: any) => l.id));
