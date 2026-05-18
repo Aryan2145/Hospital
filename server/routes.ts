@@ -9984,6 +9984,8 @@ export async function registerRoutes(
         return res.status(400).json({ message: "This registrant has already been converted to a lead" });
       }
 
+      const { useExistingLead, allowDuplicate } = req.body || {};
+
       const phoneE164 = reg.phone.startsWith("+") ? reg.phone : `+91${reg.phone.replace(/^0/, "")}`;
       const normalized = phoneE164.replace(/\D/g, "").slice(-10);
 
@@ -9992,7 +9994,13 @@ export async function registerRoutes(
       );
 
       let leadId: number;
-      if (existingLeads.length > 0) {
+      if (existingLeads.length > 0 && !allowDuplicate) {
+        if (!useExistingLead) {
+          return res.status(200).json({
+            requiresChoice: true,
+            existingLead: { id: existingLeads[0].id, name: existingLeads[0].name, status: existingLeads[0].status },
+          });
+        }
         leadId = existingLeads[0].id;
       } else {
         // Intake: TELECALLER-only round-robin; null if no telecaller available

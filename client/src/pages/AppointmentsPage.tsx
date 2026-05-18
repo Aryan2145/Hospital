@@ -298,6 +298,19 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
           ...(bookNewLeadAllowDuplicate ? { allowDuplicate: true } : {}),
         });
         const newLead = await leadRes.json();
+        if (newLead.requiresAcknowledgement && newLead.existingLeads) {
+          setPhoneLookupMatches(
+            (newLead.existingLeads as any[]).map((l: any) => ({
+              type: "lead" as const,
+              id: String(l.id),
+              name: l.name,
+              status: l.status,
+              leadId: String(l.id),
+            }))
+          );
+          setIsCreatingLead(false);
+          return;
+        }
         leadId = newLead.id;
         queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
       } catch (err: any) {
@@ -1333,9 +1346,9 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                   <button
                     type="button"
                     onClick={() => {
+                      if (bookMode === "existing") setNewPatientName("");
                       setBookLeadId("");
                       setBookPatientId("");
-                      setNewPatientName("");
                       setBookMode("new");
                       setPhoneLookupMatches([]);
                       setBookNewLeadAllowDuplicate(true);

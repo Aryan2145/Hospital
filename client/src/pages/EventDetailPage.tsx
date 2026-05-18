@@ -61,6 +61,7 @@ export default function EventDetailPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [convertDuplicateInfo, setConvertDuplicateInfo] = useState<{ regId: number; existingLead: { id: number; name: string; status: string } } | null>(null);
   const [regForm, setRegForm] = useState({
     name: "",
     phone: "",
@@ -108,11 +109,20 @@ export default function EventDetailPage() {
   });
 
   const convertMutation = useMutation({
-    mutationFn: (regId: number) => apiRequest("POST", `/api/events/${eventId}/registrations/${regId}/convert-to-lead`),
-    onSuccess: () => {
+    mutationFn: async ({ regId, useExistingLead, allowDuplicate }: { regId: number; useExistingLead?: boolean; allowDuplicate?: boolean }) => {
+      const body = (useExistingLead || allowDuplicate) ? { useExistingLead, allowDuplicate } : undefined;
+      const res = await apiRequest("POST", `/api/events/${eventId}/registrations/${regId}/convert-to-lead`, body);
+      return res.json();
+    },
+    onSuccess: (data: any, variables) => {
+      if (data.requiresChoice) {
+        setConvertDuplicateInfo({ regId: variables.regId, existingLead: data.existingLead });
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/events", eventId] });
       queryClient.invalidateQueries({ queryKey: ["/api/events", eventId, "registrations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/events/stats"] });
+      setConvertDuplicateInfo(null);
       toast({ title: "Registrant converted to lead" });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -435,7 +445,7 @@ export default function EventDetailPage() {
                             Edit
                           </Button>
                           {!reg.resultingLeadId && (
-                            <Button variant="outline" size="sm" onClick={() => convertMutation.mutate(reg.id)} disabled={convertMutation.isPending} data-testid={`button-convert-${reg.id}`}>
+                            <Button variant="outline" size="sm" onClick={() => convertMutation.mutate({ regId: reg.id })} disabled={convertMutation.isPending} data-testid={`button-convert-${reg.id}`}>
                               <UserPlus className="h-3 w-3 mr-1" />
                               Convert
                             </Button>
@@ -512,6 +522,30 @@ export default function EventDetailPage() {
             <Button variant="outline" onClick={() => setRegDialogOpen(false)} data-testid="button-cancel-reg">Cancel</Button>
             <Button onClick={handleSaveReg} disabled={addRegMutation.isPending || updateRegMutation.isPending} data-testid="button-save-reg">
               {(addRegMutation.isPending || updateRegMutation.isPending) ? "Saving..." : editingReg ? "Update" : "Register"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!convertDuplicateInfo} onOpenChange={() => setConvertDuplicateInfo(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Lead Already Exists</DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-2 text-sm text-muted-foreground">
+            <p>A lead with this phone number already exists:</p>
+            <div className="rounded-md border px-3 py-2 text-sm font-medium text-foreground">
+              {convertDuplicateInfo?.existingLead.name}
+              <span className="ml-2 text-xs font-normal text-muted-foreground">{convertDuplicateInfo?.existingLead.status}</span>
+            </div>
+            <p>Do you want to link this registrant to the existing lead, or create a separate new lead?</p>
+          </div>
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" onClick={() => convertMutation.mutate({ regId: convertDuplicateInfo!.regId, useExistingLead: true })} disabled={convertMutation.isPending}>
+              Use Existing Lead
+            </Button>
+            <Button onClick={() => convertMutation.mutate({ regId: convertDuplicateInfo!.regId, allowDuplicate: true })} disabled={convertMutation.isPending}>
+              Create New Lead
             </Button>
           </DialogFooter>
         </DialogContent>
