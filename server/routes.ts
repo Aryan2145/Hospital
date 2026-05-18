@@ -7314,8 +7314,9 @@ export async function registerRoutes(
   app.get("/api/appointments/phone-lookup", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
-      const phone = String(req.query.phone || "").replace(/\D/g, "").slice(-10);
-      if (phone.length < 10) return res.json([]);
+      const rawPhone = String(req.query.phone || "").replace(/\D/g, "").slice(-10);
+      if (rawPhone.length < 10) return res.json([]);
+      const normalizedPhone = normalizePhone(rawPhone);
 
       const leadsResult = await pool.query(
         `SELECT l.id, l.name, l.status, l.patient_id
@@ -7326,7 +7327,7 @@ export async function registerRoutes(
            AND l.status NOT LIKE '%Closed%'
          ORDER BY l.last_activity_at DESC NULLS LAST
          LIMIT 5`,
-        [tid, phone]
+        [tid, normalizedPhone]
       );
 
       const patientsResult = await pool.query(
