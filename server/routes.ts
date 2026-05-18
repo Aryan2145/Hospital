@@ -2294,6 +2294,7 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const input = api.leads.create.input.parse({ ...req.body, tenantId: tid });
       if (input.phoneE164) {
+        (input as any).phoneE164 = normalizePhone(input.phoneE164);
         (input as any).mobileNormalized = normalizePhone(input.phoneE164);
       }
       const closedStatuses = ["Closed Won", "Closed Lost", "Unqualified"];
