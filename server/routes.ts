@@ -7309,6 +7309,64 @@ export async function registerRoutes(
   // =============================================
   // APPOINTMENT ROUTES
   // =============================================
+
+  // Server-side phone lookup for appointment booking — avoids PHI masking issues with client-side filtering
+  app.get("/api/appointments/phone-lookup", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const phone = String(req.query.phone || "").replace(/\D/g, "").slice(-10);
+      if (phone.length < 10) return res.json([]);
+
+      const leadsResult = await pool.query(
+        `SELECT l.id, l.name, l.status, l.patient_id
+         FROM leads l
+         WHERE l.tenant_id = $1
+           AND l.mobile_normalized = $2
+           AND (l.merge_status IS NULL OR l.merge_status = 'ACTIVE')
+           AND l.status NOT LIKE '%Closed%'
+         ORDER BY l.last_activity_at DESC NULLS LAST
+         LIMIT 5`,
+        [tid, phone]
+      );
+
+      const patientsResult = await pool.query(
+        `SELECT p.id, p.first_name, p.last_name, p.primary_phone
+         FROM patients p
+         WHERE p.tenant_id = $1
+           AND RIGHT(REGEXP_REPLACE(p.primary_phone, '[^0-9]', '', 'g'), 10) = $2
+         LIMIT 5`,
+        [tid, phone]
+      );
+
+      const leadIds = new Set(leadsResult.rows.map((l: any) => l.id));
+      const patientIdsFromLeads = new Set(leadsResult.rows.map((l: any) => l.patient_id).filter(Boolean));
+
+      const results = [
+        ...leadsResult.rows.map((l: any) => ({
+          type: "lead",
+          id: String(l.id),
+          name: l.name || "Unnamed",
+          status: l.status || "",
+          leadId: String(l.id),
+          patientId: l.patient_id ? String(l.patient_id) : undefined,
+        })),
+        ...patientsResult.rows
+          .filter((p: any) => !patientIdsFromLeads.has(p.id))
+          .map((p: any) => ({
+            type: "patient",
+            id: String(p.id),
+            name: [p.first_name, p.last_name].filter(Boolean).join(" ") || "Unnamed",
+            status: "",
+            patientId: String(p.id),
+          })),
+      ];
+
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.get("/api/appointments", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);

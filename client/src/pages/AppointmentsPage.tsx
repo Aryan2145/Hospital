@@ -1281,30 +1281,28 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                       setPhoneLookupMatches([]);
                       setBookNewLeadAllowDuplicate(false);
                       if (val.length === 10) {
-                        const matchedLeads = (leadsList || []).filter((l: any) => {
-                          const lPhone = (l.phoneE164 || l.phone || "").replace(/\D/g, "").slice(-10);
-                          return lPhone === val;
-                        });
-                        const matchedPatients = (patientsList || []).filter((p: any) => {
-                          const pPhone = (p.primaryPhone || "").replace(/\D/g, "").slice(-10);
-                          return pPhone === val;
-                        });
-                        const allMatches = [
-                          ...matchedLeads.map((l: any) => ({ type: "lead" as const, id: String(l.id), name: l.name || "Unnamed", status: l.status || "", leadId: String(l.id), patientId: l.patientId ? String(l.patientId) : undefined })),
-                          ...matchedPatients.filter((p: any) => !matchedLeads.some((l: any) => l.patientId === p.id)).map((p: any) => ({ type: "patient" as const, id: String(p.id), name: [p.firstName, p.lastName].filter(Boolean).join(" ") || "Unnamed", status: "", leadId: undefined, patientId: String(p.id) })),
-                        ];
-                        if (allMatches.length >= 1) {
-                          setPhoneLookupMatches(allMatches);
-                          setBookLeadId("");
-                          setBookPatientId("");
-                          setNewPatientName("");
-                          setBookMode("existing");
-                        } else {
-                          setBookLeadId("");
-                          setBookPatientId("");
-                          setNewPatientName("");
-                          setBookMode("new");
-                        }
+                        fetch(`/api/appointments/phone-lookup?phone=${encodeURIComponent(val)}`, { credentials: "include" })
+                          .then(r => r.ok ? r.json() : [])
+                          .then((allMatches: any[]) => {
+                            if (allMatches.length >= 1) {
+                              setPhoneLookupMatches(allMatches);
+                              setBookLeadId("");
+                              setBookPatientId("");
+                              setNewPatientName("");
+                              setBookMode("existing");
+                            } else {
+                              setBookLeadId("");
+                              setBookPatientId("");
+                              setNewPatientName("");
+                              setBookMode("new");
+                            }
+                          })
+                          .catch(() => {
+                            setBookLeadId("");
+                            setBookPatientId("");
+                            setNewPatientName("");
+                            setBookMode("new");
+                          });
                       } else {
                         setBookLeadId("");
                         setBookPatientId("");
