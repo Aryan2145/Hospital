@@ -14789,6 +14789,7 @@ export async function registerRoutes(
   await ensureAllCanonicalRolesSeeded();
   await ensureMarketingRolePermissions();
   await ensureNewRolePermissions();
+  await ensureReceptionistEpisodePermissions();
   return httpServer;
 }
 
@@ -14834,6 +14835,24 @@ async function ensureMarketingRolePermissions() {
     console.log("[Roles] MARKETING role permissions ensured for all tenants");
   } catch (err: any) {
     console.error("[Roles] Error ensuring MARKETING permissions:", err.message);
+  }
+}
+
+async function ensureReceptionistEpisodePermissions() {
+  try {
+    const allTenants = await pool.query(`SELECT id FROM tenants ORDER BY id`);
+    for (const t of allTenants.rows) {
+      const tid = t.id as number;
+      await db.insert(rolePermissions)
+        .values({ tenantId: tid, roleCode: "RECEPTIONIST", module: "episodes", canView: true, canCreate: true, canEdit: false, canDelete: false })
+        .onConflictDoUpdate({
+          target: [rolePermissions.tenantId, rolePermissions.roleCode, rolePermissions.module],
+          set: { canView: true, canCreate: true, canEdit: false, canDelete: false },
+        });
+    }
+    console.log("[Roles] RECEPTIONIST episode permissions corrected (canCreate=true) for all tenants");
+  } catch (err: any) {
+    console.error("[Roles] Error correcting RECEPTIONIST episode permissions:", err.message);
   }
 }
 
