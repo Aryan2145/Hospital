@@ -405,9 +405,9 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
         <KPICard title="Total Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} onClick={nav ? () => nav("/leads") : undefined} />
-        <KPICard title="Active Episodes" value={(Number(ec.active_episodes) || 0).toString()} icon={FileText} trend={`${Number(ec.surgeries) || 0} surgeries`} up onClick={nav ? () => nav("/leads?view=list") : undefined} />
-        <KPICard title="Pipeline Value" value={`Rs.${formatINR(pipelineValue)}`} icon={IndianRupee} trend={`${Number(ec.total_episodes) || 0} total episodes`} onClick={nav ? () => nav("/leads?view=list") : undefined} />
-        <KPICard title="Revenue Realized" value={`Rs.${formatINR(realizedRevenue)}`} icon={IndianRupee} trend={`${Number(ec.completed) || 0} completed`} up={realizedRevenue > 0} onClick={nav ? () => nav("/leads?status=Closed Won&view=list") : undefined} />
+        <KPICard title="Active Episodes" value={(Number(ec.active_episodes) || 0).toString()} icon={FileText} trend={`${Number(ec.surgeries) || 0} surgeries`} up onClick={nav ? () => nav("/transactions") : undefined} />
+        <KPICard title="Pipeline Value" value={`Rs.${formatINR(pipelineValue)}`} icon={IndianRupee} trend={`${Number(ec.total_episodes) || 0} total episodes`} onClick={nav ? () => nav("/transactions") : undefined} />
+        <KPICard title="Revenue Realized" value={`Rs.${formatINR(realizedRevenue)}`} icon={IndianRupee} trend={`${Number(ec.completed) || 0} completed`} up={realizedRevenue > 0} onClick={nav ? () => nav("/transactions?status=Closed Won") : undefined} />
         <KPICard title="Today Appointments" value={(Number(ac.today_appointments) || 0).toString()} icon={CalendarCheck} trend={`${Number(ac.today_pending) || 0} pending`} onClick={nav ? () => nav("/appointments") : undefined} />
       </div>
 
@@ -415,7 +415,7 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
         <StatCard label="Hot Leads" value={Number(lc.hot_leads) || 0} icon={Flame} color="text-orange-500" onClick={nav ? () => nav("/leads?filter=hot&view=list") : undefined} />
         <StatCard label="Dormant Leads" value={Number(lc.dormant_leads) || 0} icon={Snowflake} color="text-blue-400" onClick={nav ? () => nav("/leads?filter=dormant&view=list") : undefined} />
         <StatCard label="Overdue Actions" value={(Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)} icon={AlertTriangle} color="text-red-500" onClick={nav ? () => nav("/leads?filter=overdue&view=list") : undefined} />
-        <StatCard label="Insurance Cases" value={Number(ec.insurance_cases) || 0} icon={ShieldCheck} color="text-cyan-500" onClick={nav ? () => nav("/leads?view=list") : undefined} />
+        <StatCard label="Insurance Cases" value={Number(ec.insurance_cases) || 0} icon={ShieldCheck} color="text-cyan-500" onClick={nav ? () => nav("/transactions") : undefined} />
       </div>
 
       {!readOnly && <MyTodayAndOverdueSection todayTasks={todayTasks} dashStats={dashStats} navigate={navigate} />}
@@ -582,7 +582,7 @@ function ManagerDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, userNam
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <KPICard title="My Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} onClick={() => navigate("/leads")} />
         <KPICard title="Hot Leads" value={(Number(lc.hot_leads) || 0).toString()} icon={Flame} trend="Needs immediate attention" up onClick={() => navigate("/leads?filter=hot&view=list")} />
-        <KPICard title="Active Episodes" value={(Number(ec.active_episodes) || 0).toString()} icon={FileText} trend={`${Number(ec.surgeries) || 0} surgeries`} onClick={() => navigate("/leads?view=list")} />
+        <KPICard title="Active Episodes" value={(Number(ec.active_episodes) || 0).toString()} icon={FileText} trend={`${Number(ec.surgeries) || 0} surgeries`} onClick={() => navigate("/transactions")} />
         <KPICard title="Today Appointments" value={(Number(ac.today_appointments) || 0).toString()} icon={CalendarCheck} trend={`${Number(ac.today_pending) || 0} pending`} onClick={() => navigate("/appointments")} />
       </div>
 
