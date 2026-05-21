@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,6 +36,7 @@ interface Episode {
   status: string;
   startDate: string | null;
   endDate: string | null;
+  nextActionDate: string | null;
   diagnosis: string | null;
   treatmentPlan: string | null;
   estimatedCost: number | null;
@@ -76,10 +78,20 @@ const EPISODE_STATUSES = [
 
 export default function TransactionsPage() {
   const { toast } = useToast();
+  const [location] = useLocation();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Episode | null>(null);
   const [filterStatus, setFilterStatus] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [overdueOnly, setOverdueOnly] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("filter") === "overdue";
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setOverdueOnly(params.get("filter") === "overdue");
+  }, [location]);
 
   const [formPatientId, setFormPatientId] = useState("");
   const [formDoctorId, setFormDoctorId] = useState("");
@@ -169,6 +181,10 @@ export default function TransactionsPage() {
   const filteredEpisodes = useMemo(() => {
     if (!episodes) return [];
     let result = episodes;
+    if (overdueOnly) {
+      const now = new Date();
+      result = result.filter((e) => e.nextActionDate && new Date(e.nextActionDate) < now);
+    }
     if (filterStatus && filterStatus !== "all") {
       result = result.filter((e) => e.status === filterStatus);
     }
@@ -192,7 +208,7 @@ export default function TransactionsPage() {
       });
     }
     return result;
-  }, [episodes, filterStatus, searchQuery, patientMap, leadMap]);
+  }, [episodes, overdueOnly, filterStatus, searchQuery, patientMap, leadMap]);
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -348,7 +364,13 @@ export default function TransactionsPage() {
                   data-testid="filter-episode-status"
                 />
               </div>
-              <Button variant="outline" size="sm" onClick={() => { setFilterStatus(""); setSearchQuery(""); }} data-testid="button-clear-episode-filters">
+              {overdueOnly && (
+                <Badge variant="destructive" className="h-7 px-2 text-xs flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  Overdue Actions
+                </Badge>
+              )}
+              <Button variant="outline" size="sm" onClick={() => { setFilterStatus(""); setSearchQuery(""); setOverdueOnly(false); }} data-testid="button-clear-episode-filters">
                 Clear
               </Button>
             </div>

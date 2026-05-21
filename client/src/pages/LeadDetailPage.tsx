@@ -443,9 +443,14 @@ function LeadHeader({ lead, onBack }: { lead: any; onBack: () => void }) {
 
 function HandoverBanner({ lead }: { lead: any }) {
   const handoverAction = useHandoverAction();
+  const { data: crmUsers } = useActiveCrmUsers();
+  const { crmUser } = useCurrentUser();
   const { toast } = useToast();
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
+
+  // Only the intended recipient sees this banner
+  if (crmUser && lead.handoverToUserId && crmUser.id !== lead.handoverToUserId) return null;
 
   const handleAccept = () => {
     handoverAction.mutate(
@@ -483,7 +488,12 @@ function HandoverBanner({ lead }: { lead: any }) {
       <div className="flex-1 min-w-0">
         <p className={cn("text-sm font-medium", slaExpired ? "text-red-800 dark:text-red-300" : "text-amber-800 dark:text-amber-300")}>
           Pending Handover
-          {lead.handoverFromUserId && <span className="font-normal"> from CRM User #{lead.handoverFromUserId}</span>}
+          {lead.handoverFromUserId && (
+            <span className="font-normal">
+              {" from "}
+              {crmUsers?.find((u: any) => u.id === lead.handoverFromUserId)?.name || `User #${lead.handoverFromUserId}`}
+            </span>
+          )}
         </p>
         {slaDeadline && (
           <p className={cn("text-xs", slaExpired ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400")}>
@@ -1668,7 +1678,7 @@ function QuickActions({ lead }: { lead: any }) {
               </div>
               {lead.assignedCrmUserId && (
                 <p className="text-xs text-muted-foreground">
-                  Currently assigned to CRM User #{lead.assignedCrmUserId}
+                  Currently assigned to {crmUsers?.find((u: any) => u.id === lead.assignedCrmUserId)?.name || `User #${lead.assignedCrmUserId}`}
                 </p>
               )}
               <Button

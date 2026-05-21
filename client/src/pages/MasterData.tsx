@@ -102,6 +102,8 @@ interface ExtraField {
   refTable?: string;
   autoGenCodeName?: boolean;
   showWhen?: { field: string; value: string; negate?: boolean };
+  position?: "after-name";
+  required?: boolean;
 }
 
 const EXTRA_FIELDS: Record<string, ExtraField[]> = {
@@ -145,7 +147,7 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "isActive", label: "Is Active", type: "boolean" },
   ],
   consultationTypes: [
-    { key: "treatmentDepartmentId", label: "Treatment Department", type: "ref", refTable: "treatmentDepartments" },
+    { key: "treatmentDepartmentId", label: "Treatment Department", type: "ref", refTable: "treatmentDepartments", position: "after-name", required: true },
   ],
   // CATEGORY 4: DOCTORS MASTERS
   doctors: [
@@ -288,6 +290,8 @@ export default function MasterData() {
     return field.showWhen.negate ? !match : match;
   }
   const extraFields = allExtraFields.filter(f => !f.showWhen || isFieldVisible(f, formData));
+  const afterNameFields = extraFields.filter(f => f.position === "after-name");
+  const standardExtraFields = extraFields.filter(f => f.position !== "after-name");
   const refTables = Array.from(new Set(allExtraFields.filter(f => (f.type === "ref" || f.type === "multiref") && f.refTable).map(f => f.refTable!)));
 
   const { data: refDataMap = {} } = useQuery<Record<string, MasterRecord[]>>({
@@ -632,6 +636,11 @@ export default function MasterData() {
   }
 
   function handleSubmit() {
+    const missingRequired = extraFields.filter(f => f.required && !formData[f.key]);
+    if (missingRequired.length > 0) {
+      toast({ title: "Required fields missing", description: missingRequired.map(f => f.label).join(", "), variant: "destructive" });
+      return;
+    }
     if (editingRecord) {
       const data = autoGenerateCodeName(formData);
       updateMutation.mutate({ id: editingRecord.id, data });
@@ -1344,6 +1353,25 @@ export default function MasterData() {
                     />
                   </div>
                 )}
+                {afterNameFields.map((field) => (
+                  <div key={field.key}>
+                    <label className="text-sm font-medium">
+                      {field.label}
+                      {field.required && <span className="text-destructive ml-1">*</span>}
+                    </label>
+                    {field.type === "ref" && field.refTable ? (
+                      <SearchableSelect
+                        value={formData[field.key] ? String(formData[field.key]) : ""}
+                        onValueChange={(val) => setFormData({ ...formData, [field.key]: parseInt(val) || 0 })}
+                        options={(refDataMap[field.refTable] || [])
+                          .filter((r: any) => r.status === "Active")
+                          .map((r: any) => ({ value: String(r.id), label: r.name }))}
+                        placeholder={`Select ${field.label}`}
+                        data-testid={`select-${field.key}`}
+                      />
+                    ) : null}
+                  </div>
+                ))}
                 {selectedTable === "referrers" && formData.type === "Patient" && formData.name && (
                   <div>
                     <label className="text-sm font-medium text-muted-foreground">Name (from patient)</label>
@@ -1375,11 +1403,11 @@ export default function MasterData() {
               </>
             )}
 
-            {extraFields.length > 0 && (
+            {standardExtraFields.length > 0 && (
               <div className="border-t pt-4 mt-2">
                 <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Additional Fields</p>
                 <div className="space-y-3">
-                  {extraFields.map((field) => (
+                  {standardExtraFields.map((field) => (
                     <div key={field.key}>
                       <label className="text-sm font-medium">{field.label}</label>
                       {field.type === "boolean" ? (

@@ -219,14 +219,6 @@ export async function provisionNewTenant(tid: number) {
   });
 
   await eachIdx([
-    { code: "FIRST", name: "First Consultation" },
-    { code: "FOLLOW_UP", name: "Follow-Up" },
-    { code: "EMERGENCY", name: "Emergency" },
-  ], async (ct, i) => {
-    await db.insert(consultationTypes).values({ tenantId: tid, ...ct, displayOrder: i + 1, status: "Active", approvalStatus: "Approved" });
-  });
-
-  await eachIdx([
     { code: "MAIN", name: "Main Reception Line" },
     { code: "CRM", name: "CRM Outbound Line" },
   ], async (cl, i) => {

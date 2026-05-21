@@ -216,7 +216,6 @@ export const MASTER_CATEGORIES = [
       { key: "states", label: "State" },
       { key: "cities", label: "City" },
       { key: "areas", label: "Area & PIN Code" },
-      { key: "pinCodes", label: "PIN Code" },
     ]
   },
   {

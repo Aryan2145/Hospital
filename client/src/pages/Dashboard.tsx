@@ -414,7 +414,7 @@ function ManagementDashboard({ lc, ec, ac, dashStats, todayTasks, dormantLeads, 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <StatCard label="Hot Leads" value={Number(lc.hot_leads) || 0} icon={Flame} color="text-orange-500" onClick={nav ? () => nav("/leads?filter=hot&view=list") : undefined} />
         <StatCard label="Dormant Leads" value={Number(lc.dormant_leads) || 0} icon={Snowflake} color="text-blue-400" onClick={nav ? () => nav("/leads?filter=dormant&view=list") : undefined} />
-        <StatCard label="Overdue Actions" value={(Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)} icon={AlertTriangle} color="text-red-500" onClick={nav ? () => nav("/leads?filter=overdue&view=list") : undefined} />
+        <StatCard label="Overdue Actions" value={(Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)} icon={AlertTriangle} color="text-red-500" onClick={nav ? () => nav("/transactions?filter=overdue") : undefined} />
         <StatCard label="Insurance Cases" value={Number(ec.insurance_cases) || 0} icon={ShieldCheck} color="text-cyan-500" onClick={nav ? () => nav("/transactions") : undefined} />
       </div>
 
@@ -587,7 +587,7 @@ function ManagerDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, userNam
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Overdue Actions" value={(Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)} icon={AlertTriangle} color="text-red-500" onClick={() => navigate("/leads?filter=overdue&view=list")} />
+        <StatCard label="Overdue Actions" value={(Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)} icon={AlertTriangle} color="text-red-500" onClick={() => navigate("/transactions?filter=overdue")} />
         <StatCard label="Today's Actions" value={(Number(lc.today_actions) || 0) + (Number(ec.today_ep_actions) || 0)} icon={ListChecks} color="text-primary" onClick={() => navigate("/leads?view=list")} />
         <StatCard label="Dormant Leads" value={Number(lc.dormant_leads) || 0} icon={Snowflake} color="text-blue-400" onClick={() => navigate("/leads?filter=dormant&view=list")} />
         <StatCard label="Untouched Leads" value={Number(lc.raw_leads) || 0} icon={Eye} color="text-amber-500" onClick={() => navigate("/leads?status=Raw Lead Captured&view=list")} />
@@ -724,7 +724,7 @@ function IndividualDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, user
         <KPICard title="My Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} onClick={() => navigate("/leads?filter=my-leads")} />
         <KPICard title="Hot Leads" value={(Number(lc.hot_leads) || 0).toString()} icon={Flame} trend="Priority follow-ups" up onClick={() => navigate("/leads?filter=hot&view=list")} />
         <KPICard title="Today's Actions" value={((Number(lc.today_actions) || 0) + (Number(ec.today_ep_actions) || 0)).toString()} icon={ListChecks} trend="Due today" onClick={() => navigate("/leads?view=list")} />
-        <KPICard title="Overdue" value={((Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)).toString()} icon={AlertTriangle} trend="Needs attention" up={false} onClick={() => navigate("/leads?filter=overdue&view=list")} />
+        <KPICard title="Overdue" value={((Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)).toString()} icon={AlertTriangle} trend="Needs attention" up={false} onClick={() => navigate("/transactions?filter=overdue")} />
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
@@ -1780,7 +1780,7 @@ function TelecallerDashboard({ lc, ec, ac, dashStats, todayTasks, navigate, user
         <KPICard title="My Leads" value={totalLeads.toString()} icon={Users} trend={`${Number(lc.today_new) || 0} new today`} up={Number(lc.today_new) > 0} onClick={() => navigate("/leads?filter=my-leads")} />
         <KPICard title="Calls Today" value={(Number(callStats.today_calls) || 0).toString()} icon={PhoneCall} trend={`${Number(callStats.week_calls) || 0} this week`} up onClick={() => navigate("/leads")} />
         <KPICard title="Hot Leads" value={(Number(lc.hot_leads) || 0).toString()} icon={Flame} trend="Priority calls" up onClick={() => navigate("/leads?filter=hot&view=list")} />
-        <KPICard title="Overdue Follow-ups" value={((Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)).toString()} icon={AlertTriangle} trend="Needs attention" up={false} onClick={() => navigate("/leads?filter=overdue&view=list")} />
+        <KPICard title="Overdue Follow-ups" value={((Number(lc.overdue_actions) || 0) + (Number(ec.overdue_ep_actions) || 0)).toString()} icon={AlertTriangle} trend="Needs attention" up={false} onClick={() => navigate("/transactions?filter=overdue")} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
