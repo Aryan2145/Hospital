@@ -5385,6 +5385,21 @@ export async function registerRoutes(
           records = records.filter((r: any) => r.code !== "SYS_ADMIN");
         }
       }
+      if (tableName === "doctors") {
+        const crmIds = records.filter((r: any) => r.crmUserId).map((r: any) => r.crmUserId as number);
+        if (crmIds.length > 0) {
+          const rows = await db.select({ id: crmUsers.id, roleCode: systemRoles.code, name: crmUsers.name })
+            .from(crmUsers)
+            .leftJoin(systemRoles, eq(crmUsers.systemRoleId, systemRoles.id))
+            .where(inArray(crmUsers.id, crmIds));
+          const roleMap = new Map(rows.map(r => [r.id, r]));
+          records = records.map((r: any) => ({
+            ...r,
+            crmUserRoleCode: r.crmUserId ? (roleMap.get(r.crmUserId)?.roleCode ?? null) : null,
+            crmUserName: r.crmUserId ? (roleMap.get(r.crmUserId)?.name ?? null) : null,
+          }));
+        }
+      }
       res.json(records);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });
@@ -5949,20 +5964,52 @@ export async function registerRoutes(
         body.phone = normalizedPhone || body.phone;
       }
 
-      if (tableName === "doctors" && body.crmUserId) {
-        const [linkedUser] = await db.select({ id: crmUsers.id, name: crmUsers.name, phone: crmUsers.phone, email: crmUsers.email, systemRoleId: crmUsers.systemRoleId, isActive: crmUsers.isActive })
-          .from(crmUsers).where(and(eq(crmUsers.id, Number(body.crmUserId)), eq(crmUsers.tenantId, tid)));
-        if (!linkedUser) return res.status(400).json({ message: "Selected CRM user does not exist." });
-        if (!linkedUser.isActive) return res.status(400).json({ message: "Selected CRM user is not active." });
-        if (linkedUser.systemRoleId) {
-          const [role] = await db.select({ code: systemRoles.code }).from(systemRoles).where(eq(systemRoles.id, linkedUser.systemRoleId));
-          if (!role || role.code !== "DOCTOR") return res.status(400).json({ message: "Selected CRM user does not have the Doctor role. Please select a user with the Doctor role." });
-        } else {
-          return res.status(400).json({ message: "Selected CRM user has no assigned role. Please assign the Doctor role first." });
+      if (tableName === "doctors") {
+        const { isCrmUser, isTopManagement, password, confirmPassword, ...doctorFields } = body;
+        Object.assign(body, doctorFields);
+        delete body.isCrmUser; delete body.isTopManagement; delete body.password; delete body.confirmPassword;
+
+        if (body.branchIds) {
+          try {
+            const ids = JSON.parse(body.branchIds);
+            if (Array.isArray(ids) && ids.length > 0) body.branchId = ids[0];
+          } catch {}
         }
-        if (!body.name && linkedUser.name) body.name = linkedUser.name;
-        if (!body.phone && linkedUser.phone) body.phone = linkedUser.phone;
-        if (!body.email && linkedUser.email) body.email = linkedUser.email;
+
+        if (isCrmUser || isTopManagement) {
+          if (!password || password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters for CRM login." });
+          if (!body.phone) return res.status(400).json({ message: "Phone number is required to create a CRM login (used as username)." });
+          const normalizedPhone = normalizeCrmPhone(body.phone);
+          const existingUsers = await storage.getCrmUsers(tid);
+          const phoneDup = existingUsers.find((u: any) => normalizeCrmPhone(u.phone || "") === normalizedPhone);
+          if (phoneDup) return res.status(400).json({ message: "A CRM user with this phone number already exists." });
+
+          const roleCode = isTopManagement ? "ADMIN" : "DOCTOR";
+          const [roleRow] = await db.select({ id: systemRoles.id }).from(systemRoles)
+            .where(and(eq(systemRoles.tenantId, tid), eq(systemRoles.code, roleCode)));
+          if (!roleRow) return res.status(400).json({ message: `${roleCode} system role not found for this tenant.` });
+
+          const { hashPassword } = await import("./replit_integrations/auth/replitAuth");
+          const passwordHash = await hashPassword(password);
+
+          const lastUser = await pool.query(
+            `SELECT code FROM crm_users WHERE tenant_id = $1 AND code LIKE 'USR_%' ORDER BY code DESC LIMIT 1`, [tid]
+          );
+          let userSeq = 1;
+          if (lastUser.rows.length > 0) {
+            const n = parseInt(lastUser.rows[0].code.split("_").pop() || "0", 10);
+            if (!isNaN(n)) userSeq = n + 1;
+          }
+          const userCode = `USR_${String(userSeq).padStart(Math.max(3, String(userSeq).length), "0")}`;
+
+          const [newCrmUser] = await db.insert(crmUsers).values({
+            tenantId: tid, code: userCode, name: body.name, phone: normalizedPhone,
+            email: body.email || null, passwordHash, systemRoleId: roleRow.id,
+            isActive: true, status: "Active", approvalStatus: "Approved",
+            accessScopeType: "Self", phiAccessLevel: "None",
+          }).returning({ id: crmUsers.id });
+          body.crmUserId = newCrmUser.id;
+        }
       }
 
       if (tableName === "opdTimings" && body.doctorId && body.dayOfWeek && body.startTime && body.endTime) {
@@ -6005,6 +6052,77 @@ export async function registerRoutes(
     try {
       const tid = await getDefaultTenantId(req);
       const body = coerceDateFields(req.body, ["leaveDate", "leaveEndDate", "holidayDate", "startDate", "endDate"]);
+
+      if (tableName === "doctors") {
+        const { isCrmUser, isTopManagement, password, ...doctorPatchFields } = body;
+        delete body.isCrmUser; delete body.isTopManagement; delete body.password;
+
+        if (body.branchIds) {
+          try {
+            const ids = JSON.parse(body.branchIds);
+            if (Array.isArray(ids) && ids.length > 0) body.branchId = ids[0];
+          } catch {}
+        }
+
+        const [existingDoctor] = await db.select({ id: doctors.id, crmUserId: doctors.crmUserId })
+          .from(doctors).where(and(eq(doctors.id, Number(id)), eq(doctors.tenantId, tid)));
+        if (!existingDoctor) return res.status(404).json({ message: "Doctor not found." });
+
+        const hasCrmUser = !!existingDoctor.crmUserId;
+        const wantsCrmUser = isCrmUser === true || isTopManagement === true;
+        const wantsTopMgmt = isTopManagement === true;
+
+        if (wantsCrmUser && !hasCrmUser) {
+          if (!password || password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters for CRM login." });
+          const docName = body.name || doctorPatchFields.name;
+          const docPhone = body.phone || doctorPatchFields.phone;
+          if (!docPhone) return res.status(400).json({ message: "Phone number is required to create a CRM login." });
+          const normalizedPhone = normalizeCrmPhone(docPhone);
+          const existingUsers = await storage.getCrmUsers(tid);
+          const phoneDup = existingUsers.find((u: any) => normalizeCrmPhone(u.phone || "") === normalizedPhone);
+          if (phoneDup) return res.status(400).json({ message: "A CRM user with this phone number already exists." });
+
+          const roleCode = wantsTopMgmt ? "ADMIN" : "DOCTOR";
+          const [roleRow] = await db.select({ id: systemRoles.id }).from(systemRoles)
+            .where(and(eq(systemRoles.tenantId, tid), eq(systemRoles.code, roleCode)));
+          if (!roleRow) return res.status(400).json({ message: `${roleCode} system role not found for this tenant.` });
+
+          const { hashPassword } = await import("./replit_integrations/auth/replitAuth");
+          const passwordHash = await hashPassword(password);
+
+          const lastUser = await pool.query(
+            `SELECT code FROM crm_users WHERE tenant_id = $1 AND code LIKE 'USR_%' ORDER BY code DESC LIMIT 1`, [tid]
+          );
+          let userSeq = 1;
+          if (lastUser.rows.length > 0) {
+            const n = parseInt(lastUser.rows[0].code.split("_").pop() || "0", 10);
+            if (!isNaN(n)) userSeq = n + 1;
+          }
+          const userCode = `USR_${String(userSeq).padStart(Math.max(3, String(userSeq).length), "0")}`;
+
+          const [newCrmUser] = await db.insert(crmUsers).values({
+            tenantId: tid, code: userCode, name: docName || "", phone: normalizedPhone,
+            email: body.email || doctorPatchFields.email || null, passwordHash, systemRoleId: roleRow.id,
+            isActive: true, status: "Active", approvalStatus: "Approved",
+            accessScopeType: "Self", phiAccessLevel: "None",
+          }).returning({ id: crmUsers.id });
+          body.crmUserId = newCrmUser.id;
+
+        } else if (!wantsCrmUser && hasCrmUser && isCrmUser === false) {
+          await db.update(crmUsers).set({ isActive: false, status: "Inactive" })
+            .where(and(eq(crmUsers.id, existingDoctor.crmUserId!), eq(crmUsers.tenantId, tid)));
+          body.crmUserId = null;
+
+        } else if (hasCrmUser && wantsCrmUser) {
+          const roleCode = wantsTopMgmt ? "ADMIN" : "DOCTOR";
+          const [roleRow] = await db.select({ id: systemRoles.id }).from(systemRoles)
+            .where(and(eq(systemRoles.tenantId, tid), eq(systemRoles.code, roleCode)));
+          if (roleRow) {
+            await db.update(crmUsers).set({ systemRoleId: roleRow.id })
+              .where(and(eq(crmUsers.id, existingDoctor.crmUserId!), eq(crmUsers.tenantId, tid)));
+          }
+        }
+      }
 
       if (tableName === "opdTimings" && body.doctorId && body.dayOfWeek && body.startTime && body.endTime) {
         const tMin = (t: string) => { const p = t.split(":"); return parseInt(p[0]) * 60 + parseInt(p[1]); };

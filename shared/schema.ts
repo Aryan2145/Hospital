@@ -349,6 +349,7 @@ export const doctors = pgTable("doctors", {
   qualification: text("qualification"),
   specialization: text("specialization"),
   branchId: integer("branch_id").references(() => branches.id),
+  branchIds: text("branch_ids"),
   treatmentDepartmentId: integer("treatment_department_id").references(() => treatmentDepartments.id),
   consultationTypeId: integer("consultation_type_id").references(() => consultationTypes.id),
   phone: text("phone"),

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -104,6 +104,7 @@ interface ExtraField {
   showWhen?: { field: string; value: string; negate?: boolean };
   position?: "after-name";
   required?: boolean;
+  storeAsJson?: boolean;
 }
 
 const EXTRA_FIELDS: Record<string, ExtraField[]> = {
@@ -151,18 +152,17 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
   ],
   // CATEGORY 4: DOCTORS MASTERS
   doctors: [
-    { key: "crmUserId", label: "Linked CRM User (Doctor role)", type: "ref", refTable: "docCrmUsers" },
     { key: "specialization", label: "Specialization", type: "text" },
     { key: "qualification", label: "Qualification", type: "text" },
-    { key: "branchId", label: "Branch", type: "ref", refTable: "branches" },
+    { key: "branchIds", label: "Branch", type: "multiref", refTable: "branches", required: true, storeAsJson: true },
     { key: "treatmentDepartmentId", label: "Treatment Department", type: "ref", refTable: "treatmentDepartments" },
     { key: "consultationTypeId", label: "Treatment Sub-Department", type: "ref", refTable: "consultationTypes" },
     { key: "phone", label: "Phone", type: "text" },
     { key: "email", label: "Email", type: "text" },
   ],
   opdTimings: [
-    { key: "doctorId", label: "Doctor", type: "ref", refTable: "doctors" },
-    { key: "branchId", label: "Branch", type: "ref", refTable: "branches" },
+    { key: "doctorId", label: "Doctor", type: "ref", refTable: "doctors", required: true },
+    { key: "branchId", label: "Branch", type: "ref", refTable: "branches", required: true },
     { key: "dayOfWeek", label: "Day(s) of Week", type: "multiselect", options: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
     { key: "startTime", label: "Start Time", type: "time" },
     { key: "endTime", label: "End Time", type: "time" },
@@ -250,6 +250,27 @@ export default function MasterData() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<MasterRecord | null>(null);
   const [formData, setFormData] = useState<Record<string, any>>({ code: "", name: "", status: "Active", displayOrder: 0 });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tableParam = params.get("table");
+    if (tableParam) {
+      const cat = MASTER_CATEGORIES.find(c => c.tables.some(t => t.key === tableParam));
+      if (cat) {
+        const tbl = cat.tables.find(t => t.key === tableParam);
+        if (tbl) {
+          setSelectedCategory(cat.category);
+          setSelectedTable(tbl.key);
+          setSelectedTableLabel(tbl.label);
+        }
+      }
+    }
+  }, []);
+
+  const [doctorIsCrmUser, setDoctorIsCrmUser] = useState(false);
+  const [doctorIsTopManagement, setDoctorIsTopManagement] = useState(false);
+  const [doctorPassword, setDoctorPassword] = useState("");
+  const [doctorConfirmPassword, setDoctorConfirmPassword] = useState("");
   const [showImportResult, setShowImportResult] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [lastImportErrors, setLastImportErrors] = useState<{ row: number; message: string }[]>([]);
@@ -582,6 +603,10 @@ export default function MasterData() {
     });
     setFormData(base);
     setEditingRecord(null);
+    setDoctorIsCrmUser(false);
+    setDoctorIsTopManagement(false);
+    setDoctorPassword("");
+    setDoctorConfirmPassword("");
   }
 
   function handleEdit(record: MasterRecord) {
@@ -593,15 +618,24 @@ export default function MasterData() {
       displayOrder: record.displayOrder ?? 0,
     };
     allExtraFields.forEach((f) => {
-      let val = record[f.key] ?? (f.type === "number" ? 0 : f.type === "boolean" ? false : f.type === "ref" ? "" : f.type === "patient-picker" ? null : "");
+      let val = record[f.key] ?? (f.type === "number" ? 0 : f.type === "boolean" ? false : f.type === "ref" ? "" : f.type === "patient-picker" ? null : (f.type === "multiref" || f.type === "multiselect") ? [] : "");
       if (f.type === "date" && val) {
         try {
           val = new Date(val).toISOString().split("T")[0];
         } catch {}
       }
+      if (f.type === "multiref" && f.storeAsJson && typeof val === "string") {
+        try { val = JSON.parse(val); } catch { val = []; }
+      }
       base[f.key] = val;
     });
     setFormData(base);
+    if (selectedTable === "doctors") {
+      setDoctorIsCrmUser(!!record.crmUserId);
+      setDoctorIsTopManagement(record.crmUserRoleCode === "ADMIN");
+      setDoctorPassword("");
+      setDoctorConfirmPassword("");
+    }
     setIsDialogOpen(true);
   }
 
@@ -636,17 +670,39 @@ export default function MasterData() {
   }
 
   function handleSubmit() {
-    const missingRequired = extraFields.filter(f => f.required && !formData[f.key]);
+    const missingRequired = extraFields.filter(f => {
+      if (!f.required) return false;
+      if (f.type === "multiref" && f.storeAsJson) return !Array.isArray(formData[f.key]) || (formData[f.key] as number[]).length === 0;
+      return !formData[f.key];
+    });
     if (missingRequired.length > 0) {
       toast({ title: "Required fields missing", description: missingRequired.map(f => f.label).join(", "), variant: "destructive" });
       return;
     }
+    if (selectedTable === "doctors" && doctorIsCrmUser && !editingRecord?.crmUserId) {
+      if (!doctorPassword || doctorPassword.length < 6) {
+        toast({ title: "Validation Error", description: "Password must be at least 6 characters", variant: "destructive" });
+        return;
+      }
+      if (doctorPassword !== doctorConfirmPassword) {
+        toast({ title: "Validation Error", description: "Passwords do not match", variant: "destructive" });
+        return;
+      }
+    }
     if (editingRecord) {
-      const data = autoGenerateCodeName(formData);
+      const data: Record<string, any> = autoGenerateCodeName({ ...formData });
+      extraFields.filter(f => f.type === "multiref" && f.storeAsJson).forEach(f => {
+        if (Array.isArray(data[f.key])) data[f.key] = JSON.stringify(data[f.key]);
+      });
+      if (selectedTable === "doctors") {
+        data.isCrmUser = doctorIsCrmUser;
+        data.isTopManagement = doctorIsTopManagement;
+        if (doctorPassword) data.password = doctorPassword;
+      }
       updateMutation.mutate({ id: editingRecord.id, data });
     } else {
       const multiselectField = extraFields.find(f => f.type === "multiselect");
-      const multirefField = extraFields.find(f => f.type === "multiref");
+      const multirefField = extraFields.find(f => f.type === "multiref" && !f.storeAsJson);
 
       if (multiselectField && Array.isArray(formData[multiselectField.key]) && formData[multiselectField.key].length > 0) {
         const days = formData[multiselectField.key] as string[];
@@ -677,7 +733,15 @@ export default function MasterData() {
           });
         });
       } else {
-        const data = autoGenerateCodeName(formData);
+        const data: Record<string, any> = autoGenerateCodeName({ ...formData });
+        extraFields.filter(f => f.type === "multiref" && f.storeAsJson).forEach(f => {
+          if (Array.isArray(data[f.key])) data[f.key] = JSON.stringify(data[f.key]);
+        });
+        if (selectedTable === "doctors") {
+          data.isCrmUser = doctorIsCrmUser;
+          data.isTopManagement = doctorIsTopManagement;
+          if (doctorPassword) data.password = doctorPassword;
+        }
         createMutation.mutate(data);
       }
     }
@@ -1212,7 +1276,13 @@ export default function MasterData() {
                             let displayVal: any = record[f.key] ?? "-";
                             if (f.type === "boolean") {
                               displayVal = record[f.key] ? "Yes" : "No";
-                            } else if ((f.type === "ref" || f.type === "multiref") && f.refTable && record[f.key]) {
+                            } else if (f.type === "multiref" && f.storeAsJson && f.refTable && record[f.key]) {
+                              try {
+                                const ids: number[] = JSON.parse(record[f.key]);
+                                const refRecords = refDataMap[f.refTable] || [];
+                                displayVal = ids.map(id => refRecords.find((r: any) => r.id === id)?.name).filter(Boolean).join(", ") || "-";
+                              } catch { displayVal = "-"; }
+                            } else if (f.type === "ref" && f.refTable && record[f.key]) {
                               const refRecords = refDataMap[f.refTable] || [];
                               const refRecord = refRecords.find((r: any) => r.id === record[f.key]);
                               displayVal = refRecord ? refRecord.name : record[f.key];
@@ -1409,7 +1479,10 @@ export default function MasterData() {
                 <div className="space-y-3">
                   {standardExtraFields.map((field) => (
                     <div key={field.key}>
-                      <label className="text-sm font-medium">{field.label}</label>
+                      <label className="text-sm font-medium">
+                        {field.label}
+                        {field.required && <span className="text-destructive ml-1">*</span>}
+                      </label>
                       {field.type === "boolean" ? (
                         <div className="flex gap-2 mt-1">
                           <Button
@@ -1447,6 +1520,35 @@ export default function MasterData() {
                           placeholder={`Select ${field.label}`}
                           data-testid={`select-${field.key}`}
                         />
+                      ) : field.type === "multiref" && field.storeAsJson && field.refTable ? (
+                        (() => {
+                          const options = (refDataMap[field.refTable] || []).filter((r: any) => r.status === "Active" || r.approvalStatus === "Approved");
+                          const selected: number[] = Array.isArray(formData[field.key]) ? formData[field.key] : [];
+                          return (
+                            <div className="flex flex-wrap gap-2 mt-1">
+                              {options.map((opt: any) => {
+                                const isSel = selected.includes(opt.id);
+                                return (
+                                  <button
+                                    key={opt.id}
+                                    type="button"
+                                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                                      isSel ? "bg-primary text-primary-foreground border-primary" : "bg-muted text-muted-foreground border-border hover:bg-accent"
+                                    }`}
+                                    onClick={() => {
+                                      const updated = isSel ? selected.filter(id => id !== opt.id) : [...selected, opt.id];
+                                      setFormData({ ...formData, [field.key]: updated });
+                                    }}
+                                    data-testid={`toggle-${field.key}-${opt.id}`}
+                                  >
+                                    {opt.name}
+                                  </button>
+                                );
+                              })}
+                              {options.length === 0 && <span className="text-xs text-muted-foreground">No active branches found</span>}
+                            </div>
+                          );
+                        })()
                       ) : field.type === "multiselect" && field.options ? (
                         editingRecord ? (
                           <SearchableSelect
@@ -1659,6 +1761,73 @@ export default function MasterData() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+            {selectedTable === "doctors" && (
+              <div className="border-t pt-4 mt-2 space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">System Access</p>
+                {editingRecord?.crmUserId ? (
+                  <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                    <span className="text-xs text-muted-foreground">Linked:</span>
+                    <span className="text-sm font-medium">{editingRecord.crmUserName}</span>
+                    <Badge variant="outline" className="text-xs">{editingRecord.crmUserRoleCode === "ADMIN" ? "Top Management" : "CRM User"}</Badge>
+                  </div>
+                ) : null}
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={doctorIsCrmUser}
+                      disabled={doctorIsTopManagement}
+                      onChange={e => setDoctorIsCrmUser(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300"
+                      data-testid="checkbox-crm-user"
+                    />
+                    <span className="text-sm font-medium">CRM User</span>
+                    <span className="text-xs text-muted-foreground">— system login with Doctor role</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={doctorIsTopManagement}
+                      onChange={e => {
+                        setDoctorIsTopManagement(e.target.checked);
+                        if (e.target.checked) setDoctorIsCrmUser(true);
+                      }}
+                      className="h-4 w-4 rounded border-gray-300"
+                      data-testid="checkbox-top-management"
+                    />
+                    <span className="text-sm font-medium">Top Management</span>
+                    <span className="text-xs text-muted-foreground">— admin rights (includes CRM login)</span>
+                  </label>
+                </div>
+                {doctorIsCrmUser && !editingRecord?.crmUserId && (
+                  <div className="space-y-2 p-3 rounded-md border bg-muted/30">
+                    <div>
+                      <label className="text-sm font-medium">Password <span className="text-destructive">*</span></label>
+                      <Input
+                        type="password"
+                        value={doctorPassword}
+                        onChange={e => setDoctorPassword(e.target.value)}
+                        placeholder="Min 6 characters"
+                        data-testid="input-doctor-password"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium">Confirm Password <span className="text-destructive">*</span></label>
+                      <Input
+                        type="password"
+                        value={doctorConfirmPassword}
+                        onChange={e => setDoctorConfirmPassword(e.target.value)}
+                        placeholder="Re-enter password"
+                        data-testid="input-doctor-confirm-password"
+                      />
+                    </div>
+                  </div>
+                )}
+                {!doctorIsCrmUser && editingRecord?.crmUserId && (
+                  <p className="text-xs text-destructive">Unchecking CRM User will deactivate this doctor's system login on save.</p>
+                )}
               </div>
             )}
           </div>

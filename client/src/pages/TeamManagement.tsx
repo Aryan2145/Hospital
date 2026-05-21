@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -138,6 +139,7 @@ function TreeNode({ user, allUsers, level = 0, onEdit, onDelete }: {
 export default function TeamManagement() {
   const { toast } = useToast();
   const { isAdmin, isSysAdmin } = useCurrentUser();
+  const [, setLocation] = useLocation();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
@@ -363,6 +365,12 @@ export default function TeamManagement() {
     return role ? role.name : null;
   };
 
+  const getRoleCode = (roleId: number | null) => {
+    if (!roleId) return null;
+    const role = roles.find((r: any) => r.id === roleId);
+    return role ? role.code : null;
+  };
+
   const getBranchName = (branchId: number | null) => {
     if (!branchId) return null;
     const branch = branches.find((b: any) => b.id === branchId);
@@ -569,8 +577,10 @@ export default function TeamManagement() {
                         const isInactive = user.isActive === false;
                         const isLocked = !isInactive && !!user.lockedUntil && new Date(user.lockedUntil) > new Date();
                         const remainingMin = isLocked ? Math.ceil((new Date(user.lockedUntil!).getTime() - Date.now()) / 60000) : 0;
+                        const roleCode = getRoleCode(user.systemRoleId);
+                        const isDoctor = roleCode === "DOCTOR";
                         return (
-                          <tr key={user.id} className={`border-b last:border-0 cursor-pointer ${isInactive ? 'opacity-60 bg-muted/20' : isLocked ? 'bg-red-50/50' : 'hover-elevate'}`} onClick={() => openEdit(user)} data-testid={`row-user-${user.id}`}>
+                          <tr key={user.id} className={`border-b last:border-0 ${isDoctor ? 'bg-blue-50/30 dark:bg-blue-950/10' : isInactive ? 'opacity-60 bg-muted/20' : isLocked ? 'bg-red-50/50' : 'cursor-pointer hover-elevate'}`} onClick={() => !isDoctor && openEdit(user)} data-testid={`row-user-${user.id}`}>
                             <td className="p-3">
                               <div className="flex items-center gap-2">
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isInactive ? 'bg-muted text-muted-foreground' : isLocked ? 'bg-red-100 text-red-600' : 'bg-primary/10 text-primary'}`}>
@@ -616,7 +626,17 @@ export default function TeamManagement() {
                               </div>
                             </td>
                             <td className="p-3 text-right" onClick={e => e.stopPropagation()}>
-                              {isInactive ? (
+                              {isDoctor ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setLocation("/master-data?table=doctors")}
+                                  className="text-xs h-7 px-2"
+                                  data-testid={`button-edit-doctor-${user.id}`}
+                                >
+                                  <Pencil className="w-3 h-3 mr-1" />Edit in Doctors Master
+                                </Button>
+                              ) : isInactive ? (
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -768,7 +788,7 @@ export default function TeamManagement() {
                   onValueChange={v => setFormData(p => ({ ...p, systemRoleId: v === "none" ? null : Number(v) }))}
                   options={[
                     { value: "none", label: "-- Select Role --" },
-                    ...roles.filter((r: any) => r.status === "Active" && (isSysAdmin || r.code !== "SYS_ADMIN")).map((r: any) => ({ value: r.id.toString(), label: r.name }))
+                    ...roles.filter((r: any) => r.status === "Active" && (isSysAdmin || r.code !== "SYS_ADMIN") && r.code !== "DOCTOR").map((r: any) => ({ value: r.id.toString(), label: r.name }))
                   ]}
                   placeholder="Select role"
                   data-testid="select-system-role"
