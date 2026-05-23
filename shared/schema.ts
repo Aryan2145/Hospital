@@ -323,7 +323,7 @@ export const treatmentDepartments = pgTable("treatment_departments", {
 });
 
 
-export const consultationTypes = pgTable("consultation_types", {
+export const treatmentSubDepartments = pgTable("consultation_types", {
   id: serial("id").primaryKey(),
   tenantId: integer("tenant_id").notNull().references(() => tenants.id),
   code: text("code").notNull(),
@@ -351,7 +351,7 @@ export const doctors = pgTable("doctors", {
   branchId: integer("branch_id").references(() => branches.id),
   branchIds: text("branch_ids"),
   treatmentDepartmentId: integer("treatment_department_id").references(() => treatmentDepartments.id),
-  consultationTypeId: integer("consultation_type_id").references(() => consultationTypes.id),
+  treatmentSubDepartmentId: integer("consultation_type_id").references(() => treatmentSubDepartments.id),
   phone: text("phone"),
   email: text("email"),
   crmUserId: integer("crm_user_id").references(() => crmUsers.id),
@@ -1030,7 +1030,7 @@ export const leads = pgTable("leads", {
   leadSourceCategoryId: integer("lead_source_category_id").references(() => leadSourceCategories.id),
   doctorId: integer("doctor_id").references(() => doctors.id),
   treatmentDepartmentId: integer("treatment_department_id").references(() => treatmentDepartments.id),
-  consultationTypeId: integer("consultation_type_id").references(() => consultationTypes.id),
+  treatmentSubDepartmentId: integer("consultation_type_id").references(() => treatmentSubDepartments.id),
   priority: text("priority").default("Normal"),
   leadScore: integer("lead_score").default(0),
   conversionStageId: integer("conversion_stage_id").references(() => conversionStages.id),
@@ -1181,7 +1181,7 @@ export const appointments = pgTable("appointments", {
   doctorId: integer("doctor_id").notNull().references(() => doctors.id),
   branchId: integer("branch_id").references(() => branches.id),
   appointmentTypeId: integer("appointment_type_id").references(() => appointmentTypes.id),
-  consultationTypeId: integer("consultation_type_id").references(() => consultationTypes.id),
+  treatmentSubDepartmentId: integer("consultation_type_id").references(() => treatmentSubDepartments.id),
   serviceLocation: text("service_location").default("At Hospital"),
   serviceAddress: text("service_address"),
   appointmentDate: timestamp("appointment_date").notNull(),
@@ -1221,7 +1221,7 @@ export const episodes = pgTable("episodes", {
   patientId: integer("patient_id").references(() => patients.id),
   episodeName: text("episode_name").notNull(),
   treatmentDepartmentId: integer("treatment_department_id").references(() => treatmentDepartments.id),
-  consultationTypeId: integer("consultation_type_id").references(() => consultationTypes.id),
+  treatmentSubDepartmentId: integer("consultation_type_id").references(() => treatmentSubDepartments.id),
   doctorId: integer("doctor_id").references(() => doctors.id),
   branchId: integer("branch_id").references(() => branches.id),
   episodeType: text("episode_type").default("OPD"),
@@ -1951,7 +1951,7 @@ export const MASTER_TABLE_REGISTRY: Record<string, string> = {
   callingLines: "calling_lines",
   userLineAssignments: "user_line_assignments",
   treatmentDepartments: "treatment_departments",
-  consultationTypes: "consultation_types",
+  treatmentSubDepartments: "consultation_types",
   doctors: "doctors",
   opdTimings: "opd_timings",
   doctorLeaveExceptions: "doctor_leave_exceptions",

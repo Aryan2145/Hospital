@@ -15,7 +15,7 @@ import {
   callStatuses,
   callDirections,
   campaignChannels,
-  consultationTypes,
+  treatmentSubDepartments,
   callingLines,
   lostReasons,
   noShowReasons,

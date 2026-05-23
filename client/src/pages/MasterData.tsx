@@ -147,7 +147,7 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "phiAccessLevel", label: "PHI Access Level", type: "select", options: ["Full", "Masked", "None"] },
     { key: "isActive", label: "Is Active", type: "boolean" },
   ],
-  consultationTypes: [
+  treatmentSubDepartments: [
     { key: "treatmentDepartmentId", label: "Treatment Department", type: "ref", refTable: "treatmentDepartments", position: "after-name", required: true },
   ],
   // CATEGORY 4: DOCTORS MASTERS
@@ -156,7 +156,7 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "qualification", label: "Qualification", type: "text" },
     { key: "branchIds", label: "Branch", type: "multiref", refTable: "branches", required: true, storeAsJson: true },
     { key: "treatmentDepartmentId", label: "Treatment Department", type: "ref", refTable: "treatmentDepartments" },
-    { key: "consultationTypeId", label: "Treatment Sub-Department", type: "ref", refTable: "consultationTypes" },
+    { key: "treatmentSubDepartmentId", label: "Treatment Sub-Department", type: "ref", refTable: "treatmentSubDepartments" },
     { key: "phone", label: "Phone", type: "text" },
     { key: "email", label: "Email", type: "text" },
   ],
@@ -1101,7 +1101,7 @@ export default function MasterData() {
                     Add {selectedTableLabel}
                   </Button>
                 )}
-                {selectedTable !== "opdTimings" && selectedTable !== "systemRoles" && (
+                {selectedTable !== "systemRoles" && (
                   <>
                     <input
                       type="file"

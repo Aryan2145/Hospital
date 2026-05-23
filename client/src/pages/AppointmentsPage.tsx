@@ -163,7 +163,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
   const { data: leadsList } = useQuery<any[]>({ queryKey: ["/api/leads"] });
   const { data: patientsList } = useQuery<any[]>({ queryKey: ["/api/patients"] });
   const { data: appointmentTypes } = useQuery<any[]>({ queryKey: ["/api/masters/appointmentTypes"] });
-  const { data: consultationTypesList } = useQuery<any[]>({ queryKey: ["/api/masters/consultationTypes"] });
+  const { data: consultationTypesList } = useQuery<any[]>({ queryKey: ["/api/masters/treatmentSubDepartments"] });
   const { data: branchesListSchedule } = useBranches();
   const activeBranches = (branchesListSchedule || []).filter((b: any) => b.status === "Active");
   const defaultBranchId = activeBranches.length > 0 ? String(activeBranches[0].id) : "";
@@ -290,7 +290,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
           status: "Qualified",
           doctorId: Number(bookDoctorId),
           treatmentDepartmentId: newPatientTreatmentDeptId ? Number(newPatientTreatmentDeptId) : undefined,
-          consultationTypeId: newPatientConsultationType ? Number(newPatientConsultationType) : undefined,
+          treatmentSubDepartmentId: newPatientConsultationType ? Number(newPatientConsultationType) : undefined,
           notes: [
             newPatientAge ? `Age: ${newPatientAge}` : "",
             newPatientGender ? `Gender: ${newPatientGender}` : "",
@@ -336,7 +336,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
     }
     if (bookPatientId && bookPatientId !== "none") data.patientId = Number(bookPatientId);
     if (bookApptTypeId && bookApptTypeId !== "none") data.appointmentTypeId = Number(bookApptTypeId);
-    if (bookMode === "new" && newPatientConsultationType) data.consultationTypeId = Number(newPatientConsultationType);
+    if (bookMode === "new" && newPatientConsultationType) data.treatmentSubDepartmentId = Number(newPatientConsultationType);
     if (bookServiceLocation) data.serviceLocation = bookServiceLocation;
     if (bookServiceLocation === "Home Visit" && bookServiceAddress) data.serviceAddress = bookServiceAddress;
     const effectiveBranchId = bookBranchId && bookBranchId !== "none" ? bookBranchId : defaultBranchId;
@@ -431,7 +431,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
         notes: newEpisodeNotes || undefined,
       };
       if (newEpisodeTreatmentDeptId) body.treatmentDepartmentId = Number(newEpisodeTreatmentDeptId);
-      if (newEpisodeSubDeptId) body.consultationTypeId = Number(newEpisodeSubDeptId);
+      if (newEpisodeSubDeptId) body.treatmentSubDepartmentId = Number(newEpisodeSubDeptId);
       const res = await apiRequest("POST", "/api/episodes", body);
       const newEpisode = await res.json();
       // Step 2: Check in atomically with the new episodeId

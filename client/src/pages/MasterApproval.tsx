@@ -57,7 +57,7 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "phiAccessLevel", label: "PHI Access Level", type: "select", options: ["Full", "Masked", "None"] },
     { key: "isActive", label: "Is Active", type: "boolean" },
   ],
-  consultationTypes: [
+  treatmentSubDepartments: [
     { key: "treatmentDepartmentId", label: "Treatment Department", type: "ref", refTable: "treatmentDepartments" },
   ],
   doctors: [
@@ -65,7 +65,7 @@ const EXTRA_FIELDS: Record<string, ExtraField[]> = {
     { key: "qualification", label: "Qualification", type: "text" },
     { key: "branchId", label: "Branch", type: "ref", refTable: "branches" },
     { key: "treatmentDepartmentId", label: "Treatment Department", type: "ref", refTable: "treatmentDepartments" },
-    { key: "consultationTypeId", label: "Treatment Sub-Department", type: "ref", refTable: "consultationTypes" },
+    { key: "treatmentSubDepartmentId", label: "Treatment Sub-Department", type: "ref", refTable: "treatmentSubDepartments" },
     { key: "phone", label: "Phone", type: "text" },
     { key: "email", label: "Email", type: "text" },
   ],
@@ -151,7 +151,7 @@ const FIELD_LABELS: Record<string, string> = {
   specialization: "Specialization",
   branchId: "Branch",
   treatmentDepartmentId: "Treatment Department",
-  consultationTypeId: "Treatment Sub-Department",
+  treatmentSubDepartmentId: "Treatment Sub-Department",
   phone: "Phone",
   email: "Email",
   categoryId: "Category",

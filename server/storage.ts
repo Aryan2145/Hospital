@@ -866,7 +866,7 @@ export class DatabaseStorage implements IStorage {
     organisations: "ORG", branches: "BRANCH", administrativeDepartments: "TEAM",
     designations: "DESG", employmentTypes: "EMPTYPE", systemRoles: "ROLE",
     callingLines: "CLINE", userLineAssignments: "ULA",
-    treatmentDepartments: "TDEPT", consultationTypes: "CTYPE",
+    treatmentDepartments: "TDEPT", treatmentSubDepartments: "CTYPE",
     doctors: "DOC", opdTimings: "OPD", doctorLeaveExceptions: "LEAVE",
     leadSourceCategories: "LSCAT", leadSources: "LSRC", campaignChannels: "CMPCH",
     utmSources: "UTMS", utmMediums: "UTMM", utmCampaigns: "UTMC", utmTerms: "UTMT", utmContents: "UTMCN",

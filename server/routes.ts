@@ -8,7 +8,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { db, pool } from "./db";
-import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, campaigns, appointmentTypes, conversionStages, lostReasons, noShowReasons, consultationTypes, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks, doctorLeaveExceptions, slaRules, reminderPolicies, dataRetentionPolicies, contactPersons, leadContactPersons } from "@shared/schema";
+import { tenants, leads, leadStatuses, activityTypes, nextActionTypes, taskCategories, callStatuses, callDirections, appointmentStatuses, referralStatuses, leadSourceCategories, leadSources, campaignChannels, campaigns, appointmentTypes, conversionStages, lostReasons, noShowReasons, treatmentSubDepartments, countries, states, cities, designations, employmentTypes, systemRoles, organisations, doctors, opdTimings, branches, administrativeDepartments, treatmentDepartments, areas, pinCodes, callingLines, activities, tasks, appointments, patients, contacts, patientContactLinks, doctorLeaveExceptions, slaRules, reminderPolicies, dataRetentionPolicies, contactPersons, leadContactPersons } from "@shared/schema";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
@@ -700,7 +700,7 @@ async function seedDatabase() {
       { code: "FOOT_ANKLE", name: "Foot & Ankle Surgery", displayOrder: 10 },
       { code: "ICU_CARE", name: "ICU & Critical Care", displayOrder: 11 },
     ]) {
-      await db.insert(consultationTypes).values({ tenantId: tid, ...ct, status: "Active" });
+      await db.insert(treatmentSubDepartments).values({ tenantId: tid, ...ct, status: "Active" });
     }
 
     // ── Doctors (Real VIROC team from viroc.in) ──
@@ -5469,7 +5469,7 @@ export async function registerRoutes(
       { key: "phiAccessLevel", csvHeader: "phiAccessLevel", type: "select", options: ["Full", "Masked", "None"] },
       { key: "isActive", csvHeader: "isActive", type: "boolean" },
     ],
-    consultationTypes: [
+    treatmentSubDepartments: [
       { key: "treatmentDepartmentId", csvHeader: "treatmentDepartment", type: "ref", refTable: "treatment_departments" },
     ],
     doctors: [
@@ -5477,7 +5477,7 @@ export async function registerRoutes(
       { key: "qualification", csvHeader: "qualification", type: "text" },
       { key: "branchId", csvHeader: "branch", type: "ref", refTable: "branches" },
       { key: "treatmentDepartmentId", csvHeader: "treatmentDepartment", type: "ref", refTable: "treatment_departments" },
-      { key: "consultationTypeId", csvHeader: "consultationType", type: "ref", refTable: "consultation_types" },
+      { key: "treatmentSubDepartmentId", csvHeader: "treatmentSubDepartment", type: "ref", refTable: "consultation_types" },
       { key: "phone", csvHeader: "phone", type: "phone" },
       { key: "email", csvHeader: "email", type: "email" },
     ],
@@ -5587,16 +5587,16 @@ export async function registerRoutes(
       const tid = await getDefaultTenantId(req);
       const records = await storage.getMasterRecords(tableName, tid);
       const colDefs = MASTER_COLUMN_DEFS[tableName] || [];
-      const allCols = ["id", "code", "name", "status", "displayOrder", ...colDefs.map(c => c.csvHeader)];
+      const noBaseFields = TABLES_WITHOUT_REQUIRED_BASE_FIELDS.has(tableName);
+      const baseCols = noBaseFields
+        ? ["id", "status", "displayOrder"]
+        : ["id", "code", "name", "status", "displayOrder"];
+      const allCols = [...baseCols, ...colDefs.map(c => c.csvHeader)];
 
       const csvRows = await Promise.all(records.map(async (r) => {
-        const row: Record<string, any> = {
-          id: r.id,
-          code: r.code,
-          name: r.name,
-          status: r.status,
-          displayOrder: r.displayOrder ?? 0,
-        };
+        const row: Record<string, any> = noBaseFields
+          ? { id: r.id, status: r.status, displayOrder: r.displayOrder ?? 0 }
+          : { id: r.id, code: r.code, name: r.name, status: r.status, displayOrder: r.displayOrder ?? 0 };
         for (const col of colDefs) {
           const raw = r[col.key];
           if (col.type === "ref" && col.refTable && raw) {
@@ -5618,9 +5618,9 @@ export async function registerRoutes(
       const csvData = stringify(csvRows, { header: true, columns: allCols });
       const sessionCrmUserId = (req as any).session?.crmUserId;
       if (sessionCrmUserId) logAccess(tid, sessionCrmUserId, "EXPORT", "master_data", 0, `table=${tableName}, records=${records.length}`, req);
-      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${tableName}_export.csv"`);
-      res.send(csvData);
+      res.send("﻿" + csvData);
     } catch (err: any) {
       res.status(500).json({ message: humanizeError(err) });
     }
@@ -5633,12 +5633,15 @@ export async function registerRoutes(
       return res.status(400).json({ message: `Unknown master table: ${tableName}` });
     }
     const colDefs = MASTER_COLUMN_DEFS[tableName] || [];
-    const allCols = ["id", "code", "name", "status", "displayOrder", ...colDefs.map(c => c.csvHeader)];
+    const baseCols = TABLES_WITHOUT_REQUIRED_BASE_FIELDS.has(tableName)
+      ? ["id", "status", "displayOrder"]
+      : ["id", "code", "name", "status", "displayOrder"];
+    const allCols = [...baseCols, ...colDefs.map(c => c.csvHeader)];
     // Header-only template — structurally identical to export minus data rows
     const csvData = stringify([], { header: true, columns: allCols });
-    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${tableName}_template.csv"`);
-    res.send(csvData);
+    res.send("﻿" + csvData);
   });
 
   app.get("/api/masters/:tableName/import-logs", isAuthenticated, async (req, res) => {
@@ -5851,7 +5854,10 @@ export async function registerRoutes(
         } else {
           if (!isUpdate && code) importedCodes.add(code.toUpperCase());
           for (const { colKey, value } of pendingUniqueAdds) fileUniqueValues.get(colKey)?.add(value);
-          validRows.push({ rowNum, isUpdate, recordId: recordId ?? undefined, data: { code, name, status, ...extraData } });
+          const baseData = TABLES_WITHOUT_REQUIRED_BASE_FIELDS.has(tableName)
+            ? { status }
+            : { code, name, status };
+          validRows.push({ rowNum, isUpdate, recordId: recordId ?? undefined, data: { ...baseData, ...extraData } });
         }
       }
 
