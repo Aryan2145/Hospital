@@ -1204,6 +1204,7 @@ export const appointments = pgTable("appointments", {
   bookedBy: varchar("booked_by"),
   bookedByCrmUserId: integer("booked_by_crm_user_id").references(() => crmUsers.id),
   notes: text("notes"),
+  uhid: text("uhid"),
   checkedInAt: timestamp("checked_in_at"),
   checkedInBy: varchar("checked_in_by"),
   checkedInByCrmUserId: integer("checked_in_by_crm_user_id").references(() => crmUsers.id),

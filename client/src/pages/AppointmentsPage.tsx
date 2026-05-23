@@ -189,7 +189,8 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
   const [newPatientTreatmentDeptId, setNewPatientTreatmentDeptId] = useState("");
   const [newPatientConsultationType, setNewPatientConsultationType] = useState("");
   const [isCreatingLead, setIsCreatingLead] = useState(false);
-  const [phoneLookupMatches, setPhoneLookupMatches] = useState<Array<{type:"lead"|"patient";id:string;name:string;status?:string;leadId?:string;patientId?:string}>>([]);
+  const [phoneLookupMatches, setPhoneLookupMatches] = useState<Array<{type:"lead"|"patient";id:string;name:string;status?:string;leadId?:string;patientId?:string;uhid?:string}>>([]);
+  const [bookUhid, setBookUhid] = useState("");
   const [bookNewLeadAllowDuplicate, setBookNewLeadAllowDuplicate] = useState(false);
 
   // Derive which doctor IDs have OPD timings at the selected booking branch.
@@ -231,6 +232,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
     setNewPatientConsultationType("");
     setPhoneLookupMatches([]);
     setBookNewLeadAllowDuplicate(false);
+    setBookUhid("");
   };
 
   const selectedLeadForEpisodes = bookMode === "existing" && bookLeadId && bookLeadId !== "none" ? bookLeadId : null;
@@ -281,6 +283,13 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
       if (phoneDigits.length < 10) {
         toast({ title: "Please enter a valid 10-digit phone number", variant: "destructive" });
         return;
+      }
+      if (bookUhid) {
+        const uhidCheck = await fetch(`/api/appointments/check-uhid?uhid=${encodeURIComponent(bookUhid)}`, { credentials: "include" }).then(r => r.json()).catch(() => ({ available: true }));
+        if (!uhidCheck.available) {
+          toast({ title: "UHID already in use", description: `"${bookUhid}" is already assigned to ${uhidCheck.takenBy}. Please use a different UHID.`, variant: "destructive" });
+          return;
+        }
       }
       setIsCreatingLead(true);
       try {
@@ -343,6 +352,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
     if (effectiveBranchId) data.branchId = Number(effectiveBranchId);
     if (bookEpisodeId && bookEpisodeId !== "none") data.episodeId = Number(bookEpisodeId);
     if (bookNotes) data.notes = bookNotes;
+    if (bookUhid) data.uhid = bookUhid;
 
     const bookedDate = bookDate;
     createAppointment.mutate(data, {
@@ -569,6 +579,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
           )}
         </td>
         <td className="py-1.5 px-2 text-xs text-muted-foreground">{phone}</td>
+        <td className="py-1.5 px-2 text-xs text-muted-foreground">{appt.uhid || "—"}</td>
         {showDoctor && (
           <td className="py-1.5 px-2 text-xs">
             <div className="flex items-center gap-1">
@@ -787,6 +798,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                           <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase w-28">Time</th>
                           <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Patient</th>
                           <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Phone</th>
+                          <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">UHID</th>
                           <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Branch</th>
                           <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Status</th>
                           <th className="text-right py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Actions</th>
@@ -811,6 +823,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                 <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase w-28">Time</th>
                 <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Patient</th>
                 <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Phone</th>
+                <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">UHID</th>
                 <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Doctor</th>
                 <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Branch</th>
                 <th className="text-left py-1.5 px-2 text-[10px] font-medium text-muted-foreground uppercase">Status</th>
@@ -1329,6 +1342,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                         setBookLeadId(m.leadId || "");
                         setBookPatientId(m.patientId || "");
                         setNewPatientName(m.name);
+                        setBookUhid(m.uhid || "");
                         setBookMode("existing");
                         setPhoneLookupMatches([]);
                         setBookNewLeadAllowDuplicate(false);
@@ -1347,6 +1361,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                       if (bookMode === "existing") setNewPatientName("");
                       setBookLeadId("");
                       setBookPatientId("");
+                      setBookUhid("");
                       setBookMode("new");
                       setPhoneLookupMatches([]);
                       setBookNewLeadAllowDuplicate(true);
@@ -1391,6 +1406,16 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                   placeholder="Full name"
                   disabled={bookMode === "existing" && !!(bookLeadId || bookPatientId)}
                   data-testid="book-input-patient-name"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium text-muted-foreground">UHID</Label>
+                <Input
+                  value={bookUhid}
+                  onChange={(e) => setBookUhid(e.target.value)}
+                  placeholder="Optional"
+                  data-testid="book-input-uhid"
                 />
               </div>
 

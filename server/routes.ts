@@ -438,6 +438,10 @@ function humanizeError(err: any): string {
     return `The "${col}" field is required and cannot be empty.`;
   }
   if (msg.includes("violates foreign key constraint")) {
+    if (msg.includes("update or delete on table")) {
+      const refTable = msg.match(/on table "([^"]+)"/g)?.[1]?.replace(/on table "/,'').replace('"','') || "other records";
+      return `This record cannot be deleted because it is still referenced by ${refTable.replace(/_/g, " ")}. Remove those references first, or set the status to Inactive instead.`;
+    }
     return "This record references another item that doesn't exist. Please check your selections and try again.";
   }
   if (msg.includes("violates check constraint")) {
@@ -7436,6 +7440,25 @@ export async function registerRoutes(
   // =============================================
 
   // Server-side phone lookup for appointment booking — avoids PHI masking issues with client-side filtering
+  app.get("/api/appointments/check-uhid", isAuthenticated, async (req, res) => {
+    try {
+      const tid = await getDefaultTenantId(req);
+      const uhid = String(req.query.uhid || "").trim();
+      const excludeLeadId = req.query.excludeLeadId ? Number(req.query.excludeLeadId) : null;
+      if (!uhid) return res.json({ available: true });
+      const result = await pool.query(
+        `SELECT id, name FROM leads WHERE tenant_id = $1 AND uhid = $2 AND ($3::int IS NULL OR id != $3) LIMIT 1`,
+        [tid, uhid, excludeLeadId]
+      );
+      if (result.rows.length > 0) {
+        return res.json({ available: false, takenBy: result.rows[0].name });
+      }
+      res.json({ available: true });
+    } catch (err: any) {
+      res.status(500).json({ message: humanizeError(err) });
+    }
+  });
+
   app.get("/api/appointments/phone-lookup", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
@@ -7444,13 +7467,14 @@ export async function registerRoutes(
       const normalizedPhone = normalizePhone(rawPhone);
 
       const leadsResult = await pool.query(
-        `SELECT l.id, l.name, l.status, l.patient_id
+        `SELECT DISTINCT ON (LOWER(TRIM(l.name)))
+           l.id, l.name, l.status, l.patient_id, l.uhid
          FROM leads l
          WHERE l.tenant_id = $1
            AND l.mobile_normalized = $2
            AND (l.merge_status IS NULL OR l.merge_status = 'ACTIVE')
            AND l.status NOT LIKE '%Closed%'
-         ORDER BY l.last_activity_at DESC NULLS LAST
+         ORDER BY LOWER(TRIM(l.name)), l.uhid DESC NULLS LAST, l.last_activity_at DESC NULLS LAST
          LIMIT 5`,
         [tid, normalizedPhone]
       );
@@ -7475,6 +7499,7 @@ export async function registerRoutes(
           status: l.status || "",
           leadId: String(l.id),
           patientId: l.patient_id ? String(l.patient_id) : undefined,
+          uhid: l.uhid || undefined,
         })),
         ...patientsResult.rows
           .filter((p: any) => !patientIdsFromLeads.has(p.id))
@@ -7660,9 +7685,26 @@ export async function registerRoutes(
         }
       }
 
+      if (parsed.uhid) {
+        const existing = await pool.query(
+          `SELECT id, name FROM leads WHERE tenant_id = $1 AND uhid = $2 AND ($3::int IS NULL OR id != $3) LIMIT 1`,
+          [tid, parsed.uhid, parsed.leadId ?? null]
+        );
+        if (existing.rows.length > 0) {
+          return res.status(400).json({ message: `UHID "${parsed.uhid}" is already assigned to another patient (${existing.rows[0].name}). Each patient must have a unique UHID.` });
+        }
+      }
+
       const tokenNumber = await storage.getNextTokenNumber(parsed.doctorId, tid, dateStr);
 
       const appt = await storage.createAppointment({ ...parsed, tokenNumber });
+
+      if (parsed.uhid && parsed.leadId) {
+        await pool.query(
+          `UPDATE leads SET uhid = $1 WHERE id = $2 AND tenant_id = $3 AND (uhid IS NULL OR uhid = '')`,
+          [parsed.uhid, parsed.leadId, tid]
+        );
+      }
 
       if (parsed.leadId) {
         const doctor = parsed.doctorId ? await db.select().from(doctors).where(and(eq(doctors.id, parsed.doctorId), eq(doctors.tenantId, tid))).then(r => r[0]) : null;
@@ -7847,8 +7889,20 @@ export async function registerRoutes(
   app.patch("/api/appointments/:id", isAuthenticated, async (req, res) => {
     try {
       const tid = await getDefaultTenantId(req);
+      const apptId = Number(req.params.id);
       const parsed = insertAppointmentSchema.partial().parse(req.body);
-      const appt = await storage.updateAppointment(Number(req.params.id), tid, parsed);
+      if (parsed.uhid) {
+        const existing = await pool.query(
+          `SELECT l.id, l.name FROM leads l
+           JOIN appointments a ON a.lead_id = l.id
+           WHERE l.tenant_id = $1 AND l.uhid = $2 AND a.id != $3 LIMIT 1`,
+          [tid, parsed.uhid, apptId]
+        );
+        if (existing.rows.length > 0) {
+          return res.status(400).json({ message: `UHID "${parsed.uhid}" is already assigned to another patient (${existing.rows[0].name}). Each patient must have a unique UHID.` });
+        }
+      }
+      const appt = await storage.updateAppointment(apptId, tid, parsed);
       res.json(appt);
     } catch (err: any) {
       res.status(400).json({ message: humanizeError(err) });

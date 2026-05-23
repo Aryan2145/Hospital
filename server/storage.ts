@@ -508,7 +508,7 @@ export class DatabaseStorage implements IStorage {
         a.appointment_date AS "appointmentDate", a.start_time AS "startTime", a.end_time AS "endTime",
         a.token_number AS "tokenNumber", a.status, a.reschedule_count AS "rescheduleCount",
         a.cancel_reason AS "cancelReason", a.consultation_notes AS "consultationNotes",
-        a.notes, a.created_at AS "createdAt",
+        a.notes, a.uhid, a.created_at AS "createdAt",
         a.checked_in_at AS "checkedInAt", a.checked_in_by AS "checkedInBy",
         a.service_location AS "serviceLocation",
         d.name AS "doctorName",
