@@ -4718,21 +4718,6 @@ export async function registerRoutes(
       }
 
       const creds = (connector.credentials || {}) as Record<string, any>;
-      const incomingSecret = (
-        req.headers["x-callyzer-secret"] ||
-        req.headers["x-webhook-secret"] ||
-        req.headers["x-api-key"] ||
-        req.headers["authorization"]?.toString().replace(/^Bearer\s+/i, "") ||
-        req.query.secret ||
-        req.query.key ||
-        req.query.token
-      ) as string | undefined;
-
-      const validSecrets = [creds.webhookSecret, creds.apiKey].filter(Boolean);
-      if (validSecrets.length > 0 && (!incomingSecret || !validSecrets.includes(incomingSecret))) {
-        console.log(`Callyzer webhook auth failed for connector ${connectorId}. Expected one of [${validSecrets.map(s => s?.substring(0, 8) + '...').join(', ')}], got: ${incomingSecret ? incomingSecret.substring(0, 8) + '...' : 'none'}. Headers: ${Object.keys(req.headers).filter(h => h.startsWith('x-')).join(', ')}`);
-        return res.status(401).json({ message: "Invalid webhook secret" });
-      }
 
       const tid = connector.tenantId;
       const payload = req.body;
