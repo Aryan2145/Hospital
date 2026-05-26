@@ -402,10 +402,14 @@ export default function MasterData() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      await apiRequest("PATCH", `/api/masters/${selectedTable}/${id}`, data);
+      const res = await apiRequest("PATCH", `/api/masters/${selectedTable}/${id}`, data);
+      return res.json() as Promise<MasterRecord>;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/masters", selectedTable] });
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["/api/masters", selectedTable], (old: MasterRecord[] | undefined) =>
+        old ? old.map((r) => (r.id === updated.id ? updated : r)) : old
+      );
+      queryClient.invalidateQueries({ queryKey: ["/api/masters/ref-data"] });
       toast({ title: "Record updated successfully" });
       setIsDialogOpen(false);
       resetForm();

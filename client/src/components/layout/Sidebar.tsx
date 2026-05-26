@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { 
   LayoutDashboard, 
   Users, 
@@ -279,7 +279,16 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="flex-1 py-4 px-4 overflow-y-auto">
+      <div
+        className="flex-1 py-4 px-4 overflow-y-auto"
+        ref={(el) => {
+          if (el) {
+            const saved = sessionStorage.getItem("sidebar-scroll");
+            if (saved) el.scrollTop = parseInt(saved, 10);
+          }
+        }}
+        onScroll={(e) => sessionStorage.setItem("sidebar-scroll", String((e.currentTarget as HTMLDivElement).scrollTop))}
+      >
         {visibleSections.map((section, idx) => (
           <div key={section.label} className={cn(idx > 0 && "mt-6")}>
             <div className="text-xs font-semibold text-muted-foreground mb-3 px-2 uppercase tracking-wider">
