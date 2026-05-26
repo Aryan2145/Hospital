@@ -943,7 +943,6 @@ export class DatabaseStorage implements IStorage {
 
   async updateMasterRecord(tableName: string, id: number, data: Record<string, any>, tenantId?: number): Promise<MasterRecord> {
     const pgTable = this.resolveTableName(tableName);
-    if (data.name && typeof data.name === "string") data.name = toProperCase(data.name);
     data.modified_at = new Date();
 
     const snakeData = this.toSnakeCase(data);
