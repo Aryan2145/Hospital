@@ -1123,8 +1123,8 @@ function QuickActions({ lead }: { lead: any }) {
     .map((s: any) => s.name);
   const validTransitions = allStatuses.filter((s: string) => s !== lead.status);
 
-  const { data: branchesList } = useQuery<any[]>({ queryKey: ["/api/masters/branches"] });
-  const activeBranches = (branchesList || []).filter((b: any) => b.status === "Active");
+  const { data: branchesList } = useQuery<any[]>({ queryKey: ["/api/masters", "branches"] });
+  const activeBranches = (branchesList || []).filter((b: any) => b.status === "Active" && (b.approvalStatus === "Approved" || !b.approvalStatus));
 
   const [callDialogOpen, setCallDialogOpen] = useState(false);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);

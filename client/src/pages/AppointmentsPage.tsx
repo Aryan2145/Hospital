@@ -43,7 +43,7 @@ function useEnrichedAppointments(filters?: Record<string, string>) {
 
 function useBranches() {
   return useQuery<any[]>({
-    queryKey: ["/api/masters/branches"],
+    queryKey: ["/api/masters", "branches"],
     queryFn: async () => {
       const res = await fetch("/api/masters/branches", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch branches");
@@ -165,7 +165,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
   const { data: appointmentTypes } = useQuery<any[]>({ queryKey: ["/api/masters/appointmentTypes"] });
   const { data: consultationTypesList } = useQuery<any[]>({ queryKey: ["/api/masters/treatmentSubDepartments"] });
   const { data: branchesListSchedule } = useBranches();
-  const activeBranches = (branchesListSchedule || []).filter((b: any) => b.status === "Active");
+  const activeBranches = (branchesListSchedule || []).filter((b: any) => b.status === "Active" && (b.approvalStatus === "Approved" || !b.approvalStatus));
   const defaultBranchId = activeBranches.length > 0 ? String(activeBranches[0].id) : "";
   const { data: opdSchedule } = useQuery<any[]>({ queryKey: ["/api/opd-schedule"] });
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -1650,7 +1650,7 @@ function CalendarView() {
                 onValueChange={setSelectedBranch}
                 options={[
                   { value: "all", label: "All Branches" },
-                  ...(branchesList?.filter((b: any) => b.status === "Active").map((b: any) => ({ value: String(b.id), label: b.name })) || []),
+                  ...(branchesList?.filter((b: any) => b.status === "Active" && (b.approvalStatus === "Approved" || !b.approvalStatus)).map((b: any) => ({ value: String(b.id), label: b.name })) || []),
                 ]}
                 placeholder="All branches"
                 triggerClassName="h-8 text-xs"
@@ -1664,7 +1664,7 @@ function CalendarView() {
       {branchesList && branchesList.length > 0 && (
         <div className="flex items-center gap-3 text-xs">
           <span className="text-muted-foreground font-medium">Branches:</span>
-          {branchesList.filter((b: any) => b.status === "Active").map((b: any) => (
+          {branchesList.filter((b: any) => b.status === "Active" && (b.approvalStatus === "Approved" || !b.approvalStatus)).map((b: any) => (
             <div key={b.id} className="flex items-center gap-1.5">
               <div className={cn("w-3 h-3 rounded-sm", branchColors[String(b.id)] || "bg-gray-400")} />
               <span>{b.name}</span>
@@ -1819,7 +1819,7 @@ function AvailabilityCalendarModal({ open, onOpenChange, selectMode, onSlotSelec
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const { data: leaves, isLoading: leavesLoading } = useDoctorLeaves(selectedDoctor);
 
-  const activeBranchesCal = (branchesListCal || []).filter((b: any) => b.status === "Active");
+  const activeBranchesCal = (branchesListCal || []).filter((b: any) => b.status === "Active" && (b.approvalStatus === "Approved" || !b.approvalStatus));
 
   // Filter doctors to only those with OPD at the selected branch
   const activeDoctors = useMemo(() => {

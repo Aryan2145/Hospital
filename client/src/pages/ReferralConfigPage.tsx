@@ -127,7 +127,7 @@ export default function ReferralConfigPage() {
   });
 
   const { data: branchesList = [] } = useQuery<Branch[]>({
-    queryKey: ["/api/masters/branches"],
+    queryKey: ["/api/masters", "branches"],
   });
 
   const activeUsers = crmUsers.filter((u: any) => u.isActive !== false && (u.approvalStatus === "Approved" || !u.approvalStatus));

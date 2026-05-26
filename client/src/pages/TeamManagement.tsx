@@ -166,7 +166,7 @@ export default function TeamManagement() {
     queryFn: () => fetch(usersQueryUrl, { credentials: "include" }).then(r => r.json()),
   });
   const { data: roles = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/systemRoles"], staleTime: 0 });
-  const { data: branches = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters/branches"] });
+  const { data: branches = [] } = useQuery<MasterRecord[]>({ queryKey: ["/api/masters", "branches"] });
 
   const createMutation = useMutation({
     mutationFn: (data: UserFormData) => apiRequest("POST", "/api/crm-users", data),
@@ -801,7 +801,7 @@ export default function TeamManagement() {
                   onValueChange={v => setFormData(p => ({ ...p, branchId: v === "none" ? null : Number(v) }))}
                   options={[
                     { value: "none", label: "-- No Branch --" },
-                    ...branches.filter((b: any) => b.status === "Active").map((b: any) => ({ value: b.id.toString(), label: b.name }))
+                    ...branches.filter((b: any) => b.status === "Active" && (b.approvalStatus === "Approved" || !b.approvalStatus)).map((b: any) => ({ value: b.id.toString(), label: b.name }))
                   ]}
                   placeholder="Select branch"
                   data-testid="select-branch"

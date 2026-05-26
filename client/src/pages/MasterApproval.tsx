@@ -442,6 +442,7 @@ export default function MasterApproval() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/masters-pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/masters"] });
       toast({ title: "Item approved" });
     },
   });
@@ -457,6 +458,7 @@ export default function MasterApproval() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/masters-pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/masters"] });
       toast({ title: "Item rejected" });
     },
   });

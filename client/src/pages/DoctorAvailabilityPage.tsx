@@ -72,7 +72,7 @@ function useOpdSchedule() {
 
 function useBranches() {
   return useQuery<any[]>({
-    queryKey: ["/api/masters/branches"],
+    queryKey: ["/api/masters", "branches"],
     queryFn: async () => {
       const res = await fetch("/api/masters/branches", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch branches");
@@ -149,7 +149,7 @@ export default function DoctorAvailabilityPage() {
     (d) => slotsByDay.has(d)
   );
 
-  const activeBranches = branches.filter((b: any) => b.status === "Active");
+  const activeBranches = branches.filter((b: any) => b.status === "Active" && (b.approvalStatus === "Approved" || !b.approvalStatus));
 
   function slotCount(s: OpdSlot) {
     const dur = s.slotDuration || 15;
