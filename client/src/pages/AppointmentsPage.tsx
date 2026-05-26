@@ -1186,7 +1186,7 @@ function DoctorScheduleView({ onOpenAvailability }: { onOpenAvailability: (cb: (
                       {availability.data.dayOfWeek} OPD — click a green slot to select
                     </p>
                     {/* Group individual slots by OPD window */}
-                    {availability.data.windows?.map((win) => {
+                    {[...(availability.data.windows ?? [])].sort((a, b) => a.startTime.localeCompare(b.startTime)).map((win) => {
                       const winSlots = (availability.data!.individualSlots || []).filter(
                         (s: IndividualSlot) => s.windowStart === win.startTime
                       );
