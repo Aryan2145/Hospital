@@ -1,15 +1,37 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./Sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTenantBranding } from "@/hooks/use-tenant-branding";
+import { useLocation } from "wouter";
+
+function useScrollRestoration(ref: React.RefObject<HTMLElement | null>) {
+  const [location] = useLocation();
+  const positions = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onScroll = () => { positions.current[location] = el.scrollTop; };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [location, ref]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.scrollTop = positions.current[location] ?? 0;
+  }, [location, ref]);
+}
 
 export function AppLayout({ children, className }: { children: React.ReactNode; className?: string }) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const { displayName, logoUrl } = useTenantBranding();
+  const mainRef = useRef<HTMLElement>(null);
+  useScrollRestoration(mainRef);
 
   if (isMobile) {
     return (
@@ -33,7 +55,7 @@ export function AppLayout({ children, className }: { children: React.ReactNode; 
             <span className="text-xs text-muted-foreground font-medium">CRM</span>
           </div>
         </header>
-        <main className={className || "flex-1 overflow-auto"}>
+        <main ref={mainRef} className={className || "flex-1 overflow-auto"}>
           {children}
         </main>
       </div>
@@ -43,7 +65,7 @@ export function AppLayout({ children, className }: { children: React.ReactNode; 
   return (
     <div className="flex h-screen bg-background">
       <Sidebar />
-      <main className={className || "flex-1 overflow-auto"}>
+      <main ref={mainRef} className={className || "flex-1 overflow-auto"}>
         {children}
       </main>
     </div>
